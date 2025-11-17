@@ -1,0 +1,8 @@
+[project]
+name = "kumiho"
+version = "0.2.0"
+license = { file = "LICENSE" }
+
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"
