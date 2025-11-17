@@ -2,6 +2,16 @@
 name = "kumiho"
 version = "0.2.0"
 license = { file = "LICENSE" }
+dependencies = [
+	"grpcio>=1.63.0",
+	"grpcio-tools>=1.63.0",
+	"protobuf>=4.25.0",
+]
+
+[project.optional-dependencies]
+dev = [
+	"pytest>=8.2.0",
+]
 
 [build-system]
 requires = ["setuptools"]

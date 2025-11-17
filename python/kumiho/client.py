@@ -2,7 +2,7 @@
 
 import os
 from datetime import datetime
-from typing import Any, Dict, Iterator, List, Optional, Tuple, Union
+from typing import Any, Dict, Iterator, List, Optional, Sequence, Tuple, Union
 from urllib.parse import urlparse
 
 import grpc
@@ -63,7 +63,13 @@ class Client:
         stub: The gRPC stub for making service calls.
     """
 
-    def __init__(self, target: Optional[str] = None) -> None:
+    def __init__(
+        self,
+        target: Optional[str] = None,
+        *,
+        auth_token: Optional[str] = None,
+        default_metadata: Optional[Sequence[Tuple[str, str]]] = None,
+    ) -> None:
         """Initialize the client with a target server address.
 
         Args:
@@ -72,6 +78,12 @@ class Client:
                 1. ``KUMIHO_SERVER_ENDPOINT``
                 2. ``KUMIHO_SERVER_ADDRESS`` (legacy name)
                 3. ``localhost:8080``
+            auth_token: Optional bearer token that will be sent as
+                ``Authorization: Bearer <token>`` on every RPC. Falls back to
+                the ``KUMIHO_AUTH_TOKEN`` environment variable when not
+                provided.
+            default_metadata: Optional additional metadata to attach to all
+                outbound RPCs. Each entry is a ``(key, value)`` tuple.
         """
         if target is None:
             target = (
@@ -97,9 +109,23 @@ class Client:
             options = [("grpc.default_authority", authority)]
             if ssl_override:
                 options.append(("grpc.ssl_target_name_override", ssl_override))
-            self.channel = grpc.secure_channel(address, credentials, options=options)
+            channel = grpc.secure_channel(address, credentials, options=options)
         else:
-            self.channel = grpc.insecure_channel(address)
+            channel = grpc.insecure_channel(address)
+
+        metadata: List[Tuple[str, str]] = list(default_metadata or [])
+        resolved_token = auth_token or os.getenv("KUMIHO_AUTH_TOKEN")
+        if resolved_token:
+            metadata.append(("authorization", f"Bearer {resolved_token}"))
+
+        tenant_hint = os.getenv("KUMIHO_TENANT_HINT")
+        if tenant_hint:
+            metadata.append(("x-tenant-id", tenant_hint))
+
+        if metadata:
+            channel = grpc.intercept_channel(channel, _MetadataInjector(metadata))
+
+        self.channel = channel
         self.stub = kumiho_pb2_grpc.KumihoServiceStub(self.channel)
 
     @staticmethod
@@ -156,7 +182,6 @@ class Client:
                 root_certs = handle.read()
             return grpc.ssl_channel_credentials(root_certificates=root_certs)
         return grpc.ssl_channel_credentials()
-
     # Group methods
     def create_group(self, parent_path: str, group_name: str) -> Group:
         """Create a new group.
@@ -808,3 +833,67 @@ class Client:
         req = EventStreamRequest(routing_key_filter=routing_key_filter, kref_filter=kref_filter)
         for pb_event in self.stub.EventStream(req):
             yield Event(pb_event)
+
+
+class _ClientCallDetails(grpc.ClientCallDetails):
+    """Mutable wrapper that lets us override metadata on outbound RPCs."""
+
+    def __init__(
+        self,
+        method: str,
+        timeout: Optional[float],
+        metadata: Optional[Sequence[Tuple[str, str]]],
+        credentials: Optional[grpc.CallCredentials],
+        wait_for_ready: Optional[bool],
+        compression: Optional[grpc.Compression],
+    ) -> None:
+        self.method = method
+        self.timeout = timeout
+        self.metadata = metadata
+        self.credentials = credentials
+        self.wait_for_ready = wait_for_ready
+        self.compression = compression
+
+
+def _augment_call_details(
+    client_call_details: grpc.ClientCallDetails,
+    metadata: Sequence[Tuple[str, str]],
+) -> _ClientCallDetails:
+    existing = list(client_call_details.metadata or [])
+    existing.extend(metadata)
+    return _ClientCallDetails(
+        method=client_call_details.method,
+        timeout=client_call_details.timeout,
+        metadata=existing,
+        credentials=client_call_details.credentials,
+        wait_for_ready=getattr(client_call_details, "wait_for_ready", None),
+        compression=getattr(client_call_details, "compression", None),
+    )
+
+
+class _MetadataInjector(
+    grpc.UnaryUnaryClientInterceptor,
+    grpc.UnaryStreamClientInterceptor,
+    grpc.StreamUnaryClientInterceptor,
+    grpc.StreamStreamClientInterceptor,
+):
+    """Client interceptor that injects static metadata such as auth tokens."""
+
+    def __init__(self, metadata: Sequence[Tuple[str, str]]) -> None:
+        self._metadata = tuple(metadata)
+
+    def intercept_unary_unary(self, continuation, client_call_details, request):
+        updated = _augment_call_details(client_call_details, self._metadata)
+        return continuation(updated, request)
+
+    def intercept_unary_stream(self, continuation, client_call_details, request):
+        updated = _augment_call_details(client_call_details, self._metadata)
+        return continuation(updated, request)
+
+    def intercept_stream_unary(self, continuation, client_call_details, request_iterator):
+        updated = _augment_call_details(client_call_details, self._metadata)
+        return continuation(updated, request_iterator)
+
+    def intercept_stream_stream(self, continuation, client_call_details, request_iterator):
+        updated = _augment_call_details(client_call_details, self._metadata)
+        return continuation(updated, request_iterator)
