@@ -6,7 +6,11 @@ dependencies = [
 	"grpcio>=1.63.0",
 	"grpcio-tools>=1.63.0",
 	"protobuf>=4.25.0",
+	"requests>=2.31.0",
 ]
+
+[project.scripts]
+kumiho-auth = "kumiho.auth_cli:main"
 
 [project.optional-dependencies]
 dev = [

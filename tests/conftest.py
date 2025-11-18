@@ -1,9 +1,11 @@
 import os
+import sys
 from pathlib import Path
 from typing import Optional, Tuple
 
 import pytest
 import kumiho
+from kumiho.auth_cli import TokenAcquisitionError, ensure_token
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_TOKEN_FILE = REPO_ROOT / "firebase_token.txt"
@@ -31,6 +33,17 @@ def _load_token() -> Tuple[Optional[str], Optional[str]]:
             continue
         if contents:
             return contents, str(candidate)
+
+    if sys.stdin.isatty():
+        try:
+            token, source = ensure_token(token_file=DEFAULT_TOKEN_FILE)
+            return token, source
+        except TokenAcquisitionError as exc:
+            print(f"[kumiho-tests] Interactive login failed: {exc}")
+        except Exception as exc:  # pragma: no cover - defensive logging
+            print(f"[kumiho-tests] Unexpected error retrieving token: {exc}")
+    else:
+        print("[kumiho-tests] KUMIHO_AUTH_TOKEN not set and stdin is not a TTY; skipping interactive login.")
     return None, None
 
 
@@ -39,11 +52,12 @@ def _firebase_token() -> str:
     token, source = _load_token()
     if not token:
         pytest.skip(
-            "Configure KUMIHO_AUTH_TOKEN or KUMIHO_AUTH_TOKEN_FILE (see "
-            "kumiho-python/README.md for Firebase/Supabase setup) to run live tests."
+            "Configure KUMIHO_AUTH_TOKEN / KUMIHO_AUTH_TOKEN_FILE or run 'kumiho-auth login' "
+            "(see kumiho-python/README.md) to run live tests."
         )
     if source:
         print(f"[kumiho-tests] Using Firebase token from {source}")
+    os.environ["KUMIHO_AUTH_TOKEN"] = token
     return token
 
 @pytest.fixture(scope="function", autouse=True)
