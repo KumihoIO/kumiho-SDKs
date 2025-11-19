@@ -24,6 +24,41 @@ Kumiho relies on Firebase Authentication for identity and Supabase Postgres for 
 | `KUMIHO_AUTH_TOKEN_FILE` | Optional | Path to a file that contains the Firebase ID token. Useful for `firebase_token.txt` generated in the repo root. |
 | `KUMIHO_FIREBASE_API_KEY` | Optional | Firebase Web API key used by the `kumiho-auth` helper. Pass it via the env var or `--api-key` flag when logging in. |
 | `KUMIHO_TENANT_HINT` | Optional | Forces requests into a known tenant UUID when a user belongs to multiple tenants. The server still validates membership via Supabase. |
+| `KUMIHO_CONTROL_PLANE_URL` | Optional | Base URL for the control plane. Defaults to `https://kumiho.io`. The discovery helper calls `<base>/api/discovery/tenant`. |
+| `KUMIHO_DISCOVERY_CACHE_FILE` | Optional | Path to persist discovery responses. Defaults to `~/.kumiho/discovery-cache.json`. |
+| `KUMIHO_DISCOVERY_TIMEOUT_SECONDS` | Optional | HTTP timeout when contacting the discovery endpoint. Defaults to `10`. |
+
+### Bootstrap via the discovery endpoint
+
+The Phase 4 control plane exposes `POST /api/discovery/tenant`, which returns the
+tenant ID, region routing info, and cache-control metadata. The Python SDK ships
+`kumiho.client_from_discovery` to call this endpoint, persist the payload, and
+refresh it when the control plane says the data is stale.
+
+```python
+from kumiho import client_from_discovery
+
+# Reuses KUMIHO_AUTH_TOKEN / kumiho-auth token file for the Firebase ID token.
+client = client_from_discovery(tenant_hint="icon-fx-demo")
+
+# All subsequent calls reuse the cached region info until refresh_after_seconds.
+group = client.create_group("demo-project")
+```
+
+The helper automatically:
+
+1. Loads a Firebase ID token from `KUMIHO_AUTH_TOKEN` or the `kumiho-auth` cache.
+2. Checks `~/.kumiho/discovery-cache.json` (configurable via
+	`KUMIHO_DISCOVERY_CACHE_FILE`) for a non-expired entry keyed by `tenant_hint`.
+3. Refreshes the cache once the control plane’s `refresh_after_seconds` deadline
+	passes, falling back to the cached response if the control plane is
+	temporarily unavailable.
+4. Injects the resolved `x-tenant-id` metadata and gRPC target/authority so the
+	`Client` instance is immediately ready to talk to the correct regional server.
+
+Set `force_refresh=True` when calling `client_from_discovery` to ignore the cache
+entirely, or pass a custom `cache_path` if your environment needs an alternate
+location.
 
 ### Firebase token helper (`kumiho-auth`)
 

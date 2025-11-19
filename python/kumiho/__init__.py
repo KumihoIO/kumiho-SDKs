@@ -17,6 +17,7 @@ from .link import Link
 from .product import Product
 from .resource import Resource
 from .version import Version
+from .discovery import client_from_discovery
 
 # Add constants for reserved tags, permissions, and common link types
 LATEST_TAG = "latest"
@@ -147,6 +148,7 @@ def resolve(kref: str) -> Optional[str]:
 __all__ = [
     "KumihoObject",
     "Client",
+    "client_from_discovery",
     "Group",
     "Product",
     "Version",

@@ -1,6 +1,6 @@
 [project]
 name = "kumiho"
-version = "0.2.0"
+version = "0.3.0"
 license = { file = "LICENSE" }
 dependencies = [
 	"grpcio>=1.76.0",
