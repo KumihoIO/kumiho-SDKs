@@ -82,5 +82,4 @@ class Resource(KumihoObject):
         Args:
             force: If True, force deletion. Requires appropriate permissions.
         """
-        user_permission = self._get_current_user() if force else ""
-        self._client.delete_resource(self.kref, force, user_permission)
+        self._client.delete_resource(self.kref, force)

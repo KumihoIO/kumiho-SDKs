@@ -3,9 +3,9 @@ name = "kumiho"
 version = "0.2.0"
 license = { file = "LICENSE" }
 dependencies = [
-	"grpcio>=1.63.0",
-	"grpcio-tools>=1.63.0",
-	"protobuf>=4.25.0",
+	"grpcio>=1.76.0",
+	"grpcio-tools>=1.76.0",
+	"protobuf>=6.31.1",
 	"requests>=2.31.0",
 ]
 

@@ -1,6 +1,5 @@
 """Base classes and utilities for Kumiho objects."""
 
-import getpass
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -22,10 +21,3 @@ class KumihoObject:
         """
         self._client = client
 
-    def _get_current_user(self) -> str:
-        """Get the current username.
-
-        Returns:
-            The username of the current user.
-        """
-        return getpass.getuser()

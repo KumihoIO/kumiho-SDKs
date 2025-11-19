@@ -19,6 +19,8 @@ PROJECT_ENV = "KUMIHO_FIREBASE_PROJECT_ID"
 TOKEN_FILE_ENV = "KUMIHO_AUTH_TOKEN_FILE"
 REPO_ROOT_ENV = "KUMIHO_WORKSPACE_ROOT"
 ENV_FILE_ENV = "KUMIHO_ENV_FILE"
+TOKEN_GRACE_ENV = "KUMIHO_AUTH_TOKEN_GRACE_SECONDS"
+DEFAULT_TOKEN_GRACE_SECONDS = 300
 
 
 class TokenAcquisitionError(RuntimeError):
@@ -35,7 +37,9 @@ class Credentials:
     project_id: Optional[str] = None
 
     def is_valid(self) -> bool:
-        return self.id_token and (self.expires_at - int(time.time())) > 60
+        remaining = self.expires_at - int(time.time())
+        grace = int(os.getenv(TOKEN_GRACE_ENV, DEFAULT_TOKEN_GRACE_SECONDS))
+        return bool(self.id_token) and remaining > grace
 
 
 def _config_dir() -> Path:

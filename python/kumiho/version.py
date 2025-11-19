@@ -241,5 +241,4 @@ class Version(KumihoObject):
             force: If True, force deletion even if it has resources.
                   Requires appropriate permissions.
         """
-        user_permission = self._get_current_user() if force else ""
-        self._client.delete_version(self.kref, force, user_permission)
+        self._client.delete_version(self.kref, force)

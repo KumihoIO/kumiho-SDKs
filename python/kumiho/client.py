@@ -9,6 +9,7 @@ import grpc
 
 from google.protobuf.json_format import MessageToDict
 
+from ._token_loader import load_bearer_token
 from .proto import kumiho_pb2
 from .proto import kumiho_pb2_grpc
 from .event import Event
@@ -80,8 +81,8 @@ class Client:
                 3. ``localhost:8080``
             auth_token: Optional bearer token that will be sent as
                 ``Authorization: Bearer <token>`` on every RPC. Falls back to
-                the ``KUMIHO_AUTH_TOKEN`` environment variable when not
-                provided.
+                ``KUMIHO_AUTH_TOKEN`` or the helper token file written by
+                ``kumiho.auth_cli`` when not provided.
             default_metadata: Optional additional metadata to attach to all
                 outbound RPCs. Each entry is a ``(key, value)`` tuple.
         """
@@ -114,7 +115,7 @@ class Client:
             channel = grpc.insecure_channel(address)
 
         metadata: List[Tuple[str, str]] = list(default_metadata or [])
-        resolved_token = auth_token or os.getenv("KUMIHO_AUTH_TOKEN")
+        resolved_token = auth_token or load_bearer_token()
         if resolved_token:
             metadata.append(("authorization", f"Bearer {resolved_token}"))
 
@@ -491,37 +492,34 @@ class Client:
         # Fallback: return the version with the highest number
         return max(versions, key=lambda v: v.number)
 
-    def delete_version(self, kref: Kref, force: bool, user_permission: str) -> None:
+    def delete_version(self, kref: Kref, force: bool) -> None:
         """Delete a version.
 
         Args:
             kref: The kref of the version to delete.
             force: Whether to force deletion.
-            user_permission: The username for permission checking.
         """
-        req = DeleteVersionRequest(kref=kref.to_pb(), force=force, user_permission=user_permission)
+        req = DeleteVersionRequest(kref=kref.to_pb(), force=force)
         self.stub.DeleteVersion(req)
 
-    def delete_group(self, path: str, force: bool, user_permission: str) -> None:
+    def delete_group(self, path: str, force: bool) -> None:
         """Delete a group.
 
         Args:
             path: The path of the group to delete.
             force: Whether to force deletion.
-            user_permission: The username for permission checking.
         """
-        req = DeleteGroupRequest(path=path, force=force, user_permission=user_permission)
+        req = DeleteGroupRequest(path=path, force=force)
         self.stub.DeleteGroup(req)
 
-    def delete_product(self, kref: Kref, force: bool, user_permission: str) -> None:
+    def delete_product(self, kref: Kref, force: bool) -> None:
         """Delete a product.
 
         Args:
             kref: The kref of the product to delete.
             force: Whether to force deletion.
-            user_permission: The username for permission checking.
         """
-        req = DeleteProductRequest(kref=kref.to_pb(), force=force, user_permission=user_permission)
+        req = DeleteProductRequest(kref=kref.to_pb(), force=force)
         self.stub.DeleteProduct(req)
 
     def update_version_metadata(self, kref: Kref, metadata: Dict[str, str]) -> Version:
@@ -656,15 +654,14 @@ class Client:
         resp = self.stub.GetResourcesByLocation(req)
         return [Resource(r, self) for r in resp.resources]
 
-    def delete_resource(self, kref: Kref, force: bool, user_permission: str) -> None:
+    def delete_resource(self, kref: Kref, force: bool) -> None:
         """Delete a resource.
 
         Args:
             kref: The kref of the resource to delete.
             force: Whether to force deletion.
-            user_permission: The username for permission checking.
         """
-        req = DeleteResourceRequest(kref=kref.to_pb(), force=force, user_permission=user_permission)
+        req = DeleteResourceRequest(kref=kref.to_pb(), force=force)
         self.stub.DeleteResource(req)
 
     def update_resource_metadata(self, kref: Kref, metadata: Dict[str, str]) -> Resource:

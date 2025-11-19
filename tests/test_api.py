@@ -362,7 +362,7 @@ def test_group_deletion_logic(live_client: Client, cleanup_test_data):
     assert e.value.code() == grpc.StatusCode.PERMISSION_DENIED
 
     # 2. Succeed in deleting non-empty group with admin force
-    proj.delete(force=True)  # Removed user_permission; client handles current user
+    proj.delete(force=True)
     # Remove from cleanup since it's already deleted
     cleanup_test_data.remove(proj)
     with pytest.raises(grpc.RpcError) as e:
@@ -395,7 +395,7 @@ def test_product_deprecation_and_deletion(live_client: Client, cleanup_test_data
     assert prod_new.deprecated is False
 
     # 3. Hard-delete with admin rights (assume current user is admin in test env)
-    prod_new.delete(force=True)  # Removed user_permission; expect success
+    prod_new.delete(force=True)
     # Remove from cleanup since it's already deleted
     cleanup_test_data.remove(prod_new)
     with pytest.raises(grpc.RpcError) as e:

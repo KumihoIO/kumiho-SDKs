@@ -189,5 +189,4 @@ class Product(KumihoObject):
             force: If True, force deletion even if it has versions.
                   Requires appropriate permissions.
         """
-        user_permission = self._get_current_user() if force else ""
-        self._client.delete_product(self.kref, force, user_permission)
+        self._client.delete_product(self.kref, force)

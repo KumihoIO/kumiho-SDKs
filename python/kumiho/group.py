@@ -102,8 +102,7 @@ class Group(KumihoObject):
             force: If True, force deletion even if the group contains products.
                   Requires appropriate permissions.
         """
-        user_permission = self._get_current_user() if force else ""
-        self._client.delete_group(self.path, force, user_permission)
+        self._client.delete_group(self.path, force)
 
     def get_product(self, product_name: str, product_type: str) -> Product:
         """Get a specific product within this group by name and type.

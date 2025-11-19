@@ -4,7 +4,6 @@ Kumiho Python Client Library
 
 __version__ = "0.3.0"
 
-import os
 import grpc
 from typing import Dict, List, Optional, Iterator
 
@@ -79,13 +78,8 @@ def get_child_groups(parent_path: str = "") -> List['Group']:
     """
     return get_client().get_child_groups(parent_path)
 
-def get_current_user() -> str:
-    """Gets the current username from environment (e.g., USERNAME on Windows)."""
-    return os.environ.get("USERNAME", "unknown")
-
 def delete_group(path: str, force: bool = False):
-    user_permission = get_current_user() if force else ""
-    return get_client().delete_group(path, force, user_permission)
+    return get_client().delete_group(path, force)
 
 def create_product(parent_path: str, name: str, ptype: str) -> 'Product':
     return get_client().create_product(parent_path, name, ptype)
