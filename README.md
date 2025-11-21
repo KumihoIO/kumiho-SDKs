@@ -23,7 +23,7 @@ Kumiho relies on Firebase Authentication for identity and Supabase Postgres for 
 | `KUMIHO_AUTH_TOKEN` | Yes for live calls | Firebase ID token (JWT). Obtain it via the Firebase SDK, `firebase login:ci`, or any custom auth flow. |
 | `KUMIHO_AUTH_TOKEN_FILE` | Optional | Path to a file that contains the Firebase ID token. Useful for `firebase_token.txt` generated in the repo root. |
 | `KUMIHO_FIREBASE_API_KEY` | Optional | Firebase Web API key used by the `kumiho-auth` helper. Pass it via the env var or `--api-key` flag when logging in. |
-| `KUMIHO_TENANT_HINT` | Optional | Forces requests into a known tenant UUID when a user belongs to multiple tenants. The server still validates membership via Supabase. |
+| `KUMIHO_TENANT_HINT` | Deprecated | Legacy override for forcing a tenant UUID. Auto-discovery now resolves the tenant from Supabase memberships, so the variable is ignored. |
 | `KUMIHO_CONTROL_PLANE_URL` | Optional | Base URL for the control plane. Defaults to `https://kumiho.io`. The discovery helper calls `<base>/api/discovery/tenant`. |
 | `KUMIHO_DISCOVERY_CACHE_FILE` | Optional | Path to persist discovery responses. Defaults to `~/.kumiho/discovery-cache.json`. |
 | `KUMIHO_DISCOVERY_TIMEOUT_SECONDS` | Optional | HTTP timeout when contacting the discovery endpoint. Defaults to `10`. |
@@ -39,7 +39,7 @@ refresh it when the control plane says the data is stale.
 from kumiho import client_from_discovery
 
 # Reuses KUMIHO_AUTH_TOKEN / kumiho-auth token file for the Firebase ID token.
-client = client_from_discovery(tenant_hint="icon-fx-demo")
+client = client_from_discovery()
 
 # All subsequent calls reuse the cached region info until refresh_after_seconds.
 group = client.create_group("demo-project")
@@ -49,7 +49,7 @@ The helper automatically:
 
 1. Loads a Firebase ID token from `KUMIHO_AUTH_TOKEN` or the `kumiho-auth` cache.
 2. Checks `~/.kumiho/discovery-cache.json` (configurable via
-	`KUMIHO_DISCOVERY_CACHE_FILE`) for a non-expired entry keyed by `tenant_hint`.
+	`KUMIHO_DISCOVERY_CACHE_FILE`) for a non-expired entry keyed by the provided tenant hint (or a default record when no hint is supplied).
 3. Refreshes the cache once the control plane’s `refresh_after_seconds` deadline
 	passes, falling back to the cached response if the control plane is
 	temporarily unavailable.
@@ -94,7 +94,7 @@ cd kumiho-python
 pytest
 ```
 
-If `KUMIHO_AUTH_TOKEN` (or the file fallback) is not configured, the fixtures automatically skip the live scenarios and print a message describing the required environment. Once the token is present, the suite will use it to call the server with `Authorization: Bearer <token>` headers and will propagate any optional `KUMIHO_TENANT_HINT` metadata as well.
+If `KUMIHO_AUTH_TOKEN` (or the file fallback) is not configured, the fixtures automatically skip the live scenarios and print a message describing the required environment. Once the token is present, the suite will use it to call the server with `Authorization: Bearer <token>` headers; the multi-tenant routing is resolved automatically via discovery.
 
 To explicitly exercise the full Firebase → Supabase → Neo4j path against a running server, target the `tests/test_live_e2e.py::test_firebase_supabase_neo4j_roundtrip` case:
 

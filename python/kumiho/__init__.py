@@ -18,6 +18,7 @@ from .product import Product
 from .resource import Resource
 from .version import Version
 from .discovery import client_from_discovery
+from ._bootstrap import bootstrap_default_client
 
 # Add constants for reserved tags, permissions, and common link types
 LATEST_TAG = "latest"
@@ -28,13 +29,21 @@ REFERENCE_LINK = "Reference"
 
 
 # Instantiate a default client instance for convenience.
-_default_client = None
+_default_client: Optional[Client] = None
 
 def get_client() -> Client:
     """Gets the global client instance, creating it if it doesn't exist."""
     global _default_client
     if _default_client is None:
-        _default_client = Client()
+        _default_client = bootstrap_default_client()
+    return _default_client
+
+
+def configure_default_client(client: Client) -> Client:
+    """Override the lazily created default client used by top-level helpers."""
+
+    global _default_client
+    _default_client = client
     return _default_client
 
 # Expose methods from the default client as top-level package functions.

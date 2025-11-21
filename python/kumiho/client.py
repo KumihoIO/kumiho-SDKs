@@ -1,5 +1,6 @@
 """Low-level client for interacting with the Kumiho gRPC service."""
 
+import logging
 import os
 from datetime import datetime
 from typing import Any, Dict, Iterator, List, Optional, Sequence, Tuple, Union
@@ -10,6 +11,7 @@ import grpc
 from google.protobuf.json_format import MessageToDict
 
 from ._token_loader import load_bearer_token
+from .discovery import DiscoveryError, DiscoveryManager
 from .proto import kumiho_pb2
 from .proto import kumiho_pb2_grpc
 from .event import Event
@@ -53,6 +55,11 @@ from .resource import Resource
 from .version import Version
 
 
+_LOGGER = logging.getLogger("kumiho.client")
+_DISCOVERY_DISABLE_ENV = "KUMIHO_DISABLE_AUTO_DISCOVERY"
+_FORCE_REFRESH_ENV = "KUMIHO_FORCE_DISCOVERY_REFRESH"
+
+
 class Client:
     """Low-level client for interacting with the Kumiho gRPC service.
 
@@ -70,6 +77,9 @@ class Client:
         *,
         auth_token: Optional[str] = None,
         default_metadata: Optional[Sequence[Tuple[str, str]]] = None,
+        use_discovery: Optional[bool] = None,
+        tenant_hint: Optional[str] = None,
+        force_discovery_refresh: Optional[bool] = None,
     ) -> None:
         """Initialize the client with a target server address.
 
@@ -86,6 +96,24 @@ class Client:
             default_metadata: Optional additional metadata to attach to all
                 outbound RPCs. Each entry is a ``(key, value)`` tuple.
         """
+        metadata: List[Tuple[str, str]] = list(default_metadata or [])
+        resolved_token = auth_token or load_bearer_token()
+
+        discovery = self._maybe_resolve_via_discovery(
+            explicit_target=target,
+            use_discovery=use_discovery,
+            id_token=resolved_token,
+            tenant_hint=tenant_hint,
+            force_discovery_refresh=force_discovery_refresh,
+        )
+        tenant_header_set = False
+
+        if discovery:
+            target = discovery[0]
+            if len(discovery) > 1 and discovery[1]:
+                metadata.append(("x-tenant-id", discovery[1]))
+                tenant_header_set = True
+
         if target is None:
             target = (
                 os.getenv("KUMIHO_SERVER_ENDPOINT")
@@ -114,20 +142,72 @@ class Client:
         else:
             channel = grpc.insecure_channel(address)
 
-        metadata: List[Tuple[str, str]] = list(default_metadata or [])
-        resolved_token = auth_token or load_bearer_token()
         if resolved_token:
             metadata.append(("authorization", f"Bearer {resolved_token}"))
-
-        tenant_hint = os.getenv("KUMIHO_TENANT_HINT")
-        if tenant_hint:
-            metadata.append(("x-tenant-id", tenant_hint))
 
         if metadata:
             channel = grpc.intercept_channel(channel, _MetadataInjector(metadata))
 
         self.channel = channel
         self.stub = kumiho_pb2_grpc.KumihoServiceStub(self.channel)
+
+    @staticmethod
+    def _env_flag(name: str, *, default: bool = False) -> bool:
+        value = os.getenv(name)
+        if value is None:
+            return default
+        return value.strip().lower() not in {"0", "false", "no"}
+
+    def _maybe_resolve_via_discovery(
+        self,
+        *,
+        explicit_target: Optional[str],
+        use_discovery: Optional[bool],
+        id_token: Optional[str],
+        tenant_hint: Optional[str],
+        force_discovery_refresh: Optional[bool],
+    ) -> Optional[Tuple[str, Optional[str]]]:
+        if explicit_target:
+            return None
+
+        should_use = use_discovery
+        if should_use is None:
+            should_use = not self._env_flag(_DISCOVERY_DISABLE_ENV)
+
+        if not should_use:
+            return None
+
+        if not id_token:
+            _LOGGER.debug("Discovery skipped: no Firebase token available")
+            return None
+
+        hint = tenant_hint or None
+        force_refresh = (
+            force_discovery_refresh
+            if force_discovery_refresh is not None
+            else self._env_flag(_FORCE_REFRESH_ENV, default=False)
+        )
+
+        manager = DiscoveryManager()
+        try:
+            record = manager.resolve(
+                id_token=id_token,
+                tenant_hint=hint,
+                force_refresh=force_refresh,
+            )
+        except DiscoveryError as exc:
+            _LOGGER.info("Discovery failed (%s); falling back to legacy target", exc)
+            return None
+        except Exception:  # pragma: no cover - defensive logging
+            _LOGGER.exception("Unexpected discovery failure; falling back to legacy target")
+            return None
+
+        target = record.region.grpc_authority or record.region.server_url
+        tenant_id = record.tenant_id
+        _LOGGER.debug(
+            "Resolved Kumiho endpoint via discovery: target=%s tenant=%s", target, tenant_id
+        )
+        return target, tenant_id
 
     @staticmethod
     def _normalise_target(raw_target: str) -> Tuple[str, str, bool]:

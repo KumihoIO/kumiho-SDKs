@@ -87,8 +87,4 @@ def cleanup_test_data(live_client):
 def live_client(_firebase_token):
     """Provides a client connected to the live gRPC server with auth metadata."""
 
-    tenant_hint = os.getenv("KUMIHO_TENANT_HINT")
-    if tenant_hint:
-        print(f"[kumiho-tests] Tenant hint set to {tenant_hint}")
-
     return kumiho.Client(auth_token=_firebase_token)

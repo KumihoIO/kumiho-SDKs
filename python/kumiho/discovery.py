@@ -7,12 +7,13 @@ import os
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, Iterable, Optional, Sequence, Tuple
+from typing import TYPE_CHECKING, Any, Dict, Iterable, Optional, Sequence, Tuple
 
 import requests
 
 from ._token_loader import load_bearer_token
-from .client import Client
+if TYPE_CHECKING:
+    from .client import Client
 
 DEFAULT_CONTROL_PLANE_URL = os.getenv("KUMIHO_CONTROL_PLANE_URL") or "https://kumiho.io"
 DEFAULT_CACHE_PATH = Path(
@@ -229,7 +230,7 @@ def client_from_discovery(
     cache_path: Optional[str] = None,
     force_refresh: bool = False,
     default_metadata: Optional[Sequence[Tuple[str, str]]] = None,
-) -> Client:
+) -> "Client":
     """Create a Client configured via the public discovery endpoint.
 
     The helper caches discovery payloads based on the tenant hint, respects the
@@ -250,6 +251,8 @@ def client_from_discovery(
     metadata: Iterable[Tuple[str, str]] = list(default_metadata or [])
     metadata = list(metadata)
     metadata.append(("x-tenant-id", record.tenant_id))
+
+    from .client import Client  # Local import to avoid circular dependency.
 
     return Client(target=target, auth_token=token, default_metadata=metadata)
 
