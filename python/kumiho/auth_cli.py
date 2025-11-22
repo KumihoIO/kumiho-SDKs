@@ -20,7 +20,9 @@ TOKEN_FILE_ENV = "KUMIHO_AUTH_TOKEN_FILE"
 REPO_ROOT_ENV = "KUMIHO_WORKSPACE_ROOT"
 ENV_FILE_ENV = "KUMIHO_ENV_FILE"
 TOKEN_GRACE_ENV = "KUMIHO_AUTH_TOKEN_GRACE_SECONDS"
+CONTROL_PLANE_API_ENV = "KUMIHO_CONTROL_PLANE_API_URL"
 DEFAULT_TOKEN_GRACE_SECONDS = 300
+DEFAULT_CONTROL_PLANE_API_URL = "https://kumiho.io"
 
 
 class TokenAcquisitionError(RuntimeError):
@@ -35,11 +37,20 @@ class Credentials:
     id_token: str
     expires_at: int
     project_id: Optional[str] = None
+    control_plane_token: Optional[str] = None
+    cp_expires_at: Optional[int] = None
 
     def is_valid(self) -> bool:
         remaining = self.expires_at - int(time.time())
         grace = int(os.getenv(TOKEN_GRACE_ENV, DEFAULT_TOKEN_GRACE_SECONDS))
         return bool(self.id_token) and remaining > grace
+
+    def is_cp_valid(self) -> bool:
+        if not self.control_plane_token or not self.cp_expires_at:
+            return False
+        remaining = self.cp_expires_at - int(time.time())
+        grace = int(os.getenv(TOKEN_GRACE_ENV, DEFAULT_TOKEN_GRACE_SECONDS))
+        return remaining > grace
 
 
 def _config_dir() -> Path:
@@ -102,6 +113,8 @@ def _load_credentials() -> Optional[Credentials]:
             id_token=data["id_token"],
             expires_at=int(data["expires_at"]),
             project_id=data.get("project_id"),
+            control_plane_token=data.get("control_plane_token"),
+            cp_expires_at=int(data.get("cp_expires_at")) if data.get("cp_expires_at") else None,
         )
     except KeyError:
         return None
@@ -117,6 +130,8 @@ def _save_credentials(creds: Credentials) -> None:
         "id_token": creds.id_token,
         "expires_at": creds.expires_at,
         "project_id": creds.project_id,
+        "control_plane_token": creds.control_plane_token,
+        "cp_expires_at": creds.cp_expires_at,
     }
     path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
 
@@ -186,6 +201,26 @@ def _refresh_with_token(api_key: str, refresh_token: str) -> Tuple[str, str, int
     return data["id_token"], data["refresh_token"], int(data.get("expires_in", "3600"))
 
 
+def _exchange_for_control_plane_token(firebase_token: str) -> Tuple[str, int]:
+    base_url = os.getenv(CONTROL_PLANE_API_ENV, DEFAULT_CONTROL_PLANE_API_URL).rstrip("/")
+    url = f"{base_url}/api/control-plane/token"
+    
+    try:
+        resp = requests.post(
+            url, 
+            headers={"Authorization": f"Bearer {firebase_token}"},
+            timeout=10
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        return data["token"], int(data["expires_at"])
+    except requests.RequestException as exc:
+        # Fallback: if CP exchange fails, we just return empty (client will use Firebase token)
+        # But we should log it.
+        print(f"[kumiho-auth] Warning: Failed to exchange for Control Plane JWT: {exc}")
+        return None, None
+
+
 def _prompt(prompt_text: str) -> str:
     return input(prompt_text).strip()
 
@@ -249,7 +284,16 @@ def ensure_token(
             _write_token_file(token_file, creds.id_token)
             _ensure_env_hint(_env_file_path(repo_root), token_file)
             _log_token(creds.id_token, "cached", token_file)
-        return creds.id_token, "cached credentials"
+        
+        # Check if we need to refresh CP token
+        if not creds.is_cp_valid():
+             cp_token, cp_exp = _exchange_for_control_plane_token(creds.id_token)
+             if cp_token:
+                 creds.control_plane_token = cp_token
+                 creds.cp_expires_at = cp_exp
+                 _save_credentials(creds)
+
+        return creds.control_plane_token or creds.id_token, "cached credentials"
 
     if creds and creds.refresh_token:
         try:
@@ -262,6 +306,12 @@ def ensure_token(
                 expires_at=int(time.time()) + expires_in,
                 project_id=creds.project_id,
             )
+            
+            # Exchange for CP token
+            cp_token, cp_exp = _exchange_for_control_plane_token(id_token)
+            updated.control_plane_token = cp_token
+            updated.cp_expires_at = cp_exp
+
             _save_credentials(updated)
             if token_file:
                 _write_token_file(token_file, updated.id_token)
@@ -277,12 +327,19 @@ def ensure_token(
     api_key = _resolve_api_key(creds.api_key if creds else None)
     project_id = _resolve_project_id(creds.project_id if creds else None)
     new_creds = _interactive_login(api_key, project_id)
+    
+    # Exchange for CP token
+    cp_token, cp_exp = _exchange_for_control_plane_token(new_creds.id_token)
+    new_creds.control_plane_token = cp_token
+    new_creds.cp_expires_at = cp_exp
+    
     _save_credentials(new_creds)
     if token_file:
         _write_token_file(token_file, new_creds.id_token)
         _ensure_env_hint(_env_file_path(repo_root), token_file)
         _log_token(new_creds.id_token, "interactive", token_file)
-    return new_creds.id_token, "interactive login"
+        _log_token(new_creds.id_token, "interactive", token_file)
+    return new_creds.control_plane_token or new_creds.id_token, "interactive login"
 
 
 def cmd_login(args: argparse.Namespace) -> None:

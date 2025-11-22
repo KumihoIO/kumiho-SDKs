@@ -77,6 +77,8 @@ def load_bearer_token() -> Optional[str]:
             if token_file.suffix == ".json":
                 import json
                 data = json.loads(contents)
+                if "control_plane_token" in data and data["control_plane_token"]:
+                    return data["control_plane_token"]
                 if "id_token" in data:
                     return data["id_token"]
         except (FileNotFoundError, OSError, ValueError, ImportError):
