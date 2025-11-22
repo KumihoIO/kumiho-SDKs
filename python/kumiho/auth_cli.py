@@ -50,7 +50,7 @@ def _config_dir() -> Path:
 
 
 def _credentials_path() -> Path:
-    return _config_dir() / "credentials.json"
+    return _config_dir() / "kumiho_authentification.json"
 
 
 def _default_repo_root() -> Path:
@@ -242,13 +242,13 @@ def ensure_token(
     """
 
     repo_root = _default_repo_root()
-    token_path = token_file or _token_file_path(repo_root)
-
+    
     creds = _load_credentials()
     if creds and creds.is_valid():
-        _write_token_file(token_path, creds.id_token)
-        _ensure_env_hint(_env_file_path(repo_root), token_path)
-        _log_token(creds.id_token, "cached", token_path)
+        if token_file:
+            _write_token_file(token_file, creds.id_token)
+            _ensure_env_hint(_env_file_path(repo_root), token_file)
+            _log_token(creds.id_token, "cached", token_file)
         return creds.id_token, "cached credentials"
 
     if creds and creds.refresh_token:
@@ -263,9 +263,10 @@ def ensure_token(
                 project_id=creds.project_id,
             )
             _save_credentials(updated)
-            _write_token_file(token_path, updated.id_token)
-            _ensure_env_hint(_env_file_path(repo_root), token_path)
-            _log_token(updated.id_token, "refreshed", token_path)
+            if token_file:
+                _write_token_file(token_file, updated.id_token)
+                _ensure_env_hint(_env_file_path(repo_root), token_file)
+                _log_token(updated.id_token, "refreshed", token_file)
             return updated.id_token, "refreshed credentials"
         except requests.HTTPError as exc:
             print(f"[kumiho-auth] Refresh failed: {exc}")
@@ -277,9 +278,10 @@ def ensure_token(
     project_id = _resolve_project_id(creds.project_id if creds else None)
     new_creds = _interactive_login(api_key, project_id)
     _save_credentials(new_creds)
-    _write_token_file(token_path, new_creds.id_token)
-    _ensure_env_hint(_env_file_path(repo_root), token_path)
-    _log_token(new_creds.id_token, "interactive", token_path)
+    if token_file:
+        _write_token_file(token_file, new_creds.id_token)
+        _ensure_env_hint(_env_file_path(repo_root), token_file)
+        _log_token(new_creds.id_token, "interactive", token_file)
     return new_creds.id_token, "interactive login"
 
 

@@ -24,12 +24,25 @@ def _unique_paths(paths: Iterable[Path]) -> List[Path]:
     return ordered
 
 
+    return _unique_paths(candidates)
+
+
+def _config_dir() -> Path:
+    base = os.getenv("KUMIHO_CONFIG_DIR")
+    if base:
+        return Path(base).expanduser()
+    return Path.home() / ".kumiho"
+
+
 def _candidate_token_files() -> List[Path]:
     candidates: List[Path] = []
 
     env_file = os.getenv(_TOKEN_FILE_ENV)
     if env_file:
         candidates.append(Path(env_file))
+
+    # Add the new JSON credentials file as a candidate
+    candidates.append(_config_dir() / "kumiho_authentification.json")
 
     workspace_root = os.getenv(_WORKSPACE_ENV)
     if workspace_root:
@@ -46,6 +59,9 @@ def _candidate_token_files() -> List[Path]:
     return _unique_paths(candidates)
 
 
+    return None
+
+
 def load_bearer_token() -> Optional[str]:
     """Return a bearer token from env vars or helper files, if available."""
 
@@ -58,10 +74,14 @@ def load_bearer_token() -> Optional[str]:
     for token_file in _candidate_token_files():
         try:
             contents = token_file.read_text(encoding="utf-8").strip()
-        except FileNotFoundError:
+            if token_file.suffix == ".json":
+                import json
+                data = json.loads(contents)
+                if "id_token" in data:
+                    return data["id_token"]
+        except (FileNotFoundError, OSError, ValueError, ImportError):
             continue
-        except OSError:
-            continue
-        if contents:
-            return contents
+        
+        if contents and token_file.suffix != ".json":
+             return contents
     return None
