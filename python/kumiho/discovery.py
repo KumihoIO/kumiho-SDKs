@@ -2,18 +2,24 @@
 
 from __future__ import annotations
 
+import base64
+import binascii
 import json
 import os
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Dict, Iterable, Optional, Sequence, Tuple
+from typing import TYPE_CHECKING, Any, Dict, Iterable, Optional, Sequence, Tuple, Type
 
 import requests
 
-from ._token_loader import load_bearer_token
+from ._token_loader import load_bearer_token, load_firebase_token
 if TYPE_CHECKING:
-    from .client import Client
+    from .client import Client as ClientType
+else:
+    ClientType = Any
+
+Client: Optional[Type[Any]] = None
 
 DEFAULT_CONTROL_PLANE_URL = os.getenv("KUMIHO_CONTROL_PLANE_URL") or "https://kumiho.io"
 DEFAULT_CACHE_PATH = Path(
@@ -184,24 +190,26 @@ class DiscoveryManager:
         force_refresh: bool = False,
     ) -> DiscoveryRecord:
         cache_key = tenant_hint or _DEFAULT_CACHE_KEY
+
+        def fetch_fresh() -> DiscoveryRecord:
+            firebase_token = _ensure_firebase_token(id_token)
+            fresh = self._fetch_remote(id_token=firebase_token, tenant_hint=tenant_hint)
+            self.cache.store(cache_key, fresh)
+            return fresh
+
         if not force_refresh:
             cached = self.cache.load(cache_key)
             if cached and not cached.cache_control.is_expired():
                 if cached.cache_control.should_refresh():
                     try:
-                        fresh = self._fetch_remote(id_token=id_token, tenant_hint=tenant_hint)
-                        self.cache.store(cache_key, fresh)
-                        return fresh
+                        return fetch_fresh()
                     except DiscoveryError:
-                        # Fall back to cached copy if it is still valid.
                         if not cached.cache_control.is_expired():
                             return cached
                         raise
                 return cached
 
-        fresh = self._fetch_remote(id_token=id_token, tenant_hint=tenant_hint)
-        self.cache.store(cache_key, fresh)
-        return fresh
+        return fetch_fresh()
 
     def _fetch_remote(self, *, id_token: str, tenant_hint: Optional[str]) -> DiscoveryRecord:
         url = _build_discovery_url(self.base_url)
@@ -230,7 +238,7 @@ def client_from_discovery(
     cache_path: Optional[str] = None,
     force_refresh: bool = False,
     default_metadata: Optional[Sequence[Tuple[str, str]]] = None,
-) -> "Client":
+) -> "ClientType":
     """Create a Client configured via the public discovery endpoint.
 
     The helper caches discovery payloads based on the tenant hint, respects the
@@ -241,10 +249,13 @@ def client_from_discovery(
     token = id_token or load_bearer_token()
     if not token:
         raise DiscoveryError(
-            "A Firebase ID token is required. Set KUMIHO_AUTH_TOKEN or run kumiho-auth login."
+            "A bearer token is required. Set KUMIHO_AUTH_TOKEN or run kumiho-auth login."
         )
 
-    manager = DiscoveryManager(control_plane_url=control_plane_url, cache_path=Path(cache_path) if cache_path else None)
+    manager = DiscoveryManager(
+        control_plane_url=control_plane_url,
+        cache_path=Path(cache_path) if cache_path else None,
+    )
     record = manager.resolve(id_token=token, tenant_hint=tenant_hint, force_refresh=force_refresh)
 
     target = record.region.grpc_authority or record.region.server_url
@@ -252,9 +263,8 @@ def client_from_discovery(
     metadata = list(metadata)
     metadata.append(("x-tenant-id", record.tenant_id))
 
-    from .client import Client  # Local import to avoid circular dependency.
-
-    return Client(target=target, auth_token=token, default_metadata=metadata)
+    client_cls = _get_client_class()
+    return client_cls(target=target, auth_token=token, default_metadata=metadata)
 
 
 def _parse_iso8601(raw: Optional[str]) -> datetime:
@@ -278,3 +288,58 @@ def _build_discovery_url(base_url: str) -> str:
     if base.endswith("/api"):
         return f"{base}/discovery/tenant"
     return f"{base}/api/discovery/tenant"
+
+
+def _ensure_firebase_token(candidate: str) -> str:
+    if not _is_control_plane_token(candidate):
+        return candidate
+
+    firebase = load_firebase_token()
+    if firebase:
+        return firebase
+
+    raise DiscoveryError(
+        "Control Plane JWT detected but no Firebase ID token is available. "
+        "Run 'kumiho-auth login' to refresh credentials."
+    )
+
+
+def _decode_claims(token: str) -> Dict[str, Any]:
+    parts = token.split(".")
+    if len(parts) < 2:
+        return {}
+    payload = parts[1]
+    padding = "=" * (-len(payload) % 4)
+    try:
+        data = base64.urlsafe_b64decode((payload + padding).encode("utf-8"))
+    except (binascii.Error, ValueError):
+        return {}
+    try:
+        obj = json.loads(data)
+    except json.JSONDecodeError:
+        return {}
+    return obj if isinstance(obj, dict) else {}
+
+
+def _is_control_plane_token(token: str) -> bool:
+    claims = _decode_claims(token)
+    if not claims:
+        return False
+    if isinstance(claims.get("tenant_id"), str):
+        return True
+    iss = claims.get("iss")
+    if isinstance(iss, str) and iss.startswith("https://kumiho.io"):
+        return True
+    aud = claims.get("aud")
+    if isinstance(aud, str) and aud.startswith("https://api.kumiho.io"):
+        return True
+    return False
+
+
+def _get_client_class() -> Type[Any]:
+    global Client
+    if Client is None:
+        from .client import Client as RealClient
+
+        Client = RealClient
+    return Client

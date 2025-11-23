@@ -60,7 +60,7 @@ def _firebase_token() -> str:
     os.environ["KUMIHO_AUTH_TOKEN"] = token
     return token
 
-@pytest.fixture(scope="function", autouse=True)
+@pytest.fixture(scope="function")
 def cleanup_test_data(live_client):
     """Clean up test data after each test."""
     # Store created objects for cleanup
@@ -87,4 +87,6 @@ def cleanup_test_data(live_client):
 def live_client(_firebase_token):
     """Provides a client connected to the live gRPC server with auth metadata."""
 
-    return kumiho.Client(auth_token=_firebase_token)
+    client = kumiho.client_from_discovery(id_token=_firebase_token, force_refresh=True)
+    kumiho.configure_default_client(client)
+    return client

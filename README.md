@@ -60,6 +60,29 @@ Set `force_refresh=True` when calling `client_from_discovery` to ignore the cach
 entirely, or pass a custom `cache_path` if your environment needs an alternate
 location.
 
+#### Auto-configure the default client (no `firebase_token.txt` required)
+
+If you already ran `kumiho-auth login`, the cached credentials under
+`~/.kumiho` are enough to bootstrap the SDK—there is no need to keep
+`firebase_token.txt` in the repo. Call:
+
+```python
+import kumiho
+
+kumiho.auto_configure_from_discovery()
+
+groups = kumiho.get_child_groups()
+```
+
+The helper reuses the cached Firebase token (refreshing it when necessary), hits
+the control-plane discovery endpoint, and installs the resulting client as the
+package-wide default. Pass `interactive=True` if you want the helper to fall
+back to prompting for credentials when the cache is missing, or set
+`tenant_hint`/`force_refresh` to control discovery semantics. To run this
+automatically on every `import kumiho`, set `KUMIHO_AUTO_CONFIGURE=true` in your
+environment; the module will eagerly invoke the helper during import and fail
+fast if cached credentials are missing.
+
 ### Firebase token helper (`kumiho-auth`)
 
 The Python package ships a small CLI that uses the Firebase Web API directly, so you do **not** need the Firebase CLI on every machine. After installing the editable package, run:

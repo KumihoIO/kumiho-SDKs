@@ -4,6 +4,7 @@ Kumiho Python Client Library
 
 __version__ = "0.3.0"
 
+import os
 import grpc
 from typing import Dict, List, Optional, Iterator
 
@@ -19,6 +20,8 @@ from .resource import Resource
 from .version import Version
 from .discovery import client_from_discovery
 from ._bootstrap import bootstrap_default_client
+from .auth_cli import ensure_token, TokenAcquisitionError
+from ._token_loader import load_firebase_token
 
 # Add constants for reserved tags, permissions, and common link types
 LATEST_TAG = "latest"
@@ -30,6 +33,7 @@ REFERENCE_LINK = "Reference"
 
 # Instantiate a default client instance for convenience.
 _default_client: Optional[Client] = None
+_AUTO_CONFIGURE_ENV = "KUMIHO_AUTO_CONFIGURE"
 
 def get_client() -> Client:
     """Gets the global client instance, creating it if it doesn't exist."""
@@ -45,6 +49,76 @@ def configure_default_client(client: Client) -> Client:
     global _default_client
     _default_client = client
     return _default_client
+
+
+def auto_configure_from_discovery(
+    *,
+    tenant_hint: Optional[str] = None,
+    force_refresh: bool = False,
+    interactive: bool = False,
+) -> Client:
+    """Resolve and configure the default client using the cached ~/.kumiho credentials.
+
+    This helper keeps all token material inside the auth cache managed by
+    ``kumiho-auth``—no need to write ``firebase_token.txt`` in the repo. It will
+    reuse the cached Firebase ID token (refreshing it if necessary), call the
+    control-plane discovery endpoint, and install the resulting client as the
+    package-wide default.
+
+    Args:
+        tenant_hint: Optional tenant slug/ID to pass to the discovery endpoint.
+        force_refresh: Whether to bypass the discovery cache on disk.
+        interactive: Allow ``ensure_token`` to fall back to interactive login
+            if no cached credentials are available. Defaults to ``False`` so
+            REPLs and scripts fail fast when the cache is missing.
+
+    Returns:
+        The configured :class:`Client` instance.
+
+    Raises:
+        RuntimeError: If no cached credentials exist and interactive mode is
+            disabled.
+    """
+
+    try:
+        ensure_token(interactive=interactive)
+    except TokenAcquisitionError as exc:
+        raise RuntimeError(
+            "No cached Firebase credentials found. Run 'kumiho-auth login' to "
+            "populate ~/.kumiho before calling auto_configure_from_discovery()."
+        ) from exc
+
+    firebase_token = load_firebase_token()
+    if not firebase_token:
+        raise RuntimeError(
+            "Cached credentials missing Firebase ID token. Re-run 'kumiho-auth login' "
+            "or set KUMIHO_FIREBASE_ID_TOKEN."
+        )
+
+    client = client_from_discovery(
+        id_token=firebase_token,
+        tenant_hint=tenant_hint,
+        force_refresh=force_refresh,
+    )
+    return configure_default_client(client)
+
+
+def _auto_configure_flag_enabled() -> bool:
+    raw = os.getenv(_AUTO_CONFIGURE_ENV)
+    if not raw:
+        return False
+    return raw.strip().lower() in {"1", "true", "yes"}
+
+
+def _auto_configure_from_env_if_requested() -> None:
+    if not _auto_configure_flag_enabled():
+        return
+    try:
+        auto_configure_from_discovery()
+    except Exception as exc:  # pragma: no cover - defensive
+        raise RuntimeError(
+            "KUMIHO_AUTO_CONFIGURE is set, but automatic discovery bootstrap failed."
+        ) from exc
 
 # Expose methods from the default client as top-level package functions.
 def create_group(path: str) -> 'Group':
@@ -186,4 +260,8 @@ __all__ = [
     "get_links",
     "event_stream",
     "resolve",
+    "auto_configure_from_discovery",
 ]
+
+
+_auto_configure_from_env_if_requested()
