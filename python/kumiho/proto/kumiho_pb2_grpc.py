@@ -35,6 +35,21 @@ class KumihoServiceStub(object):
         Args:
             channel: A grpc.Channel.
         """
+        self.CreateProject = channel.unary_unary(
+                '/kumiho.KumihoService/CreateProject',
+                request_serializer=kumiho__pb2.CreateProjectRequest.SerializeToString,
+                response_deserializer=kumiho__pb2.ProjectResponse.FromString,
+                _registered_method=True)
+        self.GetProjects = channel.unary_unary(
+                '/kumiho.KumihoService/GetProjects',
+                request_serializer=kumiho__pb2.GetProjectsRequest.SerializeToString,
+                response_deserializer=kumiho__pb2.GetProjectsResponse.FromString,
+                _registered_method=True)
+        self.DeleteProject = channel.unary_unary(
+                '/kumiho.KumihoService/DeleteProject',
+                request_serializer=kumiho__pb2.DeleteProjectRequest.SerializeToString,
+                response_deserializer=kumiho__pb2.StatusResponse.FromString,
+                _registered_method=True)
         self.CreateGroup = channel.unary_unary(
                 '/kumiho.KumihoService/CreateGroup',
                 request_serializer=kumiho__pb2.CreateGroupRequest.SerializeToString,
@@ -205,6 +220,25 @@ class KumihoServiceStub(object):
 class KumihoServiceServicer(object):
     """The Kumiho service definition.
     """
+
+    def CreateProject(self, request, context):
+        """Project methods
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def GetProjects(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def DeleteProject(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
 
     def CreateGroup(self, request, context):
         """Group methods
@@ -413,6 +447,21 @@ class KumihoServiceServicer(object):
 
 def add_KumihoServiceServicer_to_server(servicer, server):
     rpc_method_handlers = {
+            'CreateProject': grpc.unary_unary_rpc_method_handler(
+                    servicer.CreateProject,
+                    request_deserializer=kumiho__pb2.CreateProjectRequest.FromString,
+                    response_serializer=kumiho__pb2.ProjectResponse.SerializeToString,
+            ),
+            'GetProjects': grpc.unary_unary_rpc_method_handler(
+                    servicer.GetProjects,
+                    request_deserializer=kumiho__pb2.GetProjectsRequest.FromString,
+                    response_serializer=kumiho__pb2.GetProjectsResponse.SerializeToString,
+            ),
+            'DeleteProject': grpc.unary_unary_rpc_method_handler(
+                    servicer.DeleteProject,
+                    request_deserializer=kumiho__pb2.DeleteProjectRequest.FromString,
+                    response_serializer=kumiho__pb2.StatusResponse.SerializeToString,
+            ),
             'CreateGroup': grpc.unary_unary_rpc_method_handler(
                     servicer.CreateGroup,
                     request_deserializer=kumiho__pb2.CreateGroupRequest.FromString,
@@ -589,6 +638,87 @@ def add_KumihoServiceServicer_to_server(servicer, server):
 class KumihoService(object):
     """The Kumiho service definition.
     """
+
+    @staticmethod
+    def CreateProject(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/kumiho.KumihoService/CreateProject',
+            kumiho__pb2.CreateProjectRequest.SerializeToString,
+            kumiho__pb2.ProjectResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def GetProjects(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/kumiho.KumihoService/GetProjects',
+            kumiho__pb2.GetProjectsRequest.SerializeToString,
+            kumiho__pb2.GetProjectsResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def DeleteProject(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/kumiho.KumihoService/DeleteProject',
+            kumiho__pb2.DeleteProjectRequest.SerializeToString,
+            kumiho__pb2.StatusResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
 
     @staticmethod
     def CreateGroup(request,

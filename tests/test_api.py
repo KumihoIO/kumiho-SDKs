@@ -27,6 +27,30 @@ def mock_client(monkeypatch):
     client = Client()
     yield client, mock_stub
 
+def test_project_crud(mock_client):
+    client, mock_stub = mock_client
+    # Create
+    mock_stub.CreateProject.return_value = kumiho_pb2.ProjectResponse(
+        project_id="p1", name="demo", description="", created_at="now", updated_at="now", deprecated=False
+    )
+    project = client.create_project(name="demo")
+    mock_stub.CreateProject.assert_called_once()
+    assert project.project_id == "p1"
+
+    # List
+    mock_stub.GetProjects.return_value = kumiho_pb2.GetProjectsResponse(
+        projects=[project]
+    )
+    projects = client.get_projects()
+    mock_stub.GetProjects.assert_called_once()
+    assert projects[0].name == "demo"
+
+    # Delete
+    mock_stub.DeleteProject.return_value = kumiho_pb2.StatusResponse(success=True, message="ok")
+    resp = client.delete_project(project_id="p1", force=True)
+    mock_stub.DeleteProject.assert_called_once()
+    assert resp.success
+
 def test_create_group(mock_client):
     """Test the create_group method."""
     client, mock_stub = mock_client

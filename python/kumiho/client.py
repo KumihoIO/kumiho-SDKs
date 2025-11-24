@@ -23,11 +23,13 @@ from .proto.kumiho_pb2 import (
     CreateProductRequest,
     CreateResourceRequest,
     CreateVersionRequest,
+    CreateProjectRequest,
     DeleteGroupRequest,
     DeleteLinkRequest,
     DeleteProductRequest,
     DeleteResourceRequest,
     DeleteVersionRequest,
+    DeleteProjectRequest,
     EventStreamRequest,
     GetChildGroupsRequest,
     GetChildGroupsResponse,
@@ -35,6 +37,7 @@ from .proto.kumiho_pb2 import (
     GetLinksRequest,
     GetProductRequest,
     GetProductsRequest,
+    GetProjectsRequest,
     GetResourceRequest,
     GetResourcesByLocationRequest,
     GetResourcesRequest,
@@ -50,6 +53,7 @@ from .proto.kumiho_pb2 import (
     WasTaggedRequest,
 )
 from .link import Link
+from .proto.kumiho_pb2 import ProjectResponse, StatusResponse
 from .product import Product
 from .resource import Resource
 from .version import Version
@@ -266,6 +270,34 @@ class Client:
                 root_certs = handle.read()
             return grpc.ssl_channel_credentials(root_certificates=root_certs)
         return grpc.ssl_channel_credentials()
+
+    # Project methods
+    def create_project(self, name: str, description: str = "") -> kumiho_pb2.ProjectResponse:
+        req = CreateProjectRequest(name=name, description=description)
+        resp = self.stub.CreateProject(
+            req,
+            metadata=self._metadata(),
+            timeout=self.timeout_seconds,
+        )
+        return resp
+
+    def get_projects(self) -> List[kumiho_pb2.ProjectResponse]:
+        req = GetProjectsRequest()
+        resp = self.stub.GetProjects(
+            req,
+            metadata=self._metadata(),
+            timeout=self.timeout_seconds,
+        )
+        return list(resp.projects)
+
+    def delete_project(self, project_id: str, force: bool = False) -> StatusResponse:
+        req = DeleteProjectRequest(project_id=project_id, force=force)
+        resp = self.stub.DeleteProject(
+            req,
+            metadata=self._metadata(),
+            timeout=self.timeout_seconds,
+        )
+        return resp
     # Group methods
     def create_group(self, parent_path: str, group_name: str) -> Group:
         """Create a new group.
