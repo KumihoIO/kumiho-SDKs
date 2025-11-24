@@ -4,14 +4,11 @@ from __future__ import annotations
 import json
 import os
 from pathlib import Path
-from typing import Iterable, List, Optional, Tuple
+from typing import Optional, Tuple
 
 _TOKEN_ENV = "KUMIHO_AUTH_TOKEN"
 _FIREBASE_TOKEN_ENV = "KUMIHO_FIREBASE_ID_TOKEN"
-_TOKEN_FILE_ENV = "KUMIHO_AUTH_TOKEN_FILE"
-_WORKSPACE_ENV = "KUMIHO_WORKSPACE_ROOT"
-_DEFAULT_FILENAME = "firebase_token.txt"
-_CREDENTIALS_FILENAME = "kumiho_authentification.json"
+_CREDENTIALS_FILENAME = "kumiho_authentication.json"
 _USE_CP_TOKEN_ENV = "KUMIHO_USE_CONTROL_PLANE_TOKEN"
 
 
@@ -27,19 +24,6 @@ def _env_flag(name: str) -> bool:
     if value is None:
         return False
     return value.strip().lower() in {"1", "true", "yes"}
-
-
-def _unique_paths(paths: Iterable[Path]) -> List[Path]:
-    seen = set()
-    ordered: List[Path] = []
-    for path in paths:
-        resolved = path.expanduser()
-        key = resolved.resolve() if resolved.exists() else resolved
-        if key in seen:
-            continue
-        seen.add(key)
-        ordered.append(resolved)
-    return ordered
 
 
 def _config_dir() -> Path:
@@ -69,38 +53,6 @@ def _credentials_tokens() -> Tuple[Optional[str], Optional[str]]:
     return _normalize(data.get("control_plane_token")), _normalize(data.get("id_token"))
 
 
-def _candidate_plaintext_files() -> List[Path]:
-    candidates: List[Path] = []
-
-    env_file = os.getenv(_TOKEN_FILE_ENV)
-    if env_file:
-        candidates.append(Path(env_file))
-
-    workspace_root = os.getenv(_WORKSPACE_ENV)
-    if workspace_root:
-        candidates.append(Path(workspace_root) / _DEFAULT_FILENAME)
-
-    search_roots = [Path.cwd(), Path(__file__).resolve()]
-    for origin in search_roots:
-        for candidate_root in [origin, *origin.parents]:
-            candidate = candidate_root / _DEFAULT_FILENAME
-            candidates.append(candidate)
-
-    return _unique_paths(candidates)
-
-
-def _load_plaintext_token() -> Optional[str]:
-    for token_file in _candidate_plaintext_files():
-        try:
-            contents = token_file.read_text(encoding="utf-8")
-        except (FileNotFoundError, OSError):
-            continue
-        normalized = _normalize(contents)
-        if normalized:
-            return normalized
-    return None
-
-
 def load_bearer_token() -> Optional[str]:
     """Return the preferred bearer token for gRPC calls."""
 
@@ -117,7 +69,7 @@ def load_bearer_token() -> Optional[str]:
     if control_plane_token:
         return control_plane_token
 
-    return _load_plaintext_token()
+    return None
 
 
 def load_firebase_token() -> Optional[str]:
@@ -128,7 +80,4 @@ def load_firebase_token() -> Optional[str]:
         return env_token
 
     _, firebase_token = _credentials_tokens()
-    if firebase_token:
-        return firebase_token
-
-    return _load_plaintext_token()
+    return firebase_token

@@ -21,6 +21,7 @@ Kumiho relies on Firebase Authentication for identity and Supabase Postgres for 
 | --- | --- | --- |
 | `KUMIHO_SERVER_ENDPOINT` | Optional | `host:port` or `https://host` for the Rust server. Defaults to `localhost:8080`. |
 | `KUMIHO_AUTH_TOKEN` | Yes for live calls | Firebase ID token (JWT). Obtain it via the Firebase SDK, `firebase login:ci`, or any custom auth flow. |
+| `KUMIHO_USE_CONTROL_PLANE_TOKEN` | Optional | Set to `true` to prefer the Control Plane JWT (ES256) over the Firebase ID token (RS256) when both are available. |
 | `KUMIHO_AUTH_TOKEN_FILE` | Optional | Path to a file that contains the Firebase ID token. Useful for `firebase_token.txt` generated in the repo root. |
 | `KUMIHO_FIREBASE_API_KEY` | Optional | Firebase Web API key used by the `kumiho-auth` helper. Pass it via the env var or `--api-key` flag when logging in. |
 | `KUMIHO_TENANT_HINT` | Deprecated | Legacy override for forcing a tenant UUID. Auto-discovery now resolves the tenant from Supabase memberships, so the variable is ignored. |

@@ -145,11 +145,14 @@ class Client:
         if resolved_token:
             metadata.append(("authorization", f"Bearer {resolved_token}"))
 
+        # Apply interceptors in order: auto-login first, then metadata injection
+        channel = grpc.intercept_channel(channel, _AutoLoginInterceptor())
         if metadata:
             channel = grpc.intercept_channel(channel, _MetadataInjector(metadata))
 
         self.channel = channel
         self.stub = kumiho_pb2_grpc.KumihoServiceStub(self.channel)
+
 
     @staticmethod
     def _env_flag(name: str, *, default: bool = False) -> bool:
@@ -974,3 +977,58 @@ class _MetadataInjector(
     def intercept_stream_stream(self, continuation, client_call_details, request_iterator):
         updated = _augment_call_details(client_call_details, self._metadata)
         return continuation(updated, request_iterator)
+
+
+class _AutoLoginInterceptor(
+    grpc.UnaryUnaryClientInterceptor,
+    grpc.UnaryStreamClientInterceptor,
+):
+    """Client interceptor that automatically prompts for login on auth failures."""
+
+    def intercept_unary_unary(self, continuation, client_call_details, request):
+        response = continuation(client_call_details, request)
+        
+        # Check if this is an auth error
+        try:
+            # Force the response to be evaluated
+            if hasattr(response, 'code'):
+                code = response.code()
+                if code in (grpc.StatusCode.UNAUTHENTICATED, grpc.StatusCode.PERMISSION_DENIED):
+                    _LOGGER.info("Authentication error detected, prompting for login...")
+                    try:
+                        from . import auth_cli
+                        new_token, _ = auth_cli.ensure_token(interactive=True)
+                        
+                        # Update the authorization header with the new token
+                        existing_metadata = list(client_call_details.metadata or [])
+                        # Remove old authorization header
+                        existing_metadata = [(k, v) for k, v in existing_metadata if k.lower() != "authorization"]
+                        # Add new token
+                        existing_metadata.append(("authorization", f"Bearer {new_token}"))
+                        
+                        updated_details = _ClientCallDetails(
+                            method=client_call_details.method,
+                            timeout=client_call_details.timeout,
+                            metadata=existing_metadata,
+                            credentials=client_call_details.credentials,
+                            wait_for_ready=getattr(client_call_details, "wait_for_ready", None),
+                            compression=getattr(client_call_details, "compression", None),
+                        )
+                        
+                        # Retry the RPC with the new token
+                        _LOGGER.info("Retrying RPC with new credentials...")
+                        return continuation(updated_details, request)
+                    except Exception as e:
+                        _LOGGER.error(f"Auto-login failed: {e}")
+                        return response
+        except Exception:
+            # If we can't check the error, just return the original response
+            pass
+        
+        return response
+
+    def intercept_unary_stream(self, continuation, client_call_details, request):
+        # For streaming responses, we can't easily retry, so just pass through
+        # The first error will be caught and user will be prompted to re-run
+        return continuation(client_call_details, request)
+

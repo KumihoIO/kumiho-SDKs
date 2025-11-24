@@ -6,9 +6,6 @@ import kumiho
 from kumiho import Client
 
 
-pytestmark = pytest.mark.live
-
-
 def _unique(prefix: str) -> str:
     return f"{prefix}_{uuid.uuid4().hex[:8]}"
 

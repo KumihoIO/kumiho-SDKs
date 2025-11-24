@@ -16,13 +16,14 @@ import requests
 CONFIG_ENV = "KUMIHO_CONFIG_DIR"
 API_KEY_ENV = "KUMIHO_FIREBASE_API_KEY"
 PROJECT_ENV = "KUMIHO_FIREBASE_PROJECT_ID"
-TOKEN_FILE_ENV = "KUMIHO_AUTH_TOKEN_FILE"
+# Legacy env var for token file is removed
 REPO_ROOT_ENV = "KUMIHO_WORKSPACE_ROOT"
 ENV_FILE_ENV = "KUMIHO_ENV_FILE"
 TOKEN_GRACE_ENV = "KUMIHO_AUTH_TOKEN_GRACE_SECONDS"
 CONTROL_PLANE_API_ENV = "KUMIHO_CONTROL_PLANE_API_URL"
 DEFAULT_TOKEN_GRACE_SECONDS = 300
 DEFAULT_CONTROL_PLANE_API_URL = "https://kumiho.io"
+DEFAULT_FIREBASE_API_KEY = "AIzaSyBFAo7Nv48xAvbN18rL-3W41Dqheporh8E"
 
 
 class TokenAcquisitionError(RuntimeError):
@@ -61,7 +62,7 @@ def _config_dir() -> Path:
 
 
 def _credentials_path() -> Path:
-    return _config_dir() / "kumiho_authentification.json"
+    return _config_dir() / "kumiho_authentication.json"
 
 
 def _default_repo_root() -> Path:
@@ -81,20 +82,6 @@ def _default_repo_root() -> Path:
             if (candidate / "Cargo.toml").exists() and (candidate / "kumiho-python").exists():
                 return candidate
     return Path.cwd()
-
-
-def _env_file_path(repo_root: Path) -> Path:
-    env_override = os.getenv(ENV_FILE_ENV)
-    if env_override:
-        return Path(env_override).expanduser()
-    return repo_root / ".env.local"
-
-
-def _token_file_path(repo_root: Path) -> Path:
-    token_override = os.getenv(TOKEN_FILE_ENV)
-    if token_override:
-        return Path(token_override).expanduser()
-    return repo_root / "firebase_token.txt"
 
 
 def _load_credentials() -> Optional[Credentials]:
@@ -136,11 +123,6 @@ def _save_credentials(creds: Credentials) -> None:
     path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
 
 
-def _write_token_file(token_file: Path, token: str) -> None:
-    token_file.parent.mkdir(parents=True, exist_ok=True)
-    token_file.write_text(token.strip() + "\n", encoding="utf-8")
-
-
 def _token_preview(token: str) -> str:
     if not token:
         return "<empty>"
@@ -149,31 +131,9 @@ def _token_preview(token: str) -> str:
     return f"{token[:8]}...{token[-6:]} (len={len(token)})"
 
 
-def _log_token(token: str, source: str, token_path: Path) -> None:
+def _log_token(token: str, source: str) -> None:
     preview = _token_preview(token)
-    print(f"[kumiho-auth] {source} token -> {preview} [file: {token_path}]")
-
-
-def _ensure_env_hint(env_file: Path, token_file: Path) -> None:
-    line = f"KUMIHO_AUTH_TOKEN_FILE={token_file.as_posix()}"
-    try:
-        if env_file.exists():
-            contents = env_file.read_text(encoding="utf-8").splitlines()
-        else:
-            contents = []
-    except FileNotFoundError:
-        contents = []
-
-    for idx, entry in enumerate(contents):
-        if entry.startswith("KUMIHO_AUTH_TOKEN_FILE"):
-            if entry == line:
-                return
-            contents[idx] = line
-            env_file.write_text("\n".join(contents) + "\n", encoding="utf-8")
-            return
-
-    contents.append(line)
-    env_file.write_text("\n".join(contents) + "\n", encoding="utf-8")
+    print(f"[kumiho-auth] {source} token -> {preview}")
 
 
 def _fetch_with_password(api_key: str, email: str, password: str) -> Tuple[str, str, int]:
@@ -235,10 +195,7 @@ def _resolve_api_key(existing: Optional[str]) -> str:
     env_key = os.getenv(API_KEY_ENV)
     if env_key:
         return env_key
-    key = _prompt("Firebase Web API key (see Firebase console): ")
-    if not key:
-        raise TokenAcquisitionError("Firebase Web API key is required")
-    return key
+    return DEFAULT_FIREBASE_API_KEY
 
 
 def _resolve_project_id(existing: Optional[str]) -> Optional[str]:
@@ -268,7 +225,6 @@ def _interactive_login(api_key: str, project_id: Optional[str]) -> Credentials:
 
 def ensure_token(
     *,
-    token_file: Optional[Path] = None,
     interactive: bool = True,
 ) -> Tuple[str, str]:
     """Ensure a usable Firebase ID token exists.
@@ -276,14 +232,9 @@ def ensure_token(
     Returns the token and a short description of the source.
     """
 
-    repo_root = _default_repo_root()
-    
     creds = _load_credentials()
     if creds and creds.is_valid():
-        if token_file:
-            _write_token_file(token_file, creds.id_token)
-            _ensure_env_hint(_env_file_path(repo_root), token_file)
-            _log_token(creds.id_token, "cached", token_file)
+        _log_token(creds.id_token, "cached")
         
         # Check if we need to refresh CP token
         if not creds.is_cp_valid():
@@ -313,11 +264,8 @@ def ensure_token(
             updated.cp_expires_at = cp_exp
 
             _save_credentials(updated)
-            if token_file:
-                _write_token_file(token_file, updated.id_token)
-                _ensure_env_hint(_env_file_path(repo_root), token_file)
-                _log_token(updated.id_token, "refreshed", token_file)
-            return updated.id_token, "refreshed credentials"
+            _log_token(updated.id_token, "refreshed")
+            return updated.control_plane_token or updated.id_token, "refreshed credentials"
         except requests.HTTPError as exc:
             print(f"[kumiho-auth] Refresh failed: {exc}")
 
@@ -334,26 +282,17 @@ def ensure_token(
     new_creds.cp_expires_at = cp_exp
     
     _save_credentials(new_creds)
-    if token_file:
-        _write_token_file(token_file, new_creds.id_token)
-        _ensure_env_hint(_env_file_path(repo_root), token_file)
-        _log_token(new_creds.id_token, "interactive", token_file)
-        _log_token(new_creds.id_token, "interactive", token_file)
+    _log_token(new_creds.id_token, "interactive")
     return new_creds.control_plane_token or new_creds.id_token, "interactive login"
 
 
 def cmd_login(args: argparse.Namespace) -> None:
-    repo_root = _default_repo_root()
-    token_path = Path(args.token_file).expanduser() if args.token_file else _token_file_path(repo_root)
     api_key = args.api_key or _resolve_api_key(None)
     project_id = args.project_id or _resolve_project_id(None)
 
     creds = _interactive_login(api_key, project_id)
     _save_credentials(creds)
-    _write_token_file(token_path, creds.id_token)
-    _ensure_env_hint(_env_file_path(repo_root), token_path)
-    _log_token(creds.id_token, "login", token_path)
-    print(f"[kumiho-auth] Token written to {token_path}")
+    _log_token(creds.id_token, "login")
     print(f"[kumiho-auth] Credentials cached at {_credentials_path()}")
 
 
@@ -371,10 +310,7 @@ def cmd_refresh(args: argparse.Namespace) -> None:
         project_id=creds.project_id,
     )
     _save_credentials(updated)
-    token_path = Path(args.token_file).expanduser() if args.token_file else _token_file_path(_default_repo_root())
-    _write_token_file(token_path, updated.id_token)
-    _ensure_env_hint(_env_file_path(_default_repo_root()), token_path)
-    _log_token(updated.id_token, "refresh", token_path)
+    _log_token(updated.id_token, "refresh")
     print("[kumiho-auth] Token refreshed.")
 
 
@@ -385,11 +321,9 @@ def build_parser() -> argparse.ArgumentParser:
     login = sub.add_parser("login", help="Obtain and store a Firebase ID token using email/password")
     login.add_argument("--api-key", help="Firebase Web API key (defaults to KUMIHO_FIREBASE_API_KEY)")
     login.add_argument("--project-id", help="Firebase project ID (optional)")
-    login.add_argument("--token-file", help="Path to firebase_token.txt to update")
     login.set_defaults(func=cmd_login)
 
     refresh = sub.add_parser("refresh", help="Refresh the cached Firebase ID token using the stored refresh token")
-    refresh.add_argument("--token-file", help="Path to firebase_token.txt to update")
     refresh.set_defaults(func=cmd_refresh)
     return parser
 

@@ -8,47 +8,34 @@ import kumiho
 from kumiho.auth_cli import TokenAcquisitionError, ensure_token
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-DEFAULT_TOKEN_FILE = REPO_ROOT / "firebase_token.txt"
 
+
+from kumiho._token_loader import load_bearer_token
 
 def _load_token() -> Tuple[Optional[str], Optional[str]]:
-    """Resolve the Firebase ID token from env vars or the helper file."""
+    """Resolve the auth token (Firebase or CP) from env vars, files, or interactive login."""
+    
+    # 1. Try the SDK's standard loader (respects env vars and preferences)
+    token = load_bearer_token()
+    if token:
+        return token, "SDK load_bearer_token"
 
-    env_token = os.getenv("KUMIHO_AUTH_TOKEN")
-    if env_token:
-        return env_token.strip(), "KUMIHO_AUTH_TOKEN"
-
-    token_file = os.getenv("KUMIHO_AUTH_TOKEN_FILE")
-    candidate_paths = []
-    if token_file:
-        candidate_paths.append(Path(token_file))
-    candidate_paths.append(DEFAULT_TOKEN_FILE)
-
-    for candidate in candidate_paths:
-        if not candidate:
-            continue
-        try:
-            contents = candidate.read_text(encoding="utf-8").strip()
-        except FileNotFoundError:
-            continue
-        if contents:
-            return contents, str(candidate)
-
+    # 2. Fallback to interactive login if TTY
     if sys.stdin.isatty():
         try:
-            token, source = ensure_token(token_file=DEFAULT_TOKEN_FILE)
+            token, source = ensure_token(interactive=True)
             return token, source
         except TokenAcquisitionError as exc:
             print(f"[kumiho-tests] Interactive login failed: {exc}")
         except Exception as exc:  # pragma: no cover - defensive logging
             print(f"[kumiho-tests] Unexpected error retrieving token: {exc}")
     else:
-        print("[kumiho-tests] KUMIHO_AUTH_TOKEN not set and stdin is not a TTY; skipping interactive login.")
+        print("[kumiho-tests] No token found and stdin is not a TTY; skipping interactive login.")
     return None, None
 
 
 @pytest.fixture(scope="session")
-def _firebase_token() -> str:
+def _auth_token() -> str:
     token, source = _load_token()
     if not token:
         pytest.skip(
@@ -56,7 +43,8 @@ def _firebase_token() -> str:
             "(see kumiho-python/README.md) to run live tests."
         )
     if source:
-        print(f"[kumiho-tests] Using Firebase token from {source}")
+        print(f"[kumiho-tests] Using auth token from {source}")
+    # Ensure the env var is set so subprocesses or other libs can find it
     os.environ["KUMIHO_AUTH_TOKEN"] = token
     return token
 
@@ -84,9 +72,11 @@ def cleanup_test_data(live_client):
             pass
 
 @pytest.fixture(scope="session")
-def live_client(_firebase_token):
+def live_client(_auth_token):
     """Provides a client connected to the live gRPC server with auth metadata."""
 
-    client = kumiho.client_from_discovery(id_token=_firebase_token, force_refresh=True)
+    # Pass the resolved token (which might be a CP token) to the discovery helper.
+    # The helper handles swapping it for a Firebase token for the discovery call if needed.
+    client = kumiho.client_from_discovery(id_token=_auth_token, force_refresh=True)
     kumiho.configure_default_client(client)
     return client

@@ -21,7 +21,7 @@ from .version import Version
 from .discovery import client_from_discovery
 from ._bootstrap import bootstrap_default_client
 from .auth_cli import ensure_token, TokenAcquisitionError
-from ._token_loader import load_firebase_token
+from ._token_loader import load_bearer_token
 
 # Add constants for reserved tags, permissions, and common link types
 LATEST_TAG = "latest"
@@ -61,7 +61,7 @@ def auto_configure_from_discovery(
 
     This helper keeps all token material inside the auth cache managed by
     ``kumiho-auth``—no need to write ``firebase_token.txt`` in the repo. It will
-    reuse the cached Firebase ID token (refreshing it if necessary), call the
+    reuse the cached credentials (refreshing if necessary), call the
     control-plane discovery endpoint, and install the resulting client as the
     package-wide default.
 
@@ -84,19 +84,19 @@ def auto_configure_from_discovery(
         ensure_token(interactive=interactive)
     except TokenAcquisitionError as exc:
         raise RuntimeError(
-            "No cached Firebase credentials found. Run 'kumiho-auth login' to "
+            "No cached credentials found. Run 'kumiho-auth login' to "
             "populate ~/.kumiho before calling auto_configure_from_discovery()."
         ) from exc
 
-    firebase_token = load_firebase_token()
-    if not firebase_token:
+    token = load_bearer_token()
+    if not token:
         raise RuntimeError(
-            "Cached credentials missing Firebase ID token. Re-run 'kumiho-auth login' "
-            "or set KUMIHO_FIREBASE_ID_TOKEN."
+            "Cached credentials missing valid token. Re-run 'kumiho-auth login' "
+            "or set KUMIHO_AUTH_TOKEN."
         )
 
     client = client_from_discovery(
-        id_token=firebase_token,
+        id_token=token,
         tenant_hint=tenant_hint,
         force_refresh=force_refresh,
     )
