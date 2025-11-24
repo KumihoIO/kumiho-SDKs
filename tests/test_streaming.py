@@ -38,9 +38,11 @@ def test_event_streaming(cleanup_test_data):
     project_name = unique_name("stream_test_project")
     asset_name = unique_name("stream_test_asset")
     
-    print(f"[TEST] Creating group: {project_name}")  # Added print for debugging
-    group = kumiho.create_group(project_name)  # Updated to use new API
-    cleanup_test_data.append(group)  # Add to cleanup
+    print(f"[TEST] Creating project: {project_name}")  # Added print for debugging
+    project = kumiho.create_project(project_name)
+    cleanup_test_data.append(project)
+    group = project.create_group(name=project_name, parent_path="/")
+    cleanup_test_data.append(group)
     print(f"[TEST] Creating product: {asset_name}")  # Added print for debugging
     product = group.create_product(product_name=asset_name, product_type="model")  # Uses instance method
     cleanup_test_data.append(product)  # Add to cleanup
@@ -67,7 +69,7 @@ def test_event_streaming(cleanup_test_data):
 
     # 2. Create a version and check for the event
     print("[TEST] Creating version...")  # Added print for debugging
-    version = kumiho.create_version(product_kref=product.kref)  # Uses top-level kumiho.create_version()
+    version = product.create_version()
     cleanup_test_data.append(version)  # Add to cleanup
     print("[TEST] Waiting for 'version.created' event...")  # Added print for debugging
     try:

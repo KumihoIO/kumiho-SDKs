@@ -4,8 +4,6 @@ Kumiho Python Client Library
 
 __version__ = "0.3.0"
 
-import os
-import grpc
 from typing import Dict, List, Optional, Iterator
 
 # Import the main classes to make them available at the package level.
@@ -16,12 +14,13 @@ from .group import Group
 from .kref import Kref
 from .link import Link
 from .product import Product
+from .project import Project
 from .resource import Resource
+from .proto.kumiho_pb2 import StatusResponse
 from .version import Version
+from .client import ProjectLimitError
 from .discovery import client_from_discovery
 from ._bootstrap import bootstrap_default_client
-from .auth_cli import ensure_token, TokenAcquisitionError
-from ._token_loader import load_bearer_token
 
 # Add constants for reserved tags, permissions, and common link types
 LATEST_TAG = "latest"
@@ -80,6 +79,9 @@ def auto_configure_from_discovery(
             disabled.
     """
 
+    from .auth_cli import ensure_token, TokenAcquisitionError  # Lazy import to avoid polluting module attrs
+    from ._token_loader import load_bearer_token
+
     try:
         ensure_token(interactive=interactive)
     except TokenAcquisitionError as exc:
@@ -104,6 +106,8 @@ def auto_configure_from_discovery(
 
 
 def _auto_configure_flag_enabled() -> bool:
+    import os
+
     raw = os.getenv(_AUTO_CONFIGURE_ENV)
     if not raw:
         return False
@@ -120,79 +124,37 @@ def _auto_configure_from_env_if_requested() -> None:
             "KUMIHO_AUTO_CONFIGURE is set, but automatic discovery bootstrap failed."
         ) from exc
 
-# Expose methods from the default client as top-level package functions.
-def create_group(path: str) -> 'Group':
-    """
-    Create a group at the specified path. Supports nested paths (e.g., "projectA/seqA/shot100").
-    Uses 'create or get' logic by default.
-    """
-    parts = path.split('/')
-    if len(parts) == 1:
-        # Top-level group
-        return get_client().create_group(parent_path="/", group_name=parts[0])
-    else:
-        # Nested groups: create intermediates if needed
-        current_path = "/"
-        created_groups = []
-        for part in parts:
-            current_path = f"{current_path.rstrip('/')}/{part}"
-            try:
-                group = get_client().create_group(parent_path="/".join(current_path.split('/')[:-1]) or "/", group_name=part)
-                created_groups.append(group)
-            except grpc.RpcError as e:
-                if e.code() == grpc.StatusCode.ALREADY_EXISTS:
-                    group = get_client().get_group(current_path)
-                else:
-                    raise
-        return group
+# Expose methods from the default client as top-level package functions (project-scoped entry points only).
 
-def get_group(path: str) -> 'Group':
-    return get_client().get_group(path)
+def create_project(name: str, description: str = "") -> Project:
+    return get_client().create_project(name=name, description=description)
 
-def get_child_groups(parent_path: str = "") -> List['Group']:
-    """
-    Get child groups of a parent group.
+def get_projects() -> List[Project]:
+    return get_client().get_projects()
 
-    Args:
-        parent_path: The path of the parent group. If empty or "/",
-                     returns root-level groups.
+def get_project(name: str) -> Optional[Project]:
+    return get_client().get_project(name)
 
-    Returns:
-        A list of Group objects that are direct children of the parent.
-    """
-    return get_client().get_child_groups(parent_path)
-
-def delete_group(path: str, force: bool = False):
-    return get_client().delete_group(path, force)
-
-def create_product(parent_path: str, name: str, ptype: str) -> 'Product':
-    return get_client().create_product(parent_path, name, ptype)
-
-def get_product(kref: str) -> 'Product':
-    return get_client().get_product_by_kref(kref)
-
-def get_product_by_context(parent_path: str, name: str, ptype: str) -> 'Product':
-    return get_client().get_product(parent_path, name, ptype)
-
-def get_version(kref: str) -> 'Version':
-    return get_client().get_version(kref)
+def delete_project(project_id: str, force: bool = False) -> StatusResponse:
+    return get_client().delete_project(project_id=project_id, force=force)
 
 def product_search(context_filter: str = "", name_filter: str = "", ptype_filter: str = "") -> List['Product']:
     return get_client().product_search(context_filter, name_filter, ptype_filter)
 
-def create_version(product_kref: 'Kref', metadata: Optional[Dict[str, str]] = None, version_number: int = 0) -> 'Version':
-    return get_client().create_version(product_kref, metadata, version_number)
+def get_product(kref: str) -> 'Product':
+    """Fetch a product by kref URI."""
+    return get_client().get_product_by_kref(kref)
+
+def get_version(kref: str) -> 'Version':
+    """Fetch a version by kref URI."""
+    return get_client().get_version(kref)
+
+def get_resource(kref: str) -> 'Resource':
+    """Fetch a resource by kref URI."""
+    return get_client().get_resource_by_kref(kref)
 
 def get_resources_by_location(location: str) -> List['Resource']:
     return get_client().get_resources_by_location(location)
-
-def create_link(source_version: 'Version', target_version: 'Version', link_type: str, metadata: Optional[Dict[str, str]] = None) -> 'Link':
-    """Creates a directed, typed link from a source version to a target version."""
-    return get_client().create_link(source_version, target_version, link_type, metadata)
-
-def get_links(version: 'Version', link_type_filter: str = "") -> List['Link']:
-    """Retrieves all links associated with a given version."""
-    return get_client().get_links(version.kref, link_type_filter)
 
 def event_stream(routing_key_filter: str = "", kref_filter: str = "") -> Iterator[Event]:
     """
@@ -213,25 +175,13 @@ def event_stream(routing_key_filter: str = "", kref_filter: str = "") -> Iterato
 def resolve(kref: str) -> Optional[str]:
     """
     Resolve a KREF URI to a file location.
-
-    Supports extended KREF parameters:
-    - Product KREF: resolves to latest version → default resource → location
-    - Version KREF: resolves to default resource → location  
-    - Resource KREF: returns the resource location directly
-    - &r=resource_name parameter: specifies which resource to use instead of default
-
-    Args:
-        kref: The KREF URI to resolve.
-
-    Returns:
-        The file location string, or None if resolution fails.
     """
     return get_client().resolve(kref)
 
 __all__ = [
     "KumihoObject",
     "Client",
-    "client_from_discovery",
+    "Project",
     "Group",
     "Product",
     "Version",
@@ -239,6 +189,7 @@ __all__ = [
     "Link",
     "Kref",
     "Event",
+    "ProjectLimitError",
     # Constants
     "LATEST_TAG",
     "PUBLISHED_TAG",
@@ -246,22 +197,19 @@ __all__ = [
     "INPUT_LINK",
     "REFERENCE_LINK",
     # Functions
-    "create_group",
-    "get_group",
-    "delete_group",
-    "create_product",
-    "get_product",
-    "get_product_by_context",
-    "get_version",
+    "create_project",
+    "get_projects",
+    "get_project",
+    "delete_project",
     "product_search",
-    "create_version",
     "get_resources_by_location",
-    "create_link",
-    "get_links",
     "event_stream",
     "resolve",
     "auto_configure_from_discovery",
 ]
+
+# Remove typing imports from public namespace
+del Dict, List, Optional, Iterator
 
 
 _auto_configure_from_env_if_requested()

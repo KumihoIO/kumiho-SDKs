@@ -60,6 +60,15 @@ class Group(KumihoObject):
         """
         return self._client.create_group(parent_path=self.path, group_name=name)
 
+    def get_group(self, name: str) -> 'Group':
+        """Get an existing subgroup within this group."""
+        path = f"{self.path.rstrip('/')}/{name}"
+        return self._client.get_group(path)
+
+    def get_groups(self):
+        """List direct child groups under this group."""
+        return self._client.get_child_groups(self.path)
+
     def create_product(self, product_name: str, product_type: str) -> Product:
         """Create a new product within this group.
 

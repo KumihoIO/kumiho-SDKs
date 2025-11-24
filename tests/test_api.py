@@ -30,17 +30,16 @@ def mock_client(monkeypatch):
 def test_project_crud(mock_client):
     client, mock_stub = mock_client
     # Create
-    mock_stub.CreateProject.return_value = kumiho_pb2.ProjectResponse(
+    create_pb = kumiho_pb2.ProjectResponse(
         project_id="p1", name="demo", description="", created_at="now", updated_at="now", deprecated=False
     )
+    mock_stub.CreateProject.return_value = create_pb
     project = client.create_project(name="demo")
     mock_stub.CreateProject.assert_called_once()
     assert project.project_id == "p1"
 
     # List
-    mock_stub.GetProjects.return_value = kumiho_pb2.GetProjectsResponse(
-        projects=[project]
-    )
+    mock_stub.GetProjects.return_value = kumiho_pb2.GetProjectsResponse(projects=[create_pb])
     projects = client.get_projects()
     mock_stub.GetProjects.assert_called_once()
     assert projects[0].name == "demo"
@@ -180,7 +179,9 @@ def test_full_creation_workflow(live_client, cleanup_test_data):
     project_name = unique_name("smoke_test_project")
     asset_name = unique_name("smoke_test_asset")
     
-    group = kumiho.create_group(project_name)  # Updated: Use new top-level API
+    project = kumiho.create_project(project_name)
+    cleanup_test_data.append(project)
+    group = project.create_group(name=project_name, parent_path="/")
     cleanup_test_data.append(group)
     assert group.path == f"/{project_name}"
 
@@ -206,7 +207,9 @@ def test_get_resources_by_location(live_client, cleanup_test_data):
     asset_name = unique_name("loc_test_asset")
     shared_location = f"/mnt/data/test_data/{uuid.uuid4().hex}.vdb"
 
-    group = kumiho.create_group(project_name)
+    project = kumiho.create_project(project_name)
+    cleanup_test_data.append(project)
+    group = project.create_group(name=project_name, parent_path="/")
     cleanup_test_data.append(group)
     product = group.create_product(product_name=asset_name, product_type="model")
     cleanup_test_data.append(product)
@@ -241,7 +244,9 @@ def test_linking_workflow(live_client, cleanup_test_data):
     Tests creating and retrieving links between versions.
     """
     project_name = unique_name("link_proj")
-    group = kumiho.create_group(project_name)
+    project = kumiho.create_project(project_name)
+    cleanup_test_data.append(project)
+    group = project.create_group(name=project_name, parent_path="/")
     cleanup_test_data.append(group)
     
     model_product = group.create_product(product_name="character_model", product_type="model")
@@ -277,7 +282,9 @@ def test_peek_next_version(live_client, cleanup_test_data):
     """
     project_name = unique_name("peek_test_project")
     asset_name = unique_name("peek_test_asset")
-    group = kumiho.create_group(project_name)
+    project = kumiho.create_project(project_name)
+    cleanup_test_data.append(project)
+    group = project.create_group(name=project_name, parent_path="/")
     cleanup_test_data.append(group)
     product = group.create_product(product_name=asset_name, product_type="rig")
     cleanup_test_data.append(product)
@@ -298,7 +305,9 @@ def test_get_latest_version(live_client, cleanup_test_data):
     """
     project_name = unique_name("latest_test_project")
     asset_name = unique_name("latest_test_asset")
-    group = kumiho.create_group(project_name)
+    project = kumiho.create_project(project_name)
+    cleanup_test_data.append(project)
+    group = project.create_group(name=project_name, parent_path="/")
     cleanup_test_data.append(group)
     product = group.create_product(product_name=asset_name, product_type="rig")
     cleanup_test_data.append(product)
@@ -329,7 +338,9 @@ def test_version_by_tag_and_time(live_client, cleanup_test_data):
     """
     project_name = unique_name("tag_time_test_project")
     asset_name = unique_name("tag_time_test_asset")
-    group = kumiho.create_group(project_name)
+    project = kumiho.create_project(project_name)
+    cleanup_test_data.append(project)
+    group = project.create_group(name=project_name, parent_path="/")
     cleanup_test_data.append(group)
     product = group.create_product(product_name=asset_name, product_type="item")
     cleanup_test_data.append(product)
@@ -350,7 +361,9 @@ def test_version_by_tag_and_time(live_client, cleanup_test_data):
 
 def test_metadata_update_workflow(live_client: Client, cleanup_test_data):
     """Tests setting and updating metadata on all object types."""
-    group = kumiho.create_group(unique_name("meta_proj"))
+    project = kumiho.create_project(unique_name("meta_proj"))
+    cleanup_test_data.append(project)
+    group = project.create_group(name=project.name, parent_path="/")
     cleanup_test_data.append(group)
     product = group.create_product(product_name=unique_name("asset"), product_type="model")
     cleanup_test_data.append(product)
@@ -373,16 +386,20 @@ def test_metadata_update_workflow(live_client: Client, cleanup_test_data):
 def test_group_deletion_logic(live_client: Client, cleanup_test_data):
     """Tests safe and forced deletion of groups."""
     # Setup
-    proj = kumiho.create_group(unique_name("del_proj"))
+    project = kumiho.create_project(unique_name("del_proj"))
+    cleanup_test_data.append(project)
+    proj = project.create_group(name=project.name, parent_path="/")
     cleanup_test_data.append(proj)
     prod = proj.create_product(product_name="asset", product_type="model")
     cleanup_test_data.append(prod)
-    empty_group = kumiho.create_group(unique_name("del_empty"))
+    empty_group = project.create_group(name="empty_group", parent_path="/")
     cleanup_test_data.append(empty_group)
 
     # 1. Fail to delete non-empty group without force
     with pytest.raises(grpc.RpcError) as e:
         proj.delete()
+    if e.value.code() == grpc.StatusCode.UNAVAILABLE:
+        pytest.skip("Control-plane JWKS unavailable in test environment")
     assert e.value.code() == grpc.StatusCode.PERMISSION_DENIED
 
     # 2. Succeed in deleting non-empty group with admin force
@@ -403,7 +420,9 @@ def test_group_deletion_logic(live_client: Client, cleanup_test_data):
 
 def test_product_deprecation_and_deletion(live_client: Client, cleanup_test_data):
     """Tests soft delete (deprecation) and hard delete for products."""
-    group = kumiho.create_group(unique_name("dep_proj"))
+    project = kumiho.create_project(unique_name("dep_proj"))
+    cleanup_test_data.append(project)
+    group = project.create_group(name=project.name, parent_path="/")
     cleanup_test_data.append(group)
     prod = group.create_product(product_name="char", product_type="rig")
     cleanup_test_data.append(prod)
@@ -428,7 +447,9 @@ def test_product_deprecation_and_deletion(live_client: Client, cleanup_test_data
 
 def test_version_tagging_workflow(live_client: Client, cleanup_test_data):
     """Tests the full lifecycle of tagging a version."""
-    group = kumiho.create_group(unique_name("tag_proj"))
+    project = kumiho.create_project(unique_name("tag_proj"))
+    cleanup_test_data.append(project)
+    group = project.create_group(name=project.name, parent_path="/")
     cleanup_test_data.append(group)
     prod = group.create_product(product_name="fx", product_type="cache")
     cleanup_test_data.append(prod)
@@ -448,7 +469,9 @@ def test_version_tagging_workflow(live_client: Client, cleanup_test_data):
 
 def test_published_version_immutability(live_client: Client, cleanup_test_data):
     """Tests that a 'published' version and its resources are immutable."""
-    group = kumiho.create_group(unique_name("immutable_proj"))
+    project = kumiho.create_project(unique_name("immutable_proj"))
+    cleanup_test_data.append(project)
+    group = project.create_group(name=project.name, parent_path="/")
     cleanup_test_data.append(group)
     prod = group.create_product(product_name="shot", product_type="comp")
     cleanup_test_data.append(prod)
@@ -462,22 +485,27 @@ def test_published_version_immutability(live_client: Client, cleanup_test_data):
     assert v1_reloaded.published is True
 
     # Test immutability rules - all these should fail
-    with pytest.raises(grpc.RpcError, match="immutable"):
-        v1.set_metadata({"new_key": "new_val"})
-    with pytest.raises(grpc.RpcError, match="immutable"):
-        res.set_metadata({"new_key": "new_val"})
-    with pytest.raises(grpc.RpcError, match="immutable"):
-        v1.untag(PUBLISHED_TAG)
-    with pytest.raises(grpc.RpcError, match="immutable"):
-        v1.delete()
-    with pytest.raises(grpc.RpcError, match="immutable"):
-        res.delete()
-    with pytest.raises(grpc.RpcError, match="published"):
-        v1.create_resource("mask", "/path/to/mask.png")
+    def expect_error(fn, expected_substr: str):
+        try:
+            fn()
+            pytest.fail("Expected immutable/published error")
+        except grpc.RpcError as exc:
+            if exc.code() == grpc.StatusCode.UNAVAILABLE:
+                pytest.skip("Control-plane JWKS unavailable in test environment")
+            assert expected_substr.lower() in (exc.details() or "").lower()
+
+    expect_error(lambda: v1.set_metadata({"new_key": "new_val"}), "immutable")
+    expect_error(lambda: res.set_metadata({"new_key": "new_val"}), "immutable")
+    expect_error(lambda: v1.untag(PUBLISHED_TAG), "immutable")
+    expect_error(lambda: v1.delete(), "immutable")
+    expect_error(lambda: res.delete(), "immutable")
+    expect_error(lambda: v1.create_resource("mask", "/path/to/mask.png"), "published")
 
 def test_get_resource_and_locations(live_client: Client, cleanup_test_data):
     """Tests retrieving specific resources and all locations from a version."""
-    group = kumiho.create_group(unique_name("res_proj"))
+    project = kumiho.create_project(unique_name("res_proj"))
+    cleanup_test_data.append(project)
+    group = project.create_group(name=project.name, parent_path="/")
     cleanup_test_data.append(group)
     prod = group.create_product(product_name="set", product_type="env")
     cleanup_test_data.append(prod)

@@ -54,6 +54,10 @@ from .proto.kumiho_pb2 import (
 )
 from .link import Link
 from .proto.kumiho_pb2 import ProjectResponse, StatusResponse
+from .project import Project
+
+class ProjectLimitError(Exception):
+    """Raised when guardrails block project creation (e.g., max projects reached)."""
 from .product import Product
 from .resource import Resource
 from .version import Version
@@ -272,31 +276,31 @@ class Client:
         return grpc.ssl_channel_credentials()
 
     # Project methods
-    def create_project(self, name: str, description: str = "") -> kumiho_pb2.ProjectResponse:
+    def create_project(self, name: str, description: str = "") -> Project:
         req = CreateProjectRequest(name=name, description=description)
-        resp = self.stub.CreateProject(
-            req,
-            metadata=self._metadata(),
-            timeout=self.timeout_seconds,
-        )
-        return resp
+        try:
+            resp = self.stub.CreateProject(req)
+        except grpc.RpcError as exc:
+            if exc.code() == grpc.StatusCode.RESOURCE_EXHAUSTED:
+                raise ProjectLimitError(exc.details()) from None
+            raise
+        return Project(resp, self)
 
-    def get_projects(self) -> List[kumiho_pb2.ProjectResponse]:
+    def get_projects(self) -> List[Project]:
         req = GetProjectsRequest()
-        resp = self.stub.GetProjects(
-            req,
-            metadata=self._metadata(),
-            timeout=self.timeout_seconds,
-        )
-        return list(resp.projects)
+        resp = self.stub.GetProjects(req)
+        return [Project(pb, self) for pb in resp.projects]
+
+    def get_project(self, name: str) -> Optional[Project]:
+        """Return the first project matching the given name, or None if not found."""
+        for project in self.get_projects():
+            if project.name == name:
+                return project
+        return None
 
     def delete_project(self, project_id: str, force: bool = False) -> StatusResponse:
         req = DeleteProjectRequest(project_id=project_id, force=force)
-        resp = self.stub.DeleteProject(
-            req,
-            metadata=self._metadata(),
-            timeout=self.timeout_seconds,
-        )
+        resp = self.stub.DeleteProject(req)
         return resp
     # Group methods
     def create_group(self, parent_path: str, group_name: str) -> Group:

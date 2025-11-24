@@ -33,7 +33,8 @@ def test_product_search_performance():
     start_creation = time.perf_counter()
     
     # Create root group (top-level)
-    root_group = kumiho.create_group(root_group_name)
+    root_project = kumiho.create_project(root_group_name)
+    root_group = root_project.create_group(name=root_group_name, parent_path="/")
     for i in range(num_projects):
         # Create project group under root
         proj_group = root_group.create_group(f"proj_{i:02d}")
@@ -46,7 +47,7 @@ def test_product_search_performance():
                 for l in range(num_products_per_shot):
                     ptype = random.choice(product_types)
                     pname = unique_name(f"asset_{l}")
-                    item = kumiho.create_product(shot_group.path, pname, ptype)  # Note: create_product still uses path + name + type
+                    item = shot_group.create_product(product_name=pname, product_type=ptype)
                     logging.info(f"Created product: {item.kref.uri}")
                     if l == 0:  # Store one name per shot for later search test
                         created_product_names.append(pname)
@@ -82,7 +83,7 @@ def test_product_search_performance():
     # --- 3. Teardown ---
     logging.info(f"--- Tearing down test data ---")
     start_delete = time.perf_counter()
-    kumiho.delete_group(f"/{root_group_name}", force=True)
+    root_project.delete(force=True)
     end_delete = time.perf_counter()
     logging.info(f"[REPORT] Teardown Time: {end_delete - start_delete:.4f} seconds.")
     

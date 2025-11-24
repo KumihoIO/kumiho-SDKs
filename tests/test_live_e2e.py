@@ -20,7 +20,9 @@ def test_firebase_supabase_neo4j_roundtrip(live_client: Client, cleanup_test_dat
         "timestamp": datetime.utcnow().isoformat(),
     }
 
-    group = kumiho.create_group(project_name)
+    project = kumiho.create_project(project_name)
+    cleanup_test_data.append(project)
+    group = project.create_group(name=project_name, parent_path="/")
     cleanup_test_data.append(group)
     assert group.path == f"/{project_name}"
 
