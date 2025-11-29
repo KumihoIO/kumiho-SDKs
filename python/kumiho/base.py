@@ -6,6 +6,10 @@ if TYPE_CHECKING:
     from .client import Client
 
 
+class KumihoError(Exception):
+    """Base exception for Kumiho errors."""
+
+
 class KumihoObject:
     """Base class for high-level Kumiho objects.
 

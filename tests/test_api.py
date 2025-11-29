@@ -11,8 +11,9 @@ def unique_name(prefix: str) -> str:
     return f"{prefix}_{uuid.uuid4().hex[:8]}"
 
 # Import classes directly from the .client module
+import mock_helpers
 from kumiho import Client
-from kumiho.proto import kumiho_pb2
+
 
 # --- Constants ---
 PUBLISHED_TAG = "published"
@@ -30,8 +31,8 @@ def mock_client(monkeypatch):
 def test_project_crud(mock_client):
     client, mock_stub = mock_client
     # Create
-    create_pb = kumiho_pb2.ProjectResponse(
-        project_id="p1", name="demo", description="", created_at="now", updated_at="now", deprecated=False
+    create_pb = mock_helpers.mock_project_response(
+        project_id="p1", name="demo"
     )
     mock_stub.CreateProject.return_value = create_pb
     project = client.create_project(name="demo")
@@ -39,22 +40,37 @@ def test_project_crud(mock_client):
     assert project.project_id == "p1"
 
     # List
-    mock_stub.GetProjects.return_value = kumiho_pb2.GetProjectsResponse(projects=[create_pb])
+    mock_stub.GetProjects.return_value = mock_helpers.mock_get_projects_response(projects=[create_pb])
     projects = client.get_projects()
     mock_stub.GetProjects.assert_called_once()
     assert projects[0].name == "demo"
 
     # Delete
-    mock_stub.DeleteProject.return_value = kumiho_pb2.StatusResponse(success=True, message="ok")
+    mock_stub.DeleteProject.return_value = mock_helpers.mock_status_response(success=True, message="ok")
     resp = client.delete_project(project_id="p1", force=True)
     mock_stub.DeleteProject.assert_called_once()
     assert resp.success
 
 def test_create_group(mock_client):
-    """Test the create_group method."""
+    """Test the create_group method via Project."""
     client, mock_stub = mock_client
-    mock_stub.CreateGroup.return_value = kumiho_pb2.GroupResponse(path="/projectA/seqA")
-    group = client.create_group(parent_path="/projectA", group_name="seqA")  # Mocked test: keep as-is for direct client testing
+    
+    # Mock Project creation first
+    mock_stub.CreateProject.return_value = mock_helpers.mock_project_response(
+        project_id="p1", name="projectA"
+    )
+    project = client.create_project("projectA")
+
+    # Mock Group creation
+    mock_stub.CreateGroup.return_value = mock_helpers.mock_group_response(path="/projectA/seqA")
+    
+    # Create group via project
+    group = project.create_group(name="seqA")
+    
+    # Verify calls
+    mock_stub.CreateGroup.assert_called_once_with(
+        mock_helpers.mock_create_group_request(parent_path="/projectA", group_name="seqA")
+    )
     assert group.path == "/projectA/seqA"
 
 def test_get_product_from_version_kref(mock_client):
@@ -62,9 +78,9 @@ def test_get_product_from_version_kref(mock_client):
     client, mock_stub = mock_client
     
     # Mock the version response
-    version_response = kumiho_pb2.VersionResponse(
-        kref=kumiho_pb2.Kref(uri="kumiho://projectA/modelA.asset?v=1"),
-        product_kref=kumiho_pb2.Kref(uri="kumiho://projectA/modelA.asset"),
+    version_response = mock_helpers.mock_version_response(
+        kref_uri="kref://projectA/modelA.asset?v=1",
+        product_kref_uri="kref://projectA/modelA.asset",
         number=1,
         latest=True,
         tags=[],
@@ -77,8 +93,8 @@ def test_get_product_from_version_kref(mock_client):
     mock_stub.GetVersion.return_value = version_response
     
     # Mock the product response
-    product_response = kumiho_pb2.ProductResponse(
-        kref=kumiho_pb2.Kref(uri="kumiho://projectA/modelA.asset"),
+    product_response = mock_helpers.mock_product_response(
+        kref_uri="kref://projectA/modelA.asset",
         name="modelA.asset",
         product_name="modelA",
         product_type="asset",
@@ -90,14 +106,14 @@ def test_get_product_from_version_kref(mock_client):
     mock_stub.GetProduct.return_value = product_response
     
     # Test the method
-    product = client.get_product_from_version("kumiho://projectA/modelA.asset?v=1")
+    product = client.get_product_from_version("kref://projectA/modelA.asset?v=1")
     
     # Verify calls
     mock_stub.GetVersion.assert_called_once_with(
-        kumiho_pb2.KrefRequest(kref=kumiho_pb2.Kref(uri="kumiho://projectA/modelA.asset?v=1"))
+        mock_helpers.mock_kref_request(uri="kref://projectA/modelA.asset?v=1")
     )
     mock_stub.GetProduct.assert_called_once_with(
-        kumiho_pb2.GetProductRequest(
+        mock_helpers.mock_get_product_request(
             parent_path="/projectA",
             product_name="modelA", 
             product_type="asset"
@@ -112,8 +128,8 @@ def test_get_product_by_kref(mock_client):
     client, mock_stub = mock_client
     
     # Mock the product response
-    product_response = kumiho_pb2.ProductResponse(
-        kref=kumiho_pb2.Kref(uri="kumiho://projectA/modelA.asset"),
+    product_response = mock_helpers.mock_product_response(
+        kref_uri="kref://projectA/modelA.asset",
         name="modelA.asset",
         product_name="modelA",
         product_type="asset",
@@ -125,11 +141,11 @@ def test_get_product_by_kref(mock_client):
     mock_stub.GetProduct.return_value = product_response
     
     # Test the method
-    product = client.get_product_by_kref("kumiho://projectA/modelA.asset")
+    product = client.get_product_by_kref("kref://projectA/modelA.asset")
     
     # Verify calls
     mock_stub.GetProduct.assert_called_once_with(
-        kumiho_pb2.GetProductRequest(
+        mock_helpers.mock_get_product_request(
             parent_path="/projectA",
             product_name="modelA", 
             product_type="asset"
@@ -140,27 +156,43 @@ def test_get_product_by_kref(mock_client):
     assert product.product_type == "asset"
 
 def test_get_group_from_path(mock_client):
-    """Test get_group with a direct path."""
+    """Test get_group via Project."""
     client, mock_stub = mock_client
-    path = "projectA/seqA"
-    mock_stub.GetGroup.return_value = kumiho_pb2.GroupResponse(path=f"/{path}")
-    group = client.get_group(path)
-    mock_stub.GetGroup.assert_called_once_with(
-        kumiho_pb2.GetGroupRequest(path_or_kref=path)
+    
+    # Mock Project creation/retrieval (simulated)
+    mock_stub.CreateProject.return_value = mock_helpers.mock_project_response(
+        project_id="p1", name="projectA"
     )
-    assert group.path == "/projectA/seqA"
+    project = client.create_project("projectA")
+    
+    path = "seqA"
+    full_path = "/projectA/seqA"
+    mock_stub.GetGroup.return_value = mock_helpers.mock_group_response(path=full_path)
+    
+    # Get group via project
+    group = project.get_group(path)
+    
+    mock_stub.GetGroup.assert_called_once_with(
+        mock_helpers.mock_get_group_request(path_or_kref=full_path)
+    )
+    assert group.path == full_path
 
 def test_product_search_with_context(mock_client):
     """Test product_search with a context filter."""
     client, mock_stub = mock_client
     product_kref_uri = "kref://projectA/seqA/001/kumiho.model"
-    response = kumiho_pb2.GetProductsResponse(
-        products=[kumiho_pb2.ProductResponse(kref=kumiho_pb2.Kref(uri=product_kref_uri))]
+    response = mock_helpers.mock_get_products_response(
+        products=[mock_helpers.mock_product_response(
+            kref_uri=product_kref_uri,
+            name="kumiho.model",
+            product_name="kumiho",
+            product_type="model"
+        )]
     )
     mock_stub.ProductSearch.return_value = response
     results = client.product_search(context_filter="projectA/seqA", product_type_filter="model")
     mock_stub.ProductSearch.assert_called_once_with(
-        kumiho_pb2.ProductSearchRequest(
+        mock_helpers.mock_product_search_request(
             context_filter="projectA/seqA",
             product_name_filter="",
             product_type_filter="model"
@@ -392,28 +424,27 @@ def test_group_deletion_logic(live_client: Client, cleanup_test_data):
     cleanup_test_data.append(proj)
     prod = proj.create_product(product_name="asset", product_type="model")
     cleanup_test_data.append(prod)
-    empty_group = project.create_group(name="empty_group", parent_path="/")
+    empty_group = proj.create_group(name="empty_group")
     cleanup_test_data.append(empty_group)
 
-    # 1. Fail to delete non-empty group without force
+    # 1. Succeed in deleting empty group without force
+    empty_group.delete()
+    cleanup_test_data.remove(empty_group)
+
+    # 2. Fail to delete non-empty group without force
     with pytest.raises(grpc.RpcError) as e:
         proj.delete()
     if e.value.code() == grpc.StatusCode.UNAVAILABLE:
         pytest.skip("Control-plane JWKS unavailable in test environment")
     assert e.value.code() == grpc.StatusCode.PERMISSION_DENIED
 
-    # 2. Succeed in deleting non-empty group with admin force
+    # 3. Succeed in deleting non-empty group with admin force
     proj.delete(force=True)
     # Remove from cleanup since it's already deleted
     cleanup_test_data.remove(proj)
     with pytest.raises(grpc.RpcError) as e:
         live_client.get_group(proj.path)
     assert e.value.code() == grpc.StatusCode.NOT_FOUND
-
-    # 3. Succeed in deleting empty group without force
-    empty_group.delete()
-    # Remove from cleanup since it's already deleted
-    cleanup_test_data.remove(empty_group)
     with pytest.raises(grpc.RpcError) as e:
         live_client.get_group(empty_group.path)
     assert e.value.code() == grpc.StatusCode.NOT_FOUND
@@ -532,19 +563,17 @@ def test_get_resource_and_locations(live_client: Client, cleanup_test_data):
 def test_resolve_kref_with_time(mock_client):
     """Tests resolving a kref at a specific point in time."""
     client, mock_stub = mock_client  # Unpack the tuple
-    version_response = kumiho_pb2.VersionResponse(  # Use VersionResponse, not Version
-        kref=kumiho_pb2.Kref(uri="kref://obj1?v=2"),
-        product_kref=kumiho_pb2.Kref(uri="kref://obj1"),
+    version_response = mock_helpers.mock_version_response(
+        kref_uri="kref://obj1?v=2",
+        product_kref_uri="kref://obj1",
         number=2,
         latest=True,
-        tags=[],  # Add required fields
+        tags=[],
         metadata={},
-        created_at=None,
-        modified_at=None,
         author="test",
-        deprecated=False,
-        published=False,
         username="test",
+        deprecated=False,
+        published=False
     )
     mock_stub.ResolveKref.return_value = version_response
     time_str = "202510131200"
@@ -561,19 +590,17 @@ def test_resolve_kref_with_time(mock_client):
 def test_resolve_kref_with_tag_and_time(mock_client):
     """Tests resolving a kref with a tag at a specific point in time."""
     client, mock_stub = mock_client  # Unpack the tuple
-    version_response = kumiho_pb2.VersionResponse(  # Use VersionResponse, not Version
-        kref=kumiho_pb2.Kref(uri="kref://obj1?v=1"),
-        product_kref=kumiho_pb2.Kref(uri="kref://obj1"),
+    version_response = mock_helpers.mock_version_response(
+        kref_uri="kref://obj1?v=1",
+        product_kref_uri="kref://obj1",
         number=1,
         latest=True,
-        tags=[],  # Add required fields
+        tags=[],
         metadata={},
-        created_at=None,
-        modified_at=None,
         author="test",
-        deprecated=False,
-        published=False,
         username="test",
+        deprecated=False,
+        published=False
     )
     mock_stub.ResolveKref.return_value = version_response
     time_str = "202510101000"

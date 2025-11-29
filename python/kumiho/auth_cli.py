@@ -185,7 +185,7 @@ def _prompt(prompt_text: str) -> str:
     return input(prompt_text).strip()
 
 
-def _prompt_password(prompt_text: str = "Firebase password: ") -> str:
+def _prompt_password(prompt_text: str = "KumihoClouds password: ") -> str:
     return getpass.getpass(prompt_text)
 
 
@@ -203,13 +203,13 @@ def _resolve_project_id(existing: Optional[str]) -> Optional[str]:
 
 
 def _interactive_login(api_key: str, project_id: Optional[str]) -> Credentials:
-    print("[kumiho-auth] No cached credentials found. Please log in with your Firebase email.")
-    email = _prompt("Firebase email: ")
+    print("[kumiho-auth] No cached credentials found. Please log in with your KumihoClouds credentials.")
+    email = _prompt("KumihoClouds email: ")
     if not email:
-        raise TokenAcquisitionError("Firebase email is required")
+        raise TokenAcquisitionError("KumihoClouds email is required")
     password = _prompt_password()
     if not password:
-        raise TokenAcquisitionError("Firebase password is required")
+        raise TokenAcquisitionError("KumihoClouds password is required")
 
     id_token, refresh_token, expires_in = _fetch_with_password(api_key, email, password)
     expires_at = int(time.time()) + expires_in
@@ -270,7 +270,7 @@ def ensure_token(
             print(f"[kumiho-auth] Refresh failed: {exc}")
 
     if not interactive:
-        raise TokenAcquisitionError("No Firebase token available and interactive mode disabled")
+        raise TokenAcquisitionError("No KumihoClouds token available and interactive mode disabled")
 
     api_key = _resolve_api_key(creds.api_key if creds else None)
     project_id = _resolve_project_id(creds.project_id if creds else None)
@@ -291,6 +291,12 @@ def cmd_login(args: argparse.Namespace) -> None:
     project_id = args.project_id or _resolve_project_id(None)
 
     creds = _interactive_login(api_key, project_id)
+    
+    # Exchange for CP token
+    cp_token, cp_exp = _exchange_for_control_plane_token(creds.id_token)
+    creds.control_plane_token = cp_token
+    creds.cp_expires_at = cp_exp
+
     _save_credentials(creds)
     _log_token(creds.id_token, "login")
     print(f"[kumiho-auth] Credentials cached at {_credentials_path()}")
@@ -315,15 +321,15 @@ def cmd_refresh(args: argparse.Namespace) -> None:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="Kumiho Firebase token helper")
+    parser = argparse.ArgumentParser(description="KumihoClouds token helper")
     sub = parser.add_subparsers(dest="command", required=True)
 
-    login = sub.add_parser("login", help="Obtain and store a Firebase ID token using email/password")
-    login.add_argument("--api-key", help="Firebase Web API key (defaults to KUMIHO_FIREBASE_API_KEY)")
-    login.add_argument("--project-id", help="Firebase project ID (optional)")
+    login = sub.add_parser("login", help="Obtain and store a KumihoClouds ID token using email/password")
+    login.add_argument("--api-key", help="KumihoClouds API key (defaults to KUMIHO_FIREBASE_API_KEY)")
+    login.add_argument("--project-id", help="KumihoClouds project ID (optional)")
     login.set_defaults(func=cmd_login)
 
-    refresh = sub.add_parser("refresh", help="Refresh the cached Firebase ID token using the stored refresh token")
+    refresh = sub.add_parser("refresh", help="Refresh the cached KumihoClouds ID token using the stored refresh token")
     refresh.set_defaults(func=cmd_refresh)
     return parser
 
@@ -336,7 +342,7 @@ def main(argv: Optional[list[str]] = None) -> None:
     except TokenAcquisitionError as exc:
         parser.error(str(exc))
     except requests.HTTPError as exc:
-        parser.error(f"Firebase request failed: {exc}")
+        parser.error(f"KumihoClouds request failed: {exc}")
 
 
 if __name__ == "__main__":

@@ -65,9 +65,9 @@ class Group(KumihoObject):
         path = f"{self.path.rstrip('/')}/{name}"
         return self._client.get_group(path)
 
-    def get_groups(self):
-        """List direct child groups under this group."""
-        return self._client.get_child_groups(self.path)
+    def get_groups(self, recursive: bool = False):
+        """List child groups under this group."""
+        return self._client.get_child_groups(self.path, recursive=recursive)
 
     def create_product(self, product_name: str, product_type: str) -> Product:
         """Create a new product within this group.

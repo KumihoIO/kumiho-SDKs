@@ -41,6 +41,8 @@ from .proto.kumiho_pb2 import (
     GetResourceRequest,
     GetResourcesByLocationRequest,
     GetResourcesRequest,
+    GetTenantUsageRequest,
+    TenantUsageResponse,
     GetVersionsRequest,
     HasTagRequest,
     KrefRequest,
@@ -88,6 +90,7 @@ class Client:
         use_discovery: Optional[bool] = None,
         tenant_hint: Optional[str] = None,
         force_discovery_refresh: Optional[bool] = None,
+        enable_auto_login: bool = True,
     ) -> None:
         """Initialize the client with a target server address.
 
@@ -154,7 +157,8 @@ class Client:
             metadata.append(("authorization", f"Bearer {resolved_token}"))
 
         # Apply interceptors in order: auto-login first, then metadata injection
-        channel = grpc.intercept_channel(channel, _AutoLoginInterceptor())
+        if enable_auto_login:
+            channel = grpc.intercept_channel(channel, _AutoLoginInterceptor())
         if metadata:
             channel = grpc.intercept_channel(channel, _MetadataInjector(metadata))
 
@@ -302,6 +306,21 @@ class Client:
         req = DeleteProjectRequest(project_id=project_id, force=force)
         resp = self.stub.DeleteProject(req)
         return resp
+
+    def update_project(
+        self,
+        project_id: str,
+        allow_public: Optional[bool] = None,
+        description: Optional[str] = None
+    ) -> Project:
+        req = kumiho_pb2.UpdateProjectRequest(
+            project_id=project_id,
+            allow_public=allow_public,
+            description=description
+        )
+        resp = self.stub.UpdateProject(req)
+        return Project(resp, self)
+
     # Group methods
     def create_group(self, parent_path: str, group_name: str) -> Group:
         """Create a new group.
@@ -330,17 +349,18 @@ class Client:
         resp = self.stub.GetGroup(req)
         return Group(resp, self)
 
-    def get_child_groups(self, parent_path: str = "") -> List[Group]:
+    def get_child_groups(self, parent_path: str = "", recursive: bool = False) -> List[Group]:
         """Get child groups of a parent group.
 
         Args:
             parent_path: The path of the parent group. If empty or "/",
                          returns root-level groups.
+            recursive: Whether to fetch all descendant groups recursively.
 
         Returns:
             A list of Group objects that are direct children of the parent.
         """
-        req = GetChildGroupsRequest(parent_path=parent_path)
+        req = GetChildGroupsRequest(parent_path=parent_path, recursive=recursive)
         resp = self.stub.GetChildGroups(req)
         return [Group(group_resp, self) for group_resp in resp.groups]
 
@@ -796,6 +816,16 @@ class Client:
         req = UpdateMetadataRequest(kref=kref.to_pb(), metadata=metadata)
         resp = self.stub.UpdateResourceMetadata(req)
         return Resource(resp, self)
+
+    def get_tenant_usage(self) -> Dict[str, Any]:
+        """Get the current tenant's usage and limits.
+
+        Returns:
+            A dictionary containing node_count, node_limit, and tenant_id.
+        """
+        req = GetTenantUsageRequest()
+        resp = self.stub.GetTenantUsage(req)
+        return MessageToDict(resp, preserving_proto_field_name=True, always_print_fields_with_no_presence=True)
 
     def resolve(self, kref: str) -> Optional[str]:
         """Resolve a KREF to a file location.

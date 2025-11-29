@@ -156,7 +156,22 @@ class DiscoveryCache:
         tmp_path = self.path.with_suffix(".tmp")
         with tmp_path.open("w", encoding="utf-8") as handle:
             json.dump(data, handle, indent=2)
-        tmp_path.replace(self.path)
+        
+        # Retry replacement to handle Windows file locking
+        import time
+        max_retries = 5
+        for i in range(max_retries):
+            try:
+                tmp_path.replace(self.path)
+                return
+            except PermissionError:
+                if i == max_retries - 1:
+                    raise
+                time.sleep(0.1)
+            except OSError:
+                if i == max_retries - 1:
+                    raise
+                time.sleep(0.1)
 
     def _read_all(self) -> Dict[str, Any]:
         if not self.path.exists():

@@ -45,6 +45,11 @@ class KumihoServiceStub(object):
                 request_serializer=kumiho__pb2.GetProjectsRequest.SerializeToString,
                 response_deserializer=kumiho__pb2.GetProjectsResponse.FromString,
                 _registered_method=True)
+        self.UpdateProject = channel.unary_unary(
+                '/kumiho.KumihoService/UpdateProject',
+                request_serializer=kumiho__pb2.UpdateProjectRequest.SerializeToString,
+                response_deserializer=kumiho__pb2.ProjectResponse.FromString,
+                _registered_method=True)
         self.DeleteProject = channel.unary_unary(
                 '/kumiho.KumihoService/DeleteProject',
                 request_serializer=kumiho__pb2.DeleteProjectRequest.SerializeToString,
@@ -210,6 +215,11 @@ class KumihoServiceStub(object):
                 request_serializer=kumiho__pb2.DeleteLinkRequest.SerializeToString,
                 response_deserializer=kumiho__pb2.StatusResponse.FromString,
                 _registered_method=True)
+        self.GetTenantUsage = channel.unary_unary(
+                '/kumiho.KumihoService/GetTenantUsage',
+                request_serializer=kumiho__pb2.GetTenantUsageRequest.SerializeToString,
+                response_deserializer=kumiho__pb2.TenantUsageResponse.FromString,
+                _registered_method=True)
         self.EventStream = channel.unary_stream(
                 '/kumiho.KumihoService/EventStream',
                 request_serializer=kumiho__pb2.EventStreamRequest.SerializeToString,
@@ -229,6 +239,12 @@ class KumihoServiceServicer(object):
         raise NotImplementedError('Method not implemented!')
 
     def GetProjects(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def UpdateProject(self, request, context):
         """Missing associated documentation comment in .proto file."""
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
@@ -437,6 +453,13 @@ class KumihoServiceServicer(object):
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
+    def GetTenantUsage(self, request, context):
+        """Tenant methods
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
     def EventStream(self, request, context):
         """Event Streaming
         """
@@ -456,6 +479,11 @@ def add_KumihoServiceServicer_to_server(servicer, server):
                     servicer.GetProjects,
                     request_deserializer=kumiho__pb2.GetProjectsRequest.FromString,
                     response_serializer=kumiho__pb2.GetProjectsResponse.SerializeToString,
+            ),
+            'UpdateProject': grpc.unary_unary_rpc_method_handler(
+                    servicer.UpdateProject,
+                    request_deserializer=kumiho__pb2.UpdateProjectRequest.FromString,
+                    response_serializer=kumiho__pb2.ProjectResponse.SerializeToString,
             ),
             'DeleteProject': grpc.unary_unary_rpc_method_handler(
                     servicer.DeleteProject,
@@ -622,6 +650,11 @@ def add_KumihoServiceServicer_to_server(servicer, server):
                     request_deserializer=kumiho__pb2.DeleteLinkRequest.FromString,
                     response_serializer=kumiho__pb2.StatusResponse.SerializeToString,
             ),
+            'GetTenantUsage': grpc.unary_unary_rpc_method_handler(
+                    servicer.GetTenantUsage,
+                    request_deserializer=kumiho__pb2.GetTenantUsageRequest.FromString,
+                    response_serializer=kumiho__pb2.TenantUsageResponse.SerializeToString,
+            ),
             'EventStream': grpc.unary_stream_rpc_method_handler(
                     servicer.EventStream,
                     request_deserializer=kumiho__pb2.EventStreamRequest.FromString,
@@ -683,6 +716,33 @@ class KumihoService(object):
             '/kumiho.KumihoService/GetProjects',
             kumiho__pb2.GetProjectsRequest.SerializeToString,
             kumiho__pb2.GetProjectsResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def UpdateProject(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/kumiho.KumihoService/UpdateProject',
+            kumiho__pb2.UpdateProjectRequest.SerializeToString,
+            kumiho__pb2.ProjectResponse.FromString,
             options,
             channel_credentials,
             insecure,
@@ -1574,6 +1634,33 @@ class KumihoService(object):
             '/kumiho.KumihoService/DeleteLink',
             kumiho__pb2.DeleteLinkRequest.SerializeToString,
             kumiho__pb2.StatusResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def GetTenantUsage(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/kumiho.KumihoService/GetTenantUsage',
+            kumiho__pb2.GetTenantUsageRequest.SerializeToString,
+            kumiho__pb2.TenantUsageResponse.FromString,
             options,
             channel_credentials,
             insecure,

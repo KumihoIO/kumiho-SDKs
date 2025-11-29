@@ -7,7 +7,7 @@ __version__ = "0.3.0"
 from typing import Dict, List, Optional, Iterator
 
 # Import the main classes to make them available at the package level.
-from .base import KumihoObject
+from .base import KumihoObject, KumihoError
 from .client import Client
 from .event import Event
 from .group import Group
@@ -180,6 +180,7 @@ def resolve(kref: str) -> Optional[str]:
 
 __all__ = [
     "KumihoObject",
+    "KumihoError",
     "Client",
     "Project",
     "Group",

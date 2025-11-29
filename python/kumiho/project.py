@@ -18,6 +18,7 @@ class Project(KumihoObject):
         self.created_at = pb.created_at or None
         self.updated_at = pb.updated_at or None
         self.deprecated = pb.deprecated
+        self.allow_public = pb.allow_public
 
     def __repr__(self) -> str:
         return f"<kumiho.Project id='{self.project_id}' name='{self.name}'>"
@@ -31,13 +32,25 @@ class Project(KumihoObject):
         """Delete or deprecate this project."""
         return self._client.delete_project(project_id=self.project_id, force=force)
 
+    def set_public(self, public: bool):
+        """Set whether this project is publicly accessible (anonymous read)."""
+        return self._client.update_project(project_id=self.project_id, allow_public=public)
+
+    def update(self, description: Optional[str] = None, allow_public: Optional[bool] = None):
+        """Update project properties."""
+        return self._client.update_project(
+            project_id=self.project_id,
+            description=description,
+            allow_public=allow_public
+        )
+
     def get_group(self, name: str, parent_path: Optional[str] = None) -> Group:
         """Fetch an existing group within this project."""
         base_parent = parent_path or f"/{self.name}"
         path = f"{base_parent.rstrip('/')}/{name}"
         return self._client.get_group(path)
 
-    def get_groups(self, parent_path: Optional[str] = None):
+    def get_groups(self, parent_path: Optional[str] = None, recursive: bool = False):
         """List child groups under a given parent (defaults to project root)."""
         base_parent = parent_path or f"/{self.name}"
-        return self._client.get_child_groups(base_parent)
+        return self._client.get_child_groups(base_parent, recursive=recursive)

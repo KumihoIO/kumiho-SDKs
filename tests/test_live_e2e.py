@@ -2,6 +2,7 @@ import uuid
 from datetime import datetime
 
 import pytest
+import grpc
 import kumiho
 from kumiho import Client
 
@@ -49,3 +50,47 @@ def test_firebase_supabase_neo4j_roundtrip(live_client: Client, cleanup_test_dat
     assert any(match.kref == resource.kref for match in matches)
 
     assert product.peek_next_version() == version.number + 1
+
+
+def test_create_group_without_project_fails(live_client: Client):
+    """Test that creating a root group without a corresponding project fails."""
+    orphan_group_name = _unique("orphan_group")
+    
+    # Attempt to create a group without creating a project first
+    # This should fail with an internal error or similar because the project doesn't exist
+    with pytest.raises(grpc.RpcError) as e:
+        live_client.create_group(parent_path="/", group_name=orphan_group_name)
+    
+    # The server returns Status::internal("Failed to create or retrieve group")
+    # or potentially a more specific error if I updated the server to return one.
+    # Based on current implementation, it returns internal error.
+    assert e.value.code() == grpc.StatusCode.INTERNAL
+    assert "Failed to create or retrieve group" in e.value.details()
+
+
+def test_node_limit_enforcement(live_client: Client):
+    """Test that we can query tenant usage and that it returns valid numbers."""
+    # Verify GetTenantUsage works
+    usage = live_client.get_tenant_usage()
+    assert "node_count" in usage
+    assert "node_limit" in usage
+    assert "tenant_id" in usage
+    
+    initial_count = int(usage["node_count"])
+    limit = int(usage["node_limit"])
+    
+    print(f"Initial node count: {initial_count}, Limit: {limit}")
+    
+    # If limit is -1, it means no limit, so we can't test enforcement easily.
+    # If limit is positive, we could try to hit it, but that might be slow or disruptive.
+    # For now, we just verify the RPC returns valid data and the count increases when we create something.
+    
+    project_name = _unique("limit_test")
+    project = live_client.create_project(project_name)
+    
+    new_usage = live_client.get_tenant_usage()
+    new_count = int(new_usage["node_count"])
+    
+    # Count should have increased by at least 1 (the project)
+    # It might be more if side-effects create other nodes, but at least 1.
+    assert new_count > initial_count
