@@ -92,6 +92,9 @@ from .proto.kumiho_pb2 import (
     UpdateMetadataRequest,
     WasTaggedRequest,
     SetDeprecatedRequest,
+    TraverseLinksRequest,
+    ShortestPathRequest,
+    ImpactAnalysisRequest,
 )
 from .link import Link
 from .proto.kumiho_pb2 import ProjectResponse, StatusResponse
@@ -1040,6 +1043,150 @@ class _Client:
             link_type=link_type
         )
         self.stub.DeleteLink(req)
+
+    # Graph Traversal Methods
+
+    def traverse_links(
+        self,
+        origin_kref: Kref,
+        direction: int = 0,
+        link_type_filter: Optional[List[str]] = None,
+        max_depth: int = 10,
+        limit: int = 100,
+        include_path: bool = False
+    ) -> 'TraversalResult':
+        """Traverse links transitively from an origin version.
+
+        Args:
+            origin_kref: The starting version kref.
+            direction: Traversal direction (0=OUTGOING, 1=INCOMING, 2=BOTH).
+            link_type_filter: Filter by link types (empty = all).
+            max_depth: Maximum traversal depth (default: 10, max: 20).
+            limit: Maximum results to return (default: 100, max: 1000).
+            include_path: Whether to include full path information.
+
+        Returns:
+            TraversalResult containing discovered versions and paths.
+        """
+        from .link import TraversalResult, VersionPath, PathStep
+        
+        req = TraverseLinksRequest(
+            origin_kref=origin_kref.to_pb(),
+            direction=direction,
+            link_type_filter=link_type_filter or [],
+            max_depth=max_depth,
+            limit=limit,
+            include_path=include_path
+        )
+        resp = self.stub.TraverseLinks(req)
+        
+        version_krefs = [Kref(k.uri) for k in resp.version_krefs]
+        paths = []
+        for p in resp.paths:
+            steps = [PathStep(
+                version_kref=Kref(s.version_kref.uri),
+                link_type=s.link_type,
+                depth=s.depth
+            ) for s in p.steps]
+            paths.append(VersionPath(steps=steps, total_depth=p.total_depth))
+        
+        links = [Link(pb, self) for pb in resp.links]
+        
+        return TraversalResult(
+            version_krefs=version_krefs,
+            paths=paths,
+            links=links,
+            total_count=resp.total_count,
+            truncated=resp.truncated,
+            client=self
+        )
+
+    def find_shortest_path(
+        self,
+        source_kref: Kref,
+        target_kref: Kref,
+        link_type_filter: Optional[List[str]] = None,
+        max_depth: int = 10,
+        all_shortest: bool = False
+    ) -> 'ShortestPathResult':
+        """Find the shortest path between two versions.
+
+        Args:
+            source_kref: The source version kref.
+            target_kref: The target version kref.
+            link_type_filter: Filter by link types (empty = all).
+            max_depth: Maximum path length to search (default: 10).
+            all_shortest: Return all shortest paths, not just one.
+
+        Returns:
+            ShortestPathResult containing path(s) if found.
+        """
+        from .link import VersionPath, PathStep
+        
+        req = ShortestPathRequest(
+            source_kref=source_kref.to_pb(),
+            target_kref=target_kref.to_pb(),
+            link_type_filter=link_type_filter or [],
+            max_depth=max_depth,
+            all_shortest=all_shortest
+        )
+        resp = self.stub.FindShortestPath(req)
+        
+        paths = []
+        for p in resp.paths:
+            steps = [PathStep(
+                version_kref=Kref(s.version_kref.uri),
+                link_type=s.link_type,
+                depth=s.depth
+            ) for s in p.steps]
+            paths.append(VersionPath(steps=steps, total_depth=p.total_depth))
+        
+        return ShortestPathResult(
+            paths=paths,
+            path_exists=resp.path_exists,
+            path_length=resp.path_length
+        )
+
+    def analyze_impact(
+        self,
+        version_kref: Kref,
+        link_type_filter: Optional[List[str]] = None,
+        max_depth: int = 10,
+        limit: int = 100
+    ) -> List['ImpactedVersion']:
+        """Analyze what would be impacted by changes to a version.
+
+        Finds all versions that directly or indirectly depend on the
+        given version.
+
+        Args:
+            version_kref: The version to analyze impact for.
+            link_type_filter: Filter by link types (default: DEPENDS_ON).
+            max_depth: Maximum traversal depth (default: 10).
+            limit: Maximum results (default: 100).
+
+        Returns:
+            List of ImpactedVersion objects.
+        """
+        from .link import ImpactedVersion
+        
+        req = ImpactAnalysisRequest(
+            version_kref=version_kref.to_pb(),
+            link_type_filter=link_type_filter or [],
+            max_depth=max_depth,
+            limit=limit
+        )
+        resp = self.stub.AnalyzeImpact(req)
+        
+        return [
+            ImpactedVersion(
+                version_kref=Kref(iv.version_kref.uri),
+                product_kref=Kref(iv.product_kref.uri) if iv.product_kref.uri else None,
+                impact_depth=iv.impact_depth,
+                impact_path_types=list(iv.impact_path_types)
+            )
+            for iv in resp.impacted_versions
+        ]
 
     # Event Streaming
     def event_stream(self, routing_key_filter: str = "", kref_filter: str = "") -> Iterator[Event]:

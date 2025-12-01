@@ -121,7 +121,16 @@ from .client import _Client
 from .event import Event
 from .group import Group
 from .kref import Kref
-from .link import Link, LinkType, LinkDirection
+from .link import (
+    Link,
+    LinkType,
+    LinkDirection,
+    PathStep,
+    VersionPath,
+    ImpactedVersion,
+    TraversalResult,
+    ShortestPathResult,
+)
 from .product import Product
 from .project import Project
 from .resource import Resource

@@ -220,6 +220,21 @@ class KumihoServiceStub(object):
                 request_serializer=kumiho__pb2.DeleteLinkRequest.SerializeToString,
                 response_deserializer=kumiho__pb2.StatusResponse.FromString,
                 _registered_method=True)
+        self.TraverseLinks = channel.unary_unary(
+                '/kumiho.KumihoService/TraverseLinks',
+                request_serializer=kumiho__pb2.TraverseLinksRequest.SerializeToString,
+                response_deserializer=kumiho__pb2.TraverseLinksResponse.FromString,
+                _registered_method=True)
+        self.FindShortestPath = channel.unary_unary(
+                '/kumiho.KumihoService/FindShortestPath',
+                request_serializer=kumiho__pb2.ShortestPathRequest.SerializeToString,
+                response_deserializer=kumiho__pb2.ShortestPathResponse.FromString,
+                _registered_method=True)
+        self.AnalyzeImpact = channel.unary_unary(
+                '/kumiho.KumihoService/AnalyzeImpact',
+                request_serializer=kumiho__pb2.ImpactAnalysisRequest.SerializeToString,
+                response_deserializer=kumiho__pb2.ImpactAnalysisResponse.FromString,
+                _registered_method=True)
         self.GetTenantUsage = channel.unary_unary(
                 '/kumiho.KumihoService/GetTenantUsage',
                 request_serializer=kumiho__pb2.GetTenantUsageRequest.SerializeToString,
@@ -469,6 +484,25 @@ class KumihoServiceServicer(object):
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
+    def TraverseLinks(self, request, context):
+        """Graph Traversal methods
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def FindShortestPath(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def AnalyzeImpact(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
     def GetTenantUsage(self, request, context):
         """Tenant methods
         """
@@ -677,6 +711,21 @@ def add_KumihoServiceServicer_to_server(servicer, server):
                     servicer.DeleteLink,
                     request_deserializer=kumiho__pb2.DeleteLinkRequest.FromString,
                     response_serializer=kumiho__pb2.StatusResponse.SerializeToString,
+            ),
+            'TraverseLinks': grpc.unary_unary_rpc_method_handler(
+                    servicer.TraverseLinks,
+                    request_deserializer=kumiho__pb2.TraverseLinksRequest.FromString,
+                    response_serializer=kumiho__pb2.TraverseLinksResponse.SerializeToString,
+            ),
+            'FindShortestPath': grpc.unary_unary_rpc_method_handler(
+                    servicer.FindShortestPath,
+                    request_deserializer=kumiho__pb2.ShortestPathRequest.FromString,
+                    response_serializer=kumiho__pb2.ShortestPathResponse.SerializeToString,
+            ),
+            'AnalyzeImpact': grpc.unary_unary_rpc_method_handler(
+                    servicer.AnalyzeImpact,
+                    request_deserializer=kumiho__pb2.ImpactAnalysisRequest.FromString,
+                    response_serializer=kumiho__pb2.ImpactAnalysisResponse.SerializeToString,
             ),
             'GetTenantUsage': grpc.unary_unary_rpc_method_handler(
                     servicer.GetTenantUsage,
@@ -1694,6 +1743,87 @@ class KumihoService(object):
             '/kumiho.KumihoService/DeleteLink',
             kumiho__pb2.DeleteLinkRequest.SerializeToString,
             kumiho__pb2.StatusResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def TraverseLinks(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/kumiho.KumihoService/TraverseLinks',
+            kumiho__pb2.TraverseLinksRequest.SerializeToString,
+            kumiho__pb2.TraverseLinksResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def FindShortestPath(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/kumiho.KumihoService/FindShortestPath',
+            kumiho__pb2.ShortestPathRequest.SerializeToString,
+            kumiho__pb2.ShortestPathResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def AnalyzeImpact(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/kumiho.KumihoService/AnalyzeImpact',
+            kumiho__pb2.ImpactAnalysisRequest.SerializeToString,
+            kumiho__pb2.ImpactAnalysisResponse.FromString,
             options,
             channel_credentials,
             insecure,

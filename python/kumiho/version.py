@@ -39,6 +39,7 @@ if TYPE_CHECKING:
     from .product import Product
     from .group import Group
     from .project import Project
+    from .link import TraversalResult, VersionPath, ImpactedVersion
 
 
 class Version(KumihoObject):
@@ -510,3 +511,150 @@ class Version(KumihoObject):
             >>> version.delete_link(texture_version, kumiho.DEPENDS_ON)
         """
         self._client.delete_link(self.kref, target_version.kref, link_type)
+
+    # --- Graph Traversal Methods ---
+
+    def get_all_dependencies(
+        self,
+        link_type_filter: Optional[List[str]] = None,
+        max_depth: int = 10,
+        limit: int = 100
+    ) -> 'TraversalResult':
+        """Get all transitive dependencies of this version.
+
+        Traverses outgoing links to find all versions this version
+        depends on, directly or indirectly.
+
+        Args:
+            link_type_filter: Filter by link types (e.g., [kumiho.DEPENDS_ON]).
+            max_depth: Maximum traversal depth (default: 10, max: 20).
+            limit: Maximum number of results (default: 100, max: 1000).
+
+        Returns:
+            TraversalResult: Contains all discovered versions and paths.
+
+        Example:
+            >>> import kumiho
+
+            >>> # Get all dependencies up to 5 hops
+            >>> deps = version.get_all_dependencies(
+            ...     link_type_filter=[kumiho.DEPENDS_ON],
+            ...     max_depth=5
+            ... )
+            >>> for kref in deps.version_krefs:
+            ...     print(f"Depends on: {kref}")
+        """
+        from .link import LinkDirection
+        return self._client.traverse_links(
+            self.kref,
+            direction=LinkDirection.OUTGOING,
+            link_type_filter=link_type_filter,
+            max_depth=max_depth,
+            limit=limit
+        )
+
+    def get_all_dependents(
+        self,
+        link_type_filter: Optional[List[str]] = None,
+        max_depth: int = 10,
+        limit: int = 100
+    ) -> 'TraversalResult':
+        """Get all versions that transitively depend on this version.
+
+        Traverses incoming links to find all versions that depend on
+        this version, directly or indirectly. Useful for impact analysis.
+
+        Args:
+            link_type_filter: Filter by link types.
+            max_depth: Maximum traversal depth.
+            limit: Maximum number of results.
+
+        Returns:
+            TraversalResult: Contains all dependent versions.
+
+        Example:
+            >>> # Find everything that would be affected by changing this texture
+            >>> dependents = texture_v1.get_all_dependents([kumiho.DEPENDS_ON])
+            >>> print(f"{len(dependents.version_krefs)} versions would be affected")
+        """
+        from .link import LinkDirection
+        return self._client.traverse_links(
+            self.kref,
+            direction=LinkDirection.INCOMING,
+            link_type_filter=link_type_filter,
+            max_depth=max_depth,
+            limit=limit
+        )
+
+    def find_path_to(
+        self,
+        target: 'Version',
+        link_type_filter: Optional[List[str]] = None,
+        max_depth: int = 10,
+        all_paths: bool = False
+    ) -> Optional['VersionPath']:
+        """Find the shortest path from this version to another.
+
+        Uses graph traversal to find how two versions are connected.
+
+        Args:
+            target: The target version to find a path to.
+            link_type_filter: Filter by link types.
+            max_depth: Maximum path length to search.
+            all_paths: If True, returns all shortest paths via result.paths.
+
+        Returns:
+            VersionPath if a path exists, None otherwise.
+            Use all_paths=True and access result.paths for multiple paths.
+
+        Example:
+            >>> path = model_v1.find_path_to(texture_v3)
+            >>> if path:
+            ...     print(f"Path length: {path.total_depth}")
+            ...     for step in path.steps:
+            ...         print(f"  -> {step.version_kref} via {step.link_type}")
+        """
+        result = self._client.find_shortest_path(
+            self.kref,
+            target.kref,
+            link_type_filter=link_type_filter,
+            max_depth=max_depth,
+            all_shortest=all_paths
+        )
+        if all_paths:
+            # Return the result object when all paths requested
+            return result  # type: ignore
+        return result.first_path
+
+    def analyze_impact(
+        self,
+        link_type_filter: Optional[List[str]] = None,
+        max_depth: int = 10,
+        limit: int = 100
+    ) -> List['ImpactedVersion']:
+        """Analyze the impact of changes to this version.
+
+        Returns all versions that directly or indirectly depend on this
+        version, sorted by impact depth (closest dependencies first).
+
+        Args:
+            link_type_filter: Link types to follow (default: all).
+            max_depth: How far to traverse (default: 10).
+            limit: Maximum results (default: 100).
+
+        Returns:
+            List[ImpactedVersion]: Versions that would be impacted.
+
+        Example:
+            >>> # Before modifying a shared texture
+            >>> impact = texture_v1.analyze_impact()
+            >>> print(f"{len(impact)} versions would need review")
+            >>> for iv in impact[:5]:
+            ...     print(f"  {iv.version_kref} (depth {iv.impact_depth})")
+        """
+        return self._client.analyze_impact(
+            self.kref,
+            link_type_filter=link_type_filter,
+            max_depth=max_depth,
+            limit=limit
+        )
