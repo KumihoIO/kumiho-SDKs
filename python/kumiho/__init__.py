@@ -118,10 +118,26 @@ from typing import Dict, List, Optional, Iterator, Tuple
 # Import the main classes to make them available at the package level.
 from .base import KumihoObject, KumihoError
 from .client import _Client
+from .collection import (
+    Collection,
+    CollectionMember,
+    CollectionVersionHistory,
+    ReservedProductTypeError,
+    RESERVED_PRODUCT_TYPES,
+)
 from .event import Event
 from .group import Group
 from .kref import Kref
-from .link import Link, LinkType, LinkDirection
+from .link import (
+    Link,
+    LinkType,
+    LinkDirection,
+    PathStep,
+    VersionPath,
+    ImpactedVersion,
+    TraversalResult,
+    ShortestPathResult,
+)
 from .product import Product
 from .project import Project
 from .resource import Resource
@@ -713,6 +729,12 @@ __all__ = [
     "Kref",
     "Event",
     "ProjectLimitError",
+    # Collection classes
+    "Collection",
+    "CollectionMember",
+    "CollectionVersionHistory",
+    "ReservedProductTypeError",
+    "RESERVED_PRODUCT_TYPES",
     # Connection
     "connect",
     "use_client",

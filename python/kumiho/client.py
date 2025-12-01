@@ -92,6 +92,14 @@ from .proto.kumiho_pb2 import (
     UpdateMetadataRequest,
     WasTaggedRequest,
     SetDeprecatedRequest,
+    TraverseLinksRequest,
+    ShortestPathRequest,
+    ImpactAnalysisRequest,
+    CreateCollectionRequest,
+    AddCollectionMemberRequest,
+    RemoveCollectionMemberRequest,
+    GetCollectionMembersRequest,
+    GetCollectionHistoryRequest,
 )
 from .link import Link
 from .proto.kumiho_pb2 import ProjectResponse, StatusResponse
@@ -499,7 +507,18 @@ class _Client:
 
         Returns:
             The created Product object.
+
+        Raises:
+            ReservedProductTypeError: If product_type is reserved (e.g., 'collection').
         """
+        from .collection import RESERVED_PRODUCT_TYPES, ReservedProductTypeError
+        
+        if product_type.lower() in RESERVED_PRODUCT_TYPES:
+            raise ReservedProductTypeError(
+                f"Product type '{product_type}' is reserved. "
+                f"Use the dedicated create_collection() method instead."
+            )
+        
         req = CreateProductRequest(parent_path=parent_path, product_name=product_name, product_type=product_type)
         resp = self.stub.CreateProduct(req)
         return Product(resp, self)
@@ -1040,6 +1059,357 @@ class _Client:
             link_type=link_type
         )
         self.stub.DeleteLink(req)
+
+    # Graph Traversal Methods
+
+    def traverse_links(
+        self,
+        origin_kref: Kref,
+        direction: int = 0,
+        link_type_filter: Optional[List[str]] = None,
+        max_depth: int = 10,
+        limit: int = 100,
+        include_path: bool = False
+    ) -> 'TraversalResult':
+        """Traverse links transitively from an origin version.
+
+        Args:
+            origin_kref: The starting version kref.
+            direction: Traversal direction (0=OUTGOING, 1=INCOMING, 2=BOTH).
+            link_type_filter: Filter by link types (empty = all).
+            max_depth: Maximum traversal depth (default: 10, max: 20).
+            limit: Maximum results to return (default: 100, max: 1000).
+            include_path: Whether to include full path information.
+
+        Returns:
+            TraversalResult containing discovered versions and paths.
+        """
+        from .link import TraversalResult, VersionPath, PathStep
+        
+        req = TraverseLinksRequest(
+            origin_kref=origin_kref.to_pb(),
+            direction=direction,
+            link_type_filter=link_type_filter or [],
+            max_depth=max_depth,
+            limit=limit,
+            include_path=include_path
+        )
+        resp = self.stub.TraverseLinks(req)
+        
+        version_krefs = [Kref(k.uri) for k in resp.version_krefs]
+        paths = []
+        for p in resp.paths:
+            steps = [PathStep(
+                version_kref=Kref(s.version_kref.uri),
+                link_type=s.link_type,
+                depth=s.depth
+            ) for s in p.steps]
+            paths.append(VersionPath(steps=steps, total_depth=p.total_depth))
+        
+        links = [Link(pb, self) for pb in resp.links]
+        
+        return TraversalResult(
+            version_krefs=version_krefs,
+            paths=paths,
+            links=links,
+            total_count=resp.total_count,
+            truncated=resp.truncated,
+            client=self
+        )
+
+    def find_shortest_path(
+        self,
+        source_kref: Kref,
+        target_kref: Kref,
+        link_type_filter: Optional[List[str]] = None,
+        max_depth: int = 10,
+        all_shortest: bool = False
+    ) -> 'ShortestPathResult':
+        """Find the shortest path between two versions.
+
+        Args:
+            source_kref: The source version kref.
+            target_kref: The target version kref.
+            link_type_filter: Filter by link types (empty = all).
+            max_depth: Maximum path length to search (default: 10).
+            all_shortest: Return all shortest paths, not just one.
+
+        Returns:
+            ShortestPathResult containing path(s) if found.
+        """
+        from .link import VersionPath, PathStep
+        
+        req = ShortestPathRequest(
+            source_kref=source_kref.to_pb(),
+            target_kref=target_kref.to_pb(),
+            link_type_filter=link_type_filter or [],
+            max_depth=max_depth,
+            all_shortest=all_shortest
+        )
+        resp = self.stub.FindShortestPath(req)
+        
+        paths = []
+        for p in resp.paths:
+            steps = [PathStep(
+                version_kref=Kref(s.version_kref.uri),
+                link_type=s.link_type,
+                depth=s.depth
+            ) for s in p.steps]
+            paths.append(VersionPath(steps=steps, total_depth=p.total_depth))
+        
+        return ShortestPathResult(
+            paths=paths,
+            path_exists=resp.path_exists,
+            path_length=resp.path_length
+        )
+
+    def analyze_impact(
+        self,
+        version_kref: Kref,
+        link_type_filter: Optional[List[str]] = None,
+        max_depth: int = 10,
+        limit: int = 100
+    ) -> List['ImpactedVersion']:
+        """Analyze what would be impacted by changes to a version.
+
+        Finds all versions that directly or indirectly depend on the
+        given version.
+
+        Args:
+            version_kref: The version to analyze impact for.
+            link_type_filter: Filter by link types (default: DEPENDS_ON).
+            max_depth: Maximum traversal depth (default: 10).
+            limit: Maximum results (default: 100).
+
+        Returns:
+            List of ImpactedVersion objects.
+        """
+        from .link import ImpactedVersion
+        
+        req = ImpactAnalysisRequest(
+            version_kref=version_kref.to_pb(),
+            link_type_filter=link_type_filter or [],
+            max_depth=max_depth,
+            limit=limit
+        )
+        resp = self.stub.AnalyzeImpact(req)
+        
+        return [
+            ImpactedVersion(
+                version_kref=Kref(iv.version_kref.uri),
+                product_kref=Kref(iv.product_kref.uri) if iv.product_kref.uri else None,
+                impact_depth=iv.impact_depth,
+                impact_path_types=list(iv.impact_path_types)
+            )
+            for iv in resp.impacted_versions
+        ]
+
+    # Collection Methods
+
+    def create_collection(
+        self,
+        parent_path: str,
+        collection_name: str,
+        metadata: Optional[Dict[str, str]] = None
+    ) -> Product:
+        """Create a new collection product.
+
+        Collections are special products that aggregate other products.
+        The ``collection`` product_type is reserved and can only be created
+        through this method (not via :meth:`create_product`).
+
+        Note:
+            This is a low-level client method. Prefer using
+            :meth:`~kumiho.project.Project.create_collection` or
+            :meth:`~kumiho.group.Group.create_collection` for a higher-level API.
+
+        Args:
+            parent_path: The path to the parent group (e.g., ``/project/group``).
+            collection_name: The name of the collection. Must be unique within
+                the parent group.
+            metadata: Optional key-value metadata for the collection.
+
+        Returns:
+            Product: The created Product object with ``product_type='collection'``.
+
+        Raises:
+            grpc.RpcError: If the collection name is already taken or connection fails.
+        """
+        req = CreateCollectionRequest(
+            parent_path=parent_path,
+            collection_name=collection_name,
+            metadata=metadata or {}
+        )
+        resp = self.stub.CreateCollection(req)
+        return Product(resp, self)
+
+    def add_collection_member(
+        self,
+        collection_kref: Kref,
+        member_product_kref: Kref,
+        metadata: Optional[Dict[str, str]] = None
+    ) -> Tuple[bool, str, Optional[Version]]:
+        """Add a product to a collection.
+
+        Creates a new version of the collection to track the change with
+        full audit trail.
+
+        Note:
+            This is a low-level client method. Prefer using
+            :meth:`~kumiho.collection.Collection.add_member` for a higher-level API.
+
+        Args:
+            collection_kref: The kref pointing to the collection product.
+            member_product_kref: The kref pointing to the product to add.
+            metadata: Optional key-value metadata to store in the version.
+
+        Returns:
+            Tuple[bool, str, Optional[Version]]: A tuple containing:
+                - success: Whether the operation succeeded.
+                - message: Status message (e.g., "Added" or error details).
+                - new_version: The new collection version, or None on failure.
+
+        Raises:
+            grpc.RpcError: If the collection or member product is not found.
+        """
+        req = AddCollectionMemberRequest(
+            collection_kref=collection_kref.to_pb(),
+            member_product_kref=member_product_kref.to_pb(),
+            metadata=metadata or {}
+        )
+        resp = self.stub.AddCollectionMember(req)
+        new_version = Version(resp.new_version, self) if resp.new_version else None
+        return resp.success, resp.message, new_version
+
+    def remove_collection_member(
+        self,
+        collection_kref: Kref,
+        member_product_kref: Kref,
+        metadata: Optional[Dict[str, str]] = None
+    ) -> Tuple[bool, str, Optional[Version]]:
+        """Remove a product from a collection.
+
+        Creates a new version of the collection to track the change with
+        full audit trail.
+
+        Note:
+            This is a low-level client method. Prefer using
+            :meth:`~kumiho.collection.Collection.remove_member` for a higher-level API.
+
+        Args:
+            collection_kref: The kref pointing to the collection product.
+            member_product_kref: The kref pointing to the product to remove.
+            metadata: Optional key-value metadata to store in the version.
+
+        Returns:
+            Tuple[bool, str, Optional[Version]]: A tuple containing:
+                - success: Whether the operation succeeded.
+                - message: Status message (e.g., "Removed" or error details).
+                - new_version: The new collection version, or None on failure.
+
+        Raises:
+            grpc.RpcError: If the collection or member product is not found.
+        """
+        req = RemoveCollectionMemberRequest(
+            collection_kref=collection_kref.to_pb(),
+            member_product_kref=member_product_kref.to_pb(),
+            metadata=metadata or {}
+        )
+        resp = self.stub.RemoveCollectionMember(req)
+        new_version = Version(resp.new_version, self) if resp.new_version else None
+        return resp.success, resp.message, new_version
+
+    def get_collection_members(
+        self,
+        collection_kref: Kref,
+        version_number: Optional[int] = None
+    ) -> Tuple[List['CollectionMember'], int, int]:
+        """Get all members of a collection.
+
+        Retrieves the list of products that belong to a collection at
+        a specific version (or the latest version if not specified).
+
+        Note:
+            This is a low-level client method. Prefer using
+            :meth:`~kumiho.collection.Collection.get_members` for a higher-level API.
+
+        Args:
+            collection_kref: The kref pointing to the collection product.
+            version_number: Optional specific version to query. If not provided,
+                returns members from the latest version.
+
+        Returns:
+            Tuple[List[CollectionMember], int, int]: A tuple containing:
+                - members: List of :class:`~kumiho.collection.CollectionMember` objects.
+                - version_number: The version number queried.
+                - total_count: Total number of members.
+
+        Raises:
+            grpc.RpcError: If the collection is not found.
+        """
+        from .collection import CollectionMember
+        
+        req = GetCollectionMembersRequest(
+            collection_kref=collection_kref.to_pb(),
+            version_number=version_number
+        )
+        resp = self.stub.GetCollectionMembers(req)
+        
+        members = [
+            CollectionMember(
+                product_kref=Kref(m.product_kref.uri),
+                added_at=m.added_at,
+                added_by=m.added_by,
+                added_by_username=m.added_by_username,
+                added_in_version=m.added_in_version
+            )
+            for m in resp.members
+        ]
+        return members, resp.version_number, resp.total_count
+
+    def get_collection_history(
+        self,
+        collection_kref: Kref
+    ) -> List['CollectionVersionHistory']:
+        """Get the history of changes to a collection's membership.
+
+        Returns a chronological list of membership changes (adds/removes)
+        with full audit trail including author information and timestamps.
+
+        Note:
+            This is a low-level client method. Prefer using
+            :meth:`~kumiho.collection.Collection.get_history` for a higher-level API.
+
+        Args:
+            collection_kref: The kref pointing to the collection product.
+
+        Returns:
+            List[CollectionVersionHistory]: List of
+                :class:`~kumiho.collection.CollectionVersionHistory` objects
+                documenting each membership change.
+
+        Raises:
+            grpc.RpcError: If the collection is not found.
+        """
+        from .collection import CollectionVersionHistory
+        
+        req = GetCollectionHistoryRequest(
+            collection_kref=collection_kref.to_pb()
+        )
+        resp = self.stub.GetCollectionHistory(req)
+        
+        return [
+            CollectionVersionHistory(
+                version_number=h.version_number,
+                action=h.action,
+                member_product_kref=Kref(h.member_product_kref.uri) if h.member_product_kref.uri else None,
+                author=h.author,
+                username=h.username,
+                created_at=h.created_at,
+                metadata=dict(h.metadata)
+            )
+            for h in resp.history
+        ]
 
     # Event Streaming
     def event_stream(self, routing_key_filter: str = "", kref_filter: str = "") -> Iterator[Event]:

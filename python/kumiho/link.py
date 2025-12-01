@@ -194,3 +194,183 @@ class Link(KumihoObject):
             >>> link.delete()  # Remove the relationship
         """
         self._client.delete_link(self.source_kref, self.target_kref, self.link_type)
+
+
+# --- Graph Traversal Result Classes ---
+
+from dataclasses import dataclass, field
+from typing import List
+
+
+@dataclass
+class PathStep:
+    """A single step in a traversal path.
+
+    Represents one hop in a graph traversal, including the version
+    reached and the link type used to reach it.
+
+    Attributes:
+        version_kref (Kref): The version at this step.
+        link_type (str): The relationship type used to reach this version.
+        depth (int): Distance from the origin (0 = origin).
+
+    Example::
+
+        for step in path.steps:
+            print(f"Step {step.depth}: {step.version_kref} via {step.link_type}")
+    """
+    version_kref: Kref
+    link_type: str
+    depth: int
+
+
+@dataclass
+class VersionPath:
+    """A complete path between versions.
+
+    Represents a sequence of steps from one version to another,
+    used in traversal and shortest-path queries.
+
+    Attributes:
+        steps (List[PathStep]): The sequence of steps in the path.
+        total_depth (int): Total length of the path.
+
+    Example::
+
+        path = source_version.find_path_to(target_version)
+        if path:
+            print(f"Path length: {path.total_depth}")
+            for step in path.steps:
+                print(f"  -> {step.version_kref}")
+    """
+    steps: List[PathStep] = field(default_factory=list)
+    total_depth: int = 0
+
+
+@dataclass
+class ImpactedVersion:
+    """A version impacted by changes to another version.
+
+    Represents a version that directly or indirectly depends on
+    a target version, used in impact analysis.
+
+    Attributes:
+        version_kref (Kref): The impacted version.
+        product_kref (Kref): The product containing the impacted version.
+        impact_depth (int): How many hops away from the target.
+        impact_path_types (List[str]): Link types in the impact chain.
+
+    Example::
+
+        impact = texture_v1.analyze_impact()
+        for iv in impact:
+            print(f"{iv.version_kref} at depth {iv.impact_depth}")
+    """
+    version_kref: Kref
+    product_kref: Optional[Kref] = None
+    impact_depth: int = 0
+    impact_path_types: List[str] = field(default_factory=list)
+
+
+class TraversalResult:
+    """Result of a graph traversal query.
+
+    Contains all versions discovered during a multi-hop traversal,
+    along with optional path information.
+
+    Attributes:
+        version_krefs (List[Kref]): Flat list of discovered version references.
+        paths (List[VersionPath]): Path information if requested.
+        links (List[Link]): All traversed links.
+        total_count (int): Total number of discovered versions.
+        truncated (bool): True if results were limited by max_depth or limit.
+
+    Example::
+
+        # Get all transitive dependencies
+        result = version.get_all_dependencies(max_depth=5)
+        
+        print(f"Found {result.total_count} dependencies")
+        if result.truncated:
+            print("Results were truncated")
+        
+        for kref in result.version_krefs:
+            print(f"  - {kref}")
+    """
+
+    def __init__(
+        self,
+        version_krefs: List[Kref],
+        paths: List[VersionPath],
+        links: List['Link'],
+        total_count: int,
+        truncated: bool,
+        client: '_Client'
+    ) -> None:
+        self.version_krefs = version_krefs
+        self.paths = paths
+        self.links = links
+        self.total_count = total_count
+        self.truncated = truncated
+        self._client = client
+
+    def __repr__(self) -> str:
+        return f"<TraversalResult count={self.total_count} truncated={self.truncated}>"
+
+    def get_versions(self) -> List['Version']:
+        """Fetch full Version objects for all discovered versions.
+
+        Returns:
+            List[Version]: List of Version objects.
+
+        Example::
+
+            result = version.get_all_dependencies()
+            for v in result.get_versions():
+                print(f"{v.kref} - {v.metadata}")
+        """
+        from .version import Version
+        return [self._client.get_version(kref) for kref in self.version_krefs]
+
+
+class ShortestPathResult:
+    """Result of a shortest path query.
+
+    Contains path(s) between two versions if found.
+
+    Attributes:
+        paths (List[VersionPath]): One or more shortest paths found.
+        path_exists (bool): True if any path was found.
+        path_length (int): Length of the shortest path(s).
+
+    Example::
+
+        result = source_version.find_path_to(target_version)
+        if result.path_exists:
+            print(f"Found path of length {result.path_length}")
+            for path in result.paths:
+                for step in path.steps:
+                    print(f"  {step.depth}: {step.version_kref}")
+    """
+
+    def __init__(
+        self,
+        paths: List[VersionPath],
+        path_exists: bool,
+        path_length: int
+    ) -> None:
+        self.paths = paths
+        self.path_exists = path_exists
+        self.path_length = path_length
+
+    def __repr__(self) -> str:
+        return f"<ShortestPathResult exists={self.path_exists} length={self.path_length}>"
+
+    @property
+    def first_path(self) -> Optional[VersionPath]:
+        """Get the first (or only) shortest path.
+
+        Returns:
+            VersionPath if a path exists, None otherwise.
+        """
+        return self.paths[0] if self.paths else None

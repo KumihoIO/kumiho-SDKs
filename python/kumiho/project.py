@@ -24,7 +24,7 @@ Example:
             print(group.path)
 """
 
-from typing import TYPE_CHECKING, List, Optional
+from typing import TYPE_CHECKING, Dict, List, Optional
 
 from .base import KumihoObject
 from .group import Group
@@ -32,6 +32,7 @@ from .proto.kumiho_pb2 import ProjectResponse
 
 if TYPE_CHECKING:
     from .client import _Client
+    from .collection import Collection
 
 
 class Project(KumihoObject):
@@ -123,6 +124,61 @@ class Project(KumihoObject):
         """
         base_parent = parent_path or f"/{self.name}"
         return self._client.create_group(parent_path=base_parent, group_name=name)
+
+    def create_collection(
+        self,
+        collection_name: str,
+        parent_path: Optional[str] = None,
+        metadata: Optional[Dict[str, str]] = None
+    ) -> 'Collection':
+        """Create a new collection within this project.
+
+        Collections are special products that aggregate other products.
+        They provide a way to group related products together and maintain
+        an audit trail of membership changes through version history.
+
+        Args:
+            collection_name: The name of the collection. Must be unique within
+                the parent group.
+            parent_path: Optional parent path for the collection. If not provided,
+                creates the collection at the project root (``/{project_name}``).
+            metadata: Optional key-value metadata for the collection.
+
+        Returns:
+            Collection: The newly created Collection object with type "collection".
+
+        Raises:
+            grpc.RpcError: If the collection name is already taken or if there
+                is a connection error.
+
+        See Also:
+            :class:`~kumiho.collection.Collection`: The Collection class.
+            :meth:`~kumiho.group.Group.create_collection`: Create collection in a group.
+
+        Example::
+
+            >>> project = kumiho.get_project("film-2024")
+            >>> # Create at project root
+            >>> bundle = project.create_collection("release-bundle")
+            >>>
+            >>> # Create in specific group
+            >>> bundle = project.create_collection(
+            ...     "character-bundle",
+            ...     parent_path="/film-2024/assets"
+            ... )
+            >>>
+            >>> # Add products to the collection
+            >>> hero = project.get_group("models").get_product("hero", "model")
+            >>> bundle.add_member(hero)
+        """
+        from .collection import Collection
+        base_parent = parent_path or f"/{self.name}"
+        product = self._client.create_collection(
+            parent_path=base_parent,
+            collection_name=collection_name,
+            metadata=metadata
+        )
+        return Collection(product._pb, self._client)
 
     def delete(self, force: bool = False):
         """Delete or deprecate this project.

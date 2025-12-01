@@ -162,6 +162,42 @@ link = version.create_link(
 - `kumiho.REFERENCED`: This version references the target
 - `kumiho.CONTAINS`: This version contains the target
 
+### Collection
+
+A **Collection** is a special product type that aggregates other products. Collections are useful for bundling related assets together (e.g., a character bundle with model, textures, and rig) with full version-based audit trail of membership changes.
+
+```python
+# Create a collection via Project or Group
+bundle = project.create_collection("release-bundle")
+
+# Or from a group
+assets = project.get_group("assets")
+char_bundle = assets.create_collection("character-bundle")
+
+# Add products to the collection
+hero_model = assets.get_product("hero", "model")
+hero_rig = assets.get_product("hero", "rig")
+bundle.add_member(hero_model)
+bundle.add_member(hero_rig)
+
+# Get current members
+members = bundle.get_members()
+for member in members:
+    print(f"  {member.product_kref}")
+
+# View change history (audit trail)
+history = bundle.get_history()
+for entry in history:
+    print(f"v{entry.version_number}: {entry.action} {entry.member_product_kref}")
+```
+
+**Key characteristics:**
+- Collections use the reserved product type `"collection"` 
+- Cannot be created via `create_product()` (use `create_collection()`)
+- Each membership change (add/remove) creates a new collection version
+- Full audit trail: who added/removed what product and when
+- Can query members at any specific version in history
+
 ## Metadata
 
 All node types support custom metadata as key-value string pairs. Metadata can be set during creation (where supported) or updated afterward.

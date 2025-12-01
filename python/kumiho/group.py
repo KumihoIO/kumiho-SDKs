@@ -33,6 +33,7 @@ from .product import Product
 
 if TYPE_CHECKING:
     from .client import _Client
+    from .collection import Collection
     from .project import Project
 
 
@@ -174,6 +175,51 @@ class Group(KumihoObject):
             >>> wood = textures.create_product("oak-wood", "texture")
         """
         return self._client.create_product(self.path, product_name, product_type)
+
+    def create_collection(
+        self,
+        collection_name: str,
+        metadata: Optional[Dict[str, str]] = None
+    ) -> 'Collection':
+        """Create a new collection within this group.
+
+        Collections are special products that aggregate other products.
+        They provide a way to group related products together and maintain
+        an audit trail of membership changes through version history.
+
+        Args:
+            collection_name: The name of the collection. Must be unique within
+                the group.
+            metadata: Optional key-value metadata for the collection.
+
+        Returns:
+            Collection: The newly created Collection object with type "collection".
+
+        Raises:
+            grpc.RpcError: If the collection name is already taken or if there
+                is a connection error.
+
+        See Also:
+            :class:`~kumiho.collection.Collection`: The Collection class.
+            :meth:`~kumiho.project.Project.create_collection`: Create collection in a project.
+
+        Example::
+
+            >>> # Create a collection for a character bundle
+            >>> assets = project.get_group("assets")
+            >>> bundle = assets.create_collection("character-bundle")
+            >>>
+            >>> # Add products to the collection
+            >>> hero = assets.get_product("hero", "model")
+            >>> bundle.add_member(hero)
+        """
+        from .collection import Collection
+        product = self._client.create_collection(
+            parent_path=self.path,
+            collection_name=collection_name,
+            metadata=metadata
+        )
+        return Collection(product._pb, self._client)
 
     def get_products(
         self,

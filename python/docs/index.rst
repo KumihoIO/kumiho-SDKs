@@ -111,6 +111,7 @@ Contents
    api/project
    api/group
    api/product
+   api/collection
    api/version
    api/resource
    api/link
