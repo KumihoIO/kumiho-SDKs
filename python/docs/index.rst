@@ -17,7 +17,7 @@ Kumiho Python SDK
    :target: https://kumiho.readthedocs.io/en/latest/?badge=latest
    :alt: Documentation Status
 
-Kumiho is a Python SDK for `Kumiho Cloud <https://kumiho.cloud>`_, a graph-native
+Kumiho is a Python SDK for `Kumiho Cloud <https://kumiho.io>`_, a graph-native
 creative and AI asset management platform designed for VFX, animation, and
 AI-driven workflows.
 
