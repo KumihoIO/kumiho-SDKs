@@ -63,9 +63,10 @@ autodoc_default_options = {
 autodoc_typehints = "description"
 autodoc_class_signature = "separated"
 
-# Note: Some "duplicate object description" warnings are expected when
-# automodule processes re-exported symbols from __init__.py. These are
-# harmless and don't affect the generated documentation.
+# Suppress duplicate object warnings for re-exported symbols in __init__.py
+# These occur because classes/functions are documented in both their source
+# module and in the main kumiho namespace (via re-export in __init__.py)
+suppress_warnings = ["autodoc.duplicate_object"]
 
 # Autosummary settings
 autosummary_generate = True
