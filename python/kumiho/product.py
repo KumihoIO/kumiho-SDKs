@@ -1,8 +1,35 @@
-"""Product-related classes and functionality."""
+"""Product module for Kumiho asset management.
+
+This module provides the :class:`Product` class, which represents a versioned
+asset in the Kumiho system. Products are the core entities that get versioned,
+and each version can have multiple resources (file references).
+
+Example:
+    Working with products and versions::
+
+        import kumiho
+
+        # Get a product
+        product = kumiho.get_product("kref://my-project/models/hero.model")
+
+        # Create a new version
+        v1 = product.create_version(metadata={"artist": "john"})
+
+        # Add resources to the version
+        v1.create_resource("mesh", "/assets/hero_v1.fbx")
+        v1.create_resource("rig", "/assets/hero_v1_rig.fbx")
+
+        # Tag the version
+        v1.tag("approved")
+
+        # Get all versions
+        for version in product.get_versions():
+            print(f"v{version.number}: {version.tags}")
+"""
 
 import grpc
 from datetime import datetime
-from typing import Dict, List, Optional, Union, TYPE_CHECKING
+from typing import TYPE_CHECKING, Dict, List, Optional, Union
 
 from .base import KumihoObject
 from .kref import Kref
@@ -16,21 +43,53 @@ if TYPE_CHECKING:
 
 
 class Product(KumihoObject):
-    """A high-level object representing a Kumiho product.
+    """A versioned asset in the Kumiho system.
 
-    A Product represents a specific asset or item within a group that can have
-    multiple versions. Products are the core entities that get versioned.
+    Products represent assets that can have multiple versions, such as 3D models,
+    textures, workflows, or any other type of creative content. Each product
+    belongs to a group and is identified by a combination of name and type.
+
+    The product's kref (Kumiho Reference) is a URI that uniquely identifies it:
+    ``kref://project/group/product.type``
 
     Attributes:
-        kref (Kref): The unique reference for this product.
-        name (str): The name of the product.
-        product_name (str): The product name.
-        product_type (str): The type of the product (e.g., "model", "texture").
-        created_at (Optional[datetime]): When the product was created.
-        author (str): The user who created the product.
-        metadata (Dict[str, str]): Custom metadata associated with the product.
+        kref (Kref): The unique reference URI for this product.
+        name (str): The full name including type (e.g., "hero.model").
+        product_name (str): The base name of the product (e.g., "hero").
+        product_type (str): The type of product (e.g., "model", "texture").
+        created_at (Optional[str]): ISO timestamp when the product was created.
+        author (str): The user ID who created the product.
+        metadata (Dict[str, str]): Custom metadata key-value pairs.
         deprecated (bool): Whether the product is deprecated.
-        username (str): The username of the creator.
+        username (str): Display name of the creator.
+
+    Example:
+        Basic product operations::
+
+            import kumiho
+
+            # Get product by kref
+            product = kumiho.get_product("kref://film/chars/hero.model")
+
+            # Create versions
+            v1 = product.create_version()
+            v2 = product.create_version(metadata={"notes": "Updated mesh"})
+
+            # Get specific version
+            v1 = product.get_version(1)
+            latest = product.get_latest_version()
+
+            # Get version by tag
+            approved = product.get_version_by_tag("approved")
+
+            # Get version at a specific time
+            historical = product.get_version_by_time("202312011200")
+
+            # Set metadata
+            product.set_metadata({"status": "final", "priority": "high"})
+
+            # Deprecate the product
+            product.set_deprecated(True)
     """
 
     def __init__(self, pb_product: ProductResponse, client: '_Client') -> None:
@@ -38,7 +97,7 @@ class Product(KumihoObject):
 
         Args:
             pb_product: The protobuf ProductResponse message.
-            client: The client instance for API calls.
+            client: The client instance for making API calls.
         """
         super().__init__(client)
         self.kref = Kref(pb_product.kref.uri)
@@ -60,14 +119,27 @@ class Product(KumihoObject):
         metadata: Optional[Dict[str, str]] = None,
         number: int = 0
     ) -> Version:
-        """Create a new version for this product.
+        """Create a new version of this product.
+
+        Versions are automatically numbered sequentially. Each version starts
+        with the "latest" tag, which moves to the newest version.
 
         Args:
-            metadata: Optional metadata for the version.
-            number: Specific version number to use (0 for auto-increment).
+            metadata: Optional metadata for the version (e.g., artist notes,
+                render settings, software versions).
+            number: Specific version number to use. If 0 (default), auto-assigns
+                the next available number.
 
         Returns:
-            The newly created Version object.
+            Version: The newly created Version object.
+
+        Example:
+            >>> # Auto-numbered version
+            >>> v1 = product.create_version()
+            >>> v2 = product.create_version(metadata={"artist": "jane"})
+
+            >>> # Specific version number (use with caution)
+            >>> v5 = product.create_version(number=5)
         """
         return self._client.create_version(self.kref, metadata, number)
 
@@ -75,7 +147,12 @@ class Product(KumihoObject):
         """Get all versions of this product.
 
         Returns:
-            A list of Version objects for this product.
+            List[Version]: A list of Version objects, ordered by version number.
+
+        Example:
+            >>> versions = product.get_versions()
+            >>> for v in versions:
+            ...     print(f"v{v.number}: created {v.created_at}")
         """
         return self._client.get_versions(self.kref)
 
@@ -83,10 +160,15 @@ class Product(KumihoObject):
         """Get a specific version by its number.
 
         Args:
-            version_number: The version number to retrieve.
+            version_number: The version number to retrieve (1-based).
 
         Returns:
-            The Version object if found, None otherwise.
+            Optional[Version]: The Version object if found, None otherwise.
+
+        Example:
+            >>> v3 = product.get_version(3)
+            >>> if v3:
+            ...     resources = v3.get_resources()
         """
         kref_uri = f"{self.kref.uri}?v={version_number}"
         return self._client.get_version(kref_uri)
@@ -94,8 +176,17 @@ class Product(KumihoObject):
     def get_latest_version(self) -> Optional[Version]:
         """Get the latest version of this product.
 
+        The latest version is the one with the "latest" tag, or if none
+        exists, the version with the highest number.
+
         Returns:
-            The latest Version object, or None if no versions exist.
+            Optional[Version]: The latest Version object, or None if no
+                versions exist.
+
+        Example:
+            >>> latest = product.get_latest_version()
+            >>> if latest:
+            ...     print(f"Latest: v{latest.number}")
         """
         versions = self.get_versions()
         if not versions:
@@ -107,10 +198,15 @@ class Product(KumihoObject):
         return max(versions, key=lambda v: v.number)
 
     def get_group(self) -> 'Group':
-        """Get the leaf group that contains this product.
+        """Get the group that contains this product.
 
         Returns:
-            The Group object that contains this product.
+            Group: The parent Group object.
+
+        Example:
+            >>> product = kumiho.get_product("kref://project/chars/hero.model")
+            >>> group = product.get_group()
+            >>> print(group.path)  # "/project/chars"
         """
         group_path = f"/{self.kref.get_group()}"
         return self._client.get_group(group_path)
@@ -119,23 +215,29 @@ class Product(KumihoObject):
         """Get the project that contains this product.
 
         Returns:
-            The Project object.
+            Project: The parent Project object.
+
+        Example:
+            >>> project = product.get_project()
+            >>> print(project.name)
         """
-        # Parse project name from kref (assuming kref://project/...)
-        # or use get_group().get_project()
-        # Kref format: kref://project/group/product.type
-        # But get_group() returns the leaf group.
-        # We can traverse up via get_group().
         return self.get_group().get_project()
 
     def get_version_by_tag(self, tag: str) -> Optional[Version]:
         """Get a version by its tag.
 
+        Common tags include "latest", "published", "approved", etc.
+        Custom tags can be applied to versions using :meth:`Version.tag`.
+
         Args:
             tag: The tag to search for.
 
         Returns:
-            The Version object if found, None otherwise.
+            Optional[Version]: The Version object if found, None otherwise.
+
+        Example:
+            >>> approved = product.get_version_by_tag("approved")
+            >>> published = product.get_version_by_tag("published")
         """
         request = ResolveKrefRequest(kref=self.kref.uri, tag=tag)
         try:
@@ -147,13 +249,31 @@ class Product(KumihoObject):
             raise
 
     def get_version_by_time(self, time: Union[str, datetime]) -> Optional[Version]:
-        """Get a version by time.
+        """Get the version that was active at a specific time.
+
+        This finds the version that was tagged as "latest" at the given
+        time, useful for historical queries and reproducing past states.
 
         Args:
-            time: The time as a datetime object or string in YYYYMMDDHHMM format or RFC3339 format.
+            time: The time as a datetime object, or a string in either
+                YYYYMMDDHHMM format (e.g., "202312251430") or RFC3339
+                format (e.g., "2023-12-25T14:30:00Z").
 
         Returns:
-            The Version object if found, None otherwise.
+            Optional[Version]: The Version that was current at that time,
+                or None if not found.
+
+        Example:
+            >>> from datetime import datetime
+
+            >>> # Using datetime object
+            >>> v = product.get_version_by_time(datetime(2023, 12, 25, 14, 30))
+
+            >>> # Using string format
+            >>> v = product.get_version_by_time("202312251430")
+
+            >>> # Using RFC3339 format
+            >>> v = product.get_version_by_time("2023-12-25T14:30:00Z")
         """
         if isinstance(time, datetime):
             time_str = time.strftime("%Y%m%d%H%M")
@@ -180,36 +300,71 @@ class Product(KumihoObject):
     def peek_next_version(self) -> int:
         """Get the next version number that would be assigned.
 
+        This is useful for previewing version numbers before creating
+        versions, such as for naming files or planning workflows.
+
         Returns:
-            The next version number.
+            int: The next version number.
+
+        Example:
+            >>> next_num = product.peek_next_version()
+            >>> print(f"Next version will be v{next_num}")
         """
         return self._client.peek_next_version(self.kref)
 
     def set_metadata(self, metadata: Dict[str, str]) -> 'Product':
-        """Set or update the metadata for this product.
+        """Set or update metadata for this product.
+
+        Metadata is merged with existing metadata—existing keys are
+        overwritten and new keys are added.
 
         Args:
             metadata: Dictionary of metadata key-value pairs.
 
         Returns:
-            The updated Product object.
+            Product: The updated Product object.
+
+        Example:
+            >>> product.set_metadata({
+            ...     "status": "final",
+            ...     "department": "modeling",
+            ...     "complexity": "high"
+            ... })
         """
         return self._client.update_product_metadata(self.kref, metadata)
 
     def delete(self, force: bool = False) -> None:
-        """Delete the product.
+        """Delete this product.
 
         Args:
-            force: If True, force deletion even if it has versions.
-                  Requires appropriate permissions.
+            force: If True, permanently delete the product and all its
+                versions. If False (default), deletion may fail if the
+                product has versions.
+
+        Raises:
+            grpc.RpcError: If deletion fails.
+
+        Example:
+            >>> # Delete product (fails if has versions)
+            >>> product.delete()
+
+            >>> # Force delete with all versions
+            >>> product.delete(force=True)
         """
         self._client.delete_product(self.kref, force)
 
     def set_deprecated(self, status: bool) -> None:
-        """Set the deprecated status of the product.
+        """Set the deprecated status of this product.
+
+        Deprecated products are hidden from default searches but remain
+        accessible for historical reference.
 
         Args:
-            status: True to deprecate, False to un-deprecate.
+            status: True to deprecate, False to restore.
+
+        Example:
+            >>> product.set_deprecated(True)  # Hide from searches
+            >>> product.set_deprecated(False)  # Restore visibility
         """
         self._client.set_deprecated(self.kref, status)
         self.deprecated = status

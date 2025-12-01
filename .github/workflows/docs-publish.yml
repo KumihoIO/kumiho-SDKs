@@ -1,0 +1,277 @@
+# Kumiho Python SDK - Documentation & PyPI Publishing Workflow
+#
+# This workflow:
+# 1. Builds Sphinx documentation with version from kumiho.__version__
+# 2. Deploys documentation to GitHub Pages
+# 3. Publishes package to PyPI (on release tags)
+
+name: Docs & Publish
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'python/**'
+      - 'docs/**'
+      - '.github/workflows/docs-publish.yml'
+    tags:
+      - 'v*'  # Trigger on version tags like v0.3.0
+  pull_request:
+    branches:
+      - main
+    paths:
+      - 'python/**'
+      - 'docs/**'
+  workflow_dispatch:  # Allow manual trigger
+
+# Sets permissions of the GITHUB_TOKEN to allow deployment to GitHub Pages
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Allow only one concurrent deployment
+concurrency:
+  group: "pages"
+  cancel-in-progress: false
+
+env:
+  PYTHON_VERSION: "3.11"
+
+jobs:
+  # ===========================================================================
+  # Build Documentation
+  # ===========================================================================
+  build-docs:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: python
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+          cache-dependency-path: python/requirements.txt
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install -r docs/requirements.txt
+
+      - name: Extract version from kumiho package
+        id: get_version
+        run: |
+          VERSION=$(python -c "import kumiho; print(kumiho.__version__)")
+          echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
+          echo "📦 Building docs for Kumiho Python SDK v$VERSION"
+
+      - name: Update conf.py with version
+        run: |
+          # Ensure conf.py uses the package version dynamically
+          cd docs
+          python -c "
+          import sys
+          sys.path.insert(0, '..')
+          import kumiho
+          print(f'Documentation version: {kumiho.__version__}')
+          "
+
+      - name: Build Sphinx documentation
+        run: |
+          cd docs
+          make html SPHINXOPTS="-W --keep-going"
+        env:
+          SPHINXBUILD: sphinx-build
+
+      - name: Add version badge to index
+        run: |
+          VERSION=${{ steps.get_version.outputs.VERSION }}
+          # Add a version indicator to the built docs
+          echo "Kumiho Python SDK v$VERSION" > docs/_build/html/VERSION.txt
+
+      - name: Upload documentation artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: python/docs/_build/html
+
+      - name: Upload docs for other jobs
+        uses: actions/upload-artifact@v4
+        with:
+          name: sphinx-docs
+          path: python/docs/_build/html
+          retention-days: 7
+
+    outputs:
+      version: ${{ steps.get_version.outputs.VERSION }}
+
+  # ===========================================================================
+  # Deploy Documentation to GitHub Pages
+  # ===========================================================================
+  deploy-docs:
+    needs: build-docs
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
+
+  # ===========================================================================
+  # Build & Publish to PyPI
+  # ===========================================================================
+  # publish-pypi:
+  #   needs: build-docs
+  #   # Only publish on version tags
+  #   if: startsWith(github.ref, 'refs/tags/v')
+  #   runs-on: ubuntu-latest
+  #   defaults:
+  #     run:
+  #       working-directory: python
+
+  #   environment:
+  #     name: pypi
+  #     url: https://pypi.org/project/kumiho/
+
+  #   steps:
+  #     - name: Checkout repository
+  #       uses: actions/checkout@v4
+
+  #     - name: Set up Python
+  #       uses: actions/setup-python@v5
+  #       with:
+  #         python-version: ${{ env.PYTHON_VERSION }}
+
+  #     - name: Install build dependencies
+  #       run: |
+  #         python -m pip install --upgrade pip
+  #         pip install build twine
+
+  #     - name: Verify version matches tag
+  #       run: |
+  #         TAG_VERSION="${GITHUB_REF#refs/tags/v}"
+  #         PKG_VERSION=$(python -c "import kumiho; print(kumiho.__version__)")
+  #         echo "Tag version: $TAG_VERSION"
+  #         echo "Package version: $PKG_VERSION"
+  #         if [ "$TAG_VERSION" != "$PKG_VERSION" ]; then
+  #           echo "❌ Version mismatch! Tag: $TAG_VERSION, Package: $PKG_VERSION"
+  #           exit 1
+  #         fi
+  #         echo "✅ Version verified: $PKG_VERSION"
+
+  #     - name: Build package
+  #       run: python -m build
+
+  #     - name: Check package
+  #       run: twine check dist/*
+
+      # =======================================================================
+      # PLACEHOLDER: PyPI Publishing
+      # =======================================================================
+      # To enable PyPI publishing:
+      # 1. Create a PyPI account at https://pypi.org
+      # 2. Create a new API token at https://pypi.org/manage/account/token/
+      # 3. Add the token as a GitHub secret named PYPI_API_TOKEN
+      # 4. Uncomment the step below
+      #
+      # For trusted publishing (recommended):
+      # 1. Go to https://pypi.org/manage/project/kumiho/settings/publishing/
+      # 2. Add a new publisher with:
+      #    - Owner: kumihoclouds
+      #    - Repository: kumiho-python
+      #    - Workflow: docs-publish.yml
+      #    - Environment: pypi
+      # 3. Uncomment the trusted publishing step below instead
+      # =======================================================================
+
+      # - name: Publish to PyPI (placeholder)
+      #   run: |
+      #     echo "📦 Package built successfully!"
+      #     echo "📁 Distribution files:"
+      #     ls -la dist/
+      #     echo ""
+      #     echo "🚧 PyPI publishing is not yet configured."
+      #     echo "See workflow comments for setup instructions."
+
+      # Uncomment this for API token authentication:
+      # - name: Publish to PyPI
+      #   env:
+      #     TWINE_USERNAME: __token__
+      #     TWINE_PASSWORD: ${{ secrets.PYPI_API_TOKEN }}
+      #   run: twine upload dist/*
+
+      # Uncomment this for trusted publishing (recommended):
+      # - name: Publish to PyPI (Trusted Publisher)
+      #   uses: pypa/gh-action-pypi-publish@release/v1
+      #   with:
+      #     packages-dir: python/dist/
+
+  # ===========================================================================
+  # Publish to Test PyPI (for testing releases)
+  # ===========================================================================
+  # publish-test-pypi:
+  #   needs: build-docs
+  #   # Publish to TestPyPI on main branch pushes for testing
+  #   if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+  #   runs-on: ubuntu-latest
+  #   defaults:
+  #     run:
+  #       working-directory: python
+
+  #   environment:
+  #     name: testpypi
+  #     url: https://test.pypi.org/project/kumiho/
+
+  #   steps:
+  #     - name: Checkout repository
+  #       uses: actions/checkout@v4
+
+  #     - name: Set up Python
+  #       uses: actions/setup-python@v5
+  #       with:
+  #         python-version: ${{ env.PYTHON_VERSION }}
+
+  #     - name: Install build dependencies
+  #       run: |
+  #         python -m pip install --upgrade pip
+  #         pip install build twine
+
+  #     - name: Build package
+  #       run: python -m build
+
+      # =======================================================================
+      # PLACEHOLDER: Test PyPI Publishing
+      # =======================================================================
+      # To enable Test PyPI publishing:
+      # 1. Create a Test PyPI account at https://test.pypi.org
+      # 2. Create a new API token
+      # 3. Add the token as a GitHub secret named TEST_PYPI_API_TOKEN
+      # 4. Uncomment the step below
+      # =======================================================================
+
+      # - name: Publish to Test PyPI (placeholder)
+      #   run: |
+      #     echo "📦 Package built successfully for Test PyPI!"
+      #     echo "📁 Distribution files:"
+      #     ls -la dist/
+      #     echo ""
+      #     echo "🚧 Test PyPI publishing is not yet configured."
+      #     echo "See workflow comments for setup instructions."
+
+      # Uncomment this for Test PyPI publishing:
+      # - name: Publish to Test PyPI
+      #   env:
+      #     TWINE_USERNAME: __token__
+      #     TWINE_PASSWORD: ${{ secrets.TEST_PYPI_API_TOKEN }}
+      #   run: twine upload --repository testpypi dist/*

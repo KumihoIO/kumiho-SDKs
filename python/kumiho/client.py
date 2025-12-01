@@ -1,4 +1,41 @@
-"""Low-level client for interacting with the Kumiho gRPC service."""
+"""Low-level gRPC client for the Kumiho Cloud service.
+
+This module provides the internal ``_Client`` class that handles all gRPC
+communication with Kumiho Cloud servers. It manages:
+
+- Connection establishment (TLS/insecure, target resolution)
+- Authentication (Bearer token injection)
+- Discovery-based tenant routing
+- All gRPC method calls
+
+The ``_Client`` class is not intended to be used directly by end users.
+Instead, use the high-level functions and classes exposed by the ``kumiho``
+package, such as :func:`kumiho.connect`, :class:`kumiho.Project`, etc.
+
+Example:
+    Internal usage (not recommended for end users)::
+
+        from kumiho.client import _Client
+
+        client = _Client(target="us-central.kumiho.cloud:443")
+        group = client.create_group(project_kref, "my-group")
+
+    Preferred high-level usage::
+
+        import kumiho
+
+        kumiho.connect()
+        project = kumiho.create_project(name="my-project")
+
+Attributes:
+    _LOGGER: Module-level logger for client operations.
+    _DISCOVERY_DISABLE_ENV: Environment variable to disable auto-discovery.
+    _FORCE_REFRESH_ENV: Environment variable to force discovery cache refresh.
+
+Note:
+    This module is considered internal API. The public interface may change
+    between minor versions. Use the ``kumiho`` package-level API instead.
+"""
 
 import logging
 import os
@@ -73,14 +110,42 @@ _FORCE_REFRESH_ENV = "KUMIHO_FORCE_DISCOVERY_REFRESH"
 
 
 class _Client:
-    """Low-level client for interacting with the Kumiho gRPC service.
+    """Low-level gRPC client for interacting with the Kumiho Cloud service.
 
-    This client provides direct access to all Kumiho gRPC endpoints.
-    For higher-level operations, use the classes in the kumiho module.
+    This client provides direct access to all Kumiho gRPC endpoints for
+    managing projects, groups, products, versions, resources, and links.
+    It handles connection management, authentication, and discovery-based
+    tenant routing automatically.
+
+    The client is typically not instantiated directly. Instead, use
+    :func:`kumiho.connect` which manages a context-variable-scoped client
+    instance.
 
     Attributes:
-        channel: The gRPC channel to the server.
-        stub: The gRPC stub for making service calls.
+        channel (grpc.Channel): The gRPC channel to the Kumiho server.
+        stub (KumihoGraphStub): The gRPC stub for making service calls.
+
+    Example:
+        Using the client directly (not recommended)::
+
+            from kumiho.client import _Client
+
+            client = _Client(
+                target="us-central.kumiho.cloud:443",
+                auth_token="eyJhbG..."
+            )
+            projects = client.get_projects()
+
+        Using via kumiho.connect (recommended)::
+
+            import kumiho
+
+            kumiho.connect()
+            projects = kumiho.list_projects()
+
+    Note:
+        This class is considered internal API. Use the public ``kumiho``
+        module functions instead for stable interfaces.
     """
 
     def __init__(
@@ -94,20 +159,59 @@ class _Client:
         force_discovery_refresh: Optional[bool] = None,
         enable_auto_login: bool = True,
     ) -> None:
-        """Initialize the client with a target server address.
+        """Initialize the gRPC client with connection and authentication settings.
+
+        The client resolves the target server using the following priority:
+
+        1. Explicit ``target`` parameter
+        2. Discovery endpoint (if enabled and token available)
+        3. ``KUMIHO_SERVER_ENDPOINT`` environment variable
+        4. ``KUMIHO_SERVER_ADDRESS`` environment variable (legacy)
+        5. ``localhost:8080`` (default for local development)
 
         Args:
-            target: Server endpoint. Accepts `host:port`, `https://host`, or
-                `grpcs://host:port`. If None, consults the following in order:
-                1. ``KUMIHO_SERVER_ENDPOINT``
-                2. ``KUMIHO_SERVER_ADDRESS`` (legacy name)
-                3. ``localhost:8080``
-            auth_token: Optional bearer token that will be sent as
-                ``Authorization: Bearer <token>`` on every RPC. Falls back to
-                ``KUMIHO_AUTH_TOKEN`` or the helper token file written by
-                ``kumiho.auth_cli`` when not provided.
-            default_metadata: Optional additional metadata to attach to all
+            target: Server endpoint. Accepts formats:
+
+                - ``host:port`` — plain gRPC
+                - ``https://host`` — secure gRPC on port 443
+                - ``grpcs://host:port`` — secure gRPC on custom port
+
+                If None, the client attempts discovery or falls back to
+                environment variables.
+            auth_token: Bearer token for authentication. Sent as
+                ``Authorization: Bearer <token>`` on every RPC. If not
+                provided, falls back to:
+
+                - ``KUMIHO_AUTH_TOKEN`` environment variable
+                - Token file from ``kumiho-auth`` CLI cache
+            default_metadata: Additional gRPC metadata to attach to all
                 outbound RPCs. Each entry is a ``(key, value)`` tuple.
+            use_discovery: Whether to use the discovery endpoint for
+                tenant routing. Defaults to True unless disabled via
+                ``KUMIHO_DISABLE_AUTO_DISCOVERY=true``.
+            tenant_hint: Optional tenant ID hint for discovery or direct
+                tenant header injection when discovery is disabled.
+            force_discovery_refresh: Force refresh of discovery cache.
+                Overrides ``KUMIHO_FORCE_DISCOVERY_REFRESH`` env var.
+            enable_auto_login: Whether to enable auto-login when no
+                credentials are available. Defaults to True.
+
+        Raises:
+            grpc.RpcError: If the connection cannot be established.
+            DiscoveryError: If discovery fails and no fallback is available.
+
+        Example:
+            Basic initialization::
+
+                client = _Client()  # Uses defaults
+
+            With explicit settings::
+
+                client = _Client(
+                    target="us-central.kumiho.cloud:443",
+                    auth_token="eyJhbG...",
+                    default_metadata=[("x-custom-header", "value")]
+                )
         """
         metadata: List[Tuple[str, str]] = list(default_metadata or [])
         resolved_token = auth_token or load_bearer_token()
