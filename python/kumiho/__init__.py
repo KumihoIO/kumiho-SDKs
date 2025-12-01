@@ -4,15 +4,16 @@ Kumiho Python Client Library
 
 __version__ = "0.3.0"
 
-from typing import Dict, List, Optional, Iterator
+import contextvars
+from typing import Dict, List, Optional, Iterator, Tuple
 
 # Import the main classes to make them available at the package level.
 from .base import KumihoObject, KumihoError
-from .client import Client
+from .client import _Client
 from .event import Event
 from .group import Group
 from .kref import Kref
-from .link import Link
+from .link import Link, LinkType, LinkDirection
 from .product import Product
 from .project import Project
 from .resource import Resource
@@ -22,32 +23,66 @@ from .client import ProjectLimitError
 from .discovery import client_from_discovery
 from ._bootstrap import bootstrap_default_client
 
-# Add constants for reserved tags, permissions, and common link types
+# Expose LinkType constants for convenience
+BELONGS_TO = LinkType.BELONGS_TO
+CREATED_FROM = LinkType.CREATED_FROM
+
+# Constants
 LATEST_TAG = "latest"
 PUBLISHED_TAG = "published"
-OUTPUT_LINK = "Output"
-INPUT_LINK = "Input"
-REFERENCE_LINK = "Reference"
+REFERENCED = LinkType.REFERENCED
+DEPENDS_ON = LinkType.DEPENDS_ON
+DERIVED_FROM = LinkType.DERIVED_FROM
+CONTAINS = LinkType.CONTAINS
 
+# Expose LinkDirection constants for convenience
+OUTGOING = LinkDirection.OUTGOING
+INCOMING = LinkDirection.INCOMING
+BOTH = LinkDirection.BOTH
 
 # Instantiate a default client instance for convenience.
-_default_client: Optional[Client] = None
+_default_client: Optional[_Client] = None
 _AUTO_CONFIGURE_ENV = "KUMIHO_AUTO_CONFIGURE"
 
-def get_client() -> Client:
-    """Gets the global client instance, creating it if it doesn't exist."""
+# Context variable for request-scoped client instances
+_client_context_var: contextvars.ContextVar[Optional[_Client]] = contextvars.ContextVar("kumiho_client", default=None)
+
+
+def get_client() -> _Client:
+    """Gets the current client instance, preferring context-local over global default."""
+    # Check for context-local client first
+    local_client = _client_context_var.get()
+    if local_client is not None:
+        return local_client
+        
+    # Fallback to global default
     global _default_client
     if _default_client is None:
         _default_client = bootstrap_default_client()
     return _default_client
 
 
-def configure_default_client(client: Client) -> Client:
+def configure_default_client(client: _Client) -> _Client:
     """Override the lazily created default client used by top-level helpers."""
-
     global _default_client
     _default_client = client
     return _default_client
+
+
+class use_client:
+    """Context manager to temporarily set the current client instance."""
+    
+    def __init__(self, client: _Client):
+        self.client = client
+        self.token = None
+        
+    def __enter__(self):
+        self.token = _client_context_var.set(self.client)
+        return self.client
+        
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        if self.token:
+            _client_context_var.reset(self.token)
 
 
 def auto_configure_from_discovery(
@@ -55,7 +90,7 @@ def auto_configure_from_discovery(
     tenant_hint: Optional[str] = None,
     force_refresh: bool = False,
     interactive: bool = False,
-) -> Client:
+) -> _Client:
     """Resolve and configure the default client using the cached ~/.kumiho credentials.
 
     This helper keeps all token material inside the auth cache managed by
@@ -72,7 +107,7 @@ def auto_configure_from_discovery(
             REPLs and scripts fail fast when the cache is missing.
 
     Returns:
-        The configured :class:`Client` instance.
+        The configured :class:`_Client` instance.
 
     Raises:
         RuntimeError: If no cached credentials exist and interactive mode is
@@ -178,10 +213,43 @@ def resolve(kref: str) -> Optional[str]:
     """
     return get_client().resolve(kref)
 
+def connect(
+    endpoint: Optional[str] = None,
+    token: Optional[str] = None,
+    *,
+    enable_auto_login: bool = True,
+    use_discovery: Optional[bool] = None,
+    default_metadata: Optional[List[Tuple[str, str]]] = None,
+    tenant_hint: Optional[str] = None,
+) -> _Client:
+    """
+    Connect to a specific Kumiho server.
+    
+    Args:
+        endpoint: The server endpoint (e.g. "localhost:50051").
+        token: Optional authentication token.
+        enable_auto_login: Whether to enable auto-login.
+        use_discovery: Whether to use discovery.
+        default_metadata: Optional default metadata.
+        tenant_hint: Optional tenant hint.
+        
+    Returns:
+        A configured Client instance.
+    """
+    return _Client(
+        target=endpoint,
+        auth_token=token,
+        enable_auto_login=enable_auto_login,
+        use_discovery=use_discovery,
+        default_metadata=default_metadata,
+        tenant_hint=tenant_hint,
+    )
+
 __all__ = [
     "KumihoObject",
     "KumihoError",
-    "Client",
+    # "Client",  # Never expose Client directly
+    "connect",
     "Project",
     "Group",
     "Product",
@@ -194,19 +262,30 @@ __all__ = [
     # Constants
     "LATEST_TAG",
     "PUBLISHED_TAG",
-    "OUTPUT_LINK",
-    "INPUT_LINK",
-    "REFERENCE_LINK",
     # Functions
     "create_project",
     "get_projects",
     "get_project",
     "delete_project",
     "product_search",
+    "get_product",
+    "get_version",
+    "get_resource",
     "get_resources_by_location",
     "event_stream",
     "resolve",
     "auto_configure_from_discovery",
+    "LinkType",
+    "BELONGS_TO",
+    "CREATED_FROM",
+    "REFERENCED",
+    "DEPENDS_ON",
+    "DERIVED_FROM",
+    "CONTAINS",
+    "LinkDirection",
+    "OUTGOING",
+    "INCOMING",
+    "BOTH",
 ]
 
 # Remove typing imports from public namespace

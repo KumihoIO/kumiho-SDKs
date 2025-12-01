@@ -12,7 +12,6 @@ def unique_name(prefix: str) -> str:
 
 # Import classes directly from the .client module
 import mock_helpers
-from kumiho import Client
 
 
 # --- Constants ---
@@ -25,8 +24,16 @@ def mock_client(monkeypatch):
     """Pytest fixture to provide a Kumiho client with a mocked gRPC stub."""
     mock_stub = MagicMock()
     monkeypatch.setattr("kumiho.client.kumiho_pb2_grpc.KumihoServiceStub", lambda channel: mock_stub)
-    client = Client()
+    
+    # Use kumiho.connect to get a client instance without importing _Client directly
+    client = kumiho.connect(endpoint="localhost:50051", token="mock-token")
+    # Configure the global default client to use our mock
+    kumiho.configure_default_client(client)
+    
     yield client, mock_stub
+    
+    # Teardown: Reset the default client
+    kumiho._default_client = None
 
 def test_project_crud(mock_client):
     client, mock_stub = mock_client
@@ -35,19 +42,19 @@ def test_project_crud(mock_client):
         project_id="p1", name="demo"
     )
     mock_stub.CreateProject.return_value = create_pb
-    project = client.create_project(name="demo")
+    project = kumiho.create_project(name="demo")
     mock_stub.CreateProject.assert_called_once()
     assert project.project_id == "p1"
 
     # List
     mock_stub.GetProjects.return_value = mock_helpers.mock_get_projects_response(projects=[create_pb])
-    projects = client.get_projects()
+    projects = kumiho.get_projects()
     mock_stub.GetProjects.assert_called_once()
     assert projects[0].name == "demo"
 
     # Delete
     mock_stub.DeleteProject.return_value = mock_helpers.mock_status_response(success=True, message="ok")
-    resp = client.delete_project(project_id="p1", force=True)
+    resp = kumiho.delete_project(project_id="p1", force=True)
     mock_stub.DeleteProject.assert_called_once()
     assert resp.success
 
@@ -59,7 +66,7 @@ def test_create_group(mock_client):
     mock_stub.CreateProject.return_value = mock_helpers.mock_project_response(
         project_id="p1", name="projectA"
     )
-    project = client.create_project("projectA")
+    project = kumiho.create_project("projectA")
 
     # Mock Group creation
     mock_stub.CreateGroup.return_value = mock_helpers.mock_group_response(path="/projectA/seqA")
@@ -106,7 +113,8 @@ def test_get_product_from_version_kref(mock_client):
     mock_stub.GetProduct.return_value = product_response
     
     # Test the method
-    product = client.get_product_from_version("kref://projectA/modelA.asset?v=1")
+    version = kumiho.get_version("kref://projectA/modelA.asset?v=1")
+    product = version.get_product()
     
     # Verify calls
     mock_stub.GetVersion.assert_called_once_with(
@@ -141,7 +149,7 @@ def test_get_product_by_kref(mock_client):
     mock_stub.GetProduct.return_value = product_response
     
     # Test the method
-    product = client.get_product_by_kref("kref://projectA/modelA.asset")
+    product = kumiho.get_product("kref://projectA/modelA.asset")
     
     # Verify calls
     mock_stub.GetProduct.assert_called_once_with(
@@ -163,7 +171,7 @@ def test_get_group_from_path(mock_client):
     mock_stub.CreateProject.return_value = mock_helpers.mock_project_response(
         project_id="p1", name="projectA"
     )
-    project = client.create_project("projectA")
+    project = kumiho.create_project("projectA")
     
     path = "seqA"
     full_path = "/projectA/seqA"
@@ -190,7 +198,7 @@ def test_product_search_with_context(mock_client):
         )]
     )
     mock_stub.ProductSearch.return_value = response
-    results = client.product_search(context_filter="projectA/seqA", product_type_filter="model")
+    results = kumiho.product_search(context_filter="projectA/seqA", ptype_filter="model")
     mock_stub.ProductSearch.assert_called_once_with(
         mock_helpers.mock_product_search_request(
             context_filter="projectA/seqA",
@@ -256,7 +264,7 @@ def test_get_resources_by_location(live_client, cleanup_test_data):
     res2 = v2.create_resource("model_data", shared_location)
     cleanup_test_data.append(res2)
 
-    found_resources = live_client.get_resources_by_location(shared_location)
+    found_resources = kumiho.get_resources_by_location(shared_location)
 
     assert len(found_resources) >= 2
     # The most recently created resource (res2) should be the first in the list
@@ -291,10 +299,9 @@ def test_linking_workflow(live_client, cleanup_test_data):
     texture_v1 = texture_product.create_version()
     cleanup_test_data.append(texture_v1)
 
-    link = live_client.create_link(
-        source_version=texture_v1,
+    link = texture_v1.create_link(
         target_version=model_v1,
-        link_type="texture_for"
+        link_type=kumiho.LinkType.DEPENDS_ON
     )
     cleanup_test_data.append(link)
 
@@ -302,11 +309,11 @@ def test_linking_workflow(live_client, cleanup_test_data):
     assert link.target_kref == model_v1.kref  
     
     # Retrieve and verify
-    source_links = live_client.get_links(texture_v1.kref)
+    source_links = texture_v1.get_links()
     assert len(source_links) >= 1
     retrieved_link = source_links[0]
     assert retrieved_link.target_kref == model_v1.kref  
-    assert retrieved_link.link_type == "texture_for"
+    assert retrieved_link.link_type == kumiho.LinkType.DEPENDS_ON
 
 def test_peek_next_version(live_client, cleanup_test_data):
     """
@@ -391,7 +398,7 @@ def test_version_by_tag_and_time(live_client, cleanup_test_data):
 
 # --- New Feature Tests ---
 
-def test_metadata_update_workflow(live_client: Client, cleanup_test_data):
+def test_metadata_update_workflow(live_client, cleanup_test_data):
     """Tests setting and updating metadata on all object types."""
     project = kumiho.create_project(unique_name("meta_proj"))
     cleanup_test_data.append(project)
@@ -415,7 +422,7 @@ def test_metadata_update_workflow(live_client: Client, cleanup_test_data):
     assert version.metadata["approved_by"] == "lead"
     assert resource.metadata["format"] == "alembic"
 
-def test_group_deletion_logic(live_client: Client, cleanup_test_data):
+def test_group_deletion_logic(live_client, cleanup_test_data):
     """Tests safe and forced deletion of groups."""
     # Setup
     project = kumiho.create_project(unique_name("del_proj"))
@@ -443,13 +450,14 @@ def test_group_deletion_logic(live_client: Client, cleanup_test_data):
     # Remove from cleanup since it's already deleted
     cleanup_test_data.remove(proj)
     with pytest.raises(grpc.RpcError) as e:
-        live_client.get_group(proj.path)
+        # Use project.get_group instead of live_client.get_group
+        project.get_group(proj.path)
     assert e.value.code() == grpc.StatusCode.NOT_FOUND
     with pytest.raises(grpc.RpcError) as e:
-        live_client.get_group(empty_group.path)
+        project.get_group(empty_group.path)
     assert e.value.code() == grpc.StatusCode.NOT_FOUND
 
-def test_product_deprecation_and_deletion(live_client: Client, cleanup_test_data):
+def test_product_deprecation_and_deletion(live_client, cleanup_test_data):
     """Tests soft delete (deprecation) and hard delete for products."""
     project = kumiho.create_project(unique_name("dep_proj"))
     cleanup_test_data.append(project)
@@ -476,7 +484,7 @@ def test_product_deprecation_and_deletion(live_client: Client, cleanup_test_data
         group.get_product(product_name="char", product_type="rig")
     assert e.value.code() == grpc.StatusCode.NOT_FOUND
 
-def test_version_tagging_workflow(live_client: Client, cleanup_test_data):
+def test_version_tagging_workflow(live_client, cleanup_test_data):
     """Tests the full lifecycle of tagging a version."""
     project = kumiho.create_project(unique_name("tag_proj"))
     cleanup_test_data.append(project)
@@ -498,7 +506,7 @@ def test_version_tagging_workflow(live_client: Client, cleanup_test_data):
     # was_tagged should still be true as it checks history
     assert v1.was_tagged("approved") is True
 
-def test_published_version_immutability(live_client: Client, cleanup_test_data):
+def test_published_version_immutability(live_client, cleanup_test_data):
     """Tests that a 'published' version and its resources are immutable."""
     project = kumiho.create_project(unique_name("immutable_proj"))
     cleanup_test_data.append(project)
@@ -532,7 +540,7 @@ def test_published_version_immutability(live_client: Client, cleanup_test_data):
     expect_error(lambda: res.delete(), "immutable")
     expect_error(lambda: v1.create_resource("mask", "/path/to/mask.png"), "published")
 
-def test_get_resource_and_locations(live_client: Client, cleanup_test_data):
+def test_get_resource_and_locations(live_client, cleanup_test_data):
     """Tests retrieving specific resources and all locations from a version."""
     project = kumiho.create_project(unique_name("res_proj"))
     cleanup_test_data.append(project)
@@ -577,7 +585,8 @@ def test_resolve_kref_with_time(mock_client):
     )
     mock_stub.ResolveKref.return_value = version_response
     time_str = "202510131200"
-    resolved = client.resolve_kref("kref://obj1", time=time_str)  # Use client, not mock_client
+    # Use kumiho.get_version with time parameter
+    resolved = kumiho.get_version(f"kref://obj1?time={time_str}")
     
     mock_stub.ResolveKref.assert_called_once()
     request_arg = mock_stub.ResolveKref.call_args[0][0]
@@ -585,7 +594,7 @@ def test_resolve_kref_with_time(mock_client):
     assert request_arg.kref == "kref://obj1"
     assert request_arg.time == time_str
     assert not request_arg.tag
-    assert resolved["number"] == 2  # Correct key: number (snake_case)
+    assert resolved.number == 2
 
 def test_resolve_kref_with_tag_and_time(mock_client):
     """Tests resolving a kref with a tag at a specific point in time."""
@@ -606,7 +615,7 @@ def test_resolve_kref_with_tag_and_time(mock_client):
     time_str = "202510101000"
     tag_name = "published"
     
-    resolved = client.resolve_kref("kref://obj1", tag=tag_name, time=time_str) 
+    resolved = kumiho.get_version(f"kref://obj1?tag={tag_name}&time={time_str}") 
     
     mock_stub.ResolveKref.assert_called_once()
     request_arg = mock_stub.ResolveKref.call_args[0][0]
@@ -614,10 +623,123 @@ def test_resolve_kref_with_tag_and_time(mock_client):
     assert request_arg.kref == "kref://obj1"
     assert request_arg.tag == tag_name
     assert request_arg.time == time_str
-    assert resolved["number"] == 1
+    assert resolved.number == 1
 
 def test_resolve_kref_invalid_time_format(mock_client):
     """Tests that an invalid time format raises a ValueError."""
     client, mock_stub = mock_client  # Unpack the tuple
     with pytest.raises(ValueError, match="time must be in YYYYMMDDHHMM format"):
-        client.resolve_kref("kref://some_id", time="2025-10-13 12:00:00")
+        kumiho.get_version("kref://some_id?time=2025-10-13 12:00:00")
+
+def test_janus_parity_features(live_client, cleanup_test_data):
+    """Tests features added for Janus parity: deprecation, default resource, traversal, links."""
+    project_name = unique_name("janus_proj")
+    project = kumiho.create_project(project_name)
+    cleanup_test_data.append(project)
+    group = project.create_group(name=project_name, parent_path="/")
+    cleanup_test_data.append(group)
+    product = group.create_product(product_name="asset", product_type="model")
+    cleanup_test_data.append(product)
+    version = product.create_version()
+    cleanup_test_data.append(version)
+    resource = version.create_resource("main", "/path/to/file")
+    cleanup_test_data.append(resource)
+
+    # 1. Deprecation
+    # Product
+    assert product.deprecated is False
+    product.set_deprecated(True)
+    assert product.deprecated is True
+    # Reload to verify persistence
+    prod_reloaded = group.get_product("asset", "model")
+    assert prod_reloaded.deprecated is True
+    product.set_deprecated(False)
+    assert product.deprecated is False
+
+    # Version
+    assert version.deprecated is False
+    version.set_deprecated(True)
+    assert version.deprecated is True
+    version.set_deprecated(False)
+    assert version.deprecated is False
+
+    # Resource
+    assert resource.deprecated is False
+    resource.set_deprecated(True)
+    assert resource.deprecated is True
+    resource.set_deprecated(False)
+    assert resource.deprecated is False
+
+    # 2. Default Resource
+    assert version.default_resource is None
+    resource.set_default()
+    # Reload version to check default resource
+    v_reloaded = product.get_version(version.number)
+    assert v_reloaded.default_resource == resource.name
+
+    # 3. Traversal
+    # From Resource
+    assert resource.get_version().kref.uri == version.kref.uri
+    assert resource.get_product().kref.uri == product.kref.uri
+    assert resource.get_group().path == group.path
+    assert resource.get_project().name == project.name
+
+    # From Version
+    assert version.get_product().kref.uri == product.kref.uri
+    assert version.get_group().path == group.path
+    assert version.get_project().name == project.name
+
+    # From Product
+    assert product.get_group().path == group.path
+    assert product.get_project().name == project.name
+
+    # From Group
+    assert group.get_project().name == project.name
+
+    # 4. Link Types
+    # LinkType is now exposed at package level
+    v2 = product.create_version()
+    cleanup_test_data.append(v2)
+    
+    # Use new convenience method
+    link = version.create_link(
+        target_version=v2,
+        link_type=kumiho.LinkType.CREATED_FROM
+    )
+    cleanup_test_data.append(link)
+    assert link.link_type == kumiho.LinkType.CREATED_FROM
+    
+    # Verify get_links
+    links = version.get_links()
+    assert len(links) >= 1
+    assert links[0].link_type == kumiho.LinkType.CREATED_FROM
+    
+    # Verify delete_link
+    version.delete_link(v2, kumiho.LinkType.CREATED_FROM)
+    links_after = version.get_links()
+    # Note: get_links might return empty list or filtered list. 
+    # Since we just deleted the only link we created, it should be empty or not contain that specific link.
+    # But let's be safe and check if the specific link is gone.
+    assert not any(l.target_kref.uri == v2.kref.uri and l.link_type == kumiho.LinkType.CREATED_FROM for l in links_after)
+
+    # 5. Link Direction
+    # Create a link: version -> v2 (CREATED_FROM)
+    version.create_link(v2, kumiho.LinkType.CREATED_FROM)
+    
+    # Test Outgoing (Default)
+    outgoing = version.get_links(direction=kumiho.OUTGOING)
+    assert len(outgoing) > 0
+    assert outgoing[0].source_kref.uri == version.kref.uri
+    assert outgoing[0].target_kref.uri == v2.kref.uri
+    
+    # Test Incoming (from v2's perspective)
+    incoming = v2.get_links(direction=kumiho.INCOMING)
+    assert len(incoming) > 0
+    assert incoming[0].source_kref.uri == version.kref.uri
+    assert incoming[0].target_kref.uri == v2.kref.uri
+    
+    # Test Both
+    both_v1 = version.get_links(direction=kumiho.BOTH)
+    assert len(both_v1) > 0
+    both_v2 = v2.get_links(direction=kumiho.BOTH)
+    assert len(both_v2) > 0

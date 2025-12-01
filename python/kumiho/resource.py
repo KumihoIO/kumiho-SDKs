@@ -10,7 +10,11 @@ from .kref import Kref
 from .proto.kumiho_pb2 import ResourceResponse
 
 if TYPE_CHECKING:
-    from .client import Client
+    from .client import _Client
+    from .version import Version
+    from .product import Product
+    from .group import Group
+    from .project import Project
 
 
 class Resource(KumihoObject):
@@ -31,7 +35,7 @@ class Resource(KumihoObject):
         username (str): The username of the creator.
     """
 
-    def __init__(self, pb_resource: ResourceResponse, client: 'Client') -> None:
+    def __init__(self, pb_resource: ResourceResponse, client: '_Client') -> None:
         """Initialize a Resource from a protobuf response.
 
         Args:
@@ -83,3 +87,51 @@ class Resource(KumihoObject):
             force: If True, force deletion. Requires appropriate permissions.
         """
         self._client.delete_resource(self.kref, force)
+
+    def set_deprecated(self, status: bool) -> None:
+        """Set the deprecated status of the resource.
+
+        Args:
+            status: True to deprecate, False to un-deprecate.
+        """
+        self._client.set_deprecated(self.kref, status)
+        self.deprecated = status
+
+    def set_default(self) -> None:
+        """Set this resource as the default for its version."""
+        self.get_version().set_default_resource(self.name)
+
+    def get_version(self) -> 'Version':
+        """Get the parent version of this resource.
+
+        Returns:
+            The Version object.
+        """
+        return self._client.get_version(self.version_kref.uri)
+
+    def get_product(self) -> 'Product':
+        """Get the parent product of this resource.
+
+        Returns:
+            The Product object.
+        """
+        if self.product_kref:
+            return self._client.get_product_by_kref(self.product_kref.uri)
+        # Fallback via version
+        return self.get_version().get_product()
+
+    def get_group(self) -> 'Group':
+        """Get the group containing this resource's product.
+
+        Returns:
+            The Group object.
+        """
+        return self.get_product().get_group()
+
+    def get_project(self) -> 'Project':
+        """Get the project containing this resource.
+
+        Returns:
+            The Project object.
+        """
+        return self.get_group().get_project()

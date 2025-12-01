@@ -4,14 +4,13 @@ from datetime import datetime
 import pytest
 import grpc
 import kumiho
-from kumiho import Client
 
 
 def _unique(prefix: str) -> str:
     return f"{prefix}_{uuid.uuid4().hex[:8]}"
 
 
-def test_firebase_supabase_neo4j_roundtrip(live_client: Client, cleanup_test_data):
+def test_firebase_supabase_neo4j_roundtrip(live_client, cleanup_test_data):
     """Full-stack smoke test that exercises Firebase auth, Supabase tenancy, and Neo4j writes."""
     project_name = _unique("e2e_project")
     product_name = _unique("asset")
@@ -52,7 +51,7 @@ def test_firebase_supabase_neo4j_roundtrip(live_client: Client, cleanup_test_dat
     assert product.peek_next_version() == version.number + 1
 
 
-def test_create_group_without_project_fails(live_client: Client):
+def test_create_group_without_project_fails(live_client):
     """Test that creating a root group without a corresponding project fails."""
     orphan_group_name = _unique("orphan_group")
     
@@ -68,7 +67,7 @@ def test_create_group_without_project_fails(live_client: Client):
     assert "Failed to create or retrieve group" in e.value.details()
 
 
-def test_node_limit_enforcement(live_client: Client):
+def test_node_limit_enforcement(live_client):
     """Test that we can query tenant usage and that it returns valid numbers."""
     # Verify GetTenantUsage works
     usage = live_client.get_tenant_usage()

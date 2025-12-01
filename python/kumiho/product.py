@@ -10,8 +10,9 @@ from .proto.kumiho_pb2 import ProductResponse, ResolveKrefRequest
 from .version import Version
 
 if TYPE_CHECKING:
-    from .client import Client
+    from .client import _Client
     from .group import Group
+    from .project import Project
 
 
 class Product(KumihoObject):
@@ -32,7 +33,7 @@ class Product(KumihoObject):
         username (str): The username of the creator.
     """
 
-    def __init__(self, pb_product: ProductResponse, client: 'Client') -> None:
+    def __init__(self, pb_product: ProductResponse, client: '_Client') -> None:
         """Initialize a Product from a protobuf response.
 
         Args:
@@ -114,6 +115,19 @@ class Product(KumihoObject):
         group_path = f"/{self.kref.get_group()}"
         return self._client.get_group(group_path)
 
+    def get_project(self) -> 'Project':
+        """Get the project that contains this product.
+
+        Returns:
+            The Project object.
+        """
+        # Parse project name from kref (assuming kref://project/...)
+        # or use get_group().get_project()
+        # Kref format: kref://project/group/product.type
+        # But get_group() returns the leaf group.
+        # We can traverse up via get_group().
+        return self.get_group().get_project()
+
     def get_version_by_tag(self, tag: str) -> Optional[Version]:
         """Get a version by its tag.
 
@@ -190,3 +204,12 @@ class Product(KumihoObject):
                   Requires appropriate permissions.
         """
         self._client.delete_product(self.kref, force)
+
+    def set_deprecated(self, status: bool) -> None:
+        """Set the deprecated status of the product.
+
+        Args:
+            status: True to deprecate, False to un-deprecate.
+        """
+        self._client.set_deprecated(self.kref, status)
+        self.deprecated = status

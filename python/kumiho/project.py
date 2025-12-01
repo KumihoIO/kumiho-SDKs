@@ -10,7 +10,7 @@ from .proto.kumiho_pb2 import ProjectResponse
 class Project(KumihoObject):
     """A high-level wrapper around ProjectResponse with helpers for nested actions."""
 
-    def __init__(self, pb: ProjectResponse, client: "Client") -> None:  # type: ignore[name-defined]
+    def __init__(self, pb: ProjectResponse, client: "_Client") -> None:  # type: ignore[name-defined]
         super().__init__(client)
         self.project_id = pb.project_id
         self.name = pb.name
@@ -45,9 +45,17 @@ class Project(KumihoObject):
         )
 
     def get_group(self, name: str, parent_path: Optional[str] = None) -> Group:
-        """Fetch an existing group within this project."""
-        base_parent = parent_path or f"/{self.name}"
-        path = f"{base_parent.rstrip('/')}/{name}"
+        """Fetch an existing group within this project.
+        
+        Args:
+            name: The name of the group, or an absolute path.
+            parent_path: Optional parent path if name is relative.
+        """
+        if name.startswith("/"):
+            path = name
+        else:
+            base_parent = parent_path or f"/{self.name}"
+            path = f"{base_parent.rstrip('/')}/{name}"
         return self._client.get_group(path)
 
     def get_groups(self, parent_path: Optional[str] = None, recursive: bool = False):

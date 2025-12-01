@@ -1,13 +1,13 @@
 import pytest
 import kumiho
 import uuid
-from kumiho import Client
+# from kumiho import Client
 
 def unique_name(prefix: str) -> str:
     """Generates a unique name with a prefix."""
     return f"{prefix}_{uuid.uuid4().hex[:8]}"
 
-def test_latest_tag_logic(live_client: Client, cleanup_test_data):
+def test_latest_tag_logic(live_client, cleanup_test_data):
     """
     Verifies that 'latest' tag is automatically managed:
     1. First version gets 'latest' tag.
@@ -47,7 +47,7 @@ def test_latest_tag_logic(live_client: Client, cleanup_test_data):
     latest_v = product.get_latest_version()
     assert latest_v.number == v2.number
 
-def test_manual_tag_uniqueness(live_client: Client, cleanup_test_data):
+def test_manual_tag_uniqueness(live_client, cleanup_test_data):
     """
     Verifies that manual tags are unique per product:
     1. Tag v1 with 'stable'.
@@ -79,7 +79,7 @@ def test_manual_tag_uniqueness(live_client: Client, cleanup_test_data):
     v1_refreshed = product.get_version(v1.number)
     assert v1_refreshed.has_tag("stable") is False
 
-def test_published_tag_logic(live_client: Client, cleanup_test_data):
+def test_published_tag_logic(live_client, cleanup_test_data):
     """
     Verifies that 'published' tag updates the published field.
     """

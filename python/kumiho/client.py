@@ -32,27 +32,29 @@ from .proto.kumiho_pb2 import (
     DeleteProjectRequest,
     EventStreamRequest,
     GetChildGroupsRequest,
-    GetChildGroupsResponse,
     GetGroupRequest,
     GetLinksRequest,
     GetProductRequest,
     GetProductsRequest,
     GetProjectsRequest,
     GetResourceRequest,
-    GetResourcesByLocationRequest,
     GetResourcesRequest,
+    GetResourcesByLocationRequest,
     GetTenantUsageRequest,
-    TenantUsageResponse,
     GetVersionsRequest,
     HasTagRequest,
     KrefRequest,
     Link as PbLink,
     PeekNextVersionRequest,
     ProductSearchRequest,
+    ResolveKrefRequest,
+    ResolveLocationRequest,
+    SetDefaultResourceRequest,
     TagVersionRequest,
     UnTagVersionRequest,
     UpdateMetadataRequest,
     WasTaggedRequest,
+    SetDeprecatedRequest,
 )
 from .link import Link
 from .proto.kumiho_pb2 import ProjectResponse, StatusResponse
@@ -70,7 +72,7 @@ _DISCOVERY_DISABLE_ENV = "KUMIHO_DISABLE_AUTO_DISCOVERY"
 _FORCE_REFRESH_ENV = "KUMIHO_FORCE_DISCOVERY_REFRESH"
 
 
-class Client:
+class _Client:
     """Low-level client for interacting with the Kumiho gRPC service.
 
     This client provides direct access to all Kumiho gRPC endpoints.
@@ -124,6 +126,10 @@ class Client:
             if len(discovery) > 1 and discovery[1]:
                 metadata.append(("x-tenant-id", discovery[1]))
                 tenant_header_set = True
+        elif tenant_hint:
+            # Fallback: if discovery didn't run (e.g. no token), use the hint directly
+            metadata.append(("x-tenant-id", tenant_hint))
+            tenant_header_set = True
 
         if target is None:
             target = (
@@ -476,66 +482,20 @@ class Client:
         resp = self.stub.UpdateProductMetadata(req)
         return Product(resp, self)
 
-    # Version methods
-    def create_version(
-        self,
-        product_kref: Kref,
-        metadata: Optional[Dict[str, str]] = None,
-        number: int = 0
-    ) -> Version:
+    def create_version(self, product_kref: Kref, metadata: Optional[Dict[str, str]] = None, number: int = 0) -> Version:
         """Create a new version for a product.
 
         Args:
             product_kref: The kref of the product.
             metadata: Optional metadata for the version.
-            number: Specific version number (0 for auto-increment).
+            number: Specific version number to use (0 for auto-increment).
 
         Returns:
             The created Version object.
         """
-        req = CreateVersionRequest(
-            product_kref=product_kref.to_pb(),
-            metadata=metadata or {},
-            number=number
-        )
+        req = CreateVersionRequest(product_kref=product_kref.to_pb(), metadata=metadata or {}, number=number)
         resp = self.stub.CreateVersion(req)
         return Version(resp, self)
-
-    def resolve_kref(
-        self,
-        kref: str,
-        tag: Optional[str] = None,
-        time: Optional[str] = None
-    ) -> Optional[Dict[str, Any]]:
-        """Resolve a kref to a specific version with optional tag/time constraints.
-
-        Args:
-            kref: The kref URI to resolve.
-            tag: Optional tag to resolve to a specific tagged version.
-            time: Optional time in 'YYYYMMDDHHMM' format to resolve at.
-
-        Returns:
-            A dictionary representation of the resolved version, or None if not found.
-
-        Raises:
-            ValueError: If the time format is invalid.
-        """
-        if time:
-            try:
-                datetime.strptime(time, "%Y%m%d%H%M")
-            except ValueError as e:
-                raise ValueError("time must be in YYYYMMDDHHMM format") from e
-
-        request = kumiho_pb2.ResolveKrefRequest(kref=kref, tag=tag, time=time)
-        try:
-            response = self.stub.ResolveKref(request)
-            return MessageToDict(response, preserving_proto_field_name=True)
-        except grpc.RpcError as e:
-            if e.code() == grpc.StatusCode.NOT_FOUND:
-                return None
-            print(f"An RPC error occurred: {e.details()}")
-            raise
-
     def get_version(self, kref_uri: str) -> Version:
         """Get a version by its kref URI, with optional tag/time resolution.
 
@@ -554,20 +514,30 @@ class Client:
         if '?' in kref_uri:
             base_kref, params = kref_uri.split('?', 1)
             for param in params.split('&'):
-                if param.startswith('t='):
-                    tag = param[2:]
+                if param.startswith('t=') or param.startswith('tag='):
+                    tag = param.split('=')[1]
                 elif param.startswith('time='):
-                    time = param[5:]
+                    time = param.split('=')[1]
+                    # Validate time format (YYYYMMDDHHMM)
+                    import re
+                    if not re.match(r"^\d{12}$", time):
+                        raise ValueError("time must be in YYYYMMDDHHMM format")
         
-        # If tag or time is specified, use resolve_kref
         if tag is not None or time is not None:
-            resolved = self.resolve_kref(base_kref, tag=tag, time=time)
-            if resolved is None:
-                raise grpc.RpcError("Version not found")
-            # Create a Version object from the resolved data
-            # For now, construct a kref from the resolved data
-            resolved_kref = resolved.get('kref', {}).get('uri', kref_uri)
-            req = KrefRequest(kref=kumiho_pb2.Kref(uri=resolved_kref))
+            # Use ResolveKref to find the specific version
+            # We pass the base_kref (Product Kref) and the constraints
+            req = ResolveKrefRequest(kref=base_kref, tag=tag, time=time)
+            try:
+                resp = self.stub.ResolveKref(req)
+                return Version(resp, self)
+            except grpc.RpcError as e:
+                if e.code() == grpc.StatusCode.NOT_FOUND:
+                    # Re-raise as NOT_FOUND
+                    context = grpc.RpcError()
+                    context.code = lambda: grpc.StatusCode.NOT_FOUND
+                    context.details = lambda: "Version not found"
+                    raise context
+                raise
         else:
             req = KrefRequest(kref=kumiho_pb2.Kref(uri=kref_uri))
         
@@ -621,15 +591,14 @@ class Client:
         Returns:
             The latest Version object, or None if no versions exist.
         """
-        versions = self.get_versions(product_kref)
-        if not versions:
-            return None
-        # Find the version with latest=True, or fallback to highest number
-        latest_versions = [v for v in versions if hasattr(v, 'latest') and v.latest]
-        if latest_versions:
-            return latest_versions[0]
-        # Fallback: return the version with the highest number
-        return max(versions, key=lambda v: v.number)
+        req = ResolveKrefRequest(kref=product_kref.uri)
+        try:
+            resp = self.stub.ResolveKref(req)
+            return Version(resp, self)
+        except grpc.RpcError as e:
+            if e.code() == grpc.StatusCode.NOT_FOUND:
+                return None
+            raise
 
     def delete_version(self, kref: Kref, force: bool) -> None:
         """Delete a version.
@@ -737,6 +706,16 @@ class Client:
         resp = self.stub.WasTagged(req)
         return resp.was_tagged
 
+    def set_default_resource(self, version_kref: Kref, resource_name: str) -> None:
+        """Set the default resource for a version.
+
+        Args:
+            version_kref: The kref of the version.
+            resource_name: The name of the resource to set as default.
+        """
+        req = SetDefaultResourceRequest(version_kref=version_kref.to_pb(), resource_name=resource_name)
+        self.stub.SetDefaultResource(req)
+
     # Resource methods
     def create_resource(self, version_kref: Kref, name: str, location: str) -> Resource:
         """Create a new resource for a version.
@@ -766,6 +745,29 @@ class Client:
         req = GetResourceRequest(version_kref=version_kref.to_pb(), name=name)
         resp = self.stub.GetResource(req)
         return Resource(resp, self)
+
+    def get_resource_by_kref(self, kref_uri: str) -> Resource:
+        """Get a resource by its kref URI.
+
+        Args:
+            kref_uri: The kref URI of the resource (e.g., "kref://group/product.type?v=1&r=resource_name").
+
+        Returns:
+            The Resource object.
+
+        Raises:
+            ValueError: If the kref URI does not contain a resource name.
+        """
+        kref = Kref(kref_uri)
+        resource_name = kref.get_resource_name()
+        if not resource_name:
+            raise ValueError(f"Invalid resource kref format: {kref_uri} (missing &r=resource_name)")
+        
+        # Build the version kref by removing the resource part
+        version_kref_uri = kref_uri.split("&r=")[0]
+        version_kref = Kref(version_kref_uri)
+        
+        return self.get_resource(version_kref, resource_name)
 
     def get_resources(self, version_kref: Kref) -> List[Resource]:
         """Get all resources for a version.
@@ -803,6 +805,16 @@ class Client:
         req = DeleteResourceRequest(kref=kref.to_pb(), force=force)
         self.stub.DeleteResource(req)
 
+    def set_deprecated(self, kref: Kref, deprecated: bool) -> None:
+        """Set the deprecated status of a node (Product, Version, Resource).
+
+        Args:
+            kref: The kref of the node.
+            deprecated: True to deprecate, False to un-deprecate.
+        """
+        req = SetDeprecatedRequest(kref=kref.to_pb(), deprecated=deprecated)
+        self.stub.SetDeprecated(req)
+
     def update_resource_metadata(self, kref: Kref, metadata: Dict[str, str]) -> Resource:
         """Update metadata for a resource.
 
@@ -828,76 +840,35 @@ class Client:
         return MessageToDict(resp, preserving_proto_field_name=True, always_print_fields_with_no_presence=True)
 
     def resolve(self, kref: str) -> Optional[str]:
-        """Resolve a KREF to a file location.
-
-        This method implements the KREF resolution logic:
-        - Product KREF: resolves to latest version → default resource → location
-        - Version KREF: resolves to default resource → location
-        - Resource KREF: returns the resource location directly
-
-        Args:
-            kref: The KREF URI to resolve.
-
-        Returns:
-            The file location string, or None if resolution fails.
         """
-        kref_obj = Kref(kref)
-        path = kref_obj.get_path()
-        parts = path.split('/')
+        Resolves a Kref to a file location using the server-side ResolveLocation RPC.
+        
+        Args:
+            kref: The Kref URI to resolve. Can include query parameters like ?v=, ?t=, ?time=.
+            
+        Returns:
+            The resolved file location string, or None if resolution fails.
+        """
+        try:
+            # Parse tag/time from kref if present to pass explicitly
+            tag = None
+            time = None
+            
+            if '?' in kref:
+                _, params = kref.split('?', 1)
+                for param in params.split('&'):
+                    if param.startswith('t=') or param.startswith('tag='):
+                        tag = param.split('=')[1]
+                    elif param.startswith('time='):
+                        time = param.split('=')[1]
 
-        # Check for resource parameter in query string
-        resource_name = kref_obj.get_resource_name()
-
-        if len(parts) == 2 and '.' in parts[1]:
-            # Product KREF: group/product.type
-            try:
-                product = self.get_product_by_kref(kref)
-                latest_version = self.get_latest_version(product.kref)
-                if latest_version:
-                    # Use specified resource or default
-                    target_resource = resource_name or latest_version.default_resource
-                    if target_resource:
-                        resource = self.get_resource(latest_version.kref, target_resource)
-                        return resource.location
-                    else:
-                        # Fallback: use first available resource
-                        resources = self.get_resources(latest_version.kref)
-                        if resources:
-                            return resources[0].location
-            except Exception:
-                return None
-        elif len(parts) == 2 and '?' in kref and 'v=' in kref:
-            # Version KREF: group/product.type?v=123
-            try:
-                version = self.get_version(kref)
-                # Use specified resource or default
-                target_resource = resource_name or version.default_resource
-                if target_resource:
-                    resource = self.get_resource(version.kref, target_resource)
-                    return resource.location
-                else:
-                    # Fallback: use first available resource
-                    resources = self.get_resources(version.kref)
-                    if resources:
-                        return resources[0].location
-            except Exception:
-                return None
-        elif len(parts) == 3:
-            # Resource KREF: group/product.type/resource_name?v=123
-            try:
-                # Extract resource name from path, override with query param if present
-                path_resource_name = parts[2].split('?')[0]  # Remove query params
-                final_resource_name = resource_name or path_resource_name
-                version_kref_str = f"kumiho://{parts[0]}/{parts[1]}"
-                if '?' in kref:
-                    version_kref_str += f"?{kref.split('?', 1)[1]}"
-                version_kref = Kref(version_kref_str)
-                resource = self.get_resource(version_kref, final_resource_name)
-                return resource.location
-            except Exception:
-                return None
-
-        return None
+            req = ResolveLocationRequest(kref=kref, tag=tag, time=time)
+            resp = self.stub.ResolveLocation(req)
+            return resp.location
+        except grpc.RpcError:
+            return None
+        except Exception:
+            return None
 
     # Link methods
     def create_link(
@@ -912,7 +883,8 @@ class Client:
         Args:
             source_version: The source version of the link.
             target_version: The target version of the link.
-            link_type: The type of relationship (e.g., "depends_on").
+            link_type: The type of relationship (e.g., kumiho.LinkType.DEPENDS_ON).
+                       See kumiho.LinkType for standard types.
             metadata: Optional metadata for the link.
 
         Returns:
@@ -934,17 +906,19 @@ class Client:
         )
         return Link(pb_link, self)
 
-    def get_links(self, kref: Kref, link_type_filter: str = "") -> List[Link]:
+    def get_links(self, kref: Kref, link_type_filter: str = "", direction: int = 0) -> List[Link]:
         """Get links associated with a kref.
 
         Args:
             kref: The kref to get links for.
             link_type_filter: Optional filter for link types.
+            direction: The direction of links to retrieve (0=OUTGOING, 1=INCOMING, 2=BOTH).
+                       See kumiho.LinkDirection.
 
         Returns:
             A list of Link objects.
         """
-        req = GetLinksRequest(kref=kref.to_pb(), link_type_filter=link_type_filter)
+        req = GetLinksRequest(kref=kref.to_pb(), link_type_filter=link_type_filter, direction=direction)
         resp = self.stub.GetLinks(req)
         return [Link(pb, self) for pb in resp.links]
 
@@ -1029,6 +1003,7 @@ class _MetadataInjector(
         self._metadata = tuple(metadata)
 
     def intercept_unary_unary(self, continuation, client_call_details, request):
+        _LOGGER.info(f"Injecting metadata: {self._metadata}")
         updated = _augment_call_details(client_call_details, self._metadata)
         return continuation(updated, request)
 

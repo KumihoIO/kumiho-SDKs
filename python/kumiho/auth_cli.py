@@ -121,6 +121,7 @@ def _save_credentials(creds: Credentials) -> None:
         "cp_expires_at": creds.cp_expires_at,
     }
     path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+    os.chmod(path, 0o600)
 
 
 def _token_preview(token: str) -> str:
@@ -132,8 +133,8 @@ def _token_preview(token: str) -> str:
 
 
 def _log_token(token: str, source: str) -> None:
-    preview = _token_preview(token)
-    print(f"[kumiho-auth] {source} token -> {preview}")
+    # Do not log tokens in production
+    pass
 
 
 def _fetch_with_password(api_key: str, email: str, password: str) -> Tuple[str, str, int]:

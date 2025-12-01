@@ -208,8 +208,7 @@ def test_auto_configure_from_discovery(monkeypatch) -> None:
         recorded["ensure_token"] = {"token_file": token_file, "interactive": interactive}
         return "cached-cp", "cached"
 
-    def fake_load_firebase_token():
-        recorded["firebase"] = True
+    def fake_load_bearer_token():
         return "firebase-from-cache"
 
     def fake_client_from_discovery(*, id_token, tenant_hint=None, force_refresh=False, cache_path=None):
@@ -227,17 +226,16 @@ def test_auto_configure_from_discovery(monkeypatch) -> None:
         configured["client"] = client
         return client
 
-    monkeypatch.setattr(kumiho, "ensure_token", fake_ensure_token)
+    monkeypatch.setattr("kumiho.auth_cli.ensure_token", fake_ensure_token)
     monkeypatch.setattr(kumiho, "client_from_discovery", fake_client_from_discovery)
     monkeypatch.setattr(kumiho, "configure_default_client", fake_configure_default_client)
-    monkeypatch.setattr(kumiho, "load_firebase_token", fake_load_firebase_token)
+    monkeypatch.setattr("kumiho._token_loader.load_bearer_token", fake_load_bearer_token)
 
     result = kumiho.auto_configure_from_discovery(tenant_hint="tenant-xyz", force_refresh=True)
 
     assert result == {"client": "firebase-from-cache"}
     assert configured["client"] == result
     assert recorded["ensure_token"] == {"token_file": None, "interactive": False}
-    assert recorded.get("firebase") is True
     assert recorded["discovery"] == {
         "id_token": "firebase-from-cache",
         "tenant_hint": "tenant-xyz",

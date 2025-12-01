@@ -9,11 +9,14 @@ from .base import KumihoObject
 from .kref import Kref
 from .proto.kumiho_pb2 import VersionResponse
 from .resource import Resource
+from .link import Link
 
 if TYPE_CHECKING:
-    from .client import Client
+    from .client import _Client
+    from .product import Product
     from .product import Product
     from .group import Group
+    from .project import Project
 
 
 class Version(KumihoObject):
@@ -41,7 +44,7 @@ class Version(KumihoObject):
         default_resource (Optional[str]): The name of the default resource for this version.
     """
 
-    def __init__(self, pb_version: VersionResponse, client: 'Client') -> None:
+    def __init__(self, pb_version: VersionResponse, client: '_Client') -> None:
         """Initialize a Version from a protobuf response.
 
         Args:
@@ -201,6 +204,14 @@ class Version(KumihoObject):
         group_path = f"/{self.product_kref.get_group()}"
         return self._client.get_group(group_path)
 
+    def get_project(self) -> 'Project':
+        """Get the project that contains this version.
+
+        Returns:
+            The Project object.
+        """
+        return self.get_group().get_project()
+
     def refresh(self) -> None:
         """Refresh this version's data from the server.
         
@@ -242,3 +253,48 @@ class Version(KumihoObject):
                   Requires appropriate permissions.
         """
         self._client.delete_version(self.kref, force)
+
+    def set_deprecated(self, status: bool) -> None:
+        """Set the deprecated status of the version.
+
+        Args:
+            status: True to deprecate, False to un-deprecate.
+        """
+        self._client.set_deprecated(self.kref, status)
+        self.deprecated = status
+
+    def create_link(self, target_version: 'Version', link_type: str, metadata: Optional[Dict[str, str]] = None) -> 'Link':
+        """Create a link from this version to another version.
+
+        Args:
+            target_version: The target version to link to.
+            link_type: The type of link (e.g., kumiho.LinkType.DEPENDS_ON).
+                       See kumiho.LinkType for standard types.
+            metadata: Optional metadata for the link.
+
+        Returns:
+            The created Link object.
+        """
+        return self._client.create_link(self, target_version, link_type, metadata)
+
+    def get_links(self, link_type_filter: Optional[str] = None, direction: int = 0) -> List['Link']:
+        """Get links originating from this version.
+
+        Args:
+            link_type_filter: Optional filter for link type.
+            direction: The direction of links to retrieve (default: OUTGOING).
+                       See kumiho.LinkDirection.
+
+        Returns:
+            A list of Link objects.
+        """
+        return self._client.get_links(self.kref, link_type_filter or "", direction)
+
+    def delete_link(self, target_version: 'Version', link_type: str) -> None:
+        """Delete a link from this version.
+
+        Args:
+            target_version: The target version of the link.
+            link_type: The type of link to delete.
+        """
+        self._client.delete_link(self.kref, target_version.kref, link_type)

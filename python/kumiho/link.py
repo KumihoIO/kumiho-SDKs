@@ -9,8 +9,25 @@ from .base import KumihoObject
 from .kref import Kref
 from .proto.kumiho_pb2 import Link as PbLink
 
+
+class LinkType:
+    """Standard link types for Kumiho links."""
+    BELONGS_TO = "belongs_to"
+    CREATED_FROM = "created_from"
+    REFERENCED = "referenced"
+    DEPENDS_ON = "depends_on"
+    DERIVED_FROM = "derived_from"
+    CONTAINS = "contains"
+
+
+class LinkDirection:
+    """Direction for link traversal."""
+    OUTGOING = 0
+    INCOMING = 1
+    BOTH = 2
+
 if TYPE_CHECKING:
-    from .client import Client
+    from .client import _Client
 
 
 class Link(KumihoObject):
@@ -29,7 +46,7 @@ class Link(KumihoObject):
         username (str): The username of the creator.
     """
 
-    def __init__(self, pb_link: PbLink, client: 'Client') -> None:
+    def __init__(self, pb_link: PbLink, client: '_Client') -> None:
         """Initialize a Link from a protobuf message.
 
         Args:

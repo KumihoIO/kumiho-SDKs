@@ -115,6 +115,11 @@ class KumihoServiceStub(object):
                 request_serializer=kumiho__pb2.ResolveKrefRequest.SerializeToString,
                 response_deserializer=kumiho__pb2.VersionResponse.FromString,
                 _registered_method=True)
+        self.ResolveLocation = channel.unary_unary(
+                '/kumiho.KumihoService/ResolveLocation',
+                request_serializer=kumiho__pb2.ResolveLocationRequest.SerializeToString,
+                response_deserializer=kumiho__pb2.ResolveLocationResponse.FromString,
+                _registered_method=True)
         self.CreateVersion = channel.unary_unary(
                 '/kumiho.KumihoService/CreateVersion',
                 request_serializer=kumiho__pb2.CreateVersionRequest.SerializeToString,
@@ -225,6 +230,11 @@ class KumihoServiceStub(object):
                 request_serializer=kumiho__pb2.EventStreamRequest.SerializeToString,
                 response_deserializer=kumiho__pb2.Event.FromString,
                 _registered_method=True)
+        self.SetDeprecated = channel.unary_unary(
+                '/kumiho.KumihoService/SetDeprecated',
+                request_serializer=kumiho__pb2.SetDeprecatedRequest.SerializeToString,
+                response_deserializer=kumiho__pb2.StatusResponse.FromString,
+                _registered_method=True)
 
 
 class KumihoServiceServicer(object):
@@ -327,6 +337,12 @@ class KumihoServiceServicer(object):
     def ResolveKref(self, request, context):
         """Version methods
         """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def ResolveLocation(self, request, context):
+        """Missing associated documentation comment in .proto file."""
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
@@ -467,6 +483,13 @@ class KumihoServiceServicer(object):
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
+    def SetDeprecated(self, request, context):
+        """Deprecation methods
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
 
 def add_KumihoServiceServicer_to_server(servicer, server):
     rpc_method_handlers = {
@@ -549,6 +572,11 @@ def add_KumihoServiceServicer_to_server(servicer, server):
                     servicer.ResolveKref,
                     request_deserializer=kumiho__pb2.ResolveKrefRequest.FromString,
                     response_serializer=kumiho__pb2.VersionResponse.SerializeToString,
+            ),
+            'ResolveLocation': grpc.unary_unary_rpc_method_handler(
+                    servicer.ResolveLocation,
+                    request_deserializer=kumiho__pb2.ResolveLocationRequest.FromString,
+                    response_serializer=kumiho__pb2.ResolveLocationResponse.SerializeToString,
             ),
             'CreateVersion': grpc.unary_unary_rpc_method_handler(
                     servicer.CreateVersion,
@@ -659,6 +687,11 @@ def add_KumihoServiceServicer_to_server(servicer, server):
                     servicer.EventStream,
                     request_deserializer=kumiho__pb2.EventStreamRequest.FromString,
                     response_serializer=kumiho__pb2.Event.SerializeToString,
+            ),
+            'SetDeprecated': grpc.unary_unary_rpc_method_handler(
+                    servicer.SetDeprecated,
+                    request_deserializer=kumiho__pb2.SetDeprecatedRequest.FromString,
+                    response_serializer=kumiho__pb2.StatusResponse.SerializeToString,
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
@@ -1094,6 +1127,33 @@ class KumihoService(object):
             '/kumiho.KumihoService/ResolveKref',
             kumiho__pb2.ResolveKrefRequest.SerializeToString,
             kumiho__pb2.VersionResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def ResolveLocation(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/kumiho.KumihoService/ResolveLocation',
+            kumiho__pb2.ResolveLocationRequest.SerializeToString,
+            kumiho__pb2.ResolveLocationResponse.FromString,
             options,
             channel_credentials,
             insecure,
@@ -1688,6 +1748,33 @@ class KumihoService(object):
             '/kumiho.KumihoService/EventStream',
             kumiho__pb2.EventStreamRequest.SerializeToString,
             kumiho__pb2.Event.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def SetDeprecated(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/kumiho.KumihoService/SetDeprecated',
+            kumiho__pb2.SetDeprecatedRequest.SerializeToString,
+            kumiho__pb2.StatusResponse.FromString,
             options,
             channel_credentials,
             insecure,

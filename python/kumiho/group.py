@@ -10,7 +10,8 @@ from .proto.kumiho_pb2 import GroupResponse
 from .product import Product
 
 if TYPE_CHECKING:
-    from .client import Client
+    from .client import _Client
+    from .project import Project
 
 
 class Group(KumihoObject):
@@ -29,7 +30,7 @@ class Group(KumihoObject):
         username (str): The username of the creator.
     """
 
-    def __init__(self, pb_group: GroupResponse, client: 'Client') -> None:
+    def __init__(self, pb_group: GroupResponse, client: '_Client') -> None:
         """Initialize a Group from a protobuf response.
 
         Args:
@@ -151,3 +152,16 @@ class Group(KumihoObject):
             A list of Group objects that are direct children of this group.
         """
         return self._client.get_child_groups(self.path)
+
+    def get_project(self) -> 'Project':
+        """Get the project that contains this group.
+
+        Returns:
+            The Project object.
+        """
+        # The project name is the first component of the path
+        parts = [p for p in self.path.split('/') if p]
+        if not parts:
+            raise ValueError("Root group has no project")
+        project_name = parts[0]
+        return self._client.get_project(project_name)

@@ -1,14 +1,15 @@
 import pytest
 import uuid
 import os
-from kumiho import Client, KumihoError
+from kumiho import KumihoError
+import kumiho
 
 # Use the existing client fixture if available, or create a new one
 @pytest.fixture
 def client():
     # Assuming env vars are set or we can use default
     # We need a client authenticated as a tenant member (admin/owner)
-    return Client()
+    return kumiho.get_client()
 
 def test_safeguards_lifecycle(client):
     """
@@ -81,5 +82,5 @@ def test_safeguards_lifecycle(client):
 
 if __name__ == "__main__":
     # Manual run setup
-    c = Client()
+    c = kumiho.get_client()
     test_safeguards_lifecycle(c)

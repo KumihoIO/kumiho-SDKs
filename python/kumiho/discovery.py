@@ -354,7 +354,7 @@ def _is_control_plane_token(token: str) -> bool:
 def _get_client_class() -> Type[Any]:
     global Client
     if Client is None:
-        from .client import Client as RealClient
+        from .client import _Client as RealClient
 
         Client = RealClient
     return Client
