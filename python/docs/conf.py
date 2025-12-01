@@ -66,7 +66,11 @@ autodoc_class_signature = "separated"
 # Suppress duplicate object warnings for re-exported symbols in __init__.py
 # These occur because classes/functions are documented in both their source
 # module and in the main kumiho namespace (via re-export in __init__.py)
-suppress_warnings = ["autodoc.duplicate_object"]
+suppress_warnings = [
+    "autodoc.duplicate_object",
+    "ref.python",           # Duplicate Python object references
+    "py.duplicate_object",  # Python domain duplicates
+]
 
 # Autosummary settings
 autosummary_generate = True
