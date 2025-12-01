@@ -235,6 +235,31 @@ class KumihoServiceStub(object):
                 request_serializer=kumiho__pb2.ImpactAnalysisRequest.SerializeToString,
                 response_deserializer=kumiho__pb2.ImpactAnalysisResponse.FromString,
                 _registered_method=True)
+        self.CreateCollection = channel.unary_unary(
+                '/kumiho.KumihoService/CreateCollection',
+                request_serializer=kumiho__pb2.CreateCollectionRequest.SerializeToString,
+                response_deserializer=kumiho__pb2.ProductResponse.FromString,
+                _registered_method=True)
+        self.AddCollectionMember = channel.unary_unary(
+                '/kumiho.KumihoService/AddCollectionMember',
+                request_serializer=kumiho__pb2.AddCollectionMemberRequest.SerializeToString,
+                response_deserializer=kumiho__pb2.AddCollectionMemberResponse.FromString,
+                _registered_method=True)
+        self.RemoveCollectionMember = channel.unary_unary(
+                '/kumiho.KumihoService/RemoveCollectionMember',
+                request_serializer=kumiho__pb2.RemoveCollectionMemberRequest.SerializeToString,
+                response_deserializer=kumiho__pb2.RemoveCollectionMemberResponse.FromString,
+                _registered_method=True)
+        self.GetCollectionMembers = channel.unary_unary(
+                '/kumiho.KumihoService/GetCollectionMembers',
+                request_serializer=kumiho__pb2.GetCollectionMembersRequest.SerializeToString,
+                response_deserializer=kumiho__pb2.GetCollectionMembersResponse.FromString,
+                _registered_method=True)
+        self.GetCollectionHistory = channel.unary_unary(
+                '/kumiho.KumihoService/GetCollectionHistory',
+                request_serializer=kumiho__pb2.GetCollectionHistoryRequest.SerializeToString,
+                response_deserializer=kumiho__pb2.GetCollectionHistoryResponse.FromString,
+                _registered_method=True)
         self.GetTenantUsage = channel.unary_unary(
                 '/kumiho.KumihoService/GetTenantUsage',
                 request_serializer=kumiho__pb2.GetTenantUsageRequest.SerializeToString,
@@ -503,6 +528,37 @@ class KumihoServiceServicer(object):
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
+    def CreateCollection(self, request, context):
+        """Collection methods
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def AddCollectionMember(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def RemoveCollectionMember(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def GetCollectionMembers(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def GetCollectionHistory(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
     def GetTenantUsage(self, request, context):
         """Tenant methods
         """
@@ -726,6 +782,31 @@ def add_KumihoServiceServicer_to_server(servicer, server):
                     servicer.AnalyzeImpact,
                     request_deserializer=kumiho__pb2.ImpactAnalysisRequest.FromString,
                     response_serializer=kumiho__pb2.ImpactAnalysisResponse.SerializeToString,
+            ),
+            'CreateCollection': grpc.unary_unary_rpc_method_handler(
+                    servicer.CreateCollection,
+                    request_deserializer=kumiho__pb2.CreateCollectionRequest.FromString,
+                    response_serializer=kumiho__pb2.ProductResponse.SerializeToString,
+            ),
+            'AddCollectionMember': grpc.unary_unary_rpc_method_handler(
+                    servicer.AddCollectionMember,
+                    request_deserializer=kumiho__pb2.AddCollectionMemberRequest.FromString,
+                    response_serializer=kumiho__pb2.AddCollectionMemberResponse.SerializeToString,
+            ),
+            'RemoveCollectionMember': grpc.unary_unary_rpc_method_handler(
+                    servicer.RemoveCollectionMember,
+                    request_deserializer=kumiho__pb2.RemoveCollectionMemberRequest.FromString,
+                    response_serializer=kumiho__pb2.RemoveCollectionMemberResponse.SerializeToString,
+            ),
+            'GetCollectionMembers': grpc.unary_unary_rpc_method_handler(
+                    servicer.GetCollectionMembers,
+                    request_deserializer=kumiho__pb2.GetCollectionMembersRequest.FromString,
+                    response_serializer=kumiho__pb2.GetCollectionMembersResponse.SerializeToString,
+            ),
+            'GetCollectionHistory': grpc.unary_unary_rpc_method_handler(
+                    servicer.GetCollectionHistory,
+                    request_deserializer=kumiho__pb2.GetCollectionHistoryRequest.FromString,
+                    response_serializer=kumiho__pb2.GetCollectionHistoryResponse.SerializeToString,
             ),
             'GetTenantUsage': grpc.unary_unary_rpc_method_handler(
                     servicer.GetTenantUsage,
@@ -1824,6 +1905,141 @@ class KumihoService(object):
             '/kumiho.KumihoService/AnalyzeImpact',
             kumiho__pb2.ImpactAnalysisRequest.SerializeToString,
             kumiho__pb2.ImpactAnalysisResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def CreateCollection(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/kumiho.KumihoService/CreateCollection',
+            kumiho__pb2.CreateCollectionRequest.SerializeToString,
+            kumiho__pb2.ProductResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def AddCollectionMember(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/kumiho.KumihoService/AddCollectionMember',
+            kumiho__pb2.AddCollectionMemberRequest.SerializeToString,
+            kumiho__pb2.AddCollectionMemberResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def RemoveCollectionMember(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/kumiho.KumihoService/RemoveCollectionMember',
+            kumiho__pb2.RemoveCollectionMemberRequest.SerializeToString,
+            kumiho__pb2.RemoveCollectionMemberResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def GetCollectionMembers(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/kumiho.KumihoService/GetCollectionMembers',
+            kumiho__pb2.GetCollectionMembersRequest.SerializeToString,
+            kumiho__pb2.GetCollectionMembersResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def GetCollectionHistory(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/kumiho.KumihoService/GetCollectionHistory',
+            kumiho__pb2.GetCollectionHistoryRequest.SerializeToString,
+            kumiho__pb2.GetCollectionHistoryResponse.FromString,
             options,
             channel_credentials,
             insecure,
