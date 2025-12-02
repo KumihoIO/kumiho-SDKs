@@ -46,6 +46,7 @@ from .product import Product
 if TYPE_CHECKING:
     from .client import _Client
     from .version import Version
+    from .proto.kumiho_pb2 import ProductResponse
 
 
 # Reserved product types that cannot be created manually

@@ -162,6 +162,47 @@ link = version.create_link(
 - `kumiho.REFERENCED`: This version references the target
 - `kumiho.CONTAINS`: This version contains the target
 
+**Querying links by direction:**
+
+```python
+# Get outgoing links (default) - links FROM this version
+outgoing = version.get_links(direction=kumiho.OUTGOING)
+
+# Get incoming links - links TO this version
+incoming = version.get_links(direction=kumiho.INCOMING)
+
+# Get all links in both directions
+all_links = version.get_links(direction=kumiho.BOTH)
+```
+
+### Graph Traversal
+
+Kumiho provides powerful graph traversal methods for dependency analysis:
+
+```python
+# Find all dependencies (what this version depends on)
+deps = version.get_all_dependencies(max_depth=5)
+for kref in deps.version_krefs:
+    print(f"Depends on: {kref.uri}")
+
+# Find all dependents (what depends on this version)
+dependents = version.get_all_dependents(max_depth=5)
+for kref in dependents.version_krefs:
+    print(f"Depended on by: {kref.uri}")
+
+# Find shortest path between versions
+path = source_version.find_path_to(target_version)
+if path:
+    print(f"Path length: {path.total_depth}")
+    for step in path.steps:
+        print(f"  -> {step.version_kref.uri} via {step.link_type}")
+
+# Analyze impact of changes (what would be affected)
+impact = version.analyze_impact()
+for impacted in impact:
+    print(f"Would affect: {impacted.version_kref.uri} at depth {impacted.impact_depth}")
+```
+
 ### Collection
 
 A **Collection** is a special product type that aggregates other products. Collections are useful for bundling related assets together (e.g., a character bundle with model, textures, and rig) with full version-based audit trail of membership changes.
@@ -225,6 +266,24 @@ product.set_metadata({"status": "approved"})
 version.set_metadata({"published_by": "supervisor"})
 resource.set_metadata({"checksum": "sha256:..."})
 ```
+
+### Granular Attribute Operations
+
+For updating individual metadata fields without replacing the entire map:
+
+```python
+# Set a single attribute
+group.set_attribute("department", "modeling")
+version.set_attribute("status", "approved")
+
+# Get a single attribute
+dept = group.get_attribute("department")  # Returns "modeling" or None
+
+# Delete a single attribute
+group.delete_attribute("old_field")
+```
+
+This is more efficient than `set_metadata()` when you only need to change one field.
 
 ### Common Metadata Patterns
 

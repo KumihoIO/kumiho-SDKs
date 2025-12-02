@@ -27,6 +27,7 @@ Example:
 from typing import TYPE_CHECKING, Dict, List, Optional
 
 from .base import KumihoObject
+from .collection import Collection
 from .kref import Kref
 from .proto.kumiho_pb2 import GroupResponse
 from .product import Product
@@ -180,7 +181,7 @@ class Group(KumihoObject):
         self,
         collection_name: str,
         metadata: Optional[Dict[str, str]] = None
-    ) -> 'Collection':
+    ) -> Collection:
         """Create a new collection within this group.
 
         Collections are special products that aggregate other products.
@@ -213,13 +214,11 @@ class Group(KumihoObject):
             >>> hero = assets.get_product("hero", "model")
             >>> bundle.add_member(hero)
         """
-        from .collection import Collection
-        product = self._client.create_collection(
+        return self._client.create_collection(
             parent_path=self.path,
             collection_name=collection_name,
             metadata=metadata
         )
-        return Collection(product._pb, self._client)
 
     def get_products(
         self,
@@ -286,7 +285,80 @@ class Group(KumihoObject):
             ...     "status": "active"
             ... })
         """
-        return self._client.update_group_metadata(Kref(self.path), metadata)
+        # For groups, the server expects the path directly in the kref uri field.
+        # We bypass the Kref class validation since paths don't match kref:// format.
+        from .proto.kumiho_pb2 import Kref as PbKref, UpdateMetadataRequest
+        req = UpdateMetadataRequest(kref=PbKref(uri=self.path), metadata=metadata)
+        resp = self._client.stub.UpdateGroupMetadata(req)
+        return Group(resp, self._client)
+
+    def set_attribute(self, key: str, value: str) -> bool:
+        """Set a single metadata attribute.
+
+        This allows granular updates to metadata without replacing the entire
+        metadata map.
+
+        Args:
+            key: The attribute key to set.
+            value: The attribute value.
+
+        Returns:
+            bool: True if the attribute was set successfully.
+
+        Example:
+            >>> group.set_attribute("department", "modeling")
+            True
+        """
+        # For groups, the server expects the path directly in the kref uri field.
+        # We bypass the Kref class validation since paths don't match kref:// format.
+        from .proto.kumiho_pb2 import Kref as PbKref, SetAttributeRequest
+        req = SetAttributeRequest(kref=PbKref(uri=self.path), key=key, value=value)
+        resp = self._client.stub.SetAttribute(req)
+        if resp.success:
+            self.metadata[key] = value
+        return resp.success
+
+    def get_attribute(self, key: str) -> Optional[str]:
+        """Get a single metadata attribute.
+
+        Args:
+            key: The attribute key to retrieve.
+
+        Returns:
+            The attribute value if it exists, None otherwise.
+
+        Example:
+            >>> group.get_attribute("department")
+            "modeling"
+        """
+        # For groups, the server expects the path directly in the kref uri field.
+        # We bypass the Kref class validation since paths don't match kref:// format.
+        from .proto.kumiho_pb2 import Kref as PbKref, GetAttributeRequest
+        req = GetAttributeRequest(kref=PbKref(uri=self.path), key=key)
+        resp = self._client.stub.GetAttribute(req)
+        return resp.value if resp.exists else None
+
+    def delete_attribute(self, key: str) -> bool:
+        """Delete a single metadata attribute.
+
+        Args:
+            key: The attribute key to delete.
+
+        Returns:
+            bool: True if the attribute was deleted successfully.
+
+        Example:
+            >>> group.delete_attribute("old_field")
+            True
+        """
+        # For groups, the server expects the path directly in the kref uri field.
+        # We bypass the Kref class validation since paths don't match kref:// format.
+        from .proto.kumiho_pb2 import Kref as PbKref, DeleteAttributeRequest
+        req = DeleteAttributeRequest(kref=PbKref(uri=self.path), key=key)
+        resp = self._client.stub.DeleteAttribute(req)
+        if resp.success and key in self.metadata:
+            del self.metadata[key]
+        return resp.success
 
     def delete(self, force: bool = False) -> None:
         """Delete this group.
@@ -367,4 +439,7 @@ class Group(KumihoObject):
         if not parts:
             raise ValueError("Root group has no project")
         project_name = parts[0]
-        return self._client.get_project(project_name)
+        project = self._client.get_project(project_name)
+        if project is None:
+            raise ValueError(f"Project '{project_name}' not found")
+        return project

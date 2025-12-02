@@ -31,6 +31,7 @@ Example::
 
 from datetime import datetime
 from typing import TYPE_CHECKING, Dict, Optional
+import re
 
 from .base import KumihoObject
 from .kref import Kref
@@ -40,11 +41,74 @@ if TYPE_CHECKING:
     from .client import _Client
 
 
+class LinkTypeValidationError(ValueError):
+    """Raised when a link type is invalid or potentially malicious."""
+    pass
+
+
+# Regex for validating link types - must match Rust server validation
+_LINK_TYPE_PATTERN = re.compile(r'^[A-Z][A-Z0-9_]{0,49}$')
+
+
+def validate_link_type(link_type: str) -> None:
+    """Validate a link type for security and correctness.
+    
+    Link types must:
+    - Start with an uppercase letter
+    - Contain only uppercase letters, digits, and underscores
+    - Be 1-50 characters long
+    
+    Args:
+        link_type: The link type to validate.
+        
+    Raises:
+        LinkTypeValidationError: If the link type is invalid.
+        
+    Example::
+    
+        from kumiho.link import validate_link_type, LinkTypeValidationError
+        
+        try:
+            validate_link_type("DEPENDS_ON")  # OK
+            validate_link_type("depends_on")  # Raises error
+        except LinkTypeValidationError as e:
+            print(f"Invalid link type: {e}")
+    """
+    if not isinstance(link_type, str):
+        raise LinkTypeValidationError(
+            f"Link type must be a string, got {type(link_type).__name__}"
+        )
+    
+    if not _LINK_TYPE_PATTERN.match(link_type):
+        raise LinkTypeValidationError(
+            f"Invalid link_type '{link_type}'. Must start with uppercase letter, "
+            "contain only uppercase letters, digits, underscores, and be 1-50 chars."
+        )
+
+
+def is_valid_link_type(link_type: str) -> bool:
+    """Check if a link type is valid without raising exceptions.
+    
+    Args:
+        link_type: The link type to validate.
+        
+    Returns:
+        True if the link type is valid, False otherwise.
+    """
+    try:
+        validate_link_type(link_type)
+        return True
+    except LinkTypeValidationError:
+        return False
+
+
 class LinkType:
     """Standard link types for Kumiho relationships.
 
     These constants define the semantic meaning of relationships between
     versions. Use them when creating or querying links.
+    
+    All link types use UPPERCASE format as required by the Neo4j graph database.
 
     Attributes:
         BELONGS_TO (str): Indicates ownership or grouping relationship.
@@ -65,24 +129,23 @@ class LinkType:
         lod_v1.create_link(highpoly_v1, kumiho.DERIVED_FROM)
     """
 
-    BELONGS_TO = "belongs_to"
+    BELONGS_TO = "BELONGS_TO"
     """Ownership or grouping relationship."""
 
-    CREATED_FROM = "created_from"
+    CREATED_FROM = "CREATED_FROM"
     """Source was generated/created from target."""
 
-    REFERENCED = "referenced"
+    REFERENCED = "REFERENCED"
     """Soft reference relationship."""
 
-    DEPENDS_ON = "depends_on"
+    DEPENDS_ON = "DEPENDS_ON"
     """Source requires target to function."""
 
-    DERIVED_FROM = "derived_from"
+    DERIVED_FROM = "DERIVED_FROM"
     """Source was derived or modified from target."""
 
-    CONTAINS = "contains"
+    CONTAINS = "CONTAINS"
     """Source contains or includes target."""
-
 
 class LinkDirection:
     """Direction constants for link traversal queries.

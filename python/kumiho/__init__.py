@@ -127,11 +127,14 @@ from .collection import (
 )
 from .event import Event
 from .group import Group
-from .kref import Kref
+from .kref import Kref, KrefValidationError, validate_kref, is_valid_kref
 from .link import (
     Link,
     LinkType,
     LinkDirection,
+    LinkTypeValidationError,
+    validate_link_type,
+    is_valid_link_type,
     PathStep,
     VersionPath,
     ImpactedVersion,
@@ -588,6 +591,78 @@ def get_resources_by_location(location: str) -> List[Resource]:
     return get_client().get_resources_by_location(location)
 
 
+def set_attribute(kref: str, key: str, value: str) -> bool:
+    """Set a single metadata attribute on any entity.
+
+    This allows granular updates to metadata without replacing the entire
+    metadata map. Works on any entity type (Version, Product, Resource,
+    or Group) identified by kref.
+
+    Args:
+        kref: The kref URI of the entity.
+        key: The attribute key to set.
+        value: The attribute value.
+
+    Returns:
+        bool: True if the attribute was set successfully.
+
+    Raises:
+        grpc.RpcError: If the entity is not found or the key is reserved.
+
+    Example:
+        >>> kumiho.set_attribute(
+        ...     "kref://project/models/hero.model?v=1",
+        ...     "render_engine",
+        ...     "cycles"
+        ... )
+        True
+    """
+    return get_client().set_attribute(Kref(kref), key, value)
+
+
+def get_attribute(kref: str, key: str) -> Optional[str]:
+    """Get a single metadata attribute from any entity.
+
+    Args:
+        kref: The kref URI of the entity.
+        key: The attribute key to retrieve.
+
+    Returns:
+        The attribute value if it exists, None otherwise.
+
+    Example:
+        >>> kumiho.get_attribute(
+        ...     "kref://project/models/hero.model?v=1",
+        ...     "render_engine"
+        ... )
+        "cycles"
+    """
+    return get_client().get_attribute(Kref(kref), key)
+
+
+def delete_attribute(kref: str, key: str) -> bool:
+    """Delete a single metadata attribute from any entity.
+
+    Args:
+        kref: The kref URI of the entity.
+        key: The attribute key to delete.
+
+    Returns:
+        bool: True if the attribute was deleted successfully.
+
+    Raises:
+        grpc.RpcError: If the entity is not found or the key is reserved.
+
+    Example:
+        >>> kumiho.delete_attribute(
+        ...     "kref://project/models/hero.model?v=1",
+        ...     "old_field"
+        ... )
+        True
+    """
+    return get_client().delete_attribute(Kref(kref), key)
+
+
 def event_stream(
     routing_key_filter: str = "",
     kref_filter: str = ""
@@ -735,6 +810,13 @@ __all__ = [
     "CollectionVersionHistory",
     "ReservedProductTypeError",
     "RESERVED_PRODUCT_TYPES",
+    # Validation
+    "KrefValidationError",
+    "LinkTypeValidationError",
+    "validate_kref",
+    "validate_link_type",
+    "is_valid_kref",
+    "is_valid_link_type",
     # Connection
     "connect",
     "use_client",
@@ -767,6 +849,9 @@ __all__ = [
     "get_version",
     "get_resource",
     "get_resources_by_location",
+    "set_attribute",
+    "get_attribute",
+    "delete_attribute",
     "event_stream",
     "resolve",
 ]

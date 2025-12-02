@@ -442,8 +442,17 @@ class TestCollectionEdgeCases:
         """Test that Collection cannot be instantiated from non-collection product."""
         model = collection_setup["model"]
         
+        # Create a mock ProductResponse with non-collection type
+        from kumiho.proto.kumiho_pb2 import ProductResponse, Kref as ProtoKref
+        mock_pb = ProductResponse(
+            kref=ProtoKref(uri=model.kref.uri),
+            name=model.name,
+            product_name=model.product_name,
+            product_type=model.product_type,  # "model", not "collection"
+        )
+        
         # Collection class should reject non-collection products
         with pytest.raises(ValueError) as exc_info:
-            Collection(model._pb, model._client)
+            Collection(mock_pb, model._client)
         
         assert "collection" in str(exc_info.value).lower()

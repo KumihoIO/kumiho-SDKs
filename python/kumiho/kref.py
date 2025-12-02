@@ -53,6 +53,90 @@ import re
 from .proto import kumiho_pb2
 
 
+class KrefValidationError(ValueError):
+    """Raised when a Kref URI is invalid or contains malicious patterns."""
+    pass
+
+
+# Regex for validating Kref URIs.
+# Valid format: kref://project/group/product.type?v=VERSION&r=RESOURCE
+# Each path segment must be alphanumeric with dots, underscores, or hyphens.
+_KREF_PATTERN = re.compile(
+    r'^kref://[a-zA-Z0-9][a-zA-Z0-9._-]*'
+    r'(/[a-zA-Z0-9][a-zA-Z0-9._-]*)*'
+    r'(\?v=\d+(&r=[a-zA-Z0-9._-]+)?)?$'
+)
+
+
+def validate_kref(uri: str) -> None:
+    """Validate a Kref URI for security and correctness.
+    
+    Checks for:
+    - Proper kref:// scheme
+    - No path traversal patterns (..)
+    - No control characters
+    - Valid path segment format
+    
+    Args:
+        uri: The kref URI to validate.
+        
+    Raises:
+        KrefValidationError: If the URI is invalid or contains malicious patterns.
+        
+    Example::
+    
+        from kumiho.kref import validate_kref, KrefValidationError
+        
+        try:
+            validate_kref("kref://project/group/product.type?v=1")
+        except KrefValidationError as e:
+            print(f"Invalid kref: {e}")
+    """
+    if not isinstance(uri, str):
+        raise KrefValidationError(f"Kref must be a string, got {type(uri).__name__}")
+    
+    # Check for path traversal attempts
+    if '..' in uri:
+        raise KrefValidationError(
+            f"Invalid kref URI '{uri}': path traversal (..) not allowed"
+        )
+    
+    # Check for control characters
+    if any(ord(c) < 32 or c == '\x7f' for c in uri):
+        raise KrefValidationError(
+            f"Invalid kref URI '{uri}': control characters not allowed"
+        )
+    
+    # Check format with regex
+    if not _KREF_PATTERN.match(uri):
+        raise KrefValidationError(
+            f"Invalid kref URI '{uri}': must be format kref://project/group/product.type"
+        )
+
+
+def is_valid_kref(uri: str) -> bool:
+    """Check if a Kref URI is valid without raising exceptions.
+    
+    Args:
+        uri: The kref URI to validate.
+        
+    Returns:
+        True if the URI is valid, False otherwise.
+        
+    Example::
+    
+        from kumiho.kref import is_valid_kref
+        
+        if is_valid_kref("kref://project/group/product.type"):
+            print("Valid!")
+    """
+    try:
+        validate_kref(uri)
+        return True
+    except KrefValidationError:
+        return False
+
+
 class Kref(str):
     """A Kumiho Resource Reference (URI-based unique identifier).
 
@@ -89,21 +173,43 @@ class Kref(str):
         is expected. All string methods work normally.
     """
 
-    def __new__(cls, uri: str) -> 'Kref':
+    def __new__(cls, uri: str, *, validate: bool = True) -> 'Kref':
         """Create a new Kref instance.
 
         Args:
             uri: The kref URI string.
+            validate: Whether to validate the URI (default: True).
+                      Set to False for trusted internal sources.
 
         Returns:
             Kref: A Kref instance that is also a string.
+            
+        Raises:
+            KrefValidationError: If validate=True and the URI is invalid.
 
         Example:
             >>> kref = Kref("kref://project/group/product.type?v=1")
             >>> isinstance(kref, str)
             True
         """
+        if validate:
+            validate_kref(uri)
         return str.__new__(cls, uri)
+    
+    @classmethod
+    def from_pb(cls, pb_kref: kumiho_pb2.Kref) -> 'Kref':
+        """Create a Kref from a protobuf message.
+        
+        This is used for krefs received from the server, which are trusted.
+        
+        Args:
+            pb_kref: The protobuf Kref message.
+            
+        Returns:
+            Kref: A Kref instance.
+        """
+        # Don't validate server-returned krefs - they're trusted
+        return cls(pb_kref.uri, validate=False)
 
     @property
     def uri(self) -> str:

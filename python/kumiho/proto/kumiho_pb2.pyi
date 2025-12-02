@@ -55,6 +55,24 @@ class StatusResponse(_message.Message):
     message: str
     def __init__(self, success: bool = ..., message: _Optional[str] = ...) -> None: ...
 
+class PaginationRequest(_message.Message):
+    __slots__ = ("page_size", "cursor")
+    PAGE_SIZE_FIELD_NUMBER: _ClassVar[int]
+    CURSOR_FIELD_NUMBER: _ClassVar[int]
+    page_size: int
+    cursor: str
+    def __init__(self, page_size: _Optional[int] = ..., cursor: _Optional[str] = ...) -> None: ...
+
+class PaginationResponse(_message.Message):
+    __slots__ = ("next_cursor", "has_more", "total_count")
+    NEXT_CURSOR_FIELD_NUMBER: _ClassVar[int]
+    HAS_MORE_FIELD_NUMBER: _ClassVar[int]
+    TOTAL_COUNT_FIELD_NUMBER: _ClassVar[int]
+    next_cursor: str
+    has_more: bool
+    total_count: int
+    def __init__(self, next_cursor: _Optional[str] = ..., has_more: bool = ..., total_count: _Optional[int] = ...) -> None: ...
+
 class KrefRequest(_message.Message):
     __slots__ = ("kref",)
     KREF_FIELD_NUMBER: _ClassVar[int]
@@ -143,18 +161,22 @@ class DeleteGroupRequest(_message.Message):
     def __init__(self, path: _Optional[str] = ..., force: bool = ...) -> None: ...
 
 class GetChildGroupsRequest(_message.Message):
-    __slots__ = ("parent_path", "recursive")
+    __slots__ = ("parent_path", "recursive", "pagination")
     PARENT_PATH_FIELD_NUMBER: _ClassVar[int]
     RECURSIVE_FIELD_NUMBER: _ClassVar[int]
+    PAGINATION_FIELD_NUMBER: _ClassVar[int]
     parent_path: str
     recursive: bool
-    def __init__(self, parent_path: _Optional[str] = ..., recursive: bool = ...) -> None: ...
+    pagination: PaginationRequest
+    def __init__(self, parent_path: _Optional[str] = ..., recursive: bool = ..., pagination: _Optional[_Union[PaginationRequest, _Mapping]] = ...) -> None: ...
 
 class GetChildGroupsResponse(_message.Message):
-    __slots__ = ("groups",)
+    __slots__ = ("groups", "pagination")
     GROUPS_FIELD_NUMBER: _ClassVar[int]
+    PAGINATION_FIELD_NUMBER: _ClassVar[int]
     groups: _containers.RepeatedCompositeFieldContainer[GroupResponse]
-    def __init__(self, groups: _Optional[_Iterable[_Union[GroupResponse, _Mapping]]] = ...) -> None: ...
+    pagination: PaginationResponse
+    def __init__(self, groups: _Optional[_Iterable[_Union[GroupResponse, _Mapping]]] = ..., pagination: _Optional[_Union[PaginationResponse, _Mapping]] = ...) -> None: ...
 
 class CreateProductRequest(_message.Message):
     __slots__ = ("parent_path", "product_name", "product_type", "exists_error")
@@ -218,20 +240,24 @@ class DeleteProductRequest(_message.Message):
     def __init__(self, kref: _Optional[_Union[Kref, _Mapping]] = ..., force: bool = ...) -> None: ...
 
 class GetProductsRequest(_message.Message):
-    __slots__ = ("parent_path", "product_name_filter", "product_type_filter")
+    __slots__ = ("parent_path", "product_name_filter", "product_type_filter", "pagination")
     PARENT_PATH_FIELD_NUMBER: _ClassVar[int]
     PRODUCT_NAME_FILTER_FIELD_NUMBER: _ClassVar[int]
     PRODUCT_TYPE_FILTER_FIELD_NUMBER: _ClassVar[int]
+    PAGINATION_FIELD_NUMBER: _ClassVar[int]
     parent_path: str
     product_name_filter: str
     product_type_filter: str
-    def __init__(self, parent_path: _Optional[str] = ..., product_name_filter: _Optional[str] = ..., product_type_filter: _Optional[str] = ...) -> None: ...
+    pagination: PaginationRequest
+    def __init__(self, parent_path: _Optional[str] = ..., product_name_filter: _Optional[str] = ..., product_type_filter: _Optional[str] = ..., pagination: _Optional[_Union[PaginationRequest, _Mapping]] = ...) -> None: ...
 
 class GetProductsResponse(_message.Message):
-    __slots__ = ("products",)
+    __slots__ = ("products", "pagination")
     PRODUCTS_FIELD_NUMBER: _ClassVar[int]
+    PAGINATION_FIELD_NUMBER: _ClassVar[int]
     products: _containers.RepeatedCompositeFieldContainer[ProductResponse]
-    def __init__(self, products: _Optional[_Iterable[_Union[ProductResponse, _Mapping]]] = ...) -> None: ...
+    pagination: PaginationResponse
+    def __init__(self, products: _Optional[_Iterable[_Union[ProductResponse, _Mapping]]] = ..., pagination: _Optional[_Union[PaginationResponse, _Mapping]] = ...) -> None: ...
 
 class ProductSearchRequest(_message.Message):
     __slots__ = ("context_filter", "product_name_filter", "product_type_filter")
@@ -310,16 +336,20 @@ class DeleteVersionRequest(_message.Message):
     def __init__(self, kref: _Optional[_Union[Kref, _Mapping]] = ..., force: bool = ...) -> None: ...
 
 class GetVersionsRequest(_message.Message):
-    __slots__ = ("product_kref",)
+    __slots__ = ("product_kref", "pagination")
     PRODUCT_KREF_FIELD_NUMBER: _ClassVar[int]
+    PAGINATION_FIELD_NUMBER: _ClassVar[int]
     product_kref: Kref
-    def __init__(self, product_kref: _Optional[_Union[Kref, _Mapping]] = ...) -> None: ...
+    pagination: PaginationRequest
+    def __init__(self, product_kref: _Optional[_Union[Kref, _Mapping]] = ..., pagination: _Optional[_Union[PaginationRequest, _Mapping]] = ...) -> None: ...
 
 class GetVersionsResponse(_message.Message):
-    __slots__ = ("versions",)
+    __slots__ = ("versions", "pagination")
     VERSIONS_FIELD_NUMBER: _ClassVar[int]
+    PAGINATION_FIELD_NUMBER: _ClassVar[int]
     versions: _containers.RepeatedCompositeFieldContainer[VersionResponse]
-    def __init__(self, versions: _Optional[_Iterable[_Union[VersionResponse, _Mapping]]] = ...) -> None: ...
+    pagination: PaginationResponse
+    def __init__(self, versions: _Optional[_Iterable[_Union[VersionResponse, _Mapping]]] = ..., pagination: _Optional[_Union[PaginationResponse, _Mapping]] = ...) -> None: ...
 
 class CreateResourceRequest(_message.Message):
     __slots__ = ("version_kref", "name", "location", "exists_error")
@@ -494,6 +524,42 @@ class UpdateMetadataRequest(_message.Message):
     metadata: _containers.ScalarMap[str, str]
     def __init__(self, kref: _Optional[_Union[Kref, _Mapping]] = ..., metadata: _Optional[_Mapping[str, str]] = ...) -> None: ...
 
+class SetAttributeRequest(_message.Message):
+    __slots__ = ("kref", "key", "value")
+    KREF_FIELD_NUMBER: _ClassVar[int]
+    KEY_FIELD_NUMBER: _ClassVar[int]
+    VALUE_FIELD_NUMBER: _ClassVar[int]
+    kref: Kref
+    key: str
+    value: str
+    def __init__(self, kref: _Optional[_Union[Kref, _Mapping]] = ..., key: _Optional[str] = ..., value: _Optional[str] = ...) -> None: ...
+
+class GetAttributeRequest(_message.Message):
+    __slots__ = ("kref", "key")
+    KREF_FIELD_NUMBER: _ClassVar[int]
+    KEY_FIELD_NUMBER: _ClassVar[int]
+    kref: Kref
+    key: str
+    def __init__(self, kref: _Optional[_Union[Kref, _Mapping]] = ..., key: _Optional[str] = ...) -> None: ...
+
+class GetAttributeResponse(_message.Message):
+    __slots__ = ("key", "value", "exists")
+    KEY_FIELD_NUMBER: _ClassVar[int]
+    VALUE_FIELD_NUMBER: _ClassVar[int]
+    EXISTS_FIELD_NUMBER: _ClassVar[int]
+    key: str
+    value: str
+    exists: bool
+    def __init__(self, key: _Optional[str] = ..., value: _Optional[str] = ..., exists: bool = ...) -> None: ...
+
+class DeleteAttributeRequest(_message.Message):
+    __slots__ = ("kref", "key")
+    KREF_FIELD_NUMBER: _ClassVar[int]
+    KEY_FIELD_NUMBER: _ClassVar[int]
+    kref: Kref
+    key: str
+    def __init__(self, kref: _Optional[_Union[Kref, _Mapping]] = ..., key: _Optional[str] = ...) -> None: ...
+
 class PeekNextVersionRequest(_message.Message):
     __slots__ = ("product_kref",)
     PRODUCT_KREF_FIELD_NUMBER: _ClassVar[int]
@@ -507,22 +573,26 @@ class PeekNextVersionResponse(_message.Message):
     def __init__(self, number: _Optional[int] = ...) -> None: ...
 
 class GetLinksRequest(_message.Message):
-    __slots__ = ("kref", "link_type_filter", "direction")
+    __slots__ = ("kref", "link_type_filter", "direction", "pagination")
     KREF_FIELD_NUMBER: _ClassVar[int]
     LINK_TYPE_FILTER_FIELD_NUMBER: _ClassVar[int]
     DIRECTION_FIELD_NUMBER: _ClassVar[int]
+    PAGINATION_FIELD_NUMBER: _ClassVar[int]
     kref: Kref
     link_type_filter: str
     direction: LinkDirection
-    def __init__(self, kref: _Optional[_Union[Kref, _Mapping]] = ..., link_type_filter: _Optional[str] = ..., direction: _Optional[_Union[LinkDirection, str]] = ...) -> None: ...
+    pagination: PaginationRequest
+    def __init__(self, kref: _Optional[_Union[Kref, _Mapping]] = ..., link_type_filter: _Optional[str] = ..., direction: _Optional[_Union[LinkDirection, str]] = ..., pagination: _Optional[_Union[PaginationRequest, _Mapping]] = ...) -> None: ...
 
 class GetLinksResponse(_message.Message):
-    __slots__ = ("links", "version_krefs")
+    __slots__ = ("links", "version_krefs", "pagination")
     LINKS_FIELD_NUMBER: _ClassVar[int]
     VERSION_KREFS_FIELD_NUMBER: _ClassVar[int]
+    PAGINATION_FIELD_NUMBER: _ClassVar[int]
     links: _containers.RepeatedCompositeFieldContainer[Link]
     version_krefs: _containers.RepeatedCompositeFieldContainer[Kref]
-    def __init__(self, links: _Optional[_Iterable[_Union[Link, _Mapping]]] = ..., version_krefs: _Optional[_Iterable[_Union[Kref, _Mapping]]] = ...) -> None: ...
+    pagination: PaginationResponse
+    def __init__(self, links: _Optional[_Iterable[_Union[Link, _Mapping]]] = ..., version_krefs: _Optional[_Iterable[_Union[Kref, _Mapping]]] = ..., pagination: _Optional[_Union[PaginationResponse, _Mapping]] = ...) -> None: ...
 
 class DeleteLinkRequest(_message.Message):
     __slots__ = ("source_kref", "target_kref", "link_type")
