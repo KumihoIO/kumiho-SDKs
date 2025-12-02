@@ -171,14 +171,12 @@ class Project(KumihoObject):
             >>> hero = project.get_group("models").get_product("hero", "model")
             >>> bundle.add_member(hero)
         """
-        from .collection import Collection
         base_parent = parent_path or f"/{self.name}"
-        product = self._client.create_collection(
+        return self._client.create_collection(
             parent_path=base_parent,
             collection_name=collection_name,
             metadata=metadata
         )
-        return Collection(product._pb, self._client)
 
     def delete(self, force: bool = False):
         """Delete or deprecate this project.

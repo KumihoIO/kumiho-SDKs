@@ -205,6 +205,21 @@ class KumihoServiceStub(object):
                 request_serializer=kumiho__pb2.UpdateMetadataRequest.SerializeToString,
                 response_deserializer=kumiho__pb2.ResourceResponse.FromString,
                 _registered_method=True)
+        self.SetAttribute = channel.unary_unary(
+                '/kumiho.KumihoService/SetAttribute',
+                request_serializer=kumiho__pb2.SetAttributeRequest.SerializeToString,
+                response_deserializer=kumiho__pb2.StatusResponse.FromString,
+                _registered_method=True)
+        self.GetAttribute = channel.unary_unary(
+                '/kumiho.KumihoService/GetAttribute',
+                request_serializer=kumiho__pb2.GetAttributeRequest.SerializeToString,
+                response_deserializer=kumiho__pb2.GetAttributeResponse.FromString,
+                _registered_method=True)
+        self.DeleteAttribute = channel.unary_unary(
+                '/kumiho.KumihoService/DeleteAttribute',
+                request_serializer=kumiho__pb2.DeleteAttributeRequest.SerializeToString,
+                response_deserializer=kumiho__pb2.StatusResponse.FromString,
+                _registered_method=True)
         self.CreateLink = channel.unary_unary(
                 '/kumiho.KumihoService/CreateLink',
                 request_serializer=kumiho__pb2.CreateLinkRequest.SerializeToString,
@@ -490,6 +505,26 @@ class KumihoServiceServicer(object):
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
+    def SetAttribute(self, request, context):
+        """Attribute methods (granular metadata operations)
+        These work on any entity type (Version, Product, Resource, Group) identified by kref
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def GetAttribute(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def DeleteAttribute(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
     def CreateLink(self, request, context):
         """Link methods
         """
@@ -752,6 +787,21 @@ def add_KumihoServiceServicer_to_server(servicer, server):
                     servicer.UpdateResourceMetadata,
                     request_deserializer=kumiho__pb2.UpdateMetadataRequest.FromString,
                     response_serializer=kumiho__pb2.ResourceResponse.SerializeToString,
+            ),
+            'SetAttribute': grpc.unary_unary_rpc_method_handler(
+                    servicer.SetAttribute,
+                    request_deserializer=kumiho__pb2.SetAttributeRequest.FromString,
+                    response_serializer=kumiho__pb2.StatusResponse.SerializeToString,
+            ),
+            'GetAttribute': grpc.unary_unary_rpc_method_handler(
+                    servicer.GetAttribute,
+                    request_deserializer=kumiho__pb2.GetAttributeRequest.FromString,
+                    response_serializer=kumiho__pb2.GetAttributeResponse.SerializeToString,
+            ),
+            'DeleteAttribute': grpc.unary_unary_rpc_method_handler(
+                    servicer.DeleteAttribute,
+                    request_deserializer=kumiho__pb2.DeleteAttributeRequest.FromString,
+                    response_serializer=kumiho__pb2.StatusResponse.SerializeToString,
             ),
             'CreateLink': grpc.unary_unary_rpc_method_handler(
                     servicer.CreateLink,
@@ -1743,6 +1793,87 @@ class KumihoService(object):
             '/kumiho.KumihoService/UpdateResourceMetadata',
             kumiho__pb2.UpdateMetadataRequest.SerializeToString,
             kumiho__pb2.ResourceResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def SetAttribute(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/kumiho.KumihoService/SetAttribute',
+            kumiho__pb2.SetAttributeRequest.SerializeToString,
+            kumiho__pb2.StatusResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def GetAttribute(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/kumiho.KumihoService/GetAttribute',
+            kumiho__pb2.GetAttributeRequest.SerializeToString,
+            kumiho__pb2.GetAttributeResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def DeleteAttribute(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/kumiho.KumihoService/DeleteAttribute',
+            kumiho__pb2.DeleteAttributeRequest.SerializeToString,
+            kumiho__pb2.StatusResponse.FromString,
             options,
             channel_credentials,
             insecure,

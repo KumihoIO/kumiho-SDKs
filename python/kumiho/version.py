@@ -207,6 +207,61 @@ class Version(KumihoObject):
         """
         return self._client.update_version_metadata(self.kref, metadata)
 
+    def set_attribute(self, key: str, value: str) -> bool:
+        """Set a single metadata attribute.
+
+        This allows granular updates to metadata without replacing the entire
+        metadata map.
+
+        Args:
+            key: The attribute key to set.
+            value: The attribute value.
+
+        Returns:
+            bool: True if the attribute was set successfully.
+
+        Example:
+            >>> version.set_attribute("render_engine", "cycles")
+            True
+        """
+        result = self._client.set_attribute(self.kref, key, value)
+        if result:
+            self.metadata[key] = value
+        return result
+
+    def get_attribute(self, key: str) -> Optional[str]:
+        """Get a single metadata attribute.
+
+        Args:
+            key: The attribute key to retrieve.
+
+        Returns:
+            The attribute value if it exists, None otherwise.
+
+        Example:
+            >>> version.get_attribute("render_engine")
+            "cycles"
+        """
+        return self._client.get_attribute(self.kref, key)
+
+    def delete_attribute(self, key: str) -> bool:
+        """Delete a single metadata attribute.
+
+        Args:
+            key: The attribute key to delete.
+
+        Returns:
+            bool: True if the attribute was deleted successfully.
+
+        Example:
+            >>> version.delete_attribute("old_field")
+            True
+        """
+        result = self._client.delete_attribute(self.kref, key)
+        if result and key in self.metadata:
+            del self.metadata[key]
+        return result
+
     def has_tag(self, tag: str) -> bool:
         """Check if this version currently has a specific tag.
 

@@ -39,8 +39,7 @@ Note:
 
 import logging
 import os
-from datetime import datetime
-from typing import Any, Dict, Iterator, List, Optional, Sequence, Tuple, Union
+from typing import Any, Dict, Iterator, List, Optional, Sequence, Tuple, Union, TYPE_CHECKING
 from urllib.parse import urlparse
 
 import grpc
@@ -67,7 +66,9 @@ from .proto.kumiho_pb2 import (
     DeleteResourceRequest,
     DeleteVersionRequest,
     DeleteProjectRequest,
+    DeleteAttributeRequest,
     EventStreamRequest,
+    GetAttributeRequest,
     GetChildGroupsRequest,
     GetGroupRequest,
     GetLinksRequest,
@@ -82,10 +83,12 @@ from .proto.kumiho_pb2 import (
     HasTagRequest,
     KrefRequest,
     Link as PbLink,
+    LinkDirection,
     PeekNextVersionRequest,
     ProductSearchRequest,
     ResolveKrefRequest,
     ResolveLocationRequest,
+    SetAttributeRequest,
     SetDefaultResourceRequest,
     TagVersionRequest,
     UnTagVersionRequest,
@@ -101,20 +104,24 @@ from .proto.kumiho_pb2 import (
     GetCollectionMembersRequest,
     GetCollectionHistoryRequest,
 )
-from .link import Link
+from .link import Link, TraversalResult, ImpactedVersion, ShortestPathResult
 from .proto.kumiho_pb2 import ProjectResponse, StatusResponse
 from .project import Project
-
-class ProjectLimitError(Exception):
-    """Raised when guardrails block project creation (e.g., max projects reached)."""
 from .product import Product
 from .resource import Resource
 from .version import Version
+
+if TYPE_CHECKING:
+    from .collection import Collection, CollectionMember, CollectionVersionHistory
 
 
 _LOGGER = logging.getLogger("kumiho.client")
 _DISCOVERY_DISABLE_ENV = "KUMIHO_DISABLE_AUTO_DISCOVERY"
 _FORCE_REFRESH_ENV = "KUMIHO_FORCE_DISCOVERY_REFRESH"
+
+
+class ProjectLimitError(Exception):
+    """Raised when guardrails block project creation (e.g., max projects reached)."""
 
 
 class _Client:
@@ -431,11 +438,12 @@ class _Client:
         allow_public: Optional[bool] = None,
         description: Optional[str] = None
     ) -> Project:
-        req = kumiho_pb2.UpdateProjectRequest(
-            project_id=project_id,
-            allow_public=allow_public,
-            description=description
-        )
+        kwargs: Dict[str, Any] = {"project_id": project_id}
+        if allow_public is not None:
+            kwargs["allow_public"] = allow_public
+        if description is not None:
+            kwargs["description"] = description
+        req = kumiho_pb2.UpdateProjectRequest(**kwargs)
         resp = self.stub.UpdateProject(req)
         return Project(resp, self)
 
@@ -993,6 +1001,76 @@ class _Client:
         except Exception:
             return None
 
+    # Attribute methods (granular metadata operations)
+    def set_attribute(self, kref: Kref, key: str, value: str) -> bool:
+        """Set a single metadata attribute on any entity.
+
+        This allows granular updates to metadata without replacing the entire
+        metadata map. The attribute key cannot be a reserved system field.
+
+        Args:
+            kref: The kref of the entity (Version, Product, Resource, or Group).
+            key: The attribute key to set.
+            value: The attribute value.
+
+        Returns:
+            True if the attribute was set successfully.
+
+        Raises:
+            grpc.RpcError: If the entity is not found or the key is reserved.
+
+        Example:
+            >>> client.set_attribute(version.kref, "render_engine", "cycles")
+            True
+        """
+        req = SetAttributeRequest(kref=kref.to_pb(), key=key, value=value)
+        resp = self.stub.SetAttribute(req)
+        return resp.success
+
+    def get_attribute(self, kref: Kref, key: str) -> Optional[str]:
+        """Get a single metadata attribute from any entity.
+
+        Args:
+            kref: The kref of the entity (Version, Product, Resource, or Group).
+            key: The attribute key to retrieve.
+
+        Returns:
+            The attribute value if it exists, None otherwise.
+
+        Raises:
+            grpc.RpcError: If the entity is not found.
+
+        Example:
+            >>> client.get_attribute(version.kref, "render_engine")
+            "cycles"
+            >>> client.get_attribute(version.kref, "nonexistent")
+            None
+        """
+        req = GetAttributeRequest(kref=kref.to_pb(), key=key)
+        resp = self.stub.GetAttribute(req)
+        return resp.value if resp.exists else None
+
+    def delete_attribute(self, kref: Kref, key: str) -> bool:
+        """Delete a single metadata attribute from any entity.
+
+        Args:
+            kref: The kref of the entity (Version, Product, Resource, or Group).
+            key: The attribute key to delete.
+
+        Returns:
+            True if the attribute was deleted successfully.
+
+        Raises:
+            grpc.RpcError: If the entity is not found or the key is reserved.
+
+        Example:
+            >>> client.delete_attribute(version.kref, "deprecated_field")
+            True
+        """
+        req = DeleteAttributeRequest(kref=kref.to_pb(), key=key)
+        resp = self.stub.DeleteAttribute(req)
+        return resp.success
+
     # Link methods
     def create_link(
         self,
@@ -1008,11 +1086,18 @@ class _Client:
             target_version: The target version of the link.
             link_type: The type of relationship (e.g., kumiho.LinkType.DEPENDS_ON).
                        See kumiho.LinkType for standard types.
+                       Must be UPPERCASE with letters, digits, underscores only.
             metadata: Optional metadata for the link.
 
         Returns:
             The created Link object.
+            
+        Raises:
+            LinkTypeValidationError: If link_type is invalid.
         """
+        from .link import validate_link_type
+        validate_link_type(link_type)
+        
         req = CreateLinkRequest(
             source_version_kref=source_version.kref.to_pb(),
             target_version_kref=target_version.kref.to_pb(),
@@ -1052,7 +1137,13 @@ class _Client:
             source_kref: The source version kref.
             target_kref: The target version kref.
             link_type: The type of link to delete.
+            
+        Raises:
+            LinkTypeValidationError: If link_type is invalid.
         """
+        from .link import validate_link_type
+        validate_link_type(link_type)
+        
         req = DeleteLinkRequest(
             source_kref=source_kref.to_pb(),
             target_kref=target_kref.to_pb(),
@@ -1211,7 +1302,7 @@ class _Client:
         parent_path: str,
         collection_name: str,
         metadata: Optional[Dict[str, str]] = None
-    ) -> Product:
+    ) -> "Collection":
         """Create a new collection product.
 
         Collections are special products that aggregate other products.
@@ -1230,18 +1321,19 @@ class _Client:
             metadata: Optional key-value metadata for the collection.
 
         Returns:
-            Product: The created Product object with ``product_type='collection'``.
+            Collection: The created Collection object with ``product_type='collection'``.
 
         Raises:
             grpc.RpcError: If the collection name is already taken or connection fails.
         """
+        from .collection import Collection
         req = CreateCollectionRequest(
             parent_path=parent_path,
             collection_name=collection_name,
             metadata=metadata or {}
         )
         resp = self.stub.CreateCollection(req)
-        return Product(resp, self)
+        return Collection(resp, self)
 
     def add_collection_member(
         self,
@@ -1443,7 +1535,9 @@ class _ClientCallDetails(grpc.ClientCallDetails):
     ) -> None:
         self.method = method
         self.timeout = timeout
-        self.metadata = metadata
+        self.metadata: Optional[Tuple[Tuple[str, Union[str, bytes]], ...]] = (
+            tuple((k, v) for k, v in metadata) if metadata is not None else None
+        )
         self.credentials = credentials
         self.wait_for_ready = wait_for_ready
         self.compression = compression
@@ -1453,7 +1547,14 @@ def _augment_call_details(
     client_call_details: grpc.ClientCallDetails,
     metadata: Sequence[Tuple[str, str]],
 ) -> _ClientCallDetails:
-    existing = list(client_call_details.metadata or [])
+    existing: List[Tuple[str, str]] = []
+    for k, v in (client_call_details.metadata or []):
+        if isinstance(v, str):
+            existing.append((k, v))
+        elif isinstance(v, bytes):
+            existing.append((k, v.decode("utf-8")))
+        else:
+            existing.append((k, bytes(v).decode("utf-8")))
     existing.extend(metadata)
     return _ClientCallDetails(
         method=client_call_details.method,
@@ -1515,7 +1616,15 @@ class _AutoLoginInterceptor(
                         new_token, _ = auth_cli.ensure_token(interactive=True)
                         
                         # Update the authorization header with the new token
-                        existing_metadata = list(client_call_details.metadata or [])
+                        existing_metadata: List[Tuple[str, str]] = []
+                        for k, v in (client_call_details.metadata or []):
+                            if isinstance(v, str):
+                                existing_metadata.append((k, v))
+                            elif isinstance(v, bytes):
+                                existing_metadata.append((k, v.decode("utf-8")))
+                            else:
+                                # memoryview or other buffer-like object
+                                existing_metadata.append((k, bytes(v).decode("utf-8")))
                         # Remove old authorization header
                         existing_metadata = [(k, v) for k, v in existing_metadata if k.lower() != "authorization"]
                         # Add new token

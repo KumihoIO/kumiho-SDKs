@@ -68,8 +68,9 @@ one via `kumiho.create_project`, `kumiho.get_project`, or iteration over
   nested hierarchy without manual path concatenation.
 - `create_product(product_name, product_type)` and `get_products(...)` manage
   products within the group.
-- `set_metadata(metadata)` and `delete(force=False)` mutate the group via the
-  client.
+- `set_metadata(metadata)` replaces all metadata; `set_attribute(key, value)`,
+  `get_attribute(key)`, and `delete_attribute(key)` provide granular updates.
+- `delete(force=False)` removes the group via the client.
 
 ## Products
 
@@ -111,8 +112,23 @@ already have a version Kref. Helpers include:
 
 `Link` represents relationships between versions. Create them via
 `Client.create_link(source_version, target_version, link_type, metadata=None)`
-and fetch them with `Client.get_links(kref, link_type_filter="")`. Call
-`Link.delete()` to remove a relationship.
+and fetch them with `Client.get_links(kref, link_type_filter="", direction=0)`.
+Use direction constants `kumiho.OUTGOING` (default), `kumiho.INCOMING`, or
+`kumiho.BOTH` to control which links are returned. Call `Link.delete()` to
+remove a relationship.
+
+## Graph Traversal
+
+The SDK provides powerful graph traversal methods on `Version` objects:
+
+- `get_all_dependencies(max_depth=10, link_type_filter=None, limit=100)` finds
+  all versions this version depends on (following outgoing links).
+- `get_all_dependents(max_depth=10, link_type_filter=None, limit=100)` finds all
+  versions that depend on this version (following incoming links).
+- `find_path_to(target_version, link_type_filter=None, max_depth=10)` returns a
+  `ShortestPathResult` with steps between the source and target.
+- `analyze_impact(link_type_filter=None, max_depth=10, limit=100)` returns
+  `ImpactedVersion` objects showing what would be affected by changes.
 
 ## Events
 

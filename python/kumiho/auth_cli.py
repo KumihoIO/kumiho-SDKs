@@ -162,7 +162,7 @@ def _refresh_with_token(api_key: str, refresh_token: str) -> Tuple[str, str, int
     return data["id_token"], data["refresh_token"], int(data.get("expires_in", "3600"))
 
 
-def _exchange_for_control_plane_token(firebase_token: str) -> Tuple[str, int]:
+def _exchange_for_control_plane_token(firebase_token: str) -> Tuple[Optional[str], Optional[int]]:
     base_url = os.getenv(CONTROL_PLANE_API_ENV, DEFAULT_CONTROL_PLANE_API_URL).rstrip("/")
     url = f"{base_url}/api/control-plane/token"
     

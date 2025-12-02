@@ -15,7 +15,7 @@ import requests
 
 from ._token_loader import load_bearer_token, load_firebase_token
 if TYPE_CHECKING:
-    from .client import Client as ClientType
+    from .client import _Client as ClientType
 else:
     ClientType = Any
 
