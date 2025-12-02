@@ -87,7 +87,7 @@ Example:
 
         # Query by kref
         item = kumiho.get_item("kref://my-project/assets/character.model")
-        revision = kumiho.get_revision("kref://my-project/assets/character.model?v=1")
+        revision = kumiho.get_revision("kref://my-project/assets/character.model?r=1")
 
         # Search across project
         models = kumiho.item_search(
@@ -526,7 +526,7 @@ def get_revision(kref: str) -> Revision:
 
     Args:
         kref: The kref URI of the revision
-            (e.g., "kref://project/space/item.kind?v=1").
+            (e.g., "kref://project/space/item.kind?r=1").
 
     Returns:
         Revision: The Revision object.
@@ -536,7 +536,7 @@ def get_revision(kref: str) -> Revision:
 
     Example:
         >>> revision = kumiho.get_revision(
-        ...     "kref://film-project/characters/hero.model?v=3"
+        ...     "kref://film-project/characters/hero.model?r=3"
         ... )
         >>> artifacts = revision.get_artifacts()
         >>> for a in artifacts:
@@ -550,18 +550,18 @@ def get_artifact(kref: str) -> Artifact:
 
     Args:
         kref: The kref URI of the artifact
-            (e.g., "kref://project/space/item.kind?v=1&r=main").
+            (e.g., "kref://project/space/item.kind?r=1&a=main").
 
     Returns:
         Artifact: The Artifact object.
 
     Raises:
         grpc.RpcError: If the artifact is not found.
-        ValueError: If the kref is missing the artifact name (&r=).
+        ValueError: If the kref is missing the artifact name (&a=).
 
     Example:
         >>> artifact = kumiho.get_artifact(
-        ...     "kref://film-project/characters/hero.model?v=3&r=mesh"
+        ...     "kref://film-project/characters/hero.model?r=3&a=mesh"
         ... )
         >>> print(artifact.location)
         /projects/film/char/hero_v3.fbx
@@ -611,7 +611,7 @@ def set_attribute(kref: str, key: str, value: str) -> bool:
 
     Example:
         >>> kumiho.set_attribute(
-        ...     "kref://project/models/hero.model?v=1",
+        ...     "kref://project/models/hero.model?r=1",
         ...     "render_engine",
         ...     "cycles"
         ... )
@@ -632,7 +632,7 @@ def get_attribute(kref: str, key: str) -> Optional[str]:
 
     Example:
         >>> kumiho.get_attribute(
-        ...     "kref://project/models/hero.model?v=1",
+        ...     "kref://project/models/hero.model?r=1",
         ...     "render_engine"
         ... )
         "cycles"
@@ -655,7 +655,7 @@ def delete_attribute(kref: str, key: str) -> bool:
 
     Example:
         >>> kumiho.delete_attribute(
-        ...     "kref://project/models/hero.model?v=1",
+        ...     "kref://project/models/hero.model?r=1",
         ...     "old_field"
         ... )
         True
@@ -713,14 +713,14 @@ def resolve(kref: str) -> Optional[str]:
     Example:
         >>> # Resolve a specific artifact
         >>> path = kumiho.resolve(
-        ...     "kref://film-project/chars/hero.model?v=3&r=mesh"
+        ...     "kref://film-project/chars/hero.model?r=3&a=mesh"
         ... )
         >>> print(path)
         /projects/film/char/hero_v3.fbx
 
         >>> # Resolve revision's default artifact
         >>> path = kumiho.resolve(
-        ...     "kref://film-project/chars/hero.model?v=3"
+        ...     "kref://film-project/chars/hero.model?r=3"
         ... )
     """
     return get_client().resolve(kref)

@@ -7,14 +7,14 @@ Kumiho system.
 Kref Format:
     The kref URI follows this pattern::
 
-        kref://project/space/item.kind?v=REVISION&r=ARTIFACT
+        kref://project/space/item.kind?r=REVISION&a=ARTIFACT
 
     Components:
         - ``project``: The project name
         - ``space``: The space path (can be nested: ``space/subspace``)
         - ``item.kind``: Item name and kind separated by dot
-        - ``?v=REVISION``: Optional revision number (default: 1)
-        - ``&r=ARTIFACT``: Optional artifact name
+        - ``?r=REVISION``: Optional revision number (default: 1)
+        - ``&a=ARTIFACT``: Optional artifact name
 
 Examples:
     Item kref::
@@ -23,11 +23,11 @@ Examples:
 
     Revision kref::
 
-        kref://film-2024/characters/hero.model?v=3
+        kref://film-2024/characters/hero.model?r=3
 
     Artifact kref::
 
-        kref://film-2024/characters/hero.model?v=3&r=mesh
+        kref://film-2024/characters/hero.model?r=3&a=mesh
 
 Usage::
 
@@ -35,7 +35,7 @@ Usage::
     from kumiho import Kref
 
     # Parse a kref
-    kref = Kref("kref://project/models/hero.model?v=2&r=mesh")
+    kref = Kref("kref://project/models/hero.model?r=2&a=mesh")
 
     # Extract components
     print(kref.get_space())        # "project/models"
@@ -60,7 +60,7 @@ class KrefValidationError(ValueError):
 
 # Regex for validating Kref URIs.
 # Valid formats:
-#   - Item: kref://project/space/item.kind?v=REVISION&r=ARTIFACT
+#   - Item: kref://project/space/item.kind?r=REVISION&a=ARTIFACT
 #   - Space: kref://project/space or kref:///space (root-level)
 # Each path segment must be alphanumeric with dots, underscores, or hyphens.
 _KREF_PATTERN = re.compile(
@@ -70,7 +70,7 @@ _KREF_PATTERN = re.compile(
     r'|'                                           # OR
     r'[a-zA-Z0-9][a-zA-Z0-9._-]*'                 # project/item path segment
     r'(/[a-zA-Z0-9][a-zA-Z0-9._-]*)*)'            # optional nested path segments
-    r'(\?v=\d+(&r=[a-zA-Z0-9._-]+)?)?$'           # optional version and resource
+    r'(\?r=\d+(&a=[a-zA-Z0-9._-]+)?)?$'           # optional revision and artifact
 )
 
 
@@ -94,7 +94,7 @@ def validate_kref(uri: str) -> None:
         from kumiho.kref import validate_kref, KrefValidationError
         
         try:
-            validate_kref("kref://project/space/item.kind?v=1")
+            validate_kref("kref://project/space/item.kind?r=1")
         except KrefValidationError as e:
             print(f"Invalid kref: {e}")
     """
@@ -151,7 +151,7 @@ class Kref(str):
 
     The kref format is::
 
-        kref://project/space/item.kind?v=REVISION&r=ARTIFACT
+        kref://project/space/item.kind?r=REVISION&a=ARTIFACT
 
     Attributes:
         uri (str): The URI string (for backward compatibility).
@@ -161,17 +161,17 @@ class Kref(str):
         from kumiho import Kref
 
         # Create from string
-        kref = Kref("kref://my-project/assets/hero.model?v=2")
+        kref = Kref("kref://my-project/assets/hero.model?r=2")
 
         # Use as string (since Kref extends str)
-        print(kref)  # kref://my-project/assets/hero.model?v=2
+        print(kref)  # kref://my-project/assets/hero.model?r=2
 
         # Parse components
         print(kref.get_space())    # "my-project/assets"
         print(kref.get_revision()) # 2
 
         # Compare with strings
-        if kref == "kref://my-project/assets/hero.model?v=2":
+        if kref == "kref://my-project/assets/hero.model?r=2":
             print("Match!")
 
     Note:
@@ -194,7 +194,7 @@ class Kref(str):
             KrefValidationError: If validate=True and the URI is invalid.
 
         Example:
-            >>> kref = Kref("kref://project/group/product.type?v=1")
+            >>> kref = Kref("kref://project/space/item.kind?r=1")
             >>> isinstance(kref, str)
             True
         """
@@ -248,7 +248,7 @@ class Kref(str):
             str: The path (e.g., "project/space/item.kind").
 
         Example:
-            >>> Kref("kref://project/models/hero.model?v=1").get_path()
+            >>> Kref("kref://project/models/hero.model?r=1").get_path()
             'project/models/hero.model'
         """
         if "://" not in self:
@@ -309,12 +309,12 @@ class Kref(str):
             int: The revision number, or 1 if not specified.
 
         Example:
-            >>> Kref("kref://project/models/hero.model?v=3").get_revision()
+            >>> Kref("kref://project/models/hero.model?r=3").get_revision()
             3
             >>> Kref("kref://project/models/hero.model").get_revision()
             1
         """
-        match = re.search(r'\?v=(\d+)', self)
+        match = re.search(r'\?r=(\d+)', self)
         return int(match.group(1)) if match else 1
 
     def get_artifact_name(self) -> Optional[str]:
@@ -324,12 +324,12 @@ class Kref(str):
             Optional[str]: The artifact name if present, None otherwise.
 
         Example:
-            >>> Kref("kref://project/models/hero.model?v=1&r=mesh").get_artifact_name()
+            >>> Kref("kref://project/models/hero.model?r=1&a=mesh").get_artifact_name()
             'mesh'
-            >>> Kref("kref://project/models/hero.model?v=1").get_artifact_name()
+            >>> Kref("kref://project/models/hero.model?r=1").get_artifact_name()
             None
         """
-        match = re.search(r'&r=([^&]+)', self)
+        match = re.search(r'&a=([^&]+)', self)
         return match.group(1) if match else None
 
     def __repr__(self) -> str:

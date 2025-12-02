@@ -170,7 +170,7 @@ class Item(KumihoObject):
             >>> if v3:
             ...     artifacts = v3.get_artifacts()
         """
-        kref_uri = f"{self.kref.uri}?v={revision_number}"
+        kref_uri = f"{self.kref.uri}?r={revision_number}"
         return self._client.get_revision(kref_uri)
 
     def get_latest_revision(self) -> Optional[Revision]:

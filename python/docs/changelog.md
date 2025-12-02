@@ -10,8 +10,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - Comprehensive Google-style docstrings for all public APIs
 - Sphinx documentation with ReadTheDocs theme
-- `get_resource()` top-level function for fetching resources by Kref
-- `get_resource_by_kref()` method in Client class
+- `get_artifact()` top-level function for fetching artifacts by Kref
+- `get_artifact_by_kref()` method in Client class
 - Type hints throughout the codebase
 
 ### Changed
@@ -19,14 +19,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Improved error messages with more context
 
 ### Fixed
-- Kref parsing for resource URIs with special characters
+- Kref parsing for artifact URIs with special characters
 
 ## [0.2.0] - 2024-XX-XX
 
 ### Added
 - Event streaming support with `stream_events()`
 - Link traversal for lineage tracking
-- Batch operations for multiple resources
+- Batch operations for multiple artifacts
 
 ### Changed
 - Switched to context-variable-based client management
@@ -36,7 +36,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - Initial release
-- Core entity classes: Project, Group, Product, Version, Resource, Link
+- Core entity classes: Project, Space, Item, Revision, Artifact, Edge
 - Kref URI parsing and generation
 - Discovery-based authentication
 - CLI authentication tool (`kumiho-auth`)

@@ -881,7 +881,7 @@ class _Client:
         """Get an artifact by its kref URI.
 
         Args:
-            kref_uri: The kref URI of the artifact (e.g., "kref://space/item.kind?v=1&r=artifact_name").
+            kref_uri: The kref URI of the artifact (e.g., "kref://space/item.kind?r=1&a=artifact_name").
 
         Returns:
             The Artifact object.
@@ -892,10 +892,10 @@ class _Client:
         kref = Kref(kref_uri)
         artifact_name = kref.get_artifact_name()
         if not artifact_name:
-            raise ValueError(f"Invalid artifact kref format: {kref_uri} (missing &r=artifact_name)")
+            raise ValueError(f"Invalid artifact kref format: {kref_uri} (missing &a=artifact_name)")
         
         # Build the revision kref by removing the artifact part
-        revision_kref_uri = kref_uri.split("&r=")[0]
+        revision_kref_uri = kref_uri.split("&a=")[0]
         revision_kref = Kref(revision_kref_uri)
         
         return self.get_artifact(revision_kref, artifact_name)
@@ -975,7 +975,7 @@ class _Client:
         Resolves a Kref to a file location using the server-side ResolveLocation RPC.
         
         Args:
-            kref: The Kref URI to resolve. Can include query parameters like ?v=, ?t=, ?time=.
+            kref: The Kref URI to resolve. Can include query parameters like ?r=, ?t=, ?time=.
             
         Returns:
             The resolved file location string, or None if resolution fails.
