@@ -307,9 +307,10 @@ kref://project/group/product.type?v=version&r=resource
 |-----|-------------|
 | `kref://my-project` | Project |
 | `kref://my-project/chars` | Group |
-| `kref://my-project/chars/hero.model` | Product (latest version) |
-| `kref://my-project/chars/hero.model?v=2` | Specific version |
-| `kref://my-project/chars/hero.model?v=2&r=mesh.fbx` | Specific resource |
+| `kref://my-project/chars/human` | Sub-Group(s) |
+| `kref://my-project/chars/human/hero.model` | Product (latest version) |
+| `kref://my-project/chars/human/hero.model?v=2` | Specific version |
+| `kref://my-project/chars/human/hero.model?v=2&r=mesh.fbx` | Specific resource |
 
 ## BYO Storage Philosophy
 

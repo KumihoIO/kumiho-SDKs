@@ -17,12 +17,6 @@ on:
       - '.github/workflows/docs-publish.yml'
     tags:
       - 'v*'  # Trigger on version tags like v0.3.0
-  pull_request:
-    branches:
-      - main
-    paths:
-      - 'python/**'
-      - 'docs/**'
   workflow_dispatch:  # Allow manual trigger
 
 permissions:
