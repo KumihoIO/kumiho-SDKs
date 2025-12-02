@@ -265,6 +265,34 @@ class Space(KumihoObject):
         """
         return self._client.get_item(self.path, item_name, kind)
 
+    def get_bundle(self, bundle_name: str) -> Bundle:
+        """Get a bundle by name from this space.
+
+        This is a convenience method that fetches a bundle item and returns
+        it as a Bundle object with bundle-specific methods like add_member(),
+        get_members(), etc.
+
+        Args:
+            bundle_name: The name of the bundle.
+
+        Returns:
+            Bundle: The Bundle object.
+
+        Raises:
+            grpc.RpcError: If the bundle is not found.
+
+        Example:
+            >>> bundle = space.get_bundle("character-bundle")
+            >>> members = bundle.get_members()
+            >>> for member in members:
+            ...     print(member.item_kref)
+        """
+        # Construct the kref URI for the bundle
+        # Space path is like "/project/space", we need "project/space/bundle.bundle"
+        path_without_slash = self.path.lstrip("/")
+        kref_uri = f"kref://{path_without_slash}/{bundle_name}.bundle"
+        return self._client.get_bundle_by_kref(kref_uri)
+
     def set_metadata(self, metadata: Dict[str, str]) -> 'Space':
         """Set or update metadata for this space.
 
