@@ -14,18 +14,18 @@ Kumiho Cloud is built on a **graph database (Neo4j)**, which means relationships
 ┌───────────────────────────────────────────────────────┐
 │                         PROJECT                       │
 │  ┌─────────────────────────────────────────────────┐  │
-│  │                        GROUP                    │  │
+│  │                        SPACE                    │  │
 │  │  ┌─────────┐      ┌─────────┐     ┌─────────┐   │  │
-│  │  │ PRODUCT │────▶│ PRODUCT │────▶│ PRODUCT │   │  │
+│  │  │  ITEM   │────▶│  ITEM   │────▶│  ITEM   │   │  │
 │  │  └────┬────┘      └────┬────┘     └────┬────┘   │  │
 │  │       │                │               │        │  │
 │  │  ┌────▼────┐      ┌────▼────┐     ┌────▼────┐   │  │
-│  │  │ VERSION │      │ VERSION │     │ VERSION │   │  │
+│  │  │REVISION │      │REVISION │     │REVISION │   │  │
 │  │  │   v1    │      │   v1    │     │   v1    │   │  │
 │  │  └────┬────┘      └────┬────┘     └────┬────┘   │  │
 │  │       │                │               │        │  │
 │  │  ┌────▼────┐      ┌────▼────┐     ┌────▼────┐   │  │
-│  │  │RESOURCE │      │RESOURCE │     │RESOURCE │   │  │
+│  │  │ARTIFACT │      │ARTIFACT │     │ARTIFACT │   │  │
 │  │  └─────────┘      └─────────┘     └─────────┘   │  │
 │  └─────────────────────────────────────────────────┘  │
 └───────────────────────────────────────────────────────┘
@@ -49,15 +49,15 @@ project = kumiho.create_project(
 - `description`: Human-readable description
 - `kref`: Reference URI (`kref://sci-fi-short`)
 
-### Group
+### Space
 
-A **Group** organizes assets within a project. Common groupings include:
+A **Space** organizes assets within a project. Common groupings include:
 - By type: `characters`, `environments`, `props`
 - By episode: `ep01`, `ep02`
 - By department: `modeling`, `animation`, `lighting`
 
 ```python
-group = project.create_group("characters")
+space = project.create_space("characters")
 ```
 
 **Key attributes:**
@@ -65,18 +65,18 @@ group = project.create_group("characters")
 - `path`: Full path in the hierarchy (e.g., `/sci-fi-short/characters`)
 - `metadata`: Custom key-value metadata
 
-### Product
+### Item
 
-A **Product** represents a single creative asset or AI artifact. Products have a type that indicates what kind of asset they are.
+An **Item** represents a single creative asset or AI artifact. Items have a kind that indicates what type of asset they are.
 
 ```python
-product = group.create_product(
-    product_name="hero-robot",
-    product_type="model"
+item = space.create_item(
+    item_name="hero-robot",
+    kind="model"
 )
 ```
 
-**Common product types:**
+**Common item kinds:**
 - `model`: 3D models
 - `texture`: Textures and materials
 - `animation`: Animation data
@@ -88,19 +88,19 @@ product = group.create_product(
 
 **Key attributes:**
 - `name`: URL-safe identifier
-- `product_type`: Category of the asset
+- `kind`: Category of the asset
 - `kref`: Reference URI (`kref://sci-fi-short/characters/hero-robot.model`)
 
-### Version
+### Revision
 
-A **Version** represents a specific iteration of a product. Versions are immutable once published.
+A **Revision** represents a specific iteration of an item. Revisions are immutable once published.
 
 ```python
-# Simple version creation
-version = product.create_version()
+# Simple revision creation
+revision = item.create_revision()
 
-# Version with metadata
-version = product.create_version(
+# Revision with metadata
+revision = item.create_revision(
     metadata={
         "artist": "jane",
         "render_engine": "arnold",
@@ -110,23 +110,23 @@ version = product.create_version(
 ```
 
 **Key attributes:**
-- `number`: Auto-incrementing version number
+- `number`: Auto-incrementing revision number
 - `metadata`: Custom key-value metadata
 - `kref`: Reference URI (`kref://sci-fi-short/characters/hero-robot.model?v=3`)
 - `tags`: List of tags (e.g., "latest", "published", "approved")
 
-### Resource
+### Artifact
 
-A **Resource** is a file reference attached to a version. Resources store metadata about files without uploading the actual data—files stay on your local/NAS storage.
+An **Artifact** is a file reference attached to a revision. Artifacts store metadata about files without uploading the actual data—files stay on your local/NAS storage.
 
 ```python
-resource = version.create_resource(
+artifact = revision.create_artifact(
     name="hero_robot_v3.fbx",
     location="smb://studio-nas/projects/scifi/hero_robot_v3.fbx"
 )
 
 # Add metadata after creation
-resource.set_metadata({
+artifact.set_metadata({
     "size": "52428800",
     "checksum": "sha256:a1b2c3...",
     "format": "fbx"
@@ -134,45 +134,45 @@ resource.set_metadata({
 ```
 
 **Key attributes:**
-- `name`: Resource identifier within the version
+- `name`: Artifact identifier within the revision
 - `location`: URI pointing to the actual file
 - `metadata`: Custom key-value metadata
 
-### Link
+### Edge
 
-A **Link** represents a relationship between versions. Links enable lineage tracking.
+An **Edge** represents a relationship between revisions. Edges enable lineage tracking.
 
 ```python
 import kumiho
 
-# Get the target version
-texture = kumiho.get_version("kref://sci-fi-short/textures/metal.texture?v=2")
+# Get the target revision
+texture = kumiho.get_revision("kref://sci-fi-short/textures/metal.texture?v=2")
 
-# Create link with optional metadata
-link = version.create_link(
-    target_version=texture,
-    link_type=kumiho.DEPENDS_ON,
+# Create edge with optional metadata
+edge = revision.create_edge(
+    target_revision=texture,
+    edge_type=kumiho.DEPENDS_ON,
     metadata={"usage": "body material"}
 )
 ```
 
-**Link types:**
-- `kumiho.DEPENDS_ON`: This version depends on the target
-- `kumiho.DERIVED_FROM`: This version was derived from the target
-- `kumiho.REFERENCED`: This version references the target
-- `kumiho.CONTAINS`: This version contains the target
+**Edge types:**
+- `kumiho.DEPENDS_ON`: This revision depends on the target
+- `kumiho.DERIVED_FROM`: This revision was derived from the target
+- `kumiho.REFERENCED`: This revision references the target
+- `kumiho.CONTAINS`: This revision contains the target
 
-**Querying links by direction:**
+**Querying edges by direction:**
 
 ```python
-# Get outgoing links (default) - links FROM this version
-outgoing = version.get_links(direction=kumiho.OUTGOING)
+# Get outgoing edges (default) - edges FROM this revision
+outgoing = revision.get_edges(direction=kumiho.OUTGOING)
 
-# Get incoming links - links TO this version
-incoming = version.get_links(direction=kumiho.INCOMING)
+# Get incoming edges - edges TO this revision
+incoming = revision.get_edges(direction=kumiho.INCOMING)
 
-# Get all links in both directions
-all_links = version.get_links(direction=kumiho.BOTH)
+# Get all edges in both directions
+all_edges = revision.get_edges(direction=kumiho.BOTH)
 ```
 
 ### Graph Traversal
@@ -180,64 +180,64 @@ all_links = version.get_links(direction=kumiho.BOTH)
 Kumiho provides powerful graph traversal methods for dependency analysis:
 
 ```python
-# Find all dependencies (what this version depends on)
-deps = version.get_all_dependencies(max_depth=5)
-for kref in deps.version_krefs:
+# Find all dependencies (what this revision depends on)
+deps = revision.get_all_dependencies(max_depth=5)
+for kref in deps.revision_krefs:
     print(f"Depends on: {kref.uri}")
 
-# Find all dependents (what depends on this version)
-dependents = version.get_all_dependents(max_depth=5)
-for kref in dependents.version_krefs:
+# Find all dependents (what depends on this revision)
+dependents = revision.get_all_dependents(max_depth=5)
+for kref in dependents.revision_krefs:
     print(f"Depended on by: {kref.uri}")
 
-# Find shortest path between versions
-path = source_version.find_path_to(target_version)
+# Find shortest path between revisions
+path = source_revision.find_path_to(target_revision)
 if path:
     print(f"Path length: {path.total_depth}")
     for step in path.steps:
-        print(f"  -> {step.version_kref.uri} via {step.link_type}")
+        print(f"  -> {step.revision_kref.uri} via {step.edge_type}")
 
 # Analyze impact of changes (what would be affected)
-impact = version.analyze_impact()
+impact = revision.analyze_impact()
 for impacted in impact:
-    print(f"Would affect: {impacted.version_kref.uri} at depth {impacted.impact_depth}")
+    print(f"Would affect: {impacted.revision_kref.uri} at depth {impacted.impact_depth}")
 ```
 
-### Collection
+### Bundle
 
-A **Collection** is a special product type that aggregates other products. Collections are useful for bundling related assets together (e.g., a character bundle with model, textures, and rig) with full version-based audit trail of membership changes.
+A **Bundle** is a special item kind that aggregates other items. Bundles are useful for grouping related assets together (e.g., a character bundle with model, textures, and rig) with full revision-based audit trail of membership changes.
 
 ```python
-# Create a collection via Project or Group
-bundle = project.create_collection("release-bundle")
+# Create a bundle via Project or Space
+bundle = project.create_bundle("release-bundle")
 
-# Or from a group
-assets = project.get_group("assets")
-char_bundle = assets.create_collection("character-bundle")
+# Or from a space
+assets = project.get_space("assets")
+char_bundle = assets.create_bundle("character-bundle")
 
-# Add products to the collection
-hero_model = assets.get_product("hero", "model")
-hero_rig = assets.get_product("hero", "rig")
+# Add items to the bundle
+hero_model = assets.get_item("hero", "model")
+hero_rig = assets.get_item("hero", "rig")
 bundle.add_member(hero_model)
 bundle.add_member(hero_rig)
 
 # Get current members
 members = bundle.get_members()
 for member in members:
-    print(f"  {member.product_kref}")
+    print(f"  {member.item_kref}")
 
 # View change history (audit trail)
 history = bundle.get_history()
 for entry in history:
-    print(f"v{entry.version_number}: {entry.action} {entry.member_product_kref}")
+    print(f"v{entry.revision_number}: {entry.action} {entry.member_item_kref}")
 ```
 
 **Key characteristics:**
-- Collections use the reserved product type `"collection"` 
-- Cannot be created via `create_product()` (use `create_collection()`)
-- Each membership change (add/remove) creates a new collection version
-- Full audit trail: who added/removed what product and when
-- Can query members at any specific version in history
+- Bundles use the reserved item kind `"bundle"` 
+- Cannot be created via `create_item()` (use `create_bundle()`)
+- Each membership change (add/remove) creates a new bundle revision
+- Full audit trail: who added/removed what item and when
+- Can query members at any specific revision in history
 
 ## Metadata
 
@@ -246,25 +246,25 @@ All node types support custom metadata as key-value string pairs. Metadata can b
 ### Setting Metadata
 
 ```python
-# During version creation
-version = product.create_version(metadata={
+# During revision creation
+revision = item.create_revision(metadata={
     "artist": "jane",
     "render_engine": "arnold",
     "frame_range": "1-100"
 })
 
-# During link creation
-link = version.create_link(
-    target_version=texture,
-    link_type=kumiho.DEPENDS_ON,
+# During edge creation
+edge = revision.create_edge(
+    target_revision=texture,
+    edge_type=kumiho.DEPENDS_ON,
     metadata={"channel": "diffuse"}
 )
 
 # Update metadata after creation (all node types)
-group.set_metadata({"department": "modeling"})
-product.set_metadata({"status": "approved"})
-version.set_metadata({"published_by": "supervisor"})
-resource.set_metadata({"checksum": "sha256:..."})
+space.set_metadata({"department": "modeling"})
+item.set_metadata({"status": "approved"})
+revision.set_metadata({"published_by": "supervisor"})
+artifact.set_metadata({"checksum": "sha256:..."})
 ```
 
 ### Granular Attribute Operations
@@ -273,14 +273,14 @@ For updating individual metadata fields without replacing the entire map:
 
 ```python
 # Set a single attribute
-group.set_attribute("department", "modeling")
-version.set_attribute("status", "approved")
+space.set_attribute("department", "modeling")
+revision.set_attribute("status", "approved")
 
 # Get a single attribute
-dept = group.get_attribute("department")  # Returns "modeling" or None
+dept = space.get_attribute("department")  # Returns "modeling" or None
 
 # Delete a single attribute
-group.delete_attribute("old_field")
+space.delete_attribute("old_field")
 ```
 
 This is more efficient than `set_metadata()` when you only need to change one field.
@@ -289,28 +289,28 @@ This is more efficient than `set_metadata()` when you only need to change one fi
 
 | Node Type | Common Keys |
 |-----------|-------------|
-| Group | `department`, `supervisor`, `deadline` |
-| Product | `status`, `priority`, `assigned_to` |
-| Version | `artist`, `render_engine`, `notes`, `software_version` |
-| Resource | `size`, `checksum`, `format`, `resolution` |
-| Link | `usage`, `channel`, `relationship_notes` |
+| Space | `department`, `supervisor`, `deadline` |
+| Item | `status`, `priority`, `assigned_to` |
+| Revision | `artist`, `render_engine`, `notes`, `software_version` |
+| Artifact | `size`, `checksum`, `format`, `resolution` |
+| Edge | `usage`, `channel`, `relationship_notes` |
 
 ## Kref URI Scheme
 
 Kumiho uses **Kref URIs** as universal identifiers for all entities:
 
 ```
-kref://project/group/product.type?v=version&r=resource
+kref://project/space/item.kind?v=revision&r=artifact
 ```
 
 | URI | Resolves To |
 |-----|-------------|
 | `kref://my-project` | Project |
-| `kref://my-project/chars` | Group |
-| `kref://my-project/chars/human` | Sub-Group(s) |
-| `kref://my-project/chars/human/hero.model` | Product (latest version) |
-| `kref://my-project/chars/human/hero.model?v=2` | Specific version |
-| `kref://my-project/chars/human/hero.model?v=2&r=mesh.fbx` | Specific resource |
+| `kref://my-project/chars` | Space |
+| `kref://my-project/chars/human` | Sub-Space(s) |
+| `kref://my-project/chars/human/hero.model` | Item (latest revision) |
+| `kref://my-project/chars/human/hero.model?v=2` | Specific revision |
+| `kref://my-project/chars/human/hero.model?v=2&r=mesh.fbx` | Specific artifact |
 
 ## BYO Storage Philosophy
 
@@ -321,10 +321,9 @@ Kumiho follows a **"Bring Your Own Storage"** philosophy:
 3. **No vendor lock-in**: You can always access your files directly
 
 ```python
-# Resource location is just a URI - files aren't uploaded
-resource = version.create_resource(
+# Artifact location is just a URI - files aren't uploaded
+artifact = revision.create_artifact(
     name="hero.fbx",
-    resource_type="file",
     location="file:///mnt/studio/projects/hero.fbx"  # File stays here
 )
 ```
@@ -359,14 +358,14 @@ Kumiho supports real-time event streaming for reactive workflows:
 ```python
 # Stream events from a project
 for event in project.stream_events():
-    if event.event_type == "version.created":
-        print(f"New version: {event.payload}")
+    if event.event_type == "revision.created":
+        print(f"New revision: {event.payload}")
 ```
 
 **Event types:**
-- `version.created`: New version was published
-- `link.created`: New relationship was created
-- `resource.added`: Resource was added to a version
+- `revision.created`: New revision was published
+- `edge.created`: New relationship was created
+- `artifact.added`: Artifact was added to a revision
 
 ## Next Steps
 

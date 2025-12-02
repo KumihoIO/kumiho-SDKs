@@ -18,7 +18,7 @@ Example:
         from kumiho.client import _Client
 
         client = _Client(target="us-central.kumiho.cloud:443")
-        group = client.create_group(project_kref, "my-group")
+        space = client.create_space(project_kref, "my-space")
 
     Preferred high-level usage::
 
@@ -51,68 +51,68 @@ from .discovery import DiscoveryError, DiscoveryManager
 from .proto import kumiho_pb2
 from .proto import kumiho_pb2_grpc
 from .event import Event
-from .group import Group
+from .space import Space
 from .kref import Kref
 from .proto.kumiho_pb2 import (
-    CreateGroupRequest,
-    CreateLinkRequest,
-    CreateProductRequest,
-    CreateResourceRequest,
-    CreateVersionRequest,
+    CreateSpaceRequest,
+    CreateEdgeRequest,
+    CreateItemRequest,
+    CreateArtifactRequest,
+    CreateRevisionRequest,
     CreateProjectRequest,
-    DeleteGroupRequest,
-    DeleteLinkRequest,
-    DeleteProductRequest,
-    DeleteResourceRequest,
-    DeleteVersionRequest,
+    DeleteSpaceRequest,
+    DeleteEdgeRequest,
+    DeleteItemRequest,
+    DeleteArtifactRequest,
+    DeleteRevisionRequest,
     DeleteProjectRequest,
     DeleteAttributeRequest,
     EventStreamRequest,
     GetAttributeRequest,
-    GetChildGroupsRequest,
-    GetGroupRequest,
-    GetLinksRequest,
-    GetProductRequest,
-    GetProductsRequest,
+    GetChildSpacesRequest,
+    GetSpaceRequest,
+    GetEdgesRequest,
+    GetItemRequest,
+    GetItemsRequest,
     GetProjectsRequest,
-    GetResourceRequest,
-    GetResourcesRequest,
-    GetResourcesByLocationRequest,
+    GetArtifactRequest,
+    GetArtifactsRequest,
+    GetArtifactsByLocationRequest,
     GetTenantUsageRequest,
-    GetVersionsRequest,
+    GetRevisionsRequest,
     HasTagRequest,
     KrefRequest,
-    Link as PbLink,
-    LinkDirection,
-    PeekNextVersionRequest,
-    ProductSearchRequest,
+    Edge as PbEdge,
+    EdgeDirection,
+    PeekNextRevisionRequest,
+    ItemSearchRequest,
     ResolveKrefRequest,
     ResolveLocationRequest,
     SetAttributeRequest,
-    SetDefaultResourceRequest,
-    TagVersionRequest,
-    UnTagVersionRequest,
+    SetDefaultArtifactRequest,
+    TagRevisionRequest,
+    UnTagRevisionRequest,
     UpdateMetadataRequest,
     WasTaggedRequest,
     SetDeprecatedRequest,
-    TraverseLinksRequest,
+    TraverseEdgesRequest,
     ShortestPathRequest,
     ImpactAnalysisRequest,
-    CreateCollectionRequest,
-    AddCollectionMemberRequest,
-    RemoveCollectionMemberRequest,
-    GetCollectionMembersRequest,
-    GetCollectionHistoryRequest,
+    CreateBundleRequest,
+    AddBundleMemberRequest,
+    RemoveBundleMemberRequest,
+    GetBundleMembersRequest,
+    GetBundleHistoryRequest,
 )
-from .link import Link, TraversalResult, ImpactedVersion, ShortestPathResult
+from .edge import Edge, TraversalResult, ImpactedRevision, ShortestPathResult
 from .proto.kumiho_pb2 import ProjectResponse, StatusResponse
 from .project import Project
-from .product import Product
-from .resource import Resource
-from .version import Version
+from .item import Item
+from .artifact import Artifact
+from .revision import Revision
 
 if TYPE_CHECKING:
-    from .collection import Collection, CollectionMember, CollectionVersionHistory
+    from .bundle import Bundle, BundleMember, BundleRevisionHistory
 
 
 _LOGGER = logging.getLogger("kumiho.client")
@@ -128,7 +128,7 @@ class _Client:
     """Low-level gRPC client for interacting with the Kumiho Cloud service.
 
     This client provides direct access to all Kumiho gRPC endpoints for
-    managing projects, groups, products, versions, resources, and links.
+    managing projects, spaces, items, revisions, artifacts, and edges.
     It handles connection management, authentication, and discovery-based
     tenant routing automatically.
 
@@ -447,195 +447,195 @@ class _Client:
         resp = self.stub.UpdateProject(req)
         return Project(resp, self)
 
-    # Group methods
-    def create_group(self, parent_path: str, group_name: str) -> Group:
-        """Create a new group.
+    # Space methods
+    def create_space(self, parent_path: str, space_name: str) -> Space:
+        """Create a new space.
 
         Args:
-            parent_path: The path of the parent group.
-            group_name: The name of the new group.
+            parent_path: The path of the parent space.
+            space_name: The name of the new space.
 
         Returns:
-            The created Group object.
+            The created Space object.
         """
-        req = CreateGroupRequest(parent_path=parent_path, group_name=group_name)
-        resp = self.stub.CreateGroup(req)
-        return Group(resp, self)
+        req = CreateSpaceRequest(parent_path=parent_path, space_name=space_name)
+        resp = self.stub.CreateSpace(req)
+        return Space(resp, self)
 
-    def get_group(self, path: str) -> Group:
-        """Get a group by its path.
+    def get_space(self, path: str) -> Space:
+        """Get a space by its path.
 
         Args:
-            path: The path of the group to retrieve.
+            path: The path of the space to retrieve.
 
         Returns:
-            The Group object.
+            The Space object.
         """
-        req = GetGroupRequest(path_or_kref=path)
-        resp = self.stub.GetGroup(req)
-        return Group(resp, self)
+        req = GetSpaceRequest(path_or_kref=path)
+        resp = self.stub.GetSpace(req)
+        return Space(resp, self)
 
-    def get_child_groups(self, parent_path: str = "", recursive: bool = False) -> List[Group]:
-        """Get child groups of a parent group.
+    def get_child_spaces(self, parent_path: str = "", recursive: bool = False) -> List[Space]:
+        """Get child spaces of a parent space.
 
         Args:
-            parent_path: The path of the parent group. If empty or "/",
-                         returns root-level groups.
-            recursive: Whether to fetch all descendant groups recursively.
+            parent_path: The path of the parent space. If empty or "/",
+                         returns root-level spaces.
+            recursive: Whether to fetch all descendant spaces recursively.
 
         Returns:
-            A list of Group objects that are direct children of the parent.
+            A list of Space objects that are direct children of the parent.
         """
-        req = GetChildGroupsRequest(parent_path=parent_path, recursive=recursive)
-        resp = self.stub.GetChildGroups(req)
-        return [Group(group_resp, self) for group_resp in resp.groups]
+        req = GetChildSpacesRequest(parent_path=parent_path, recursive=recursive)
+        resp = self.stub.GetChildSpaces(req)
+        return [Space(space_resp, self) for space_resp in resp.spaces]
 
-    def update_group_metadata(self, kref: Kref, metadata: Dict[str, str]) -> Group:
-        """Update metadata for a group.
+    def update_space_metadata(self, kref: Kref, metadata: Dict[str, str]) -> Space:
+        """Update metadata for a space.
 
         Args:
-            kref: The kref of the group.
+            kref: The kref of the space.
             metadata: The metadata to update.
 
         Returns:
-            The updated Group object.
+            The updated Space object.
         """
         req = UpdateMetadataRequest(kref=kref.to_pb(), metadata=metadata)
-        resp = self.stub.UpdateGroupMetadata(req)
-        return Group(resp, self)
+        resp = self.stub.UpdateSpaceMetadata(req)
+        return Space(resp, self)
 
-    # Product methods
-    def create_product(self, parent_path: str, product_name: str, product_type: str) -> Product:
-        """Create a new product.
+    # Item methods
+    def create_item(self, parent_path: str, item_name: str, kind: str) -> Item:
+        """Create a new item.
 
         Args:
-            parent_path: The path of the parent group.
-            product_name: The name of the product.
-            product_type: The type of the product (e.g., "model", "texture").
+            parent_path: The path of the parent space.
+            item_name: The name of the item.
+            kind: The kind of the item (e.g., "model", "texture").
 
         Returns:
-            The created Product object.
+            The created Item object.
 
         Raises:
-            ReservedProductTypeError: If product_type is reserved (e.g., 'collection').
+            ReservedKindError: If kind is reserved (e.g., 'bundle').
         """
-        from .collection import RESERVED_PRODUCT_TYPES, ReservedProductTypeError
+        from .bundle import RESERVED_KINDS, ReservedKindError
         
-        if product_type.lower() in RESERVED_PRODUCT_TYPES:
-            raise ReservedProductTypeError(
-                f"Product type '{product_type}' is reserved. "
-                f"Use the dedicated create_collection() method instead."
+        if kind.lower() in RESERVED_KINDS:
+            raise ReservedKindError(
+                f"Item kind '{kind}' is reserved. "
+                f"Use the dedicated create_bundle() method instead."
             )
         
-        req = CreateProductRequest(parent_path=parent_path, product_name=product_name, product_type=product_type)
-        resp = self.stub.CreateProduct(req)
-        return Product(resp, self)
+        req = CreateItemRequest(parent_path=parent_path, item_name=item_name, kind=kind)
+        resp = self.stub.CreateItem(req)
+        return Item(resp, self)
 
-    def get_product(self, parent_path: str, product_name: str, product_type: str) -> Product:
-        """Get a product by its parent path, name, and type.
+    def get_item(self, parent_path: str, item_name: str, kind: str) -> Item:
+        """Get an item by its parent path, name, and kind.
 
         Args:
-            parent_path: The path of the parent group.
-            product_name: The name of the product.
-            product_type: The type of the product.
+            parent_path: The path of the parent space.
+            item_name: The name of the item.
+            kind: The kind of the item.
 
         Returns:
-            The Product object.
+            The Item object.
         """
-        req = GetProductRequest(parent_path=parent_path, product_name=product_name, product_type=product_type)
-        resp = self.stub.GetProduct(req)
-        return Product(resp, self)
+        req = GetItemRequest(parent_path=parent_path, item_name=item_name, kind=kind)
+        resp = self.stub.GetItem(req)
+        return Item(resp, self)
 
-    def get_product_by_kref(self, kref_uri: str) -> Product:
-        """Get a product by its kref URI.
+    def get_item_by_kref(self, kref_uri: str) -> Item:
+        """Get an item by its kref URI.
 
         Args:
-            kref_uri: The kref URI of the product.
+            kref_uri: The kref URI of the item.
 
         Returns:
-            The Product object.
+            The Item object.
         """
         kref = Kref(kref_uri)
-        product_path = kref.get_path()  # e.g., "projectA/modelA.asset"
-        if "/" not in product_path:
-            raise ValueError(f"Invalid product kref format: {kref}")
+        item_path = kref.get_path()  # e.g., "projectA/modelA.asset"
+        if "/" not in item_path:
+            raise ValueError(f"Invalid item kref format: {kref}")
         
-        group_path, product_name_type = product_path.split("/", 1)
-        parent_path = f"/{group_path}"  # Add leading slash
-        if "." not in product_name_type:
-            raise ValueError(f"Invalid product name.type format: {product_name_type}")
+        space_path, item_name_kind = item_path.split("/", 1)
+        parent_path = f"/{space_path}"  # Add leading slash
+        if "." not in item_name_kind:
+            raise ValueError(f"Invalid item name.kind format: {item_name_kind}")
         
-        product_name, product_type = product_name_type.split(".", 1)
+        item_name, kind = item_name_kind.split(".", 1)
         
-        return self.get_product(parent_path, product_name, product_type)
+        return self.get_item(parent_path, item_name, kind)
 
-    def get_products(self, parent_path: str, product_name_filter: str = "", product_type_filter: str = "") -> List[Product]:
-        """Get products within a group with optional filtering.
+    def get_items(self, parent_path: str, item_name_filter: str = "", kind_filter: str = "") -> List[Item]:
+        """Get items within a space with optional filtering.
 
         Args:
-            parent_path: The path of the parent group.
-            product_name_filter: Optional filter for product names.
-            product_type_filter: Optional filter for product types.
+            parent_path: The path of the parent space.
+            item_name_filter: Optional filter for item names.
+            kind_filter: Optional filter for item kinds.
 
         Returns:
-            A list of Product objects matching the filters.
+            A list of Item objects matching the filters.
         """
-        req = GetProductsRequest(parent_path=parent_path, product_name_filter=product_name_filter, product_type_filter=product_type_filter)
-        resp = self.stub.GetProducts(req)
-        return [Product(p, self) for p in resp.products]
+        req = GetItemsRequest(parent_path=parent_path, item_name_filter=item_name_filter, kind_filter=kind_filter)
+        resp = self.stub.GetItems(req)
+        return [Item(p, self) for p in resp.items]
 
-    def product_search(self, context_filter: str = "", product_name_filter: str = "", product_type_filter: str = "") -> List[Product]:
-        """Search for products across the system.
+    def item_search(self, context_filter: str = "", item_name_filter: str = "", kind_filter: str = "") -> List[Item]:
+        """Search for items across the system.
 
         Args:
             context_filter: Filter by context/path.
-            product_name_filter: Filter by product name.
-            product_type_filter: Filter by product type.
+            item_name_filter: Filter by item name.
+            kind_filter: Filter by item kind.
 
         Returns:
-            A list of Product objects matching the search criteria.
+            A list of Item objects matching the search criteria.
         """
-        req = ProductSearchRequest(context_filter=context_filter, product_name_filter=product_name_filter, product_type_filter=product_type_filter)
-        resp = self.stub.ProductSearch(req)
-        return [Product(p, self) for p in resp.products]
+        req = ItemSearchRequest(context_filter=context_filter, item_name_filter=item_name_filter, kind_filter=kind_filter)
+        resp = self.stub.ItemSearch(req)
+        return [Item(p, self) for p in resp.items]
 
-    def update_product_metadata(self, kref: Kref, metadata: Dict[str, str]) -> Product:
-        """Update metadata for a product.
+    def update_item_metadata(self, kref: Kref, metadata: Dict[str, str]) -> Item:
+        """Update metadata for an item.
 
         Args:
-            kref: The kref of the product.
+            kref: The kref of the item.
             metadata: The metadata to update.
 
         Returns:
-            The updated Product object.
+            The updated Item object.
         """
         req = UpdateMetadataRequest(kref=kref.to_pb(), metadata=metadata)
-        resp = self.stub.UpdateProductMetadata(req)
-        return Product(resp, self)
+        resp = self.stub.UpdateItemMetadata(req)
+        return Item(resp, self)
 
-    def create_version(self, product_kref: Kref, metadata: Optional[Dict[str, str]] = None, number: int = 0) -> Version:
-        """Create a new version for a product.
+    def create_revision(self, item_kref: Kref, metadata: Optional[Dict[str, str]] = None, number: int = 0) -> Revision:
+        """Create a new revision for an item.
 
         Args:
-            product_kref: The kref of the product.
-            metadata: Optional metadata for the version.
-            number: Specific version number to use (0 for auto-increment).
+            item_kref: The kref of the item.
+            metadata: Optional metadata for the revision.
+            number: Specific revision number to use (0 for auto-increment).
 
         Returns:
-            The created Version object.
+            The created Revision object.
         """
-        req = CreateVersionRequest(product_kref=product_kref.to_pb(), metadata=metadata or {}, number=number)
-        resp = self.stub.CreateVersion(req)
-        return Version(resp, self)
-    def get_version(self, kref_uri: str) -> Version:
-        """Get a version by its kref URI, with optional tag/time resolution.
+        req = CreateRevisionRequest(item_kref=item_kref.to_pb(), metadata=metadata or {}, number=number)
+        resp = self.stub.CreateRevision(req)
+        return Revision(resp, self)
+    def get_revision(self, kref_uri: str) -> Revision:
+        """Get a revision by its kref URI, with optional tag/time resolution.
 
         Args:
-            kref_uri: The kref URI of the version. Can include ?t=tag or ?time=timestamp
+            kref_uri: The kref URI of the revision. Can include ?t=tag or ?time=timestamp
                      for tag/time resolution.
 
         Returns:
-            The Version object.
+            The Revision object.
         """
         # Parse kref_uri for tag/time parameters
         base_kref = kref_uri
@@ -655,289 +655,289 @@ class _Client:
                         raise ValueError("time must be in YYYYMMDDHHMM format")
         
         if tag is not None or time is not None:
-            # Use ResolveKref to find the specific version
-            # We pass the base_kref (Product Kref) and the constraints
+            # Use ResolveKref to find the specific revision
+            # We pass the base_kref (Item Kref) and the constraints
             req = ResolveKrefRequest(kref=base_kref, tag=tag, time=time)
             try:
                 resp = self.stub.ResolveKref(req)
-                return Version(resp, self)
+                return Revision(resp, self)
             except grpc.RpcError as e:
                 if e.code() == grpc.StatusCode.NOT_FOUND:
                     # Re-raise as NOT_FOUND
                     context = grpc.RpcError()
                     context.code = lambda: grpc.StatusCode.NOT_FOUND
-                    context.details = lambda: "Version not found"
+                    context.details = lambda: "Revision not found"
                     raise context
                 raise
         else:
             req = KrefRequest(kref=kumiho_pb2.Kref(uri=kref_uri))
         
-        resp = self.stub.GetVersion(req)
-        return Version(resp, self)
+        resp = self.stub.GetRevision(req)
+        return Revision(resp, self)
 
-    def get_product_from_version(self, version_kref: str) -> Product:
-        """Get the product that contains a specific version.
+    def get_item_from_revision(self, revision_kref: str) -> Item:
+        """Get the item that contains a specific revision.
 
         Args:
-            version_kref: The kref URI of the version.
+            revision_kref: The kref URI of the revision.
 
         Returns:
-            The Product object that contains the version.
+            The Item object that contains the revision.
         """
-        # First get the version to find its product relationship
-        version = self.get_version(version_kref)
-        # Parse the product_kref to extract parent_path, product_name, and product_type
-        product_path = version.product_kref.get_path()  # e.g., "group/product.type"
-        if "/" not in product_path:
-            raise ValueError(f"Invalid product kref format: {version.product_kref}")
+        # First get the revision to find its item relationship
+        revision = self.get_revision(revision_kref)
+        # Parse the item_kref to extract parent_path, item_name, and kind
+        item_path = revision.item_kref.get_path()  # e.g., "space/item.kind"
+        if "/" not in item_path:
+            raise ValueError(f"Invalid item kref format: {revision.item_kref}")
         
-        parent_path, product_name_type = product_path.split("/", 1)
+        parent_path, item_name_kind = item_path.split("/", 1)
         parent_path = f"/{parent_path}"  # Add leading slash
-        if "." not in product_name_type:
-            raise ValueError(f"Invalid product name.type format: {product_name_type}")
+        if "." not in item_name_kind:
+            raise ValueError(f"Invalid item name.kind format: {item_name_kind}")
         
-        product_name, product_type = product_name_type.split(".", 1)
+        item_name, kind = item_name_kind.split(".", 1)
         
-        return self.get_product(parent_path, product_name, product_type)
+        return self.get_item(parent_path, item_name, kind)
 
-    def get_versions(self, product_kref: Kref) -> List[Version]:
-        """Get all versions of a product.
+    def get_revisions(self, item_kref: Kref) -> List[Revision]:
+        """Get all revisions of an item.
 
         Args:
-            product_kref: The kref of the product.
+            item_kref: The kref of the item.
 
         Returns:
-            A list of Version objects for the product.
+            A list of Revision objects for the item.
         """
-        req = GetVersionsRequest(product_kref=product_kref.to_pb())
-        resp = self.stub.GetVersions(req)
-        return [Version(v, self) for v in resp.versions]
+        req = GetRevisionsRequest(item_kref=item_kref.to_pb())
+        resp = self.stub.GetRevisions(req)
+        return [Revision(v, self) for v in resp.revisions]
 
-    def get_latest_version(self, product_kref: Kref) -> Optional[Version]:
-        """Get the latest version of a product.
+    def get_latest_revision(self, item_kref: Kref) -> Optional[Revision]:
+        """Get the latest revision of an item.
 
         Args:
-            product_kref: The kref of the product.
+            item_kref: The kref of the item.
 
         Returns:
-            The latest Version object, or None if no versions exist.
+            The latest Revision object, or None if no revisions exist.
         """
-        req = ResolveKrefRequest(kref=product_kref.uri)
+        req = ResolveKrefRequest(kref=item_kref.uri)
         try:
             resp = self.stub.ResolveKref(req)
-            return Version(resp, self)
+            return Revision(resp, self)
         except grpc.RpcError as e:
             if e.code() == grpc.StatusCode.NOT_FOUND:
                 return None
             raise
 
-    def delete_version(self, kref: Kref, force: bool) -> None:
-        """Delete a version.
+    def delete_revision(self, kref: Kref, force: bool) -> None:
+        """Delete a revision.
 
         Args:
-            kref: The kref of the version to delete.
+            kref: The kref of the revision to delete.
             force: Whether to force deletion.
         """
-        req = DeleteVersionRequest(kref=kref.to_pb(), force=force)
-        self.stub.DeleteVersion(req)
+        req = DeleteRevisionRequest(kref=kref.to_pb(), force=force)
+        self.stub.DeleteRevision(req)
 
-    def delete_group(self, path: str, force: bool) -> None:
-        """Delete a group.
+    def delete_space(self, path: str, force: bool) -> None:
+        """Delete a space.
 
         Args:
-            path: The path of the group to delete.
+            path: The path of the space to delete.
             force: Whether to force deletion.
         """
-        req = DeleteGroupRequest(path=path, force=force)
-        self.stub.DeleteGroup(req)
+        req = DeleteSpaceRequest(path=path, force=force)
+        self.stub.DeleteSpace(req)
 
-    def delete_product(self, kref: Kref, force: bool) -> None:
-        """Delete a product.
+    def delete_item(self, kref: Kref, force: bool) -> None:
+        """Delete an item.
 
         Args:
-            kref: The kref of the product to delete.
+            kref: The kref of the item to delete.
             force: Whether to force deletion.
         """
-        req = DeleteProductRequest(kref=kref.to_pb(), force=force)
-        self.stub.DeleteProduct(req)
+        req = DeleteItemRequest(kref=kref.to_pb(), force=force)
+        self.stub.DeleteItem(req)
 
-    def update_version_metadata(self, kref: Kref, metadata: Dict[str, str]) -> Version:
-        """Update metadata for a version.
+    def update_revision_metadata(self, kref: Kref, metadata: Dict[str, str]) -> Revision:
+        """Update metadata for a revision.
 
         Args:
-            kref: The kref of the version.
+            kref: The kref of the revision.
             metadata: The metadata to update.
 
         Returns:
-            The updated Version object.
+            The updated Revision object.
         """
         req = UpdateMetadataRequest(kref=kref.to_pb(), metadata=metadata)
-        resp = self.stub.UpdateVersionMetadata(req)
-        return Version(resp, self)
+        resp = self.stub.UpdateRevisionMetadata(req)
+        return Revision(resp, self)
 
-    def peek_next_version(self, product_kref: Kref) -> int:
-        """Get the next version number that would be assigned to a product.
+    def peek_next_revision(self, item_kref: Kref) -> int:
+        """Get the next revision number that would be assigned to an item.
 
         Args:
-            product_kref: The kref of the product.
+            item_kref: The kref of the item.
 
         Returns:
-            The next version number.
+            The next revision number.
         """
-        req = PeekNextVersionRequest(product_kref=product_kref.to_pb())
-        resp = self.stub.PeekNextVersion(req)
+        req = PeekNextRevisionRequest(item_kref=item_kref.to_pb())
+        resp = self.stub.PeekNextRevision(req)
         return resp.number
 
     # Tagging methods
-    def tag_version(self, kref: Kref, tag: str) -> None:
-        """Apply a tag to a version.
+    def tag_revision(self, kref: Kref, tag: str) -> None:
+        """Apply a tag to a revision.
 
         Args:
-            kref: The kref of the version.
+            kref: The kref of the revision.
             tag: The tag to apply.
         """
-        req = TagVersionRequest(kref=kref.to_pb(), tag=tag)
-        self.stub.TagVersion(req)
+        req = TagRevisionRequest(kref=kref.to_pb(), tag=tag)
+        self.stub.TagRevision(req)
 
-    def untag_version(self, kref: Kref, tag: str) -> None:
-        """Remove a tag from a version.
+    def untag_revision(self, kref: Kref, tag: str) -> None:
+        """Remove a tag from a revision.
 
         Args:
-            kref: The kref of the version.
+            kref: The kref of the revision.
             tag: The tag to remove.
         """
-        req = UnTagVersionRequest(kref=kref.to_pb(), tag=tag)
-        self.stub.UnTagVersion(req)
+        req = UnTagRevisionRequest(kref=kref.to_pb(), tag=tag)
+        self.stub.UnTagRevision(req)
 
     def has_tag(self, kref: Kref, tag: str) -> bool:
-        """Check if a version has a specific tag.
+        """Check if a revision has a specific tag.
 
         Args:
-            kref: The kref of the version.
+            kref: The kref of the revision.
             tag: The tag to check for.
 
         Returns:
-            True if the version has the tag, False otherwise.
+            True if the revision has the tag, False otherwise.
         """
         req = HasTagRequest(kref=kref.to_pb(), tag=tag)
         resp = self.stub.HasTag(req)
         return resp.has_tag
 
     def was_tagged(self, kref: Kref, tag: str) -> bool:
-        """Check if a version was ever tagged with a specific tag.
+        """Check if a revision was ever tagged with a specific tag.
 
         Args:
-            kref: The kref of the version.
+            kref: The kref of the revision.
             tag: The tag to check for.
 
         Returns:
-            True if the version was ever tagged with the given tag.
+            True if the revision was ever tagged with the given tag.
         """
         req = WasTaggedRequest(kref=kref.to_pb(), tag=tag)
         resp = self.stub.WasTagged(req)
         return resp.was_tagged
 
-    def set_default_resource(self, version_kref: Kref, resource_name: str) -> None:
-        """Set the default resource for a version.
+    def set_default_artifact(self, revision_kref: Kref, artifact_name: str) -> None:
+        """Set the default artifact for a revision.
 
         Args:
-            version_kref: The kref of the version.
-            resource_name: The name of the resource to set as default.
+            revision_kref: The kref of the revision.
+            artifact_name: The name of the artifact to set as default.
         """
-        req = SetDefaultResourceRequest(version_kref=version_kref.to_pb(), resource_name=resource_name)
-        self.stub.SetDefaultResource(req)
+        req = SetDefaultArtifactRequest(revision_kref=revision_kref.to_pb(), artifact_name=artifact_name)
+        self.stub.SetDefaultArtifact(req)
 
-    # Resource methods
-    def create_resource(self, version_kref: Kref, name: str, location: str) -> Resource:
-        """Create a new resource for a version.
+    # Artifact methods
+    def create_artifact(self, revision_kref: Kref, name: str, location: str) -> Artifact:
+        """Create a new artifact for a revision.
 
         Args:
-            version_kref: The kref of the parent version.
-            name: The name of the resource.
-            location: The storage location of the resource.
+            revision_kref: The kref of the parent revision.
+            name: The name of the artifact.
+            location: The storage location of the artifact.
 
         Returns:
-            The created Resource object.
+            The created Artifact object.
         """
-        req = CreateResourceRequest(version_kref=version_kref.to_pb(), name=name, location=location)
-        resp = self.stub.CreateResource(req)
-        return Resource(resp, self)
+        req = CreateArtifactRequest(revision_kref=revision_kref.to_pb(), name=name, location=location)
+        resp = self.stub.CreateArtifact(req)
+        return Artifact(resp, self)
 
-    def get_resource(self, version_kref: Kref, name: str) -> Resource:
-        """Get a resource by version kref and name.
+    def get_artifact(self, revision_kref: Kref, name: str) -> Artifact:
+        """Get an artifact by revision kref and name.
 
         Args:
-            version_kref: The kref of the parent version.
-            name: The name of the resource.
+            revision_kref: The kref of the parent revision.
+            name: The name of the artifact.
 
         Returns:
-            The Resource object.
+            The Artifact object.
         """
-        req = GetResourceRequest(version_kref=version_kref.to_pb(), name=name)
-        resp = self.stub.GetResource(req)
-        return Resource(resp, self)
+        req = GetArtifactRequest(revision_kref=revision_kref.to_pb(), name=name)
+        resp = self.stub.GetArtifact(req)
+        return Artifact(resp, self)
 
-    def get_resource_by_kref(self, kref_uri: str) -> Resource:
-        """Get a resource by its kref URI.
+    def get_artifact_by_kref(self, kref_uri: str) -> Artifact:
+        """Get an artifact by its kref URI.
 
         Args:
-            kref_uri: The kref URI of the resource (e.g., "kref://group/product.type?v=1&r=resource_name").
+            kref_uri: The kref URI of the artifact (e.g., "kref://space/item.kind?v=1&r=artifact_name").
 
         Returns:
-            The Resource object.
+            The Artifact object.
 
         Raises:
-            ValueError: If the kref URI does not contain a resource name.
+            ValueError: If the kref URI does not contain an artifact name.
         """
         kref = Kref(kref_uri)
-        resource_name = kref.get_resource_name()
-        if not resource_name:
-            raise ValueError(f"Invalid resource kref format: {kref_uri} (missing &r=resource_name)")
+        artifact_name = kref.get_artifact_name()
+        if not artifact_name:
+            raise ValueError(f"Invalid artifact kref format: {kref_uri} (missing &r=artifact_name)")
         
-        # Build the version kref by removing the resource part
-        version_kref_uri = kref_uri.split("&r=")[0]
-        version_kref = Kref(version_kref_uri)
+        # Build the revision kref by removing the artifact part
+        revision_kref_uri = kref_uri.split("&r=")[0]
+        revision_kref = Kref(revision_kref_uri)
         
-        return self.get_resource(version_kref, resource_name)
+        return self.get_artifact(revision_kref, artifact_name)
 
-    def get_resources(self, version_kref: Kref) -> List[Resource]:
-        """Get all resources for a version.
+    def get_artifacts(self, revision_kref: Kref) -> List[Artifact]:
+        """Get all artifacts for a revision.
 
         Args:
-            version_kref: The kref of the version.
+            revision_kref: The kref of the revision.
 
         Returns:
-            A list of Resource objects.
+            A list of Artifact objects.
         """
-        req = GetResourcesRequest(version_kref=version_kref.to_pb())
-        resp = self.stub.GetResources(req)
-        return [Resource(r, self) for r in resp.resources]
+        req = GetArtifactsRequest(revision_kref=revision_kref.to_pb())
+        resp = self.stub.GetArtifacts(req)
+        return [Artifact(r, self) for r in resp.artifacts]
 
-    def get_resources_by_location(self, location: str) -> List[Resource]:
-        """Get all resources at a specific location.
+    def get_artifacts_by_location(self, location: str) -> List[Artifact]:
+        """Get all artifacts at a specific location.
 
         Args:
-            location: The location to search for resources.
+            location: The location to search for artifacts.
 
         Returns:
-            A list of Resource objects at the location.
+            A list of Artifact objects at the location.
         """
-        req = GetResourcesByLocationRequest(location=location)
-        resp = self.stub.GetResourcesByLocation(req)
-        return [Resource(r, self) for r in resp.resources]
+        req = GetArtifactsByLocationRequest(location=location)
+        resp = self.stub.GetArtifactsByLocation(req)
+        return [Artifact(r, self) for r in resp.artifacts]
 
-    def delete_resource(self, kref: Kref, force: bool) -> None:
-        """Delete a resource.
+    def delete_artifact(self, kref: Kref, force: bool) -> None:
+        """Delete an artifact.
 
         Args:
-            kref: The kref of the resource to delete.
+            kref: The kref of the artifact to delete.
             force: Whether to force deletion.
         """
-        req = DeleteResourceRequest(kref=kref.to_pb(), force=force)
-        self.stub.DeleteResource(req)
+        req = DeleteArtifactRequest(kref=kref.to_pb(), force=force)
+        self.stub.DeleteArtifact(req)
 
     def set_deprecated(self, kref: Kref, deprecated: bool) -> None:
-        """Set the deprecated status of a node (Product, Version, Resource).
+        """Set the deprecated status of a node (Item, Revision, Artifact).
 
         Args:
             kref: The kref of the node.
@@ -946,19 +946,19 @@ class _Client:
         req = SetDeprecatedRequest(kref=kref.to_pb(), deprecated=deprecated)
         self.stub.SetDeprecated(req)
 
-    def update_resource_metadata(self, kref: Kref, metadata: Dict[str, str]) -> Resource:
-        """Update metadata for a resource.
+    def update_artifact_metadata(self, kref: Kref, metadata: Dict[str, str]) -> Artifact:
+        """Update metadata for an artifact.
 
         Args:
-            kref: The kref of the resource.
+            kref: The kref of the artifact.
             metadata: The metadata to update.
 
         Returns:
-            The updated Resource object.
+            The updated Artifact object.
         """
         req = UpdateMetadataRequest(kref=kref.to_pb(), metadata=metadata)
-        resp = self.stub.UpdateResourceMetadata(req)
-        return Resource(resp, self)
+        resp = self.stub.UpdateArtifactMetadata(req)
+        return Artifact(resp, self)
 
     def get_tenant_usage(self) -> Dict[str, Any]:
         """Get the current tenant's usage and limits.
@@ -1009,7 +1009,7 @@ class _Client:
         metadata map. The attribute key cannot be a reserved system field.
 
         Args:
-            kref: The kref of the entity (Version, Product, Resource, or Group).
+            kref: The kref of the entity (Revision, Item, Artifact, or Space).
             key: The attribute key to set.
             value: The attribute value.
 
@@ -1020,7 +1020,7 @@ class _Client:
             grpc.RpcError: If the entity is not found or the key is reserved.
 
         Example:
-            >>> client.set_attribute(version.kref, "render_engine", "cycles")
+            >>> client.set_attribute(revision.kref, "render_engine", "cycles")
             True
         """
         req = SetAttributeRequest(kref=kref.to_pb(), key=key, value=value)
@@ -1031,7 +1031,7 @@ class _Client:
         """Get a single metadata attribute from any entity.
 
         Args:
-            kref: The kref of the entity (Version, Product, Resource, or Group).
+            kref: The kref of the entity (Revision, Item, Artifact, or Space).
             key: The attribute key to retrieve.
 
         Returns:
@@ -1041,9 +1041,9 @@ class _Client:
             grpc.RpcError: If the entity is not found.
 
         Example:
-            >>> client.get_attribute(version.kref, "render_engine")
+            >>> client.get_attribute(revision.kref, "render_engine")
             "cycles"
-            >>> client.get_attribute(version.kref, "nonexistent")
+            >>> client.get_attribute(revision.kref, "nonexistent")
             None
         """
         req = GetAttributeRequest(kref=kref.to_pb(), key=key)
@@ -1054,7 +1054,7 @@ class _Client:
         """Delete a single metadata attribute from any entity.
 
         Args:
-            kref: The kref of the entity (Version, Product, Resource, or Group).
+            kref: The kref of the entity (Revision, Item, Artifact, or Space).
             key: The attribute key to delete.
 
         Returns:
@@ -1064,145 +1064,145 @@ class _Client:
             grpc.RpcError: If the entity is not found or the key is reserved.
 
         Example:
-            >>> client.delete_attribute(version.kref, "deprecated_field")
+            >>> client.delete_attribute(revision.kref, "deprecated_field")
             True
         """
         req = DeleteAttributeRequest(kref=kref.to_pb(), key=key)
         resp = self.stub.DeleteAttribute(req)
         return resp.success
 
-    # Link methods
-    def create_link(
+    # Edge methods
+    def create_edge(
         self,
-        source_version: Version,
-        target_version: Version,
-        link_type: str,
+        source_revision: Revision,
+        target_revision: Revision,
+        edge_type: str,
         metadata: Optional[Dict[str, str]] = None
-    ) -> Link:
-        """Create a link between two versions.
+    ) -> Edge:
+        """Create an edge between two revisions.
 
         Args:
-            source_version: The source version of the link.
-            target_version: The target version of the link.
-            link_type: The type of relationship (e.g., kumiho.LinkType.DEPENDS_ON).
-                       See kumiho.LinkType for standard types.
+            source_revision: The source revision of the edge.
+            target_revision: The target revision of the edge.
+            edge_type: The type of relationship (e.g., kumiho.EdgeType.DEPENDS_ON).
+                       See kumiho.EdgeType for standard types.
                        Must be UPPERCASE with letters, digits, underscores only.
-            metadata: Optional metadata for the link.
+            metadata: Optional metadata for the edge.
 
         Returns:
-            The created Link object.
+            The created Edge object.
             
         Raises:
-            LinkTypeValidationError: If link_type is invalid.
+            EdgeTypeValidationError: If edge_type is invalid.
         """
-        from .link import validate_link_type
-        validate_link_type(link_type)
+        from .edge import validate_edge_type
+        validate_edge_type(edge_type)
         
-        req = CreateLinkRequest(
-            source_version_kref=source_version.kref.to_pb(),
-            target_version_kref=target_version.kref.to_pb(),
-            link_type=link_type,
+        req = CreateEdgeRequest(
+            source_revision_kref=source_revision.kref.to_pb(),
+            target_revision_kref=target_revision.kref.to_pb(),
+            edge_type=edge_type,
             metadata=metadata or {}
         )
-        self.stub.CreateLink(req)
-        # Construct Link object client-side since RPC returns only status
-        pb_link = PbLink(
-            source_kref=source_version.kref.to_pb(),
-            target_kref=target_version.kref.to_pb(),
-            link_type=link_type,
+        self.stub.CreateEdge(req)
+        # Construct Edge object client-side since RPC returns only status
+        pb_edge = PbEdge(
+            source_kref=source_revision.kref.to_pb(),
+            target_kref=target_revision.kref.to_pb(),
+            edge_type=edge_type,
             metadata=metadata or {},
         )
-        return Link(pb_link, self)
+        return Edge(pb_edge, self)
 
-    def get_links(self, kref: Kref, link_type_filter: str = "", direction: int = 0) -> List[Link]:
-        """Get links associated with a kref.
+    def get_edges(self, kref: Kref, edge_type_filter: str = "", direction: int = 0) -> List[Edge]:
+        """Get edges associated with a kref.
 
         Args:
-            kref: The kref to get links for.
-            link_type_filter: Optional filter for link types.
-            direction: The direction of links to retrieve (0=OUTGOING, 1=INCOMING, 2=BOTH).
-                       See kumiho.LinkDirection.
+            kref: The kref to get edges for.
+            edge_type_filter: Optional filter for edge types.
+            direction: The direction of edges to retrieve (0=OUTGOING, 1=INCOMING, 2=BOTH).
+                       See kumiho.EdgeDirection.
 
         Returns:
-            A list of Link objects.
+            A list of Edge objects.
         """
-        req = GetLinksRequest(kref=kref.to_pb(), link_type_filter=link_type_filter, direction=direction)
-        resp = self.stub.GetLinks(req)
-        return [Link(pb, self) for pb in resp.links]
+        req = GetEdgesRequest(kref=kref.to_pb(), edge_type_filter=edge_type_filter, direction=direction)
+        resp = self.stub.GetEdges(req)
+        return [Edge(pb, self) for pb in resp.edges]
 
-    def delete_link(self, source_kref: Kref, target_kref: Kref, link_type: str) -> None:
-        """Delete a link between versions.
+    def delete_edge(self, source_kref: Kref, target_kref: Kref, edge_type: str) -> None:
+        """Delete an edge between revisions.
 
         Args:
-            source_kref: The source version kref.
-            target_kref: The target version kref.
-            link_type: The type of link to delete.
+            source_kref: The source revision kref.
+            target_kref: The target revision kref.
+            edge_type: The type of edge to delete.
             
         Raises:
-            LinkTypeValidationError: If link_type is invalid.
+            EdgeTypeValidationError: If edge_type is invalid.
         """
-        from .link import validate_link_type
-        validate_link_type(link_type)
+        from .edge import validate_edge_type
+        validate_edge_type(edge_type)
         
-        req = DeleteLinkRequest(
+        req = DeleteEdgeRequest(
             source_kref=source_kref.to_pb(),
             target_kref=target_kref.to_pb(),
-            link_type=link_type
+            edge_type=edge_type
         )
-        self.stub.DeleteLink(req)
+        self.stub.DeleteEdge(req)
 
     # Graph Traversal Methods
 
-    def traverse_links(
+    def traverse_edges(
         self,
         origin_kref: Kref,
         direction: int = 0,
-        link_type_filter: Optional[List[str]] = None,
+        edge_type_filter: Optional[List[str]] = None,
         max_depth: int = 10,
         limit: int = 100,
         include_path: bool = False
     ) -> 'TraversalResult':
-        """Traverse links transitively from an origin version.
+        """Traverse edges transitively from an origin revision.
 
         Args:
-            origin_kref: The starting version kref.
+            origin_kref: The starting revision kref.
             direction: Traversal direction (0=OUTGOING, 1=INCOMING, 2=BOTH).
-            link_type_filter: Filter by link types (empty = all).
+            edge_type_filter: Filter by edge types (empty = all).
             max_depth: Maximum traversal depth (default: 10, max: 20).
             limit: Maximum results to return (default: 100, max: 1000).
             include_path: Whether to include full path information.
 
         Returns:
-            TraversalResult containing discovered versions and paths.
+            TraversalResult containing discovered revisions and paths.
         """
-        from .link import TraversalResult, VersionPath, PathStep
+        from .edge import TraversalResult, RevisionPath, PathStep
         
-        req = TraverseLinksRequest(
+        req = TraverseEdgesRequest(
             origin_kref=origin_kref.to_pb(),
             direction=direction,
-            link_type_filter=link_type_filter or [],
+            edge_type_filter=edge_type_filter or [],
             max_depth=max_depth,
             limit=limit,
             include_path=include_path
         )
-        resp = self.stub.TraverseLinks(req)
+        resp = self.stub.TraverseEdges(req)
         
-        version_krefs = [Kref(k.uri) for k in resp.version_krefs]
+        revision_krefs = [Kref(k.uri) for k in resp.revision_krefs]
         paths = []
         for p in resp.paths:
             steps = [PathStep(
-                version_kref=Kref(s.version_kref.uri),
-                link_type=s.link_type,
+                revision_kref=Kref(s.revision_kref.uri),
+                edge_type=s.edge_type,
                 depth=s.depth
             ) for s in p.steps]
-            paths.append(VersionPath(steps=steps, total_depth=p.total_depth))
+            paths.append(RevisionPath(steps=steps, total_depth=p.total_depth))
         
-        links = [Link(pb, self) for pb in resp.links]
+        edges = [Edge(pb, self) for pb in resp.edges]
         
         return TraversalResult(
-            version_krefs=version_krefs,
+            revision_krefs=revision_krefs,
             paths=paths,
-            links=links,
+            edges=edges,
             total_count=resp.total_count,
             truncated=resp.truncated,
             client=self
@@ -1212,28 +1212,28 @@ class _Client:
         self,
         source_kref: Kref,
         target_kref: Kref,
-        link_type_filter: Optional[List[str]] = None,
+        edge_type_filter: Optional[List[str]] = None,
         max_depth: int = 10,
         all_shortest: bool = False
     ) -> 'ShortestPathResult':
-        """Find the shortest path between two versions.
+        """Find the shortest path between two revisions.
 
         Args:
-            source_kref: The source version kref.
-            target_kref: The target version kref.
-            link_type_filter: Filter by link types (empty = all).
+            source_kref: The source revision kref.
+            target_kref: The target revision kref.
+            edge_type_filter: Filter by edge types (empty = all).
             max_depth: Maximum path length to search (default: 10).
             all_shortest: Return all shortest paths, not just one.
 
         Returns:
             ShortestPathResult containing path(s) if found.
         """
-        from .link import VersionPath, PathStep
+        from .edge import RevisionPath, PathStep
         
         req = ShortestPathRequest(
             source_kref=source_kref.to_pb(),
             target_kref=target_kref.to_pb(),
-            link_type_filter=link_type_filter or [],
+            edge_type_filter=edge_type_filter or [],
             max_depth=max_depth,
             all_shortest=all_shortest
         )
@@ -1242,11 +1242,11 @@ class _Client:
         paths = []
         for p in resp.paths:
             steps = [PathStep(
-                version_kref=Kref(s.version_kref.uri),
-                link_type=s.link_type,
+                revision_kref=Kref(s.revision_kref.uri),
+                edge_type=s.edge_type,
                 depth=s.depth
             ) for s in p.steps]
-            paths.append(VersionPath(steps=steps, total_depth=p.total_depth))
+            paths.append(RevisionPath(steps=steps, total_depth=p.total_depth))
         
         return ShortestPathResult(
             paths=paths,
@@ -1256,245 +1256,245 @@ class _Client:
 
     def analyze_impact(
         self,
-        version_kref: Kref,
-        link_type_filter: Optional[List[str]] = None,
+        revision_kref: Kref,
+        edge_type_filter: Optional[List[str]] = None,
         max_depth: int = 10,
         limit: int = 100
-    ) -> List['ImpactedVersion']:
-        """Analyze what would be impacted by changes to a version.
+    ) -> List['ImpactedRevision']:
+        """Analyze what would be impacted by changes to a revision.
 
-        Finds all versions that directly or indirectly depend on the
-        given version.
+        Finds all revisions that directly or indirectly depend on the
+        given revision.
 
         Args:
-            version_kref: The version to analyze impact for.
-            link_type_filter: Filter by link types (default: DEPENDS_ON).
+            revision_kref: The revision to analyze impact for.
+            edge_type_filter: Filter by edge types (default: DEPENDS_ON).
             max_depth: Maximum traversal depth (default: 10).
             limit: Maximum results (default: 100).
 
         Returns:
-            List of ImpactedVersion objects.
+            List of ImpactedRevision objects.
         """
-        from .link import ImpactedVersion
+        from .edge import ImpactedRevision
         
         req = ImpactAnalysisRequest(
-            version_kref=version_kref.to_pb(),
-            link_type_filter=link_type_filter or [],
+            revision_kref=revision_kref.to_pb(),
+            edge_type_filter=edge_type_filter or [],
             max_depth=max_depth,
             limit=limit
         )
         resp = self.stub.AnalyzeImpact(req)
         
         return [
-            ImpactedVersion(
-                version_kref=Kref(iv.version_kref.uri),
-                product_kref=Kref(iv.product_kref.uri) if iv.product_kref.uri else None,
+            ImpactedRevision(
+                revision_kref=Kref(iv.revision_kref.uri),
+                item_kref=Kref(iv.item_kref.uri) if iv.item_kref.uri else None,
                 impact_depth=iv.impact_depth,
                 impact_path_types=list(iv.impact_path_types)
             )
-            for iv in resp.impacted_versions
+            for iv in resp.impacted_revisions
         ]
 
-    # Collection Methods
+    # Bundle Methods
 
-    def create_collection(
+    def create_bundle(
         self,
         parent_path: str,
-        collection_name: str,
+        bundle_name: str,
         metadata: Optional[Dict[str, str]] = None
-    ) -> "Collection":
-        """Create a new collection product.
+    ) -> "Bundle":
+        """Create a new bundle item.
 
-        Collections are special products that aggregate other products.
-        The ``collection`` product_type is reserved and can only be created
-        through this method (not via :meth:`create_product`).
+        Bundles are special items that aggregate other items.
+        The ``bundle`` kind is reserved and can only be created
+        through this method (not via :meth:`create_item`).
 
         Note:
             This is a low-level client method. Prefer using
-            :meth:`~kumiho.project.Project.create_collection` or
-            :meth:`~kumiho.group.Group.create_collection` for a higher-level API.
+            :meth:`~kumiho.project.Project.create_bundle` or
+            :meth:`~kumiho.space.Space.create_bundle` for a higher-level API.
 
         Args:
-            parent_path: The path to the parent group (e.g., ``/project/group``).
-            collection_name: The name of the collection. Must be unique within
-                the parent group.
-            metadata: Optional key-value metadata for the collection.
+            parent_path: The path to the parent space (e.g., ``/project/space``).
+            bundle_name: The name of the bundle. Must be unique within
+                the parent space.
+            metadata: Optional key-value metadata for the bundle.
 
         Returns:
-            Collection: The created Collection object with ``product_type='collection'``.
+            Bundle: The created Bundle object with ``kind='bundle'``.
 
         Raises:
-            grpc.RpcError: If the collection name is already taken or connection fails.
+            grpc.RpcError: If the bundle name is already taken or connection fails.
         """
-        from .collection import Collection
-        req = CreateCollectionRequest(
+        from .bundle import Bundle
+        req = CreateBundleRequest(
             parent_path=parent_path,
-            collection_name=collection_name,
+            bundle_name=bundle_name,
             metadata=metadata or {}
         )
-        resp = self.stub.CreateCollection(req)
-        return Collection(resp, self)
+        resp = self.stub.CreateBundle(req)
+        return Bundle(resp, self)
 
-    def add_collection_member(
+    def add_bundle_member(
         self,
-        collection_kref: Kref,
-        member_product_kref: Kref,
+        bundle_kref: Kref,
+        member_item_kref: Kref,
         metadata: Optional[Dict[str, str]] = None
-    ) -> Tuple[bool, str, Optional[Version]]:
-        """Add a product to a collection.
+    ) -> Tuple[bool, str, Optional[Revision]]:
+        """Add an item to a bundle.
 
-        Creates a new version of the collection to track the change with
+        Creates a new revision of the bundle to track the change with
         full audit trail.
 
         Note:
             This is a low-level client method. Prefer using
-            :meth:`~kumiho.collection.Collection.add_member` for a higher-level API.
+            :meth:`~kumiho.bundle.Bundle.add_member` for a higher-level API.
 
         Args:
-            collection_kref: The kref pointing to the collection product.
-            member_product_kref: The kref pointing to the product to add.
-            metadata: Optional key-value metadata to store in the version.
+            bundle_kref: The kref pointing to the bundle item.
+            member_item_kref: The kref pointing to the item to add.
+            metadata: Optional key-value metadata to store in the revision.
 
         Returns:
-            Tuple[bool, str, Optional[Version]]: A tuple containing:
+            Tuple[bool, str, Optional[Revision]]: A tuple containing:
                 - success: Whether the operation succeeded.
                 - message: Status message (e.g., "Added" or error details).
-                - new_version: The new collection version, or None on failure.
+                - new_revision: The new bundle revision, or None on failure.
 
         Raises:
-            grpc.RpcError: If the collection or member product is not found.
+            grpc.RpcError: If the bundle or member item is not found.
         """
-        req = AddCollectionMemberRequest(
-            collection_kref=collection_kref.to_pb(),
-            member_product_kref=member_product_kref.to_pb(),
+        req = AddBundleMemberRequest(
+            bundle_kref=bundle_kref.to_pb(),
+            member_item_kref=member_item_kref.to_pb(),
             metadata=metadata or {}
         )
-        resp = self.stub.AddCollectionMember(req)
-        new_version = Version(resp.new_version, self) if resp.new_version else None
-        return resp.success, resp.message, new_version
+        resp = self.stub.AddBundleMember(req)
+        new_revision = Revision(resp.new_revision, self) if resp.new_revision else None
+        return resp.success, resp.message, new_revision
 
-    def remove_collection_member(
+    def remove_bundle_member(
         self,
-        collection_kref: Kref,
-        member_product_kref: Kref,
+        bundle_kref: Kref,
+        member_item_kref: Kref,
         metadata: Optional[Dict[str, str]] = None
-    ) -> Tuple[bool, str, Optional[Version]]:
-        """Remove a product from a collection.
+    ) -> Tuple[bool, str, Optional[Revision]]:
+        """Remove an item from a bundle.
 
-        Creates a new version of the collection to track the change with
+        Creates a new revision of the bundle to track the change with
         full audit trail.
 
         Note:
             This is a low-level client method. Prefer using
-            :meth:`~kumiho.collection.Collection.remove_member` for a higher-level API.
+            :meth:`~kumiho.bundle.Bundle.remove_member` for a higher-level API.
 
         Args:
-            collection_kref: The kref pointing to the collection product.
-            member_product_kref: The kref pointing to the product to remove.
-            metadata: Optional key-value metadata to store in the version.
+            bundle_kref: The kref pointing to the bundle item.
+            member_item_kref: The kref pointing to the item to remove.
+            metadata: Optional key-value metadata to store in the revision.
 
         Returns:
-            Tuple[bool, str, Optional[Version]]: A tuple containing:
+            Tuple[bool, str, Optional[Revision]]: A tuple containing:
                 - success: Whether the operation succeeded.
                 - message: Status message (e.g., "Removed" or error details).
-                - new_version: The new collection version, or None on failure.
+                - new_revision: The new bundle revision, or None on failure.
 
         Raises:
-            grpc.RpcError: If the collection or member product is not found.
+            grpc.RpcError: If the bundle or member item is not found.
         """
-        req = RemoveCollectionMemberRequest(
-            collection_kref=collection_kref.to_pb(),
-            member_product_kref=member_product_kref.to_pb(),
+        req = RemoveBundleMemberRequest(
+            bundle_kref=bundle_kref.to_pb(),
+            member_item_kref=member_item_kref.to_pb(),
             metadata=metadata or {}
         )
-        resp = self.stub.RemoveCollectionMember(req)
-        new_version = Version(resp.new_version, self) if resp.new_version else None
-        return resp.success, resp.message, new_version
+        resp = self.stub.RemoveBundleMember(req)
+        new_revision = Revision(resp.new_revision, self) if resp.new_revision else None
+        return resp.success, resp.message, new_revision
 
-    def get_collection_members(
+    def get_bundle_members(
         self,
-        collection_kref: Kref,
-        version_number: Optional[int] = None
-    ) -> Tuple[List['CollectionMember'], int, int]:
-        """Get all members of a collection.
+        bundle_kref: Kref,
+        revision_number: Optional[int] = None
+    ) -> Tuple[List['BundleMember'], int, int]:
+        """Get all members of a bundle.
 
-        Retrieves the list of products that belong to a collection at
-        a specific version (or the latest version if not specified).
+        Retrieves the list of items that belong to a bundle at
+        a specific revision (or the latest revision if not specified).
 
         Note:
             This is a low-level client method. Prefer using
-            :meth:`~kumiho.collection.Collection.get_members` for a higher-level API.
+            :meth:`~kumiho.bundle.Bundle.get_members` for a higher-level API.
 
         Args:
-            collection_kref: The kref pointing to the collection product.
-            version_number: Optional specific version to query. If not provided,
-                returns members from the latest version.
+            bundle_kref: The kref pointing to the bundle item.
+            revision_number: Optional specific revision to query. If not provided,
+                returns members from the latest revision.
 
         Returns:
-            Tuple[List[CollectionMember], int, int]: A tuple containing:
-                - members: List of :class:`~kumiho.collection.CollectionMember` objects.
-                - version_number: The version number queried.
+            Tuple[List[BundleMember], int, int]: A tuple containing:
+                - members: List of :class:`~kumiho.bundle.BundleMember` objects.
+                - revision_number: The revision number queried.
                 - total_count: Total number of members.
 
         Raises:
-            grpc.RpcError: If the collection is not found.
+            grpc.RpcError: If the bundle is not found.
         """
-        from .collection import CollectionMember
+        from .bundle import BundleMember
         
-        req = GetCollectionMembersRequest(
-            collection_kref=collection_kref.to_pb(),
-            version_number=version_number
+        req = GetBundleMembersRequest(
+            bundle_kref=bundle_kref.to_pb(),
+            revision_number=revision_number
         )
-        resp = self.stub.GetCollectionMembers(req)
+        resp = self.stub.GetBundleMembers(req)
         
         members = [
-            CollectionMember(
-                product_kref=Kref(m.product_kref.uri),
+            BundleMember(
+                item_kref=Kref(m.item_kref.uri),
                 added_at=m.added_at,
                 added_by=m.added_by,
                 added_by_username=m.added_by_username,
-                added_in_version=m.added_in_version
+                added_in_revision=m.added_in_revision
             )
             for m in resp.members
         ]
-        return members, resp.version_number, resp.total_count
+        return members, resp.revision_number, resp.total_count
 
-    def get_collection_history(
+    def get_bundle_history(
         self,
-        collection_kref: Kref
-    ) -> List['CollectionVersionHistory']:
-        """Get the history of changes to a collection's membership.
+        bundle_kref: Kref
+    ) -> List['BundleRevisionHistory']:
+        """Get the history of changes to a bundle's membership.
 
         Returns a chronological list of membership changes (adds/removes)
         with full audit trail including author information and timestamps.
 
         Note:
             This is a low-level client method. Prefer using
-            :meth:`~kumiho.collection.Collection.get_history` for a higher-level API.
+            :meth:`~kumiho.bundle.Bundle.get_history` for a higher-level API.
 
         Args:
-            collection_kref: The kref pointing to the collection product.
+            bundle_kref: The kref pointing to the bundle item.
 
         Returns:
-            List[CollectionVersionHistory]: List of
-                :class:`~kumiho.collection.CollectionVersionHistory` objects
+            List[BundleRevisionHistory]: List of
+                :class:`~kumiho.bundle.BundleRevisionHistory` objects
                 documenting each membership change.
 
         Raises:
-            grpc.RpcError: If the collection is not found.
+            grpc.RpcError: If the bundle is not found.
         """
-        from .collection import CollectionVersionHistory
+        from .bundle import BundleRevisionHistory
         
-        req = GetCollectionHistoryRequest(
-            collection_kref=collection_kref.to_pb()
+        req = GetBundleHistoryRequest(
+            bundle_kref=bundle_kref.to_pb()
         )
-        resp = self.stub.GetCollectionHistory(req)
+        resp = self.stub.GetBundleHistory(req)
         
         return [
-            CollectionVersionHistory(
-                version_number=h.version_number,
+            BundleRevisionHistory(
+                revision_number=h.revision_number,
                 action=h.action,
-                member_product_kref=Kref(h.member_product_kref.uri) if h.member_product_kref.uri else None,
+                member_item_kref=Kref(h.member_item_kref.uri) if h.member_item_kref.uri else None,
                 author=h.author,
                 username=h.username,
                 created_at=h.created_at,
@@ -1509,7 +1509,7 @@ class _Client:
 
         Args:
             routing_key_filter: A filter for the events to receive.
-                                Supports wildcards, e.g., "product.model.*"
+                                Supports wildcards, e.g., "item.model.*"
             kref_filter: A filter for the kref URIs to receive events for.
                         Supports wildcards, e.g., "kref://projectA/**/*.model"
 

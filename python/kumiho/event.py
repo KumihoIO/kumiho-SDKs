@@ -6,25 +6,25 @@ occur in the database.
 
 Event Types (routing_key patterns):
     - ``project.created``, ``project.deleted``
-    - ``group.created``, ``group.deleted``
-    - ``product.created``, ``product.deleted``
-    - ``version.created``, ``version.deleted``
-    - ``version.tagged``, ``version.untagged``
-    - ``resource.created``, ``resource.deleted``
-    - ``link.created``, ``link.deleted``
+    - ``space.created``, ``space.deleted``
+    - ``item.created``, ``item.deleted``
+    - ``revision.created``, ``revision.deleted``
+    - ``revision.tagged``, ``revision.untagged``
+    - ``artifact.created``, ``artifact.deleted``
+    - ``edge.created``, ``edge.deleted``
 
 Example::
 
     import kumiho
 
-    # Subscribe to all version events in a project
+    # Subscribe to all revision events in a project
     for event in kumiho.event_stream(
-        routing_key_filter="version.*",
+        routing_key_filter="revision.*",
         kref_filter="kref://my-project/**"
     ):
         print(f"{event.routing_key}: {event.kref}")
 
-        if event.routing_key == "version.tagged":
+        if event.routing_key == "revision.tagged":
             tag = event.details.get("tag")
             print(f"  Tagged with: {tag}")
 """
@@ -53,10 +53,10 @@ class Event:
 
         import kumiho
 
-        # React to version creation
-        for event in kumiho.event_stream(routing_key_filter="version.created"):
-            version = kumiho.get_version(event.kref)
-            print(f"New version: {version.product_kref} v{version.number}")
+        # React to revision creation
+        for event in kumiho.event_stream(routing_key_filter="revision.created"):
+            revision = kumiho.get_revision(event.kref)
+            print(f"New revision: {revision.item_kref} v{revision.number}")
             print(f"  Created by: {event.author}")
             print(f"  At: {event.timestamp}")
 

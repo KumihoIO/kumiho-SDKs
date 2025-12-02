@@ -1,7 +1,7 @@
-kumiho.group
-============
+kumiho.item
+===========
 
-.. automodule:: kumiho.group
+.. automodule:: kumiho.item
    :members:
    :undoc-members:
    :show-inheritance:

@@ -1,7 +1,7 @@
-kumiho.version
-==============
+kumiho.space
+============
 
-.. automodule:: kumiho.version
+.. automodule:: kumiho.space
    :members:
    :undoc-members:
    :show-inheritance:

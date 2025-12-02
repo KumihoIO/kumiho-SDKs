@@ -34,63 +34,63 @@ def test_event_streaming(cleanup_test_data):
     time.sleep(1)  # Give the listener a moment to connect
     print("[TEST] Starting event streaming test...")  # Added print for debugging
 
-    # 1. Create a product and check for the event
+    # 1. Create an item and check for the event
     project_name = unique_name("stream_test_project")
     asset_name = unique_name("stream_test_asset")
     
     print(f"[TEST] Creating project: {project_name}")  # Added print for debugging
     project = kumiho.create_project(project_name)
     cleanup_test_data.append(project)
-    group = project.create_group(name=project_name, parent_path="/")
-    cleanup_test_data.append(group)
-    print(f"[TEST] Creating product: {asset_name}")  # Added print for debugging
-    product = group.create_product(product_name=asset_name, product_type="model")  # Uses instance method
-    cleanup_test_data.append(product)  # Add to cleanup
+    space = project.create_space(name=project_name, parent_path="/")
+    cleanup_test_data.append(space)
+    print(f"[TEST] Creating item: {asset_name}")  # Added print for debugging
+    item = space.create_item(item_name=asset_name, kind="model")  # Uses instance method
+    cleanup_test_data.append(item)  # Add to cleanup
     
-    # First event: group creation
-    print("[TEST] Waiting for 'group.created' event...")  # Added print for debugging
+    # First event: space creation
+    print("[TEST] Waiting for 'space.created' event...")  # Added print for debugging
     try:
         event = event_queue.get(timeout=2)
         print(f"[TEST] Consumed event: {event.routing_key}")  # Added print for debugging
-        assert event.routing_key == "group.created"
-        assert event.kref.uri == f"kref://{group.path}"  # Event krefs now include "kref://" prefix
+        assert event.routing_key == "space.created"
+        assert event.kref.uri == f"kref://{space.path}"  # Event krefs now include "kref://" prefix
     except Empty:
-        pytest.fail("Did not receive 'group.created' event in time.")
+        pytest.fail("Did not receive 'space.created' event in time.")
     
-    # Second event: product creation
-    print("[TEST] Waiting for 'product.model.created' event...")  # Added print for debugging
+    # Second event: item creation
+    print("[TEST] Waiting for 'item.model.created' event...")  # Added print for debugging
     try:
         event = event_queue.get(timeout=2)
         print(f"[TEST] Consumed event: {event.routing_key}")  # Added print for debugging
-        assert event.routing_key == "product.model.created"
-        assert event.kref.uri == product.kref.uri
+        assert event.routing_key == "item.model.created"
+        assert event.kref.uri == item.kref.uri
     except Empty:
-        pytest.fail("Did not receive 'product.model.created' event in time.")
+        pytest.fail("Did not receive 'item.model.created' event in time.")
 
-    # 2. Create a version and check for the event
-    print("[TEST] Creating version...")  # Added print for debugging
-    version = product.create_version()
-    cleanup_test_data.append(version)  # Add to cleanup
-    print("[TEST] Waiting for 'version.created' event...")  # Added print for debugging
+    # 2. Create a revision and check for the event
+    print("[TEST] Creating revision...")  # Added print for debugging
+    revision = item.create_revision()
+    cleanup_test_data.append(revision)  # Add to cleanup
+    print("[TEST] Waiting for 'revision.created' event...")  # Added print for debugging
     try:
         event = event_queue.get(timeout=2)
         print(f"[TEST] Consumed event: {event.routing_key}")  # Added print for debugging
-        assert event.routing_key == "version.created"
-        assert event.kref.uri == version.kref.uri
+        assert event.routing_key == "revision.created"
+        assert event.kref.uri == revision.kref.uri
     except Empty:
-        pytest.fail("Did not receive 'version.created' event in time.")
+        pytest.fail("Did not receive 'revision.created' event in time.")
 
-    # 3. Tag the version and check for the event
-    print(f"[TEST] Tagging version with '{kumiho.PUBLISHED_TAG}'...")  # Added print for debugging
-    version.tag(kumiho.PUBLISHED_TAG)  # No top-level equivalent yet, so kept as object method
-    print("[TEST] Waiting for 'version.tagged' event...")  # Added print for debugging
+    # 3. Tag the revision and check for the event
+    print(f"[TEST] Tagging revision with '{kumiho.PUBLISHED_TAG}'...")  # Added print for debugging
+    revision.tag(kumiho.PUBLISHED_TAG)  # No top-level equivalent yet, so kept as object method
+    print("[TEST] Waiting for 'revision.tagged' event...")  # Added print for debugging
     try:
         event = event_queue.get(timeout=2)
         print(f"[TEST] Consumed event: {event.routing_key}")  # Added print for debugging
-        assert event.routing_key == "version.tagged"
-        assert event.kref.uri == version.kref.uri
+        assert event.routing_key == "revision.tagged"
+        assert event.kref.uri == revision.kref.uri
         assert event.details["tag"] == kumiho.PUBLISHED_TAG
     except Empty:
-        pytest.fail("Did not receive 'version.tagged' event in time.")
+        pytest.fail("Did not receive 'revision.tagged' event in time.")
     
     print("[TEST] Event streaming test completed successfully.")  # Added print for debugging

@@ -1,7 +1,7 @@
-kumiho.collection
-=================
+kumiho.bundle
+=============
 
-.. automodule:: kumiho.collection
+.. automodule:: kumiho.bundle
    :members:
    :undoc-members:
    :show-inheritance:

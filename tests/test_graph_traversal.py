@@ -18,7 +18,7 @@ def _unique(prefix: str) -> str:
 
 @pytest.fixture
 def traversal_graph(live_client, cleanup_test_data):
-    """Create a test graph with linked versions for traversal tests.
+    """Create a test graph with linked revisions for traversal tests.
     
     Creates the following dependency structure:
     
@@ -29,48 +29,48 @@ def traversal_graph(live_client, cleanup_test_data):
     """
     project_name = _unique("traversal_test")
     
-    # Create project and group
+    # Create project and space
     project = kumiho.create_project(project_name)
     cleanup_test_data.append(project)
     
-    group = project.create_group(name=project_name, parent_path="/")
-    cleanup_test_data.append(group)
+    space = project.create_space(name=project_name, parent_path="/")
+    cleanup_test_data.append(space)
     
-    # Create products
-    texture = group.create_product(product_name="shared_texture", product_type="texture")
+    # Create items
+    texture = space.create_item(item_name="shared_texture", kind="texture")
     cleanup_test_data.append(texture)
     
-    model = group.create_product(product_name="hero_model", product_type="model")
+    model = space.create_item(item_name="hero_model", kind="model")
     cleanup_test_data.append(model)
     
-    scene = group.create_product(product_name="main_scene", product_type="scene")
+    scene = space.create_item(item_name="main_scene", kind="scene")
     cleanup_test_data.append(scene)
     
-    # Create versions
-    texture_v1 = texture.create_version(metadata={"role": "diffuse"})
+    # Create revisions
+    texture_v1 = texture.create_revision(metadata={"role": "diffuse"})
     cleanup_test_data.append(texture_v1)
     
-    model_v1 = model.create_version(metadata={"lod": "high"})
+    model_v1 = model.create_revision(metadata={"lod": "high"})
     cleanup_test_data.append(model_v1)
     
-    model_v2 = model.create_version(metadata={"lod": "medium"})
+    model_v2 = model.create_revision(metadata={"lod": "medium"})
     cleanup_test_data.append(model_v2)
     
-    scene_v1 = scene.create_version(metadata={"sequence": "shot_010"})
+    scene_v1 = scene.create_revision(metadata={"sequence": "shot_010"})
     cleanup_test_data.append(scene_v1)
     
-    # Create links: model_v1 depends on texture_v1
-    model_v1.create_link(texture_v1, kumiho.DEPENDS_ON)
+    # Create edges: model_v1 depends on texture_v1
+    model_v1.create_edge(texture_v1, kumiho.DEPENDS_ON)
     
-    # Create links: model_v2 depends on texture_v1
-    model_v2.create_link(texture_v1, kumiho.DEPENDS_ON)
+    # Create edges: model_v2 depends on texture_v1
+    model_v2.create_edge(texture_v1, kumiho.DEPENDS_ON)
     
-    # Create links: scene_v1 depends on model_v1
-    scene_v1.create_link(model_v1, kumiho.DEPENDS_ON)
+    # Create edges: scene_v1 depends on model_v1
+    scene_v1.create_edge(model_v1, kumiho.DEPENDS_ON)
     
     return {
         "project": project,
-        "group": group,
+        "space": space,
         "texture_v1": texture_v1,
         "model_v1": model_v1,
         "model_v2": model_v2,
@@ -78,8 +78,8 @@ def traversal_graph(live_client, cleanup_test_data):
     }
 
 
-class TestTraverseLinks:
-    """Tests for the traverse_links / get_all_dependencies / get_all_dependents methods."""
+class TestTraverseEdges:
+    """Tests for the traverse_edges / get_all_dependencies / get_all_dependents methods."""
     
     def test_get_all_dependencies_single_hop(self, traversal_graph):
         """Test that single-hop dependencies are found."""
@@ -89,8 +89,8 @@ class TestTraverseLinks:
         # model_v1 -> texture_v1
         deps = model_v1.get_all_dependencies(max_depth=1)
         
-        assert len(deps.version_krefs) == 1
-        assert deps.version_krefs[0].uri == texture_v1.kref.uri
+        assert len(deps.revision_krefs) == 1
+        assert deps.revision_krefs[0].uri == texture_v1.kref.uri
         assert deps.total_count == 1
         assert not deps.truncated
     
@@ -104,13 +104,13 @@ class TestTraverseLinks:
         deps = scene_v1.get_all_dependencies(max_depth=5)
         
         # Should find both model_v1 and texture_v1
-        dep_uris = {k.uri for k in deps.version_krefs}
+        dep_uris = {k.uri for k in deps.revision_krefs}
         assert model_v1.kref.uri in dep_uris
         assert texture_v1.kref.uri in dep_uris
         assert deps.total_count == 2
     
     def test_get_all_dependents_finds_upstream(self, traversal_graph):
-        """Test that versions depending on a target are found."""
+        """Test that revisions depending on a target are found."""
         texture_v1 = traversal_graph["texture_v1"]
         model_v1 = traversal_graph["model_v1"]
         model_v2 = traversal_graph["model_v2"]
@@ -118,7 +118,7 @@ class TestTraverseLinks:
         # Both model_v1 and model_v2 depend on texture_v1
         dependents = texture_v1.get_all_dependents(max_depth=1)
         
-        dependent_uris = {k.uri for k in dependents.version_krefs}
+        dependent_uris = {k.uri for k in dependents.revision_krefs}
         assert model_v1.kref.uri in dependent_uris
         assert model_v2.kref.uri in dependent_uris
         assert dependents.total_count == 2
@@ -132,26 +132,26 @@ class TestTraverseLinks:
         # texture_v1 <- model_v1 <- scene_v1
         dependents = texture_v1.get_all_dependents(max_depth=5)
         
-        dependent_uris = {k.uri for k in dependents.version_krefs}
+        dependent_uris = {k.uri for k in dependents.revision_krefs}
         assert model_v1.kref.uri in dependent_uris
         # scene_v1 transitively depends on texture_v1 via model_v1
         assert scene_v1.kref.uri in dependent_uris
     
-    def test_traverse_with_link_type_filter(self, traversal_graph):
-        """Test that link type filtering works."""
+    def test_traverse_with_edge_type_filter(self, traversal_graph):
+        """Test that edge type filtering works."""
         model_v1 = traversal_graph["model_v1"]
         texture_v1 = traversal_graph["texture_v1"]
         
         # Filter by DEPENDS_ON - should find texture
         deps = model_v1.get_all_dependencies(
-            link_type_filter=[kumiho.DEPENDS_ON],
+            edge_type_filter=[kumiho.DEPENDS_ON],
             max_depth=5
         )
-        assert texture_v1.kref.uri in {k.uri for k in deps.version_krefs}
+        assert texture_v1.kref.uri in {k.uri for k in deps.revision_krefs}
         
         # Filter by a different type - should find nothing
         deps_other = model_v1.get_all_dependencies(
-            link_type_filter=["SOME_OTHER_TYPE"],
+            edge_type_filter=["SOME_OTHER_TYPE"],
             max_depth=5
         )
         assert deps_other.total_count == 0
@@ -163,7 +163,7 @@ class TestTraverseLinks:
         # Limit to 1 result
         dependents = texture_v1.get_all_dependents(max_depth=5, limit=1)
         
-        assert len(dependents.version_krefs) == 1
+        assert len(dependents.revision_krefs) == 1
         assert dependents.truncated  # Should indicate results were limited
     
     def test_traverse_no_dependencies(self, traversal_graph):
@@ -174,14 +174,14 @@ class TestTraverseLinks:
         deps = texture_v1.get_all_dependencies(max_depth=5)
         
         assert deps.total_count == 0
-        assert len(deps.version_krefs) == 0
+        assert len(deps.revision_krefs) == 0
 
 
 class TestShortestPath:
     """Tests for the find_path_to / find_shortest_path methods."""
     
     def test_find_direct_path(self, traversal_graph):
-        """Test finding a direct path between adjacent versions."""
+        """Test finding a direct path between adjacent revisions."""
         model_v1 = traversal_graph["model_v1"]
         texture_v1 = traversal_graph["texture_v1"]
         
@@ -212,7 +212,7 @@ class TestShortestPath:
         # Actually there IS a path in undirected mode, let's test with a filter
         path = texture_v1.find_path_to(
             scene_v1,
-            link_type_filter=["NONEXISTENT_TYPE"]
+            edge_type_filter=["NONEXISTENT_TYPE"]
         )
         
         assert path is None
@@ -233,14 +233,14 @@ class TestImpactAnalysis:
     """Tests for the analyze_impact method."""
     
     def test_impact_analysis_finds_dependents(self, traversal_graph):
-        """Test that impact analysis finds all dependent versions."""
+        """Test that impact analysis finds all dependent revisions."""
         texture_v1 = traversal_graph["texture_v1"]
         model_v1 = traversal_graph["model_v1"]
         model_v2 = traversal_graph["model_v2"]
         
         impact = texture_v1.analyze_impact()
         
-        impacted_uris = {iv.version_kref.uri for iv in impact}
+        impacted_uris = {iv.revision_kref.uri for iv in impact}
         assert model_v1.kref.uri in impacted_uris
         assert model_v2.kref.uri in impacted_uris
     
@@ -250,7 +250,7 @@ class TestImpactAnalysis:
         
         impact = texture_v1.analyze_impact()
         
-        # All impacted versions should have depth >= 1
+        # All impacted revisions should have depth >= 1
         for iv in impact:
             assert iv.impact_depth >= 1
     
@@ -262,7 +262,7 @@ class TestImpactAnalysis:
         # scene_v1 depends on model_v1 which depends on texture_v1
         impact = texture_v1.analyze_impact(max_depth=5)
         
-        impacted_uris = {iv.version_kref.uri for iv in impact}
+        impacted_uris = {iv.revision_kref.uri for iv in impact}
         assert scene_v1.kref.uri in impacted_uris
     
     def test_impact_analysis_respects_limit(self, traversal_graph):
@@ -274,20 +274,20 @@ class TestImpactAnalysis:
         
         assert len(impact) == 1
     
-    def test_impact_analysis_with_link_type_filter(self, traversal_graph):
-        """Test that impact analysis respects link type filters."""
+    def test_impact_analysis_with_edge_type_filter(self, traversal_graph):
+        """Test that impact analysis respects edge type filters."""
         texture_v1 = traversal_graph["texture_v1"]
         
         # Filter by DEPENDS_ON
-        impact = texture_v1.analyze_impact(link_type_filter=[kumiho.DEPENDS_ON])
+        impact = texture_v1.analyze_impact(edge_type_filter=[kumiho.DEPENDS_ON])
         assert len(impact) >= 1
         
         # Filter by nonexistent type
-        impact_none = texture_v1.analyze_impact(link_type_filter=["NONEXISTENT_TYPE"])
+        impact_none = texture_v1.analyze_impact(edge_type_filter=["NONEXISTENT_TYPE"])
         assert len(impact_none) == 0
     
     def test_impact_analysis_no_dependents(self, traversal_graph):
-        """Test impact analysis on a version with no dependents."""
+        """Test impact analysis on a revision with no dependents."""
         scene_v1 = traversal_graph["scene_v1"]
         
         # scene_v1 is a leaf - nothing depends on it
@@ -299,18 +299,18 @@ class TestImpactAnalysis:
 class TestTraversalResult:
     """Tests for the TraversalResult helper methods."""
     
-    def test_get_versions_fetches_full_objects(self, traversal_graph):
-        """Test that get_versions() returns full Version objects."""
+    def test_get_revisions_fetches_full_objects(self, traversal_graph):
+        """Test that get_revisions() returns full Revision objects."""
         model_v1 = traversal_graph["model_v1"]
         
         deps = model_v1.get_all_dependencies(max_depth=1)
-        versions = deps.get_versions()
+        revisions = deps.get_revisions()
         
-        assert len(versions) == 1
-        assert versions[0].kref.uri == traversal_graph["texture_v1"].kref.uri
-        # Full Version objects should have metadata
-        assert hasattr(versions[0], 'metadata')
-        assert hasattr(versions[0], 'number')
+        assert len(revisions) == 1
+        assert revisions[0].kref.uri == traversal_graph["texture_v1"].kref.uri
+        # Full Revision objects should have metadata
+        assert hasattr(revisions[0], 'metadata')
+        assert hasattr(revisions[0], 'number')
     
     def test_traversal_result_repr(self, traversal_graph):
         """Test TraversalResult string representation."""
@@ -326,12 +326,12 @@ class TestTraversalResult:
 class TestEdgeCases:
     """Tests for edge cases and boundary conditions."""
     
-    def test_traverse_empty_link_type_filter(self, traversal_graph):
-        """Test that empty link type filter returns all link types."""
+    def test_traverse_empty_edge_type_filter(self, traversal_graph):
+        """Test that empty edge type filter returns all edge types."""
         model_v1 = traversal_graph["model_v1"]
         
         # Empty list should not filter anything
-        deps = model_v1.get_all_dependencies(link_type_filter=[], max_depth=5)
+        deps = model_v1.get_all_dependencies(edge_type_filter=[], max_depth=5)
         
         # Should still find the texture dependency
         assert deps.total_count >= 1
@@ -352,9 +352,9 @@ class TestEdgeCases:
         model_v1 = traversal_graph["model_v1"]
         client = kumiho.get_client()
         
-        result = client.traverse_links(
+        result = client.traverse_edges(
             model_v1.kref,
-            direction=kumiho.LinkDirection.OUTGOING,
+            direction=kumiho.EdgeDirection.OUTGOING,
             max_depth=5,
             include_path=True
         )

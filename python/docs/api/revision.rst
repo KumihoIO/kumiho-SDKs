@@ -1,7 +1,7 @@
-kumiho.product
-==============
+kumiho.revision
+===============
 
-.. automodule:: kumiho.product
+.. automodule:: kumiho.revision
    :members:
    :undoc-members:
    :show-inheritance:

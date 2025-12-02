@@ -67,30 +67,29 @@ Basic Usage
        description="My VFX Project for 2024 film"
    )
 
-   # Create an asset group
-   group = project.create_group("characters")
+   # Create an asset space
+   space = project.create_space("characters")
 
-   # Create a product (asset)
-   product = group.create_product(
-       product_name="hero",
-       product_type="model"
+   # Create an item (asset)
+   item = space.create_item(
+       item_name="hero",
+       kind="model"
    )
 
-   # Create a version with resources
-   version = product.create_version(
+   # Create a revision with artifacts
+   revision = item.create_revision(
        description="Initial model with rigging"
    )
    
-   # Add a file resource
-   resource = version.create_resource(
+   # Add a file artifact
+   artifact = revision.create_artifact(
        name="hero_model.fbx",
-       resource_type="file",
        location="file:///projects/hero/hero_model.fbx"
    )
 
    # Reference assets using Kref URIs
    kref = "kref://my-vfx-project/characters/hero.model?v=1&r=hero_model.fbx"
-   resource = kumiho.get_resource(kref)
+   artifact = kumiho.get_artifact(kref)
 
 Contents
 --------
@@ -109,12 +108,12 @@ Contents
 
    api/kumiho
    api/project
-   api/group
-   api/product
-   api/collection
-   api/version
-   api/resource
-   api/link
+   api/space
+   api/item
+   api/bundle
+   api/revision
+   api/artifact
+   api/edge
    api/kref
 
 .. toctree::

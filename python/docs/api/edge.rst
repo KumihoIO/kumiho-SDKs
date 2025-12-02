@@ -1,7 +1,7 @@
-kumiho.resource
-===============
+kumiho.edge
+===========
 
-.. automodule:: kumiho.resource
+.. automodule:: kumiho.edge
    :members:
    :undoc-members:
    :show-inheritance:
