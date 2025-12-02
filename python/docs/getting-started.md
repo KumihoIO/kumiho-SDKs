@@ -95,11 +95,24 @@ spaces = project.get_spaces()
 Items represent individual assets with their metadata:
 
 ```python
-# Create an item
+# Create an item in a space
 item = space.create_item(
     item_name="hero",
     kind="model"
 )
+
+# Or create directly from a project with a path
+item = project.create_item(
+    item_name="hero",
+    kind="model",
+    parent_path="/my-project/characters"
+)
+
+# Get an item from a space
+item = space.get_item("hero", "model")
+
+# Or get from a project with a path
+item = project.get_item("hero", "model", parent_path="/my-project/characters")
 
 # Get an item by Kref
 item = kumiho.get_item("kref://my-project/characters/hero.model")
@@ -171,6 +184,35 @@ edges = revision.get_edges()
 
 # Get incoming edges (what depends on this revision)
 dependents = revision.get_edges(direction=kumiho.INCOMING)
+```
+
+### Bundles
+
+Bundles group related items together with an audit trail of membership changes:
+
+```python
+# Create a bundle in a project or space
+bundle = project.create_bundle("release-bundle")
+# Or: bundle = space.create_bundle("character-bundle")
+
+# Add items to the bundle
+hero_model = space.get_item("hero", "model")
+hero_rig = space.get_item("hero", "rig")
+bundle.add_member(hero_model)
+bundle.add_member(hero_rig)
+
+# Get a bundle by name
+bundle = project.get_bundle("release-bundle")
+# Or: bundle = space.get_bundle("character-bundle")
+# Or by kref: bundle = kumiho.get_bundle("kref://my-project/assets/release-bundle.bundle")
+
+# List bundle members
+members = bundle.get_members()
+for member in members:
+    print(f"  {member.item_kref}")
+
+# View membership change history
+history = bundle.get_revision_history()
 ```
 
 ## Kref URIs

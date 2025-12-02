@@ -569,6 +569,53 @@ class _Client:
         
         return self.get_item(parent_path, item_name, kind)
 
+    def get_bundle_by_kref(self, kref_uri: str) -> "Bundle":
+        """Get a bundle by its kref URI.
+
+        This method retrieves an item and verifies it is a bundle (kind='bundle').
+        If the item exists but is not a bundle, raises a ValueError.
+
+        Args:
+            kref_uri: The kref URI of the bundle
+                (e.g., "kref://project/space/mybundle.bundle").
+
+        Returns:
+            Bundle: The Bundle object.
+
+        Raises:
+            ValueError: If the item exists but is not a bundle (kind != 'bundle').
+            grpc.RpcError: If the item is not found.
+
+        Example:
+            >>> bundle = client.get_bundle_by_kref(
+            ...     "kref://my-project/assets/character-bundle.bundle"
+            ... )
+            >>> members = bundle.get_members()
+        """
+        from .bundle import Bundle
+        
+        # First get the item
+        item = self.get_item_by_kref(kref_uri)
+        
+        # Verify it's a bundle
+        if item.kind != "bundle":
+            raise ValueError(
+                f"Item '{kref_uri}' is not a bundle (kind='{item.kind}'). "
+                f"Use get_item() for non-bundle items."
+            )
+        
+        # Re-fetch as Bundle to get the Bundle wrapper with bundle-specific methods
+        kref = Kref(kref_uri)
+        item_path = kref.get_path()
+        space_path, item_name_kind = item_path.split("/", 1)
+        parent_path = f"/{space_path}"
+        bundle_name, _ = item_name_kind.split(".", 1)
+        
+        # Use GetItem to get the raw response and wrap as Bundle
+        req = GetItemRequest(parent_path=parent_path, item_name=bundle_name, kind="bundle")
+        resp = self.stub.GetItem(req)
+        return Bundle(resp, self)
+
     def get_items(self, parent_path: str, item_name_filter: str = "", kind_filter: str = "") -> List[Item]:
         """Get items within a space with optional filtering.
 

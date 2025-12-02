@@ -29,6 +29,11 @@ projects = kumiho.get_projects()
 The package root exposes a few shortcuts that delegate to the default client so
 you can stay in the object-oriented flow:
 
+- `get_item(kref)` retrieves an `Item` by its Kref URI.
+- `get_bundle(kref)` retrieves a `Bundle` by its Kref URI (validates kind is
+  "bundle").
+- `get_revision(kref)` retrieves a `Revision` by its Kref URI.
+- `get_artifact(kref)` retrieves an `Artifact` by its Kref URI.
 - `item_search(context_filter="", name_filter="", kind_filter="")` returns
   a list of `Item` objects matching the provided context, name, or kind
   filters.
@@ -57,6 +62,14 @@ one via `kumiho.create_project`, `kumiho.get_project`, or iteration over
 - `get_space(name, parent_path=None)`: returns an existing child space.
 - `get_spaces(parent_path=None)`: lists immediate child spaces under the
   project.
+- `create_item(item_name, kind, parent_path=None, metadata=None)`: creates an
+  item at the project root or specified path.
+- `get_item(item_name, kind, parent_path=None)`: retrieves an item by name and
+  kind from the project root or specified path.
+- `create_bundle(bundle_name, parent_path=None, metadata=None)`: creates a
+  bundle item at the project root or specified path.
+- `get_bundle(bundle_name, parent_path=None)`: retrieves a bundle by name from
+  the project root or specified path.
 - `delete(force=False)`: deprecates or deletes the project.
 
 ## Spaces
@@ -68,6 +81,10 @@ one via `kumiho.create_project`, `kumiho.get_project`, or iteration over
   nested hierarchy without manual path concatenation.
 - `create_item(item_name, kind)` and `get_items(...)` manage
   items within the space.
+- `get_item(item_name, kind)`: retrieves a specific item by name and kind.
+- `create_bundle(bundle_name, metadata=None)`: creates a bundle item in this
+  space.
+- `get_bundle(bundle_name)`: retrieves a bundle by name from this space.
 - `set_metadata(metadata)` replaces all metadata; `set_attribute(key, value)`,
   `get_attribute(key)`, and `delete_attribute(key)` provide granular updates.
 - `delete(force=False)` removes the space via the client.
@@ -107,6 +124,25 @@ already have a revision Kref. Helpers include:
 - `name` property derived from the Kref (no manual parsing required).
 - `set_metadata(metadata)` to update metadata.
 - `delete(force=False)` to remove the artifact.
+
+## Bundles
+
+`Bundle` is a specialized item type that aggregates other items. Bundles track
+membership changes through revision history, providing an audit trail of what
+items were added or removed over time. Access bundles via:
+
+- `kumiho.get_bundle(kref)`: retrieves a bundle by its full Kref URI.
+- `project.get_bundle(bundle_name, parent_path=None)`: retrieves a bundle from
+  a project.
+- `space.get_bundle(bundle_name)`: retrieves a bundle from a space.
+
+Bundle helpers include:
+
+- `add_member(item, metadata=None)`: adds an item to the bundle.
+- `remove_member(item)`: removes an item from the bundle.
+- `get_members()`: returns a list of `BundleMember` objects.
+- `get_revision_history()`: returns `BundleRevisionHistory` showing membership
+  changes across bundle revisions.
 
 ## Edges
 

@@ -33,6 +33,7 @@ from .proto.kumiho_pb2 import ProjectResponse
 if TYPE_CHECKING:
     from .client import _Client
     from .bundle import Bundle
+    from .item import Item
 
 
 class Project(KumihoObject):
@@ -177,6 +178,124 @@ class Project(KumihoObject):
             bundle_name=bundle_name,
             metadata=metadata
         )
+
+    def create_item(
+        self,
+        item_name: str,
+        kind: str,
+        parent_path: Optional[str] = None,
+        metadata: Optional[Dict[str, str]] = None
+    ) -> 'Item':
+        """Create a new item within this project.
+
+        Args:
+            item_name: The name of the item. Must be unique within
+                the parent space combined with the kind.
+            kind: The type/kind of the item (e.g., "model", "texture").
+            parent_path: Optional parent path for the item. If not provided,
+                creates the item at the project root (``/{project_name}``).
+            metadata: Optional key-value metadata for the item.
+
+        Returns:
+            Item: The newly created Item object.
+
+        Raises:
+            grpc.RpcError: If the item name/kind combination is already taken
+                or if there is a connection error.
+
+        Example::
+
+            >>> project = kumiho.get_project("film-2024")
+            >>> # Create at project root
+            >>> item = project.create_item("hero", "model")
+            >>>
+            >>> # Create in specific space
+            >>> item = project.create_item(
+            ...     "hero",
+            ...     "texture",
+            ...     parent_path="/film-2024/assets"
+            ... )
+        """
+        base_parent = parent_path or f"/{self.name}"
+        return self._client.create_item(
+            parent_path=base_parent,
+            item_name=item_name,
+            kind=kind,
+            metadata=metadata
+        )
+
+    def get_item(
+        self,
+        item_name: str,
+        kind: str,
+        parent_path: Optional[str] = None
+    ) -> 'Item':
+        """Get an existing item within this project.
+
+        Args:
+            item_name: The name of the item.
+            kind: The type/kind of the item (e.g., "model", "texture").
+            parent_path: Optional parent path. If not provided,
+                looks in the project root (``/{project_name}``).
+
+        Returns:
+            Item: The Item object.
+
+        Raises:
+            grpc.RpcError: If the item is not found.
+
+        Example::
+
+            >>> project = kumiho.get_project("film-2024")
+            >>> # Get from project root
+            >>> item = project.get_item("hero", "model")
+            >>>
+            >>> # Get from specific space
+            >>> item = project.get_item(
+            ...     "hero",
+            ...     "texture",
+            ...     parent_path="/film-2024/assets"
+            ... )
+        """
+        base_parent = parent_path or f"/{self.name}"
+        kref_uri = f"kref://{base_parent.strip('/')}/{item_name}.{kind}"
+        return self._client.get_item_by_kref(kref_uri)
+
+    def get_bundle(
+        self,
+        bundle_name: str,
+        parent_path: Optional[str] = None
+    ) -> 'Bundle':
+        """Get an existing bundle within this project.
+
+        Args:
+            bundle_name: The name of the bundle.
+            parent_path: Optional parent path. If not provided,
+                looks in the project root (``/{project_name}``).
+
+        Returns:
+            Bundle: The Bundle object.
+
+        Raises:
+            ValueError: If the item exists but is not a bundle.
+            grpc.RpcError: If the bundle is not found.
+
+        Example::
+
+            >>> project = kumiho.get_project("film-2024")
+            >>> # Get from project root
+            >>> bundle = project.get_bundle("release-bundle")
+            >>>
+            >>> # Get from specific space
+            >>> bundle = project.get_bundle(
+            ...     "character-bundle",
+            ...     parent_path="/film-2024/assets"
+            ... )
+            >>> members = bundle.get_members()
+        """
+        base_parent = parent_path or f"/{self.name}"
+        kref_uri = f"kref://{base_parent.strip('/')}/{bundle_name}.bundle"
+        return self._client.get_bundle_by_kref(kref_uri)
 
     def delete(self, force: bool = False):
         """Delete or deprecate this project.

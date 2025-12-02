@@ -521,6 +521,31 @@ def get_item(kref: str) -> Item:
     return get_client().get_item_by_kref(kref)
 
 
+def get_bundle(kref: str) -> Bundle:
+    """Get a bundle by its kref URI.
+
+    This is a convenience function that gets an item and verifies it's a bundle.
+
+    Args:
+        kref: The kref URI of the bundle item
+            (e.g., "kref://project/space/bundle-name.bundle").
+
+    Returns:
+        Bundle: The Bundle object.
+
+    Raises:
+        ValueError: If the item exists but is not a bundle.
+        grpc.RpcError: If the bundle is not found.
+
+    Example:
+        >>> bundle = kumiho.get_bundle(
+        ...     "kref://film-project/shots/shot001.bundle"
+        ... )
+        >>> members = bundle.get_members()
+    """
+    return get_client().get_bundle_by_kref(kref)
+
+
 def get_revision(kref: str) -> Revision:
     """Get a revision by its kref URI.
 
@@ -846,6 +871,7 @@ __all__ = [
     "delete_project",
     "item_search",
     "get_item",
+    "get_bundle",
     "get_revision",
     "get_artifact",
     "get_artifacts_by_location",
