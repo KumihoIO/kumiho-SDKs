@@ -309,8 +309,156 @@ kref://project/space/item.kind?v=revision&r=artifact
 | `kref://my-project/chars` | Space |
 | `kref://my-project/chars/human` | Sub-Space(s) |
 | `kref://my-project/chars/human/hero.model` | Item (latest revision) |
-| `kref://my-project/chars/human/hero.model?v=2` | Specific revision |
-| `kref://my-project/chars/human/hero.model?v=2&r=mesh.fbx` | Specific artifact |
+| `kref://my-project/chars/human/hero.model?r=2` | Specific revision |
+| `kref://my-project/chars/human/hero.model?r=2&a=mesh` | Specific artifact |
+| `kref://my-project/chars/human/hero.model?t=published` | Latest published revision |
+| `kref://my-project/chars/human/hero.model?t=published&a=mesh` | Latest published revision with specific artifact|
+| `kref://my-project/chars/human/hero.model?t=published&time=202406011330&a=mesh` | Published revision at specific time with specific artifact|
+
+## Time-Based Revision Queries
+
+One of Kumiho's most powerful features is **time-based revision lookup**. This enables
+reproducible builds, historical debugging, and auditing by answering questions like:
+"What was the published version of this asset on June 1st?"
+
+### Why Time-Based Queries Matter
+
+In production pipelines, you often need to:
+
+1. **Reproduce past renders**: Re-render a shot exactly as it was delivered months ago
+2. **Debug regressions**: Compare current assets against a known-good state from a specific date
+3. **Audit changes**: Understand what version was used when a decision was made
+4. **Compliance**: Prove what asset versions were in use at a particular milestone
+
+Without time-based queries, you'd need to manually track revision numbers for every
+asset at every milestone—an error-prone and tedious process.
+
+### Using `get_revision_by_time`
+
+The SDK provides `get_revision_by_time()` to find the revision that was tagged with
+a specific tag at a given point in time:
+
+```python
+from datetime import datetime, timezone
+
+# Get the "published" revision as of June 1st, 2024
+june_1 = datetime(2024, 6, 1, tzinfo=timezone.utc)
+revision = item.get_revision_by_time(
+    time=june_1,
+    tag="published"
+)
+
+print(f"On {june_1}, published revision was r{revision.number}")
+```
+
+The `time` parameter accepts multiple formats:
+- **datetime object**: `datetime(2024, 6, 1, 13, 30, 45, tzinfo=timezone.utc)` - full precision
+- **ISO 8601 string**: `"2024-06-01T13:30:45+00:00"` or `"2024-06-01T13:30:45Z"` - full precision  
+- **YYYYMMDDHHMM string**: `"202406011330"` - minute-level precision (rounded to end of minute)
+
+For historical auditing where events may happen within the same minute, use datetime
+objects or ISO strings for sub-second precision.
+
+This is especially useful for the `published` tag, which marks revisions as immutable
+and approved for downstream consumption.
+
+### Time-Based Kref URIs
+
+You can also use time-based queries directly in Kref URIs with the `t=` (tag) and
+`time=` parameters:
+
+```python
+# Get published revision at a specific time via Kref
+# Format: YYYYMMDDHHMM (e.g., 202406011330 = June 1, 2024 at 13:30)
+kref = "kref://my-project/chars/hero.model?t=published&time=202406011330"
+revision = kumiho.get_revision(kref)
+
+# Resolve to artifact location at that point in time
+location = kumiho.resolve(kref)
+```
+
+**Kref time query parameters:**
+| Parameter | Description |
+|-----------|-------------|
+| `t=<tag>` | Find revision with this tag (e.g., `t=published`, `t=approved`) |
+| `time=<YYYYMMDDHHMM>` | Point in time to query (e.g., `time=202406011330`) |
+
+When both `t=` and `time=` are provided, Kumiho finds the revision that:
+1. Had the specified tag at the given time
+2. Was the most recent such revision before or at that time
+
+### Practical Examples
+
+**Reproduce a past delivery:**
+```python
+# Find all assets as they were for the Q2 delivery
+delivery_date = datetime(2024, 6, 30, 23, 59, 59, tzinfo=timezone.utc)
+
+for item in space.get_items():
+    rev = item.get_revision_by_time(time=delivery_date, tag="published")
+    if rev:
+        print(f"{item.name}: r{rev.number}")
+        for artifact in rev.get_artifacts():
+            print(f"  -> {artifact.location}")
+```
+
+**Compare current vs historical:**
+```python
+# What changed between two milestones?
+alpha_date = datetime(2024, 3, 1, tzinfo=timezone.utc)
+beta_date = datetime(2024, 6, 1, tzinfo=timezone.utc)
+
+alpha_rev = item.get_revision_by_time(time=alpha_date, tag="published")
+beta_rev = item.get_revision_by_time(time=beta_date, tag="published")
+
+if alpha_rev.number != beta_rev.number:
+    print(f"Asset changed from r{alpha_rev.number} to r{beta_rev.number}")
+```
+
+**Pipeline integration with timestamps:**
+```python
+# In a render farm job, record the exact time for reproducibility
+import json
+from datetime import datetime, timezone
+
+render_manifest = {
+    "render_time": datetime.now(timezone.utc).isoformat(),
+    "assets": []
+}
+
+for item_kref in required_assets:
+    item = kumiho.get_item(item_kref)
+    rev = item.get_revision_by_tag("published")
+    render_manifest["assets"].append({
+        "kref": rev.kref,
+        "revision": rev.number
+    })
+
+# Later, reproduce using the recorded timestamp
+with open("render_manifest.json") as f:
+    manifest = json.load(f)
+    
+render_time = datetime.fromisoformat(manifest["render_time"])
+# Convert to YYYYMMDDHHMM format for kref
+time_str = render_time.strftime("%Y%m%d%H%M")
+for asset in manifest["assets"]:
+    # Get exactly what was published at render time
+    kref = f"{asset['kref'].split('?')[0]}?t=published&time={time_str}"
+    revision = kumiho.get_revision(kref)
+```
+
+### Tags and Time
+
+The `published` tag is especially important for time-based queries because:
+
+1. **Immutability**: Published revisions cannot be modified or deleted
+2. **Stability**: Downstream consumers can rely on published revisions not changing
+3. **Audit trail**: Tag history is preserved, so you can query what was published when
+
+Other common tags for time-based queries:
+- `approved`: Supervisor-approved versions
+- `delivered`: Versions sent to clients
+- `milestone-alpha`, `milestone-beta`: Project milestone snapshots
 
 ## BYO Storage Philosophy
 

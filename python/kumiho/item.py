@@ -248,47 +248,73 @@ class Item(KumihoObject):
                 return None
             raise
 
-    def get_revision_by_time(self, time: Union[str, datetime]) -> Optional[Revision]:
-        """Get the revision that was active at a specific time.
+    def get_revision_by_time(
+        self,
+        time: Union[str, datetime],
+        tag: Optional[str] = None
+    ) -> Optional[Revision]:
+        """Get the revision that had a specific tag at a given time.
 
-        This finds the revision that was tagged as "latest" at the given
-        time, useful for historical queries and reproducing past states.
+        This is essential for reproducible builds and historical queries.
+        By combining a tag (like "published") with a timestamp, you can
+        answer questions like "What was the published version on June 1st?"
 
         Args:
             time: The time as a datetime object, or a string in either
                 YYYYMMDDHHMM format (e.g., "202312251430") or RFC3339
                 format (e.g., "2023-12-25T14:30:00Z").
+            tag: Optional tag to filter by. Common values:
+                - "published": Find the published revision at that time
+                - "approved": Find the approved revision at that time
+                - None (default): Find the latest revision at that time
 
         Returns:
-            Optional[Revision]: The Revision that was current at that time,
-                or None if not found.
+            Optional[Revision]: The Revision that had the specified tag
+                at that time, or None if not found.
 
         Example:
-            >>> from datetime import datetime
+            >>> from datetime import datetime, timezone
 
-            >>> # Using datetime object
-            >>> v = item.get_revision_by_time(datetime(2023, 12, 25, 14, 30))
+            >>> # Get the published revision as of June 1st, 2024
+            >>> june_1 = datetime(2024, 6, 1, tzinfo=timezone.utc)
+            >>> rev = item.get_revision_by_time(june_1, tag="published")
 
-            >>> # Using string format
-            >>> v = item.get_revision_by_time("202312251430")
+            >>> # Get whatever was latest at a specific time
+            >>> rev = item.get_revision_by_time("202312251430")
 
-            >>> # Using RFC3339 format
-            >>> v = item.get_revision_by_time("2023-12-25T14:30:00Z")
+            >>> # Using RFC3339 format with published tag
+            >>> rev = item.get_revision_by_time(
+            ...     "2024-06-01T00:00:00Z",
+            ...     tag="published"
+            ... )
+
+        Note:
+            This is particularly useful with the "published" tag since
+            published revisions are immutable and represent stable,
+            approved versions suitable for downstream consumption.
         """
         if isinstance(time, datetime):
-            time_str = time.strftime("%Y%m%d%H%M")
+            # Send full ISO timestamp for sub-minute precision
+            time_str = time.isoformat()
         elif isinstance(time, str):
-            # Check if it's RFC3339 format (contains T and ends with Z or timezone)
-            if 'T' in time and (time.endswith('Z') or '+' in time or '-' in time[-6:]):
-                # Parse RFC3339 and convert to YYYYMMDDHHMM
-                dt = datetime.fromisoformat(time.replace('Z', '+00:00'))
-                time_str = dt.strftime("%Y%m%d%H%M")
-            else:
-                # Assume it's already in YYYYMMDDHHMM format
+            # Check if it's RFC3339/ISO format (contains T)
+            if 'T' in time:
+                # Already in ISO format, pass through
                 time_str = time
+            else:
+                # Assume it's in YYYYMMDDHHMM format, convert to ISO
+                # This preserves backward compatibility
+                if len(time) >= 12:
+                    time_str = f"{time[0:4]}-{time[4:6]}-{time[6:8]}T{time[8:10]}:{time[10:12]}:59+00:00"
+                else:
+                    time_str = time
         else:
             raise ValueError("time must be a datetime object or string")
+
         request = ResolveKrefRequest(kref=self.kref.uri, time=time_str)
+        if tag:
+            request = ResolveKrefRequest(kref=self.kref.uri, time=time_str, tag=tag)
+
         try:
             response = self._client.stub.ResolveKref(request)
             return Revision(response, self._client)

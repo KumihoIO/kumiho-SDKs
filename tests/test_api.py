@@ -373,8 +373,14 @@ def test_get_latest_revision(live_client, cleanup_test_data):
 
 def test_revision_by_tag_and_time(live_client, cleanup_test_data):
     """
-    Tests getting revisions by tag and time.
+    Tests getting revisions by tag, by time, and by combined tag+time.
+    
+    The combined tag+time query is essential for reproducible builds:
+    "What was the published version of this asset on June 1st?"
     """
+    import time
+    from datetime import datetime, timezone
+    
     project_name = unique_name("tag_time_test_project")
     asset_name = unique_name("tag_time_test_asset")
     project = kumiho.create_project(project_name)
@@ -388,13 +394,58 @@ def test_revision_by_tag_and_time(live_client, cleanup_test_data):
     revision2 = item.create_revision()
     cleanup_test_data.append(revision2)
 
+    # Tag revision1 with a custom tag
     revision1.tag("hello")
+    
+    # Tag revision1 as published (simulating a milestone)
+    revision1.tag("published")
+    
+    # Capture the time after tagging revision1 (this is when revision1 has the published tag)
+    time_after_tag1 = datetime.now(timezone.utc)
 
+    # Test: get revision by tag
     tag_revision = item.get_revision_by_tag("hello")
     assert tag_revision is not None
+    assert tag_revision.number == revision1.number
 
+    # Test: get revision by time only (should return latest at that time)
     time_revision = item.get_revision_by_time(revision1.created_at)
     assert time_revision is not None
+
+    # Test: get revision by combined tag+time
+    # This answers: "What was the published version at this point in time?"
+    # We query at time_after_tag1 when revision1 had the published tag
+    published_at_time = item.get_revision_by_time(
+        time_after_tag1,
+        tag="published"
+    )
+    assert published_at_time is not None
+    assert published_at_time.number == revision1.number
+    
+    # Small delay to ensure timestamps are distinguishable
+    # With full ISO timestamp precision, even a small delay is sufficient
+    time.sleep(0.1)
+    
+    # Now tag revision2 as published (superseding revision1)
+    revision2.tag("published")
+    
+    # Query for published at time_after_tag1 should still return revision1
+    # (because at that time, revision1 was the published one, and revision2 wasn't tagged yet)
+    historical_published = item.get_revision_by_time(
+        time_after_tag1,
+        tag="published"
+    )
+    assert historical_published is not None
+    assert historical_published.number == revision1.number
+    
+    # Query for published NOW (after revision2 was tagged) should return revision2
+    time_after_tag2 = datetime.now(timezone.utc)
+    current_published = item.get_revision_by_time(
+        time_after_tag2,
+        tag="published"
+    )
+    assert current_published is not None
+    assert current_published.number == revision2.number
 
 # --- New Feature Tests ---
 
