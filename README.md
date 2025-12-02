@@ -1,132 +1,248 @@
 # Kumiho Python SDK
 
-This package provides the typed Python bindings for the Kumiho gRPC API. It mirrors the protobuf contract and ships a pytest harness for live workflows that hit the Rust server + Neo4j data plane.
+[![PyPI version](https://img.shields.io/pypi/v/kumiho.svg)](https://pypi.org/project/kumiho/)
+[![Python versions](https://img.shields.io/pypi/pyversions/kumiho.svg)](https://pypi.org/project/kumiho/)
 
-## Install locally
+The official Python SDK for [Kumiho Cloud](https://kumiho.io) — a graph-native creative and AI asset management platform for VFX, animation, and AI-driven workflows.
 
-From the repo root run:
+## Features
+
+- **Graph-Native Design**: Built on Neo4j for tracking asset relationships and lineage
+- **Revision Control**: Semantic versioning for creative assets with full history
+- **AI Lineage Tracking**: Track AI model training data / GenAI image, video output provenance and dependencies
+- **BYO Storage**: Files stay on your local/NAS/on-prem storage — only metadata is in the cloud
+- **Multi-Tenant SaaS**: Secure, region-aware multi-tenant architecture
+- **Event Streaming**: Real-time notifications for asset changes
+- **Graph Traversal**: Powerful dependency analysis and impact assessment
+
+## Installation
 
 ```bash
-cd kumiho-python/python
-pip install -e .[dev]
+pip install kumiho
 ```
 
-The editable install exposes the `kumiho` package and pulls in `pytest` for the test suite. Any shell that runs the samples or tests should activate the same virtual environment where you installed the package.
+For development:
 
-## Auth + tenancy prerequisites
-
-Kumiho relies on Firebase Authentication for identity and Supabase Postgres for the admin control plane. The Python client only needs a Firebase ID token that belongs to a Supabase membership: the server resolves the tenant + roles via the `tenant_directory` REST view.
-
-| Variable | Required | Description |
-| --- | --- | --- |
-| `KUMIHO_SERVER_ENDPOINT` | Optional | `host:port` or `https://host` for the Rust server. Defaults to `localhost:8080`. |
-| `KUMIHO_AUTH_TOKEN` | Yes for live calls | Firebase ID token (JWT). Obtain it via the Firebase SDK, `firebase login:ci`, or any custom auth flow. |
-| `KUMIHO_USE_CONTROL_PLANE_TOKEN` | Optional | Set to `true` to prefer the Control Plane JWT (ES256) over the Firebase ID token (RS256) when both are available. |
-| `KUMIHO_AUTH_TOKEN_FILE` | Optional | Path to a file that contains the Firebase ID token. Useful for `firebase_token.txt` generated in the repo root. |
-| `KUMIHO_FIREBASE_API_KEY` | Optional | Firebase Web API key used by the `kumiho-auth` helper. Pass it via the env var or `--api-key` flag when logging in. |
-| `KUMIHO_TENANT_HINT` | Deprecated | Legacy override for forcing a tenant UUID. Auto-discovery now resolves the tenant from Supabase memberships, so the variable is ignored. |
-| `KUMIHO_CONTROL_PLANE_URL` | Optional | Base URL for the control plane. Defaults to `https://kumiho.io`. The discovery helper calls `<base>/api/discovery/tenant`. |
-| `KUMIHO_DISCOVERY_CACHE_FILE` | Optional | Path to persist discovery responses. Defaults to `~/.kumiho/discovery-cache.json`. |
-| `KUMIHO_DISCOVERY_TIMEOUT_SECONDS` | Optional | HTTP timeout when contacting the discovery endpoint. Defaults to `10`. |
-
-### Bootstrap via the discovery endpoint
-
-The Phase 4 control plane exposes `POST /api/discovery/tenant`, which returns the
-tenant ID, region routing info, and cache-control metadata. The Python SDK ships
-`kumiho.client_from_discovery` to call this endpoint, persist the payload, and
-refresh it when the control plane says the data is stale.
-
-```python
-from kumiho import client_from_discovery
-
-# Reuses KUMIHO_AUTH_TOKEN / kumiho-auth token file for the Firebase ID token.
-client = client_from_discovery()
-
-# All subsequent calls reuse the cached region info until refresh_after_seconds.
-group = client.create_group("demo-project")
+```bash
+pip install kumiho[dev]
 ```
 
-The helper automatically:
+## Quick Start
 
-1. Loads a Firebase ID token from `KUMIHO_AUTH_TOKEN` or the `kumiho-auth` cache.
-2. Checks `~/.kumiho/discovery-cache.json` (configurable via
-	`KUMIHO_DISCOVERY_CACHE_FILE`) for a non-expired entry keyed by the provided tenant hint (or a default record when no hint is supplied).
-3. Refreshes the cache once the control plane’s `refresh_after_seconds` deadline
-	passes, falling back to the cached response if the control plane is
-	temporarily unavailable.
-4. Injects the resolved `x-tenant-id` metadata and gRPC target/authority so the
-	`Client` instance is immediately ready to talk to the correct regional server.
+### 1. Authenticate
 
-Set `force_refresh=True` when calling `client_from_discovery` to ignore the cache
-entirely, or pass a custom `cache_path` if your environment needs an alternate
-location.
+Run the built-in CLI to cache your Firebase credentials:
 
-#### Auto-configure the default client (no `firebase_token.txt` required)
+```bash
+kumiho-auth login
+```
 
-If you already ran `kumiho-auth login`, the cached credentials under
-`~/.kumiho` are enough to bootstrap the SDK—there is no need to keep
-`firebase_token.txt` in the repo. Call:
+This stores credentials at `~/.kumiho/kumiho_authentication.json` and automatically refreshes tokens when needed.
+
+### 2. Connect and Use
 
 ```python
 import kumiho
 
+# Auto-configure from cached credentials and discovery
 kumiho.auto_configure_from_discovery()
 
-groups = kumiho.get_child_groups()
+# Create a project
+project = kumiho.create_project(
+    name="my-vfx-project",
+    description="VFX assets for 2025 film"
+)
+
+# Create a space (organizational container)
+space = project.create_space("characters")
+
+# Create an item (versioned asset)
+item = space.create_item(
+    item_name="hero",
+    kind="model"
+)
+
+# Create a revision with metadata
+revision = item.create_revision(
+    metadata={
+        "artist": "jane",
+        "software": "maya-2024",
+        "notes": "Initial model with base topology"
+    }
+)
+
+# Attach file artifacts (files stay on your storage)
+artifact = revision.create_artifact(
+    name="hero_model.fbx",
+    location="smb://studio-nas/projects/film/hero_model.fbx"
+)
+
+# Tag the revision
+revision.tag("approved")
 ```
 
-The helper reuses the cached Firebase token (refreshing it when necessary), hits
-the control-plane discovery endpoint, and installs the resulting client as the
-package-wide default. Pass `interactive=True` if you want the helper to fall
-back to prompting for credentials when the cache is missing, or set
-`tenant_hint`/`force_refresh` to control discovery semantics. To run this
-automatically on every `import kumiho`, set `KUMIHO_AUTO_CONFIGURE=true` in your
-environment; the module will eagerly invoke the helper during import and fail
-fast if cached credentials are missing.
+## Core Concepts
 
-### Firebase token helper (`kumiho-auth`)
+### Entity Hierarchy
 
-The Python package ships a small CLI that uses the Firebase Web API directly, so you do **not** need the Firebase CLI on every machine. After installing the editable package, run:
-
-```bash
-cd kumiho-python/python
-pip install -e .[dev]
-kumiho-auth login --api-key <firebase-web-api-key>
+```
+Project
+  └── Space (organizational container)
+        └── Item (versioned asset)
+              └── Revision (immutable snapshot)
+                    └── Artifact (file reference)
 ```
 
-The flow prompts for your Firebase email/password, exchanges them for an ID + refresh token, and stores the credentials at `~/.kumiho/credentials.json`. It also writes the current ID token to `firebase_token.txt` in the repo root (or the path passed via `--token-file`) and ensures `.env.local` contains `KUMIHO_AUTH_TOKEN_FILE=<path>`. Subsequent runs of the CLI or `pytest` can refresh the token automatically:
+### Kref URIs
 
-```bash
-kumiho-auth refresh
+Kumiho uses URI-based references to address any entity:
+
+```
+kref://project/space/item.kind?r=revision&a=artifact
 ```
 
-When `pytest` needs a live token and none of the env vars/files are set, it calls the same helper. If you are in a non-interactive environment, export `KUMIHO_AUTH_TOKEN` or run `kumiho-auth login` ahead of time so the cached credentials can be reused.
+Examples:
+```python
+# Reference an item (latest revision)
+item = kumiho.get_item("kref://my-project/characters/hero.model")
 
-Ensure the Firebase UID tied to that token exists as an `owner` or `editor` inside Supabase `memberships`. The Rust server will deny RPCs until the control plane exposes that membership through `tenant_directory`. Supabase service keys are **not** required for the Python SDK—the server already hides the control-plane REST endpoint.
+# Reference a specific revision
+revision = kumiho.get_revision("kref://my-project/characters/hero.model?r=3")
 
-## Running the tests
+# Reference a specific artifact
+artifact = kumiho.get_artifact("kref://my-project/characters/hero.model?r=3&a=mesh.fbx")
+```
 
-The test suite mixes mocked unit tests and live integration flows:
+### Edges (Relationships)
 
-* Unit tests use monkeypatched stubs and run anywhere.
-* Integration tests require a running Rust server, a Neo4j instance seeded for tests, and a Firebase token that belongs to a Supabase tenant.
+Track dependencies and lineage between revisions:
 
-Run the tests from `kumiho-python`:
+```python
+# Create a dependency edge
+texture = kumiho.get_revision("kref://my-project/textures/skin.texture?r=2")
+revision.create_edge(
+    target_revision=texture,
+    edge_type=kumiho.DEPENDS_ON,
+    metadata={"usage": "skin material"}
+)
+
+# Query edges
+outgoing = revision.get_edges(direction=kumiho.OUTGOING)
+incoming = revision.get_edges(direction=kumiho.INCOMING)
+```
+
+### Graph Traversal
+
+Analyze dependencies and impact:
+
+```python
+# Find all dependencies (what this revision uses)
+deps = revision.get_all_dependencies(max_depth=5)
+for kref in deps.revision_krefs:
+    print(f"Depends on: {kref}")
+
+# Find all dependents (what uses this revision)
+dependents = revision.get_all_dependents(max_depth=5)
+
+# Impact analysis (what would be affected by changes)
+impact = revision.analyze_impact()
+for impacted in impact:
+    print(f"Would affect: {impacted.revision_kref} at depth {impacted.impact_depth}")
+
+# Find shortest path between revisions
+path = source.find_path_to(target)
+```
+
+### Bundles
+
+Aggregate items into versioned collections:
+
+```python
+# Create a bundle
+bundle = project.create_bundle("character-bundle")
+
+# Add items
+bundle.add_member(hero_model)
+bundle.add_member(hero_rig)
+bundle.add_member(hero_textures)
+
+# Get members and history
+members = bundle.get_members()
+history = bundle.get_history()  # Full audit trail
+```
+
+### Event Streaming
+
+React to changes in real-time:
+
+```python
+for event in kumiho.event_stream():
+    print(f"Event: {event.routing_key}")
+    print(f"Kref: {event.kref}")
+    print(f"Author: {event.author}")
+```
+
+## Environment Variables
+
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `KUMIHO_SERVER_ENDPOINT` | No | gRPC endpoint. Defaults to `localhost:8080`. |
+| `KUMIHO_AUTH_TOKEN` | For live calls | Firebase ID token (JWT). |
+| `KUMIHO_AUTH_TOKEN_FILE` | No | Path to file containing the Firebase token. |
+| `KUMIHO_CONTROL_PLANE_URL` | No | Control plane URL. Defaults to `https://kumiho.io`. |
+| `KUMIHO_AUTO_CONFIGURE` | No | Set to `true` to auto-bootstrap on import. |
+| `KUMIHO_DISCOVERY_CACHE_FILE` | No | Discovery cache path. Defaults to `~/.kumiho/discovery-cache.json`. |
+
+## Multi-Tenant Usage
+
+```python
+# Use discovery to auto-configure for your tenant
+kumiho.auto_configure_from_discovery()
+
+# Or specify a tenant explicitly
+kumiho.auto_configure_from_discovery(tenant_hint="my-studio")
+
+# Switch between tenants using context managers
+tenant_a = kumiho.connect(endpoint="tenant-a.kumiho.cloud:443")
+tenant_b = kumiho.connect(endpoint="tenant-b.kumiho.cloud:443")
+
+with kumiho.use_client(tenant_a):
+    projects_a = kumiho.get_projects()
+
+with kumiho.use_client(tenant_b):
+    projects_b = kumiho.get_projects()
+```
+
+## Running Tests
+
+The test suite includes both unit tests (mocked) and integration tests (require live server):
 
 ```bash
 cd kumiho-python
 pytest
 ```
 
-If `KUMIHO_AUTH_TOKEN` (or the file fallback) is not configured, the fixtures automatically skip the live scenarios and print a message describing the required environment. Once the token is present, the suite will use it to call the server with `Authorization: Bearer <token>` headers; the multi-tenant routing is resolved automatically via discovery.
-
-To explicitly exercise the full Firebase → Supabase → Neo4j path against a running server, target the `tests/test_live_e2e.py::test_firebase_supabase_neo4j_roundtrip` case:
+For live integration tests, ensure:
+1. A running Rust server with Neo4j
+2. Valid Firebase credentials (`kumiho-auth login`)
 
 ```bash
-cd kumiho-python
-pytest tests/test_live_e2e.py -k roundtrip
+# Run all tests
+pytest tests/ -v
+
+# Run specific test file
+pytest tests/test_api.py -v
+
+# Run with coverage
+pytest tests/ --cov=kumiho
 ```
 
-This test creates real groups, products, versions, and resources via the gRPC client, so make sure your local server points at a disposable Neo4j database or uses unique names.
+## Documentation
 
-For details on how Firebase, Supabase, and the Rust server interact, see `docs/Firebase_control_plane.md` in the repo root.
+- [Getting Started Guide](https://docs.kumiho.io/python/getting-started.html)
+- [Core Concepts](https://docs.kumiho.io/python/concepts.html)
+- [API Reference](https://docs.kumiho.io/python/api/kumiho.html)
+
+## License
+
+Apache 2.0 - See [LICENSE](LICENSE) for details.

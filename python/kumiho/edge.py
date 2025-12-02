@@ -17,8 +17,8 @@ Example::
     import kumiho
 
     # Get revisions
-    model = kumiho.get_revision("kref://project/models/hero.model?v=1")
-    texture = kumiho.get_revision("kref://project/tex/skin.texture?v=2")
+    model = kumiho.get_revision("kref://project/models/hero.model?r=1")
+    texture = kumiho.get_revision("kref://project/tex/skin.texture?r=2")
 
     # Create a dependency edge
     edge = model.create_edge(texture, kumiho.DEPENDS_ON)
@@ -208,8 +208,8 @@ class Edge(KumihoObject):
         import kumiho
 
         # Get revisions
-        model = kumiho.get_revision("kref://project/models/hero.model?v=1")
-        texture = kumiho.get_revision("kref://project/tex/skin.texture?v=2")
+        model = kumiho.get_revision("kref://project/models/hero.model?r=1")
+        texture = kumiho.get_revision("kref://project/tex/skin.texture?r=2")
 
         # Create edge with metadata
         edge = model.create_edge(texture, kumiho.DEPENDS_ON, {

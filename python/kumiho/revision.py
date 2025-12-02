@@ -10,7 +10,7 @@ Example:
         import kumiho
 
         # Get a revision
-        revision = kumiho.get_revision("kref://project/models/hero.model?v=1")
+        revision = kumiho.get_revision("kref://project/models/hero.model?r=1")
 
         # Add artifacts
         revision.create_artifact("mesh", "/assets/hero.fbx")
@@ -21,7 +21,7 @@ Example:
         revision.tag("ready-for-lighting")
 
         # Create edges to dependencies
-        texture_revision = kumiho.get_revision("kref://project/textures/skin.texture?v=3")
+        texture_revision = kumiho.get_revision("kref://project/textures/skin.texture?r=3")
         revision.create_edge(texture_revision, kumiho.DEPENDS_ON)
 """
 
@@ -50,7 +50,7 @@ class Revision(KumihoObject):
     categorization, and edges to other revisions for dependency tracking.
 
     The revision's kref includes the revision number:
-    ``kref://project/space/item.kind?v=1``
+    ``kref://project/space/item.kind?r=1``
 
     Revisions support dynamic tag checking—the ``tags`` property automatically
     refreshes from the server if the local data might be stale (older than 5
@@ -103,7 +103,7 @@ class Revision(KumihoObject):
                 print(f"  {r.name}: {r.location}")
 
             # Edge to dependencies
-            texture = kumiho.get_revision("kref://project/tex/skin.texture?v=2")
+            texture = kumiho.get_revision("kref://project/tex/skin.texture?r=2")
             v1.create_edge(texture, kumiho.DEPENDS_ON)
     """
 
@@ -448,7 +448,7 @@ class Revision(KumihoObject):
 
         Example:
             >>> revision.set_default_artifact("mesh")
-            >>> # Now kref://project/model.kind?v=1 resolves to the mesh
+            >>> # Now kref://project/model.kind?r=1 resolves to the mesh
         """
         from .proto.kumiho_pb2 import SetDefaultArtifactRequest
         req = SetDefaultArtifactRequest(
@@ -516,11 +516,11 @@ class Revision(KumihoObject):
             >>> import kumiho
 
             >>> # Edge to a texture dependency
-            >>> texture = kumiho.get_revision("kref://project/tex/skin.texture?v=2")
+            >>> texture = kumiho.get_revision("kref://project/tex/skin.texture?r=2")
             >>> revision.create_edge(texture, kumiho.DEPENDS_ON)
 
             >>> # Edge with metadata
-            >>> base = kumiho.get_revision("kref://project/models/base.model?v=1")
+            >>> base = kumiho.get_revision("kref://project/models/base.model?r=1")
             >>> revision.create_edge(base, kumiho.DERIVED_FROM, {
             ...     "modification": "Added details"
             ... })

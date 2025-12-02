@@ -443,8 +443,3 @@ class Space(KumihoObject):
         if project is None:
             raise ValueError(f"Project '{project_name}' not found")
         return project
-
-
-# Backwards compatibility aliases
-Group = Space
-"""Alias for Space (backwards compatibility)."""

@@ -86,7 +86,7 @@ def test_get_item_from_revision_kref(mock_client):
     
     # Mock the revision response
     revision_response = mock_helpers.mock_revision_response(
-        kref_uri="kref://projectA/modelA.asset?v=1",
+        kref_uri="kref://projectA/modelA.asset?r=1",
         item_kref_uri="kref://projectA/modelA.asset",
         number=1,
         latest=True,
@@ -113,12 +113,12 @@ def test_get_item_from_revision_kref(mock_client):
     mock_stub.GetItem.return_value = item_response
     
     # Test the method
-    revision = kumiho.get_revision("kref://projectA/modelA.asset?v=1")
+    revision = kumiho.get_revision("kref://projectA/modelA.asset?r=1")
     item = revision.get_item()
     
     # Verify calls
     mock_stub.GetRevision.assert_called_once_with(
-        mock_helpers.mock_kref_request(uri="kref://projectA/modelA.asset?v=1")
+        mock_helpers.mock_kref_request(uri="kref://projectA/modelA.asset?r=1")
     )
     mock_stub.GetItem.assert_called_once_with(
         mock_helpers.mock_get_item_request(
@@ -231,11 +231,11 @@ def test_full_creation_workflow(live_client, cleanup_test_data):
 
     revision = item.create_revision()
     cleanup_test_data.append(revision)
-    assert revision.kref.uri.endswith("?v=1")
+    assert revision.kref.uri.endswith("?r=1")
 
     artifact = revision.create_artifact("data", "/path/to/smoke_test.dat")
     cleanup_test_data.append(artifact)
-    assert artifact.kref.uri.endswith("&r=data")
+    assert artifact.kref.uri.endswith("&a=data")
     assert artifact.location == "/path/to/smoke_test.dat"
 
 def test_get_artifacts_by_location(live_client, cleanup_test_data):
@@ -572,7 +572,7 @@ def test_resolve_kref_with_time(mock_client):
     """Tests resolving a kref at a specific point in time."""
     client, mock_stub = mock_client  # Unpack the tuple
     revision_response = mock_helpers.mock_revision_response(
-        kref_uri="kref://obj1?v=2",
+        kref_uri="kref://obj1?r=2",
         item_kref_uri="kref://obj1",
         number=2,
         latest=True,
@@ -600,7 +600,7 @@ def test_resolve_kref_with_tag_and_time(mock_client):
     """Tests resolving a kref with a tag at a specific point in time."""
     client, mock_stub = mock_client  # Unpack the tuple
     revision_response = mock_helpers.mock_revision_response(
-        kref_uri="kref://obj1?v=1",
+        kref_uri="kref://obj1?r=1",
         item_kref_uri="kref://obj1",
         number=1,
         latest=True,

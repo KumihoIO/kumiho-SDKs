@@ -14,7 +14,7 @@ Example:
 
         # Get an artifact
         artifact = kumiho.get_artifact(
-            "kref://project/models/hero.model?v=1&r=mesh"
+            "kref://project/models/hero.model?r=1&a=mesh"
         )
 
         # Check the file location
@@ -55,7 +55,7 @@ class Artifact(KumihoObject):
     tracks the path and metadata but does not upload or modify the files.
 
     The artifact's kref includes both revision and artifact name:
-    ``kref://project/space/item.kind?v=1&r=artifact_name``
+    ``kref://project/space/item.kind?r=1&a=artifact_name``
 
     Attributes:
         kref (Kref): The unique reference URI for this artifact.
@@ -73,7 +73,7 @@ class Artifact(KumihoObject):
 
             import kumiho
 
-            revision = kumiho.get_revision("kref://project/models/hero.model?v=1")
+            revision = kumiho.get_revision("kref://project/models/hero.model?r=1")
 
             # Create artifacts
             mesh = revision.create_artifact("mesh", "/assets/hero.fbx")
@@ -135,7 +135,7 @@ class Artifact(KumihoObject):
             >>> artifact = revision.get_artifact("mesh")
             >>> print(artifact.name)  # "mesh"
         """
-        return self.kref.uri.split('&r=')[-1]
+        return self.kref.uri.split('&a=')[-1]
 
     def set_metadata(self, metadata: Dict[str, str]) -> 'Artifact':
         """Set or update metadata for this artifact.
