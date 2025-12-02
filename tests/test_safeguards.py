@@ -27,53 +27,53 @@ def test_safeguards_lifecycle(client):
         if "already exists" not in str(e):
             raise
 
-    # Verify root group exists
-    print(f"Verifying root group: /{project_name}")
+    # Verify root space exists
+    print(f"Verifying root space: /{project_name}")
     try:
-        client.get_group(f"/{project_name}")
+        client.get_space(f"/{project_name}")
     except Exception as e:
-        print(f"Root group not found, attempting to create: {e}")
+        print(f"Root space not found, attempting to create: {e}")
         # Try to create it explicitly if missing (shouldn't be needed usually)
         try:
-            client.create_group("/", project_name)
+            client.create_space("/", project_name)
         except Exception as create_e:
-             print(f"Failed to create root group: {create_e}")
+             print(f"Failed to create root space: {create_e}")
              # If it fails, maybe it exists now?
              pass
 
-    # 2. Create a Draft Post (Product)
+    # 2. Create a Draft Post (Item)
     post_name = f"post_{uuid.uuid4().hex[:8]}"
     print(f"Creating draft post: {post_name}")
-    # 2. Create a Draft Post (Product)
+    # 2. Create a Draft Post (Item)
     post_name = f"post_{uuid.uuid4().hex[:8]}"
     print(f"Creating draft post: {post_name}")
-    # Create product
-    product = client.create_product(
+    # Create item
+    item = client.create_item(
         f"/{project_name}",
         post_name,
         "post"
     )
-    # Create initial version (draft)
-    version = client.create_version(
-        product.kref,
+    # Create initial revision (draft)
+    revision = client.create_revision(
+        item.kref,
         metadata={"title": "Draft Post"}
     )
-    assert version.kref is not None
+    assert revision.kref is not None
     
     # 3. Verify we can see it (as Admin)
     print("Verifying draft visibility for Admin...")
-    fetched_version = client.get_version(version.kref.uri)
-    assert fetched_version.kref.uri == version.kref.uri
+    fetched_revision = client.get_revision(revision.kref.uri)
+    assert fetched_revision.kref.uri == revision.kref.uri
     
     # 4. Publish the Post
     print("Publishing post...")
-    client.tag_version(version.kref, "published")
+    client.tag_revision(revision.kref, "published")
     
     # 5. Verify we can still see it
     print("Verifying published post visibility for Admin...")
-    published_version = client.get_version(version.kref.uri)
-    assert published_version.kref.uri == version.kref.uri
-    assert client.has_tag(version.kref, "published")
+    published_revision = client.get_revision(revision.kref.uri)
+    assert published_revision.kref.uri == revision.kref.uri
+    assert client.has_tag(revision.kref, "published")
     
     # 6. (Optional) Negative Test: Invalid Token
     # We can't easily switch the client's token to an "anonymous" one that is valid

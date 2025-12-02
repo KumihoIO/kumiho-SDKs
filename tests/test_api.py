@@ -58,8 +58,8 @@ def test_project_crud(mock_client):
     mock_stub.DeleteProject.assert_called_once()
     assert resp.success
 
-def test_create_group(mock_client):
-    """Test the create_group method via Project."""
+def test_create_space(mock_client):
+    """Test the create_space method via Project."""
     client, mock_stub = mock_client
     
     # Mock Project creation first
@@ -68,26 +68,26 @@ def test_create_group(mock_client):
     )
     project = kumiho.create_project("projectA")
 
-    # Mock Group creation
-    mock_stub.CreateGroup.return_value = mock_helpers.mock_group_response(path="/projectA/seqA")
+    # Mock Space creation
+    mock_stub.CreateSpace.return_value = mock_helpers.mock_space_response(path="/projectA/seqA")
     
-    # Create group via project
-    group = project.create_group(name="seqA")
+    # Create space via project
+    space = project.create_space(name="seqA")
     
     # Verify calls
-    mock_stub.CreateGroup.assert_called_once_with(
-        mock_helpers.mock_create_group_request(parent_path="/projectA", group_name="seqA")
+    mock_stub.CreateSpace.assert_called_once_with(
+        mock_helpers.mock_create_space_request(parent_path="/projectA", space_name="seqA")
     )
-    assert group.path == "/projectA/seqA"
+    assert space.path == "/projectA/seqA"
 
-def test_get_product_from_version_kref(mock_client):
-    """Test get_product_from_version method."""
+def test_get_item_from_revision_kref(mock_client):
+    """Test get_item_from_revision method."""
     client, mock_stub = mock_client
     
-    # Mock the version response
-    version_response = mock_helpers.mock_version_response(
+    # Mock the revision response
+    revision_response = mock_helpers.mock_revision_response(
         kref_uri="kref://projectA/modelA.asset?v=1",
-        product_kref_uri="kref://projectA/modelA.asset",
+        item_kref_uri="kref://projectA/modelA.asset",
         number=1,
         latest=True,
         tags=[],
@@ -97,74 +97,74 @@ def test_get_product_from_version_kref(mock_client):
         deprecated=False,
         published=False
     )
-    mock_stub.GetVersion.return_value = version_response
+    mock_stub.GetRevision.return_value = revision_response
     
-    # Mock the product response
-    product_response = mock_helpers.mock_product_response(
+    # Mock the item response
+    item_response = mock_helpers.mock_item_response(
         kref_uri="kref://projectA/modelA.asset",
         name="modelA.asset",
-        product_name="modelA",
-        product_type="asset",
+        item_name="modelA",
+        kind="asset",
         author="test_author",
         username="test_user",
         deprecated=False,
         metadata={}
     )
-    mock_stub.GetProduct.return_value = product_response
+    mock_stub.GetItem.return_value = item_response
     
     # Test the method
-    version = kumiho.get_version("kref://projectA/modelA.asset?v=1")
-    product = version.get_product()
+    revision = kumiho.get_revision("kref://projectA/modelA.asset?v=1")
+    item = revision.get_item()
     
     # Verify calls
-    mock_stub.GetVersion.assert_called_once_with(
+    mock_stub.GetRevision.assert_called_once_with(
         mock_helpers.mock_kref_request(uri="kref://projectA/modelA.asset?v=1")
     )
-    mock_stub.GetProduct.assert_called_once_with(
-        mock_helpers.mock_get_product_request(
+    mock_stub.GetItem.assert_called_once_with(
+        mock_helpers.mock_get_item_request(
             parent_path="/projectA",
-            product_name="modelA", 
-            product_type="asset"
+            item_name="modelA", 
+            kind="asset"
         )
     )
     
-    assert product.product_name == "modelA"
-    assert product.product_type == "asset"
+    assert item.item_name == "modelA"
+    assert item.kind == "asset"
 
-def test_get_product_by_kref(mock_client):
-    """Test get_product_by_kref method."""
+def test_get_item_by_kref(mock_client):
+    """Test get_item_by_kref method."""
     client, mock_stub = mock_client
     
-    # Mock the product response
-    product_response = mock_helpers.mock_product_response(
+    # Mock the item response
+    item_response = mock_helpers.mock_item_response(
         kref_uri="kref://projectA/modelA.asset",
         name="modelA.asset",
-        product_name="modelA",
-        product_type="asset",
+        item_name="modelA",
+        kind="asset",
         author="test_author",
         username="test_user",
         deprecated=False,
         metadata={}
     )
-    mock_stub.GetProduct.return_value = product_response
+    mock_stub.GetItem.return_value = item_response
     
     # Test the method
-    product = kumiho.get_product("kref://projectA/modelA.asset")
+    item = kumiho.get_item("kref://projectA/modelA.asset")
     
     # Verify calls
-    mock_stub.GetProduct.assert_called_once_with(
-        mock_helpers.mock_get_product_request(
+    mock_stub.GetItem.assert_called_once_with(
+        mock_helpers.mock_get_item_request(
             parent_path="/projectA",
-            product_name="modelA", 
-            product_type="asset"
+            item_name="modelA", 
+            kind="asset"
         )
     )
     
-    assert product.product_name == "modelA"
-    assert product.product_type == "asset"
+    assert item.item_name == "modelA"
+    assert item.kind == "asset"
 
-def test_get_group_from_path(mock_client):
-    """Test get_group via Project."""
+def test_get_space_from_path(mock_client):
+    """Test get_space via Project."""
     client, mock_stub = mock_client
     
     # Mock Project creation/retrieval (simulated)
@@ -175,72 +175,72 @@ def test_get_group_from_path(mock_client):
     
     path = "seqA"
     full_path = "/projectA/seqA"
-    mock_stub.GetGroup.return_value = mock_helpers.mock_group_response(path=full_path)
+    mock_stub.GetSpace.return_value = mock_helpers.mock_space_response(path=full_path)
     
-    # Get group via project
-    group = project.get_group(path)
+    # Get space via project
+    space = project.get_space(path)
     
-    mock_stub.GetGroup.assert_called_once_with(
-        mock_helpers.mock_get_group_request(path_or_kref=full_path)
+    mock_stub.GetSpace.assert_called_once_with(
+        mock_helpers.mock_get_space_request(path_or_kref=full_path)
     )
-    assert group.path == full_path
+    assert space.path == full_path
 
-def test_product_search_with_context(mock_client):
-    """Test product_search with a context filter."""
+def test_item_search_with_context(mock_client):
+    """Test item_search with a context filter."""
     client, mock_stub = mock_client
-    product_kref_uri = "kref://projectA/seqA/001/kumiho.model"
-    response = mock_helpers.mock_get_products_response(
-        products=[mock_helpers.mock_product_response(
-            kref_uri=product_kref_uri,
+    item_kref_uri = "kref://projectA/seqA/001/kumiho.model"
+    response = mock_helpers.mock_get_items_response(
+        items=[mock_helpers.mock_item_response(
+            kref_uri=item_kref_uri,
             name="kumiho.model",
-            product_name="kumiho",
-            product_type="model"
+            item_name="kumiho",
+            kind="model"
         )]
     )
-    mock_stub.ProductSearch.return_value = response
-    results = kumiho.product_search(context_filter="projectA/seqA", ptype_filter="model")
-    mock_stub.ProductSearch.assert_called_once_with(
-        mock_helpers.mock_product_search_request(
+    mock_stub.ItemSearch.return_value = response
+    results = kumiho.item_search(context_filter="projectA/seqA", kind_filter="model")
+    mock_stub.ItemSearch.assert_called_once_with(
+        mock_helpers.mock_item_search_request(
             context_filter="projectA/seqA",
-            product_name_filter="",
-            product_type_filter="model"
+            item_name_filter="",
+            kind_filter="model"
         )
     )
     assert len(results) == 1
-    assert results[0].kref.uri == product_kref_uri
+    assert results[0].kref.uri == item_kref_uri
 
 
 # --- Integration Tests (requires running server and DB) ---
 
 def test_full_creation_workflow(live_client, cleanup_test_data):
     """
-    Tests the fundamental workflow of creating a group, product, version, and resource.
+    Tests the fundamental workflow of creating a space, item, revision, and artifact.
     """
     project_name = unique_name("smoke_test_project")
     asset_name = unique_name("smoke_test_asset")
     
     project = kumiho.create_project(project_name)
     cleanup_test_data.append(project)
-    group = project.create_group(name=project_name, parent_path="/")
-    cleanup_test_data.append(group)
-    assert group.path == f"/{project_name}"
+    space = project.create_space(name=project_name, parent_path="/")
+    cleanup_test_data.append(space)
+    assert space.path == f"/{project_name}"
 
-    product = group.create_product(product_name=asset_name, product_type="model")
-    cleanup_test_data.append(product)
-    assert product.kref.uri == f"kref://{project_name}/{asset_name}.model"
+    item = space.create_item(item_name=asset_name, kind="model")
+    cleanup_test_data.append(item)
+    assert item.kref.uri == f"kref://{project_name}/{asset_name}.model"
 
-    version = product.create_version()
-    cleanup_test_data.append(version)
-    assert version.kref.uri.endswith("?v=1")
+    revision = item.create_revision()
+    cleanup_test_data.append(revision)
+    assert revision.kref.uri.endswith("?v=1")
 
-    resource = version.create_resource("data", "/path/to/smoke_test.dat")
-    cleanup_test_data.append(resource)
-    assert resource.kref.uri.endswith("&r=data")
-    assert resource.location == "/path/to/smoke_test.dat"
+    artifact = revision.create_artifact("data", "/path/to/smoke_test.dat")
+    cleanup_test_data.append(artifact)
+    assert artifact.kref.uri.endswith("&r=data")
+    assert artifact.location == "/path/to/smoke_test.dat"
 
-def test_get_resources_by_location(live_client, cleanup_test_data):
+def test_get_artifacts_by_location(live_client, cleanup_test_data):
     """
-    Tests that searching for resources by location returns a time-sorted list
+    Tests that searching for artifacts by location returns a time-sorted list
     with full parent context.
     """
     project_name = unique_name("loc_test_project")
@@ -249,152 +249,152 @@ def test_get_resources_by_location(live_client, cleanup_test_data):
 
     project = kumiho.create_project(project_name)
     cleanup_test_data.append(project)
-    group = project.create_group(name=project_name, parent_path="/")
-    cleanup_test_data.append(group)
-    product = group.create_product(product_name=asset_name, product_type="model")
-    cleanup_test_data.append(product)
-    v1 = product.create_version()
+    space = project.create_space(name=project_name, parent_path="/")
+    cleanup_test_data.append(space)
+    item = space.create_item(item_name=asset_name, kind="model")
+    cleanup_test_data.append(item)
+    v1 = item.create_revision()
     cleanup_test_data.append(v1)
     time.sleep(1.1)
-    v2 = product.create_version()
+    v2 = item.create_revision()
     cleanup_test_data.append(v2)
 
-    res1 = v1.create_resource("model_data", shared_location)
+    res1 = v1.create_artifact("model_data", shared_location)
     cleanup_test_data.append(res1)
-    res2 = v2.create_resource("model_data", shared_location)
+    res2 = v2.create_artifact("model_data", shared_location)
     cleanup_test_data.append(res2)
 
-    found_resources = kumiho.get_resources_by_location(shared_location)
+    found_artifacts = kumiho.get_artifacts_by_location(shared_location)
 
-    assert len(found_resources) >= 2
-    # The most recently created resource (res2) should be the first in the list
-    newest_res = found_resources[0]
-    oldest_res = found_resources[1]
+    assert len(found_artifacts) >= 2
+    # The most recently created artifact (res2) should be the first in the list
+    newest_res = found_artifacts[0]
+    oldest_res = found_artifacts[1]
 
     assert newest_res.kref == res2.kref  
-    assert newest_res.version_kref == v2.kref  
-    assert newest_res.product_kref == product.kref  
+    assert newest_res.revision_kref == v2.kref  
+    assert newest_res.item_kref == item.kref  
 
     assert oldest_res.kref == res1.kref  
-    assert oldest_res.version_kref == v1.kref  
-    assert oldest_res.product_kref == product.kref  
+    assert oldest_res.revision_kref == v1.kref  
+    assert oldest_res.item_kref == item.kref  
 
-def test_linking_workflow(live_client, cleanup_test_data):
+def test_edge_workflow(live_client, cleanup_test_data):
     """
-    Tests creating and retrieving links between versions.
+    Tests creating and retrieving edges between revisions.
     """
-    project_name = unique_name("link_proj")
+    project_name = unique_name("edge_proj")
     project = kumiho.create_project(project_name)
     cleanup_test_data.append(project)
-    group = project.create_group(name=project_name, parent_path="/")
-    cleanup_test_data.append(group)
+    space = project.create_space(name=project_name, parent_path="/")
+    cleanup_test_data.append(space)
     
-    model_product = group.create_product(product_name="character_model", product_type="model")
-    cleanup_test_data.append(model_product)
-    texture_product = group.create_product(product_name="character_textures", product_type="texture")
-    cleanup_test_data.append(texture_product)
+    model_item = space.create_item(item_name="character_model", kind="model")
+    cleanup_test_data.append(model_item)
+    texture_item = space.create_item(item_name="character_textures", kind="texture")
+    cleanup_test_data.append(texture_item)
 
-    model_v1 = model_product.create_version()
+    model_v1 = model_item.create_revision()
     cleanup_test_data.append(model_v1)
-    texture_v1 = texture_product.create_version()
+    texture_v1 = texture_item.create_revision()
     cleanup_test_data.append(texture_v1)
 
-    link = texture_v1.create_link(
-        target_version=model_v1,
-        link_type=kumiho.LinkType.DEPENDS_ON
+    edge = texture_v1.create_edge(
+        target_revision=model_v1,
+        edge_type=kumiho.EdgeType.DEPENDS_ON
     )
-    cleanup_test_data.append(link)
+    cleanup_test_data.append(edge)
 
-    assert link.source_kref == texture_v1.kref  
-    assert link.target_kref == model_v1.kref  
+    assert edge.source_kref == texture_v1.kref  
+    assert edge.target_kref == model_v1.kref  
     
     # Retrieve and verify
-    source_links = texture_v1.get_links()
-    assert len(source_links) >= 1
-    retrieved_link = source_links[0]
-    assert retrieved_link.target_kref == model_v1.kref  
-    assert retrieved_link.link_type == kumiho.LinkType.DEPENDS_ON
+    source_edges = texture_v1.get_edges()
+    assert len(source_edges) >= 1
+    retrieved_edge = source_edges[0]
+    assert retrieved_edge.target_kref == model_v1.kref  
+    assert retrieved_edge.edge_type == kumiho.EdgeType.DEPENDS_ON
 
-def test_peek_next_version(live_client, cleanup_test_data):
+def test_peek_next_revision(live_client, cleanup_test_data):
     """
-    Tests that peeking at the next version number works correctly.
+    Tests that peeking at the next revision number works correctly.
     """
     project_name = unique_name("peek_test_project")
     asset_name = unique_name("peek_test_asset")
     project = kumiho.create_project(project_name)
     cleanup_test_data.append(project)
-    group = project.create_group(name=project_name, parent_path="/")
-    cleanup_test_data.append(group)
-    product = group.create_product(product_name=asset_name, product_type="rig")
-    cleanup_test_data.append(product)
+    space = project.create_space(name=project_name, parent_path="/")
+    cleanup_test_data.append(space)
+    item = space.create_item(item_name=asset_name, kind="rig")
+    cleanup_test_data.append(item)
 
-    assert product.peek_next_version() == 1
-    v1 = product.create_version()
+    assert item.peek_next_revision() == 1
+    v1 = item.create_revision()
     cleanup_test_data.append(v1)
     assert v1.number == 1
-    assert product.peek_next_version() == 2
-    v2 = product.create_version()
+    assert item.peek_next_revision() == 2
+    v2 = item.create_revision()
     cleanup_test_data.append(v2)
     assert v2.number == 2
-    assert product.peek_next_version() == 3
+    assert item.peek_next_revision() == 3
 
-def test_get_latest_version(live_client, cleanup_test_data):
+def test_get_latest_revision(live_client, cleanup_test_data):
     """
-    Tests getting the latest version of a product.
+    Tests getting the latest revision of an item.
     """
     project_name = unique_name("latest_test_project")
     asset_name = unique_name("latest_test_asset")
     project = kumiho.create_project(project_name)
     cleanup_test_data.append(project)
-    group = project.create_group(name=project_name, parent_path="/")
-    cleanup_test_data.append(group)
-    product = group.create_product(product_name=asset_name, product_type="rig")
-    cleanup_test_data.append(product)
+    space = project.create_space(name=project_name, parent_path="/")
+    cleanup_test_data.append(space)
+    item = space.create_item(item_name=asset_name, kind="rig")
+    cleanup_test_data.append(item)
 
-    # No versions yet
-    assert product.get_latest_version() is None
+    # No revisions yet
+    assert item.get_latest_revision() is None
 
-    # Create first version
-    v1 = product.create_version()
+    # Create first revision
+    v1 = item.create_revision()
     cleanup_test_data.append(v1)
     assert v1.number == 1
     assert v1.latest == True
-    assert product.get_latest_version().number == 1
+    assert item.get_latest_revision().number == 1
 
-    # Create second version
-    v2 = product.create_version()
+    # Create second revision
+    v2 = item.create_revision()
     cleanup_test_data.append(v2)
     assert v2.number == 2
     assert v2.latest == True
-    # Check that get_latest_version returns v2
-    latest = product.get_latest_version()
+    # Check that get_latest_revision returns v2
+    latest = item.get_latest_revision()
     assert latest is not None
     assert latest.number == 2
 
-def test_version_by_tag_and_time(live_client, cleanup_test_data):
+def test_revision_by_tag_and_time(live_client, cleanup_test_data):
     """
-    Tests getting versions by tag and time.
+    Tests getting revisions by tag and time.
     """
     project_name = unique_name("tag_time_test_project")
     asset_name = unique_name("tag_time_test_asset")
     project = kumiho.create_project(project_name)
     cleanup_test_data.append(project)
-    group = project.create_group(name=project_name, parent_path="/")
-    cleanup_test_data.append(group)
-    product = group.create_product(product_name=asset_name, product_type="item")
-    cleanup_test_data.append(product)
-    version1 = product.create_version()
-    cleanup_test_data.append(version1)
-    version2 = product.create_version()
-    cleanup_test_data.append(version2)
+    space = project.create_space(name=project_name, parent_path="/")
+    cleanup_test_data.append(space)
+    item = space.create_item(item_name=asset_name, kind="item")
+    cleanup_test_data.append(item)
+    revision1 = item.create_revision()
+    cleanup_test_data.append(revision1)
+    revision2 = item.create_revision()
+    cleanup_test_data.append(revision2)
 
-    version1.tag("hello")
+    revision1.tag("hello")
 
-    tag_version = product.get_version_by_tag("hello")
-    assert tag_version is not None
+    tag_revision = item.get_revision_by_tag("hello")
+    assert tag_revision is not None
 
-    time_version = product.get_version_by_time(version1.created_at)
-    assert time_version is not None
+    time_revision = item.get_revision_by_time(revision1.created_at)
+    assert time_revision is not None
 
 # --- New Feature Tests ---
 
@@ -402,97 +402,97 @@ def test_metadata_update_workflow(live_client, cleanup_test_data):
     """Tests setting and updating metadata on all object types."""
     project = kumiho.create_project(unique_name("meta_proj"))
     cleanup_test_data.append(project)
-    group = project.create_group(name=project.name, parent_path="/")
-    cleanup_test_data.append(group)
-    product = group.create_product(product_name=unique_name("asset"), product_type="model")
-    cleanup_test_data.append(product)
-    version = product.create_version()
-    cleanup_test_data.append(version)
-    resource = version.create_resource("geo", "/path/to/file.abc")
-    cleanup_test_data.append(resource)
+    space = project.create_space(name=project.name, parent_path="/")
+    cleanup_test_data.append(space)
+    item = space.create_item(item_name=unique_name("asset"), kind="model")
+    cleanup_test_data.append(item)
+    revision = item.create_revision()
+    cleanup_test_data.append(revision)
+    artifact = revision.create_artifact("geo", "/path/to/file.abc")
+    cleanup_test_data.append(artifact)
 
     # Test setting metadata
-    group = group.set_metadata({"status": "active"})
-    product = product.set_metadata({"pipeline_step": "modeling"})
-    version = version.set_metadata({"approved_by": "lead"})
-    resource = resource.set_metadata({"format": "alembic"})
+    space = space.set_metadata({"status": "active"})
+    item = item.set_metadata({"pipeline_step": "modeling"})
+    revision = revision.set_metadata({"approved_by": "lead"})
+    artifact = artifact.set_metadata({"format": "alembic"})
 
-    assert group.metadata["status"] == "active"
-    assert product.metadata["pipeline_step"] == "modeling"
-    assert version.metadata["approved_by"] == "lead"
-    assert resource.metadata["format"] == "alembic"
+    assert space.metadata["status"] == "active"
+    assert item.metadata["pipeline_step"] == "modeling"
+    assert revision.metadata["approved_by"] == "lead"
+    assert artifact.metadata["format"] == "alembic"
 
-def test_group_deletion_logic(live_client, cleanup_test_data):
-    """Tests safe and forced deletion of groups."""
+def test_space_deletion_logic(live_client, cleanup_test_data):
+    """Tests safe and forced deletion of spaces."""
     # Setup
     project = kumiho.create_project(unique_name("del_proj"))
     cleanup_test_data.append(project)
-    proj = project.create_group(name=project.name, parent_path="/")
-    cleanup_test_data.append(proj)
-    prod = proj.create_product(product_name="asset", product_type="model")
-    cleanup_test_data.append(prod)
-    empty_group = proj.create_group(name="empty_group")
-    cleanup_test_data.append(empty_group)
+    proj_space = project.create_space(name=project.name, parent_path="/")
+    cleanup_test_data.append(proj_space)
+    item = proj_space.create_item(item_name="asset", kind="model")
+    cleanup_test_data.append(item)
+    empty_space = proj_space.create_space(name="empty_space")
+    cleanup_test_data.append(empty_space)
 
-    # 1. Succeed in deleting empty group without force
-    empty_group.delete()
-    cleanup_test_data.remove(empty_group)
+    # 1. Succeed in deleting empty space without force
+    empty_space.delete()
+    cleanup_test_data.remove(empty_space)
 
-    # 2. Fail to delete non-empty group without force
+    # 2. Fail to delete non-empty space without force
     with pytest.raises(grpc.RpcError) as e:
-        proj.delete()
+        proj_space.delete()
     if e.value.code() == grpc.StatusCode.UNAVAILABLE:
         pytest.skip("Control-plane JWKS unavailable in test environment")
     assert e.value.code() == grpc.StatusCode.PERMISSION_DENIED
 
-    # 3. Succeed in deleting non-empty group with admin force
-    proj.delete(force=True)
+    # 3. Succeed in deleting non-empty space with admin force
+    proj_space.delete(force=True)
     # Remove from cleanup since it's already deleted
-    cleanup_test_data.remove(proj)
+    cleanup_test_data.remove(proj_space)
     with pytest.raises(grpc.RpcError) as e:
-        # Use project.get_group instead of live_client.get_group
-        project.get_group(proj.path)
+        # Use project.get_space instead of live_client.get_space
+        project.get_space(proj_space.path)
     assert e.value.code() == grpc.StatusCode.NOT_FOUND
     with pytest.raises(grpc.RpcError) as e:
-        project.get_group(empty_group.path)
+        project.get_space(empty_space.path)
     assert e.value.code() == grpc.StatusCode.NOT_FOUND
 
-def test_product_deprecation_and_deletion(live_client, cleanup_test_data):
-    """Tests soft delete (deprecation) and hard delete for products."""
+def test_item_deprecation_and_deletion(live_client, cleanup_test_data):
+    """Tests soft delete (deprecation) and hard delete for items."""
     project = kumiho.create_project(unique_name("dep_proj"))
     cleanup_test_data.append(project)
-    group = project.create_group(name=project.name, parent_path="/")
-    cleanup_test_data.append(group)
-    prod = group.create_product(product_name="char", product_type="rig")
-    cleanup_test_data.append(prod)
+    space = project.create_space(name=project.name, parent_path="/")
+    cleanup_test_data.append(space)
+    item = space.create_item(item_name="char", kind="rig")
+    cleanup_test_data.append(item)
     
-    # 1. Deprecate the product
-    prod.delete()
-    prod_reloaded = group.get_product(product_name="char", product_type="rig")
-    assert prod_reloaded.deprecated is True
+    # 1. Deprecate the item
+    item.delete()
+    item_reloaded = space.get_item(item_name="char", kind="rig")
+    assert item_reloaded.deprecated is True
 
     # 2. Re-creating it should un-deprecate it
-    prod_new = group.create_product(product_name="char", product_type="rig")
-    cleanup_test_data.append(prod_new)
-    assert prod_new.deprecated is False
+    item_new = space.create_item(item_name="char", kind="rig")
+    cleanup_test_data.append(item_new)
+    assert item_new.deprecated is False
 
     # 3. Hard-delete with admin rights (assume current user is admin in test env)
-    prod_new.delete(force=True)
+    item_new.delete(force=True)
     # Remove from cleanup since it's already deleted
-    cleanup_test_data.remove(prod_new)
+    cleanup_test_data.remove(item_new)
     with pytest.raises(grpc.RpcError) as e:
-        group.get_product(product_name="char", product_type="rig")
+        space.get_item(item_name="char", kind="rig")
     assert e.value.code() == grpc.StatusCode.NOT_FOUND
 
-def test_version_tagging_workflow(live_client, cleanup_test_data):
-    """Tests the full lifecycle of tagging a version."""
+def test_revision_tagging_workflow(live_client, cleanup_test_data):
+    """Tests the full lifecycle of tagging a revision."""
     project = kumiho.create_project(unique_name("tag_proj"))
     cleanup_test_data.append(project)
-    group = project.create_group(name=project.name, parent_path="/")
-    cleanup_test_data.append(group)
-    prod = group.create_product(product_name="fx", product_type="cache")
-    cleanup_test_data.append(prod)
-    v1 = prod.create_version()
+    space = project.create_space(name=project.name, parent_path="/")
+    cleanup_test_data.append(space)
+    item = space.create_item(item_name="fx", kind="cache")
+    cleanup_test_data.append(item)
+    v1 = item.create_revision()
     cleanup_test_data.append(v1)
 
     assert v1.has_tag("approved") is False
@@ -506,21 +506,21 @@ def test_version_tagging_workflow(live_client, cleanup_test_data):
     # was_tagged should still be true as it checks history
     assert v1.was_tagged("approved") is True
 
-def test_published_version_immutability(live_client, cleanup_test_data):
-    """Tests that a 'published' version and its resources are immutable."""
+def test_published_revision_immutability(live_client, cleanup_test_data):
+    """Tests that a 'published' revision and its artifacts are immutable."""
     project = kumiho.create_project(unique_name("immutable_proj"))
     cleanup_test_data.append(project)
-    group = project.create_group(name=project.name, parent_path="/")
-    cleanup_test_data.append(group)
-    prod = group.create_product(product_name="shot", product_type="comp")
-    cleanup_test_data.append(prod)
-    v1 = prod.create_version()
+    space = project.create_space(name=project.name, parent_path="/")
+    cleanup_test_data.append(space)
+    item = space.create_item(item_name="shot", kind="comp")
+    cleanup_test_data.append(item)
+    v1 = item.create_revision()
     cleanup_test_data.append(v1)
-    res = v1.create_resource("main", "/path/to/exr_seq")
-    cleanup_test_data.append(res)
+    artifact = v1.create_artifact("main", "/path/to/exr_seq")
+    cleanup_test_data.append(artifact)
 
     v1.tag(PUBLISHED_TAG)
-    v1_reloaded = prod.get_version(1)
+    v1_reloaded = item.get_revision(1)
     assert v1_reloaded.published is True
 
     # Test immutability rules - all these should fail
@@ -534,33 +534,33 @@ def test_published_version_immutability(live_client, cleanup_test_data):
             assert expected_substr.lower() in (exc.details() or "").lower()
 
     expect_error(lambda: v1.set_metadata({"new_key": "new_val"}), "immutable")
-    expect_error(lambda: res.set_metadata({"new_key": "new_val"}), "immutable")
+    expect_error(lambda: artifact.set_metadata({"new_key": "new_val"}), "immutable")
     expect_error(lambda: v1.untag(PUBLISHED_TAG), "immutable")
     expect_error(lambda: v1.delete(), "immutable")
-    expect_error(lambda: res.delete(), "immutable")
-    expect_error(lambda: v1.create_resource("mask", "/path/to/mask.png"), "published")
+    expect_error(lambda: artifact.delete(), "immutable")
+    expect_error(lambda: v1.create_artifact("mask", "/path/to/mask.png"), "published")
 
-def test_get_resource_and_locations(live_client, cleanup_test_data):
-    """Tests retrieving specific resources and all locations from a version."""
+def test_get_artifact_and_locations(live_client, cleanup_test_data):
+    """Tests retrieving specific artifacts and all locations from a revision."""
     project = kumiho.create_project(unique_name("res_proj"))
     cleanup_test_data.append(project)
-    group = project.create_group(name=project.name, parent_path="/")
-    cleanup_test_data.append(group)
-    prod = group.create_product(product_name="set", product_type="env")
-    cleanup_test_data.append(prod)
-    v = prod.create_version()
+    space = project.create_space(name=project.name, parent_path="/")
+    cleanup_test_data.append(space)
+    item = space.create_item(item_name="set", kind="env")
+    cleanup_test_data.append(item)
+    v = item.create_revision()
     cleanup_test_data.append(v)
-    res1 = v.create_resource("hdri", "/loc/hdri.exr")
+    res1 = v.create_artifact("hdri", "/loc/hdri.exr")
     cleanup_test_data.append(res1)
-    res2 = v.create_resource("lidar", "/loc/lidar.obj")
+    res2 = v.create_artifact("lidar", "/loc/lidar.obj")
     cleanup_test_data.append(res2)
 
-    # Get all resources
-    resources = v.get_resources()
-    assert len(resources) == 2
+    # Get all artifacts
+    artifacts = v.get_artifacts()
+    assert len(artifacts) == 2
     
-    # Get one specific resource
-    lidar_res = v.get_resource("lidar")
+    # Get one specific artifact
+    lidar_res = v.get_artifact("lidar")
     assert lidar_res.kref == res2.kref  
     assert lidar_res.location == "/loc/lidar.obj"
 
@@ -571,9 +571,9 @@ def test_get_resource_and_locations(live_client, cleanup_test_data):
 def test_resolve_kref_with_time(mock_client):
     """Tests resolving a kref at a specific point in time."""
     client, mock_stub = mock_client  # Unpack the tuple
-    version_response = mock_helpers.mock_version_response(
+    revision_response = mock_helpers.mock_revision_response(
         kref_uri="kref://obj1?v=2",
-        product_kref_uri="kref://obj1",
+        item_kref_uri="kref://obj1",
         number=2,
         latest=True,
         tags=[],
@@ -583,10 +583,10 @@ def test_resolve_kref_with_time(mock_client):
         deprecated=False,
         published=False
     )
-    mock_stub.ResolveKref.return_value = version_response
+    mock_stub.ResolveKref.return_value = revision_response
     time_str = "202510131200"
-    # Use kumiho.get_version with time parameter
-    resolved = kumiho.get_version(f"kref://obj1?time={time_str}")
+    # Use kumiho.get_revision with time parameter
+    resolved = kumiho.get_revision(f"kref://obj1?time={time_str}")
     
     mock_stub.ResolveKref.assert_called_once()
     request_arg = mock_stub.ResolveKref.call_args[0][0]
@@ -599,9 +599,9 @@ def test_resolve_kref_with_time(mock_client):
 def test_resolve_kref_with_tag_and_time(mock_client):
     """Tests resolving a kref with a tag at a specific point in time."""
     client, mock_stub = mock_client  # Unpack the tuple
-    version_response = mock_helpers.mock_version_response(
+    revision_response = mock_helpers.mock_revision_response(
         kref_uri="kref://obj1?v=1",
-        product_kref_uri="kref://obj1",
+        item_kref_uri="kref://obj1",
         number=1,
         latest=True,
         tags=[],
@@ -611,11 +611,11 @@ def test_resolve_kref_with_tag_and_time(mock_client):
         deprecated=False,
         published=False
     )
-    mock_stub.ResolveKref.return_value = version_response
+    mock_stub.ResolveKref.return_value = revision_response
     time_str = "202510101000"
     tag_name = "published"
     
-    resolved = kumiho.get_version(f"kref://obj1?tag={tag_name}&time={time_str}") 
+    resolved = kumiho.get_revision(f"kref://obj1?tag={tag_name}&time={time_str}") 
     
     mock_stub.ResolveKref.assert_called_once()
     request_arg = mock_stub.ResolveKref.call_args[0][0]
@@ -629,117 +629,117 @@ def test_resolve_kref_invalid_time_format(mock_client):
     """Tests that an invalid time format raises a ValueError."""
     client, mock_stub = mock_client  # Unpack the tuple
     with pytest.raises(ValueError, match="time must be in YYYYMMDDHHMM format"):
-        kumiho.get_version("kref://some_id?time=2025-10-13 12:00:00")
+        kumiho.get_revision("kref://some_id?time=2025-10-13 12:00:00")
 
 def test_janus_parity_features(live_client, cleanup_test_data):
-    """Tests features added for Janus parity: deprecation, default resource, traversal, links."""
+    """Tests features added for Janus parity: deprecation, default artifact, traversal, edges."""
     project_name = unique_name("janus_proj")
     project = kumiho.create_project(project_name)
     cleanup_test_data.append(project)
-    group = project.create_group(name=project_name, parent_path="/")
-    cleanup_test_data.append(group)
-    product = group.create_product(product_name="asset", product_type="model")
-    cleanup_test_data.append(product)
-    version = product.create_version()
-    cleanup_test_data.append(version)
-    resource = version.create_resource("main", "/path/to/file")
-    cleanup_test_data.append(resource)
+    space = project.create_space(name=project_name, parent_path="/")
+    cleanup_test_data.append(space)
+    item = space.create_item(item_name="asset", kind="model")
+    cleanup_test_data.append(item)
+    revision = item.create_revision()
+    cleanup_test_data.append(revision)
+    artifact = revision.create_artifact("main", "/path/to/file")
+    cleanup_test_data.append(artifact)
 
     # 1. Deprecation
-    # Product
-    assert product.deprecated is False
-    product.set_deprecated(True)
-    assert product.deprecated is True
+    # Item
+    assert item.deprecated is False
+    item.set_deprecated(True)
+    assert item.deprecated is True
     # Reload to verify persistence
-    prod_reloaded = group.get_product("asset", "model")
-    assert prod_reloaded.deprecated is True
-    product.set_deprecated(False)
-    assert product.deprecated is False
+    item_reloaded = space.get_item("asset", "model")
+    assert item_reloaded.deprecated is True
+    item.set_deprecated(False)
+    assert item.deprecated is False
 
-    # Version
-    assert version.deprecated is False
-    version.set_deprecated(True)
-    assert version.deprecated is True
-    version.set_deprecated(False)
-    assert version.deprecated is False
+    # Revision
+    assert revision.deprecated is False
+    revision.set_deprecated(True)
+    assert revision.deprecated is True
+    revision.set_deprecated(False)
+    assert revision.deprecated is False
 
-    # Resource
-    assert resource.deprecated is False
-    resource.set_deprecated(True)
-    assert resource.deprecated is True
-    resource.set_deprecated(False)
-    assert resource.deprecated is False
+    # Artifact
+    assert artifact.deprecated is False
+    artifact.set_deprecated(True)
+    assert artifact.deprecated is True
+    artifact.set_deprecated(False)
+    assert artifact.deprecated is False
 
-    # 2. Default Resource
-    assert version.default_resource is None
-    resource.set_default()
-    # Reload version to check default resource
-    v_reloaded = product.get_version(version.number)
-    assert v_reloaded.default_resource == resource.name
+    # 2. Default Artifact
+    assert revision.default_artifact is None
+    artifact.set_default()
+    # Reload revision to check default artifact
+    v_reloaded = item.get_revision(revision.number)
+    assert v_reloaded.default_artifact == artifact.name
 
     # 3. Traversal
-    # From Resource
-    assert resource.get_version().kref.uri == version.kref.uri
-    assert resource.get_product().kref.uri == product.kref.uri
-    assert resource.get_group().path == group.path
-    assert resource.get_project().name == project.name
+    # From Artifact
+    assert artifact.get_revision().kref.uri == revision.kref.uri
+    assert artifact.get_item().kref.uri == item.kref.uri
+    assert artifact.get_space().path == space.path
+    assert artifact.get_project().name == project.name
 
-    # From Version
-    assert version.get_product().kref.uri == product.kref.uri
-    assert version.get_group().path == group.path
-    assert version.get_project().name == project.name
+    # From Revision
+    assert revision.get_item().kref.uri == item.kref.uri
+    assert revision.get_space().path == space.path
+    assert revision.get_project().name == project.name
 
-    # From Product
-    assert product.get_group().path == group.path
-    assert product.get_project().name == project.name
+    # From Item
+    assert item.get_space().path == space.path
+    assert item.get_project().name == project.name
 
-    # From Group
-    assert group.get_project().name == project.name
+    # From Space
+    assert space.get_project().name == project.name
 
-    # 4. Link Types
-    # LinkType is now exposed at package level
-    v2 = product.create_version()
+    # 4. Edge Types
+    # EdgeType is now exposed at package level
+    v2 = item.create_revision()
     cleanup_test_data.append(v2)
     
     # Use new convenience method
-    link = version.create_link(
-        target_version=v2,
-        link_type=kumiho.LinkType.CREATED_FROM
+    edge = revision.create_edge(
+        target_revision=v2,
+        edge_type=kumiho.EdgeType.CREATED_FROM
     )
-    cleanup_test_data.append(link)
-    assert link.link_type == kumiho.LinkType.CREATED_FROM
+    cleanup_test_data.append(edge)
+    assert edge.edge_type == kumiho.EdgeType.CREATED_FROM
     
-    # Verify get_links
-    links = version.get_links()
-    assert len(links) >= 1
-    assert links[0].link_type == kumiho.LinkType.CREATED_FROM
+    # Verify get_edges
+    edges = revision.get_edges()
+    assert len(edges) >= 1
+    assert edges[0].edge_type == kumiho.EdgeType.CREATED_FROM
     
-    # Verify delete_link
-    version.delete_link(v2, kumiho.LinkType.CREATED_FROM)
-    links_after = version.get_links()
-    # Note: get_links might return empty list or filtered list. 
-    # Since we just deleted the only link we created, it should be empty or not contain that specific link.
-    # But let's be safe and check if the specific link is gone.
-    assert not any(l.target_kref.uri == v2.kref.uri and l.link_type == kumiho.LinkType.CREATED_FROM for l in links_after)
+    # Verify delete_edge
+    revision.delete_edge(v2, kumiho.EdgeType.CREATED_FROM)
+    edges_after = revision.get_edges()
+    # Note: get_edges might return empty list or filtered list. 
+    # Since we just deleted the only edge we created, it should be empty or not contain that specific edge.
+    # But let's be safe and check if the specific edge is gone.
+    assert not any(e.target_kref.uri == v2.kref.uri and e.edge_type == kumiho.EdgeType.CREATED_FROM for e in edges_after)
 
-    # 5. Link Direction
-    # Create a link: version -> v2 (CREATED_FROM)
-    version.create_link(v2, kumiho.LinkType.CREATED_FROM)
+    # 5. Edge Direction
+    # Create an edge: revision -> v2 (CREATED_FROM)
+    revision.create_edge(v2, kumiho.EdgeType.CREATED_FROM)
     
     # Test Outgoing (Default)
-    outgoing = version.get_links(direction=kumiho.OUTGOING)
+    outgoing = revision.get_edges(direction=kumiho.OUTGOING)
     assert len(outgoing) > 0
-    assert outgoing[0].source_kref.uri == version.kref.uri
+    assert outgoing[0].source_kref.uri == revision.kref.uri
     assert outgoing[0].target_kref.uri == v2.kref.uri
     
     # Test Incoming (from v2's perspective)
-    incoming = v2.get_links(direction=kumiho.INCOMING)
+    incoming = v2.get_edges(direction=kumiho.INCOMING)
     assert len(incoming) > 0
-    assert incoming[0].source_kref.uri == version.kref.uri
+    assert incoming[0].source_kref.uri == revision.kref.uri
     assert incoming[0].target_kref.uri == v2.kref.uri
     
     # Test Both
-    both_v1 = version.get_links(direction=kumiho.BOTH)
+    both_v1 = revision.get_edges(direction=kumiho.BOTH)
     assert len(both_v1) > 0
-    both_v2 = v2.get_links(direction=kumiho.BOTH)
+    both_v2 = v2.get_edges(direction=kumiho.BOTH)
     assert len(both_v2) > 0

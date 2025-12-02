@@ -13,58 +13,58 @@ def _unique(prefix: str) -> str:
 def test_firebase_supabase_neo4j_roundtrip(live_client, cleanup_test_data):
     """Full-stack smoke test that exercises Firebase auth, Supabase tenancy, and Neo4j writes."""
     project_name = _unique("e2e_project")
-    product_name = _unique("asset")
+    item_name = _unique("asset")
     location = f"s3://kumiho-ci/{uuid.uuid4().hex}.bin"
-    version_metadata = {
+    revision_metadata = {
         "suite": "python-live-e2e",
         "timestamp": datetime.utcnow().isoformat(),
     }
 
     project = kumiho.create_project(project_name)
     cleanup_test_data.append(project)
-    group = project.create_group(name=project_name, parent_path="/")
-    cleanup_test_data.append(group)
-    assert group.path == f"/{project_name}"
+    space = project.create_space(name=project_name, parent_path="/")
+    cleanup_test_data.append(space)
+    assert space.path == f"/{project_name}"
 
-    product = group.create_product(product_name=product_name, product_type="model")
-    cleanup_test_data.append(product)
-    assert product.product_name == product_name
+    item = space.create_item(item_name=item_name, kind="model")
+    cleanup_test_data.append(item)
+    assert item.item_name == item_name
 
-    version = product.create_version(metadata=version_metadata)
-    cleanup_test_data.append(version)
-    assert version.metadata.get("suite") == "python-live-e2e"
+    revision = item.create_revision(metadata=revision_metadata)
+    cleanup_test_data.append(revision)
+    assert revision.metadata.get("suite") == "python-live-e2e"
 
-    resource = version.create_resource("payload", location)
-    cleanup_test_data.append(resource)
-    assert resource.location == location
+    artifact = revision.create_artifact("payload", location)
+    cleanup_test_data.append(artifact)
+    assert artifact.location == location
 
-    resolved_location = kumiho.resolve(resource.kref.uri)
+    resolved_location = kumiho.resolve(artifact.kref.uri)
     assert resolved_location == location
 
-    latest_version = product.get_latest_version()
-    assert latest_version is not None
-    assert latest_version.kref == version.kref
+    latest_revision = item.get_latest_revision()
+    assert latest_revision is not None
+    assert latest_revision.kref == revision.kref
 
-    matches = live_client.get_resources_by_location(location)
-    assert any(match.kref == resource.kref for match in matches)
+    matches = live_client.get_artifacts_by_location(location)
+    assert any(match.kref == artifact.kref for match in matches)
 
-    assert product.peek_next_version() == version.number + 1
+    assert item.peek_next_revision() == revision.number + 1
 
 
-def test_create_group_without_project_fails(live_client):
-    """Test that creating a root group without a corresponding project fails."""
-    orphan_group_name = _unique("orphan_group")
+def test_create_space_without_project_fails(live_client):
+    """Test that creating a root space without a corresponding project fails."""
+    orphan_space_name = _unique("orphan_space")
     
-    # Attempt to create a group without creating a project first
+    # Attempt to create a space without creating a project first
     # This should fail with an internal error or similar because the project doesn't exist
     with pytest.raises(grpc.RpcError) as e:
-        live_client.create_group(parent_path="/", group_name=orphan_group_name)
+        live_client.create_space(parent_path="/", space_name=orphan_space_name)
     
-    # The server returns Status::internal("Failed to create or retrieve group")
+    # The server returns Status::internal("Failed to create or retrieve space")
     # or potentially a more specific error if I updated the server to return one.
     # Based on current implementation, it returns internal error.
     assert e.value.code() == grpc.StatusCode.INTERNAL
-    assert "Failed to create or retrieve group" in e.value.details()
+    assert "Failed to create or retrieve space" in e.value.details()
 
 
 def test_node_limit_enforcement(live_client):

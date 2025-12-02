@@ -55,109 +55,109 @@ class KumihoServiceStub(object):
                 request_serializer=kumiho__pb2.DeleteProjectRequest.SerializeToString,
                 response_deserializer=kumiho__pb2.StatusResponse.FromString,
                 _registered_method=True)
-        self.CreateGroup = channel.unary_unary(
-                '/kumiho.KumihoService/CreateGroup',
-                request_serializer=kumiho__pb2.CreateGroupRequest.SerializeToString,
-                response_deserializer=kumiho__pb2.GroupResponse.FromString,
+        self.CreateSpace = channel.unary_unary(
+                '/kumiho.KumihoService/CreateSpace',
+                request_serializer=kumiho__pb2.CreateSpaceRequest.SerializeToString,
+                response_deserializer=kumiho__pb2.SpaceResponse.FromString,
                 _registered_method=True)
-        self.GetGroup = channel.unary_unary(
-                '/kumiho.KumihoService/GetGroup',
-                request_serializer=kumiho__pb2.GetGroupRequest.SerializeToString,
-                response_deserializer=kumiho__pb2.GroupResponse.FromString,
+        self.GetSpace = channel.unary_unary(
+                '/kumiho.KumihoService/GetSpace',
+                request_serializer=kumiho__pb2.GetSpaceRequest.SerializeToString,
+                response_deserializer=kumiho__pb2.SpaceResponse.FromString,
                 _registered_method=True)
-        self.GetChildGroups = channel.unary_unary(
-                '/kumiho.KumihoService/GetChildGroups',
-                request_serializer=kumiho__pb2.GetChildGroupsRequest.SerializeToString,
-                response_deserializer=kumiho__pb2.GetChildGroupsResponse.FromString,
+        self.GetChildSpaces = channel.unary_unary(
+                '/kumiho.KumihoService/GetChildSpaces',
+                request_serializer=kumiho__pb2.GetChildSpacesRequest.SerializeToString,
+                response_deserializer=kumiho__pb2.GetChildSpacesResponse.FromString,
                 _registered_method=True)
-        self.DeleteGroup = channel.unary_unary(
-                '/kumiho.KumihoService/DeleteGroup',
-                request_serializer=kumiho__pb2.DeleteGroupRequest.SerializeToString,
+        self.DeleteSpace = channel.unary_unary(
+                '/kumiho.KumihoService/DeleteSpace',
+                request_serializer=kumiho__pb2.DeleteSpaceRequest.SerializeToString,
                 response_deserializer=kumiho__pb2.StatusResponse.FromString,
                 _registered_method=True)
-        self.UpdateGroupMetadata = channel.unary_unary(
-                '/kumiho.KumihoService/UpdateGroupMetadata',
+        self.UpdateSpaceMetadata = channel.unary_unary(
+                '/kumiho.KumihoService/UpdateSpaceMetadata',
                 request_serializer=kumiho__pb2.UpdateMetadataRequest.SerializeToString,
-                response_deserializer=kumiho__pb2.GroupResponse.FromString,
+                response_deserializer=kumiho__pb2.SpaceResponse.FromString,
                 _registered_method=True)
-        self.CreateProduct = channel.unary_unary(
-                '/kumiho.KumihoService/CreateProduct',
-                request_serializer=kumiho__pb2.CreateProductRequest.SerializeToString,
-                response_deserializer=kumiho__pb2.ProductResponse.FromString,
+        self.CreateItem = channel.unary_unary(
+                '/kumiho.KumihoService/CreateItem',
+                request_serializer=kumiho__pb2.CreateItemRequest.SerializeToString,
+                response_deserializer=kumiho__pb2.ItemResponse.FromString,
                 _registered_method=True)
-        self.GetProduct = channel.unary_unary(
-                '/kumiho.KumihoService/GetProduct',
-                request_serializer=kumiho__pb2.GetProductRequest.SerializeToString,
-                response_deserializer=kumiho__pb2.ProductResponse.FromString,
+        self.GetItem = channel.unary_unary(
+                '/kumiho.KumihoService/GetItem',
+                request_serializer=kumiho__pb2.GetItemRequest.SerializeToString,
+                response_deserializer=kumiho__pb2.ItemResponse.FromString,
                 _registered_method=True)
-        self.GetProducts = channel.unary_unary(
-                '/kumiho.KumihoService/GetProducts',
-                request_serializer=kumiho__pb2.GetProductsRequest.SerializeToString,
-                response_deserializer=kumiho__pb2.GetProductsResponse.FromString,
+        self.GetItems = channel.unary_unary(
+                '/kumiho.KumihoService/GetItems',
+                request_serializer=kumiho__pb2.GetItemsRequest.SerializeToString,
+                response_deserializer=kumiho__pb2.GetItemsResponse.FromString,
                 _registered_method=True)
-        self.ProductSearch = channel.unary_unary(
-                '/kumiho.KumihoService/ProductSearch',
-                request_serializer=kumiho__pb2.ProductSearchRequest.SerializeToString,
-                response_deserializer=kumiho__pb2.GetProductsResponse.FromString,
+        self.ItemSearch = channel.unary_unary(
+                '/kumiho.KumihoService/ItemSearch',
+                request_serializer=kumiho__pb2.ItemSearchRequest.SerializeToString,
+                response_deserializer=kumiho__pb2.GetItemsResponse.FromString,
                 _registered_method=True)
-        self.DeleteProduct = channel.unary_unary(
-                '/kumiho.KumihoService/DeleteProduct',
-                request_serializer=kumiho__pb2.DeleteProductRequest.SerializeToString,
+        self.DeleteItem = channel.unary_unary(
+                '/kumiho.KumihoService/DeleteItem',
+                request_serializer=kumiho__pb2.DeleteItemRequest.SerializeToString,
                 response_deserializer=kumiho__pb2.StatusResponse.FromString,
                 _registered_method=True)
-        self.UpdateProductMetadata = channel.unary_unary(
-                '/kumiho.KumihoService/UpdateProductMetadata',
+        self.UpdateItemMetadata = channel.unary_unary(
+                '/kumiho.KumihoService/UpdateItemMetadata',
                 request_serializer=kumiho__pb2.UpdateMetadataRequest.SerializeToString,
-                response_deserializer=kumiho__pb2.ProductResponse.FromString,
+                response_deserializer=kumiho__pb2.ItemResponse.FromString,
                 _registered_method=True)
         self.ResolveKref = channel.unary_unary(
                 '/kumiho.KumihoService/ResolveKref',
                 request_serializer=kumiho__pb2.ResolveKrefRequest.SerializeToString,
-                response_deserializer=kumiho__pb2.VersionResponse.FromString,
+                response_deserializer=kumiho__pb2.RevisionResponse.FromString,
                 _registered_method=True)
         self.ResolveLocation = channel.unary_unary(
                 '/kumiho.KumihoService/ResolveLocation',
                 request_serializer=kumiho__pb2.ResolveLocationRequest.SerializeToString,
                 response_deserializer=kumiho__pb2.ResolveLocationResponse.FromString,
                 _registered_method=True)
-        self.CreateVersion = channel.unary_unary(
-                '/kumiho.KumihoService/CreateVersion',
-                request_serializer=kumiho__pb2.CreateVersionRequest.SerializeToString,
-                response_deserializer=kumiho__pb2.VersionResponse.FromString,
+        self.CreateRevision = channel.unary_unary(
+                '/kumiho.KumihoService/CreateRevision',
+                request_serializer=kumiho__pb2.CreateRevisionRequest.SerializeToString,
+                response_deserializer=kumiho__pb2.RevisionResponse.FromString,
                 _registered_method=True)
-        self.GetVersion = channel.unary_unary(
-                '/kumiho.KumihoService/GetVersion',
+        self.GetRevision = channel.unary_unary(
+                '/kumiho.KumihoService/GetRevision',
                 request_serializer=kumiho__pb2.KrefRequest.SerializeToString,
-                response_deserializer=kumiho__pb2.VersionResponse.FromString,
+                response_deserializer=kumiho__pb2.RevisionResponse.FromString,
                 _registered_method=True)
-        self.GetVersions = channel.unary_unary(
-                '/kumiho.KumihoService/GetVersions',
-                request_serializer=kumiho__pb2.GetVersionsRequest.SerializeToString,
-                response_deserializer=kumiho__pb2.GetVersionsResponse.FromString,
+        self.GetRevisions = channel.unary_unary(
+                '/kumiho.KumihoService/GetRevisions',
+                request_serializer=kumiho__pb2.GetRevisionsRequest.SerializeToString,
+                response_deserializer=kumiho__pb2.GetRevisionsResponse.FromString,
                 _registered_method=True)
-        self.DeleteVersion = channel.unary_unary(
-                '/kumiho.KumihoService/DeleteVersion',
-                request_serializer=kumiho__pb2.DeleteVersionRequest.SerializeToString,
+        self.DeleteRevision = channel.unary_unary(
+                '/kumiho.KumihoService/DeleteRevision',
+                request_serializer=kumiho__pb2.DeleteRevisionRequest.SerializeToString,
                 response_deserializer=kumiho__pb2.StatusResponse.FromString,
                 _registered_method=True)
-        self.PeekNextVersion = channel.unary_unary(
-                '/kumiho.KumihoService/PeekNextVersion',
-                request_serializer=kumiho__pb2.PeekNextVersionRequest.SerializeToString,
-                response_deserializer=kumiho__pb2.PeekNextVersionResponse.FromString,
+        self.PeekNextRevision = channel.unary_unary(
+                '/kumiho.KumihoService/PeekNextRevision',
+                request_serializer=kumiho__pb2.PeekNextRevisionRequest.SerializeToString,
+                response_deserializer=kumiho__pb2.PeekNextRevisionResponse.FromString,
                 _registered_method=True)
-        self.UpdateVersionMetadata = channel.unary_unary(
-                '/kumiho.KumihoService/UpdateVersionMetadata',
+        self.UpdateRevisionMetadata = channel.unary_unary(
+                '/kumiho.KumihoService/UpdateRevisionMetadata',
                 request_serializer=kumiho__pb2.UpdateMetadataRequest.SerializeToString,
-                response_deserializer=kumiho__pb2.VersionResponse.FromString,
+                response_deserializer=kumiho__pb2.RevisionResponse.FromString,
                 _registered_method=True)
-        self.TagVersion = channel.unary_unary(
-                '/kumiho.KumihoService/TagVersion',
-                request_serializer=kumiho__pb2.TagVersionRequest.SerializeToString,
+        self.TagRevision = channel.unary_unary(
+                '/kumiho.KumihoService/TagRevision',
+                request_serializer=kumiho__pb2.TagRevisionRequest.SerializeToString,
                 response_deserializer=kumiho__pb2.StatusResponse.FromString,
                 _registered_method=True)
-        self.UnTagVersion = channel.unary_unary(
-                '/kumiho.KumihoService/UnTagVersion',
-                request_serializer=kumiho__pb2.UnTagVersionRequest.SerializeToString,
+        self.UnTagRevision = channel.unary_unary(
+                '/kumiho.KumihoService/UnTagRevision',
+                request_serializer=kumiho__pb2.UnTagRevisionRequest.SerializeToString,
                 response_deserializer=kumiho__pb2.StatusResponse.FromString,
                 _registered_method=True)
         self.HasTag = channel.unary_unary(
@@ -170,40 +170,40 @@ class KumihoServiceStub(object):
                 request_serializer=kumiho__pb2.WasTaggedRequest.SerializeToString,
                 response_deserializer=kumiho__pb2.WasTaggedResponse.FromString,
                 _registered_method=True)
-        self.SetDefaultResource = channel.unary_unary(
-                '/kumiho.KumihoService/SetDefaultResource',
-                request_serializer=kumiho__pb2.SetDefaultResourceRequest.SerializeToString,
+        self.SetDefaultArtifact = channel.unary_unary(
+                '/kumiho.KumihoService/SetDefaultArtifact',
+                request_serializer=kumiho__pb2.SetDefaultArtifactRequest.SerializeToString,
                 response_deserializer=kumiho__pb2.StatusResponse.FromString,
                 _registered_method=True)
-        self.CreateResource = channel.unary_unary(
-                '/kumiho.KumihoService/CreateResource',
-                request_serializer=kumiho__pb2.CreateResourceRequest.SerializeToString,
-                response_deserializer=kumiho__pb2.ResourceResponse.FromString,
+        self.CreateArtifact = channel.unary_unary(
+                '/kumiho.KumihoService/CreateArtifact',
+                request_serializer=kumiho__pb2.CreateArtifactRequest.SerializeToString,
+                response_deserializer=kumiho__pb2.ArtifactResponse.FromString,
                 _registered_method=True)
-        self.GetResource = channel.unary_unary(
-                '/kumiho.KumihoService/GetResource',
-                request_serializer=kumiho__pb2.GetResourceRequest.SerializeToString,
-                response_deserializer=kumiho__pb2.ResourceResponse.FromString,
+        self.GetArtifact = channel.unary_unary(
+                '/kumiho.KumihoService/GetArtifact',
+                request_serializer=kumiho__pb2.GetArtifactRequest.SerializeToString,
+                response_deserializer=kumiho__pb2.ArtifactResponse.FromString,
                 _registered_method=True)
-        self.GetResources = channel.unary_unary(
-                '/kumiho.KumihoService/GetResources',
-                request_serializer=kumiho__pb2.GetResourcesRequest.SerializeToString,
-                response_deserializer=kumiho__pb2.GetResourcesResponse.FromString,
+        self.GetArtifacts = channel.unary_unary(
+                '/kumiho.KumihoService/GetArtifacts',
+                request_serializer=kumiho__pb2.GetArtifactsRequest.SerializeToString,
+                response_deserializer=kumiho__pb2.GetArtifactsResponse.FromString,
                 _registered_method=True)
-        self.GetResourcesByLocation = channel.unary_unary(
-                '/kumiho.KumihoService/GetResourcesByLocation',
-                request_serializer=kumiho__pb2.GetResourcesByLocationRequest.SerializeToString,
-                response_deserializer=kumiho__pb2.GetResourcesByLocationResponse.FromString,
+        self.GetArtifactsByLocation = channel.unary_unary(
+                '/kumiho.KumihoService/GetArtifactsByLocation',
+                request_serializer=kumiho__pb2.GetArtifactsByLocationRequest.SerializeToString,
+                response_deserializer=kumiho__pb2.GetArtifactsByLocationResponse.FromString,
                 _registered_method=True)
-        self.DeleteResource = channel.unary_unary(
-                '/kumiho.KumihoService/DeleteResource',
-                request_serializer=kumiho__pb2.DeleteResourceRequest.SerializeToString,
+        self.DeleteArtifact = channel.unary_unary(
+                '/kumiho.KumihoService/DeleteArtifact',
+                request_serializer=kumiho__pb2.DeleteArtifactRequest.SerializeToString,
                 response_deserializer=kumiho__pb2.StatusResponse.FromString,
                 _registered_method=True)
-        self.UpdateResourceMetadata = channel.unary_unary(
-                '/kumiho.KumihoService/UpdateResourceMetadata',
+        self.UpdateArtifactMetadata = channel.unary_unary(
+                '/kumiho.KumihoService/UpdateArtifactMetadata',
                 request_serializer=kumiho__pb2.UpdateMetadataRequest.SerializeToString,
-                response_deserializer=kumiho__pb2.ResourceResponse.FromString,
+                response_deserializer=kumiho__pb2.ArtifactResponse.FromString,
                 _registered_method=True)
         self.SetAttribute = channel.unary_unary(
                 '/kumiho.KumihoService/SetAttribute',
@@ -220,25 +220,25 @@ class KumihoServiceStub(object):
                 request_serializer=kumiho__pb2.DeleteAttributeRequest.SerializeToString,
                 response_deserializer=kumiho__pb2.StatusResponse.FromString,
                 _registered_method=True)
-        self.CreateLink = channel.unary_unary(
-                '/kumiho.KumihoService/CreateLink',
-                request_serializer=kumiho__pb2.CreateLinkRequest.SerializeToString,
+        self.CreateEdge = channel.unary_unary(
+                '/kumiho.KumihoService/CreateEdge',
+                request_serializer=kumiho__pb2.CreateEdgeRequest.SerializeToString,
                 response_deserializer=kumiho__pb2.StatusResponse.FromString,
                 _registered_method=True)
-        self.GetLinks = channel.unary_unary(
-                '/kumiho.KumihoService/GetLinks',
-                request_serializer=kumiho__pb2.GetLinksRequest.SerializeToString,
-                response_deserializer=kumiho__pb2.GetLinksResponse.FromString,
+        self.GetEdges = channel.unary_unary(
+                '/kumiho.KumihoService/GetEdges',
+                request_serializer=kumiho__pb2.GetEdgesRequest.SerializeToString,
+                response_deserializer=kumiho__pb2.GetEdgesResponse.FromString,
                 _registered_method=True)
-        self.DeleteLink = channel.unary_unary(
-                '/kumiho.KumihoService/DeleteLink',
-                request_serializer=kumiho__pb2.DeleteLinkRequest.SerializeToString,
+        self.DeleteEdge = channel.unary_unary(
+                '/kumiho.KumihoService/DeleteEdge',
+                request_serializer=kumiho__pb2.DeleteEdgeRequest.SerializeToString,
                 response_deserializer=kumiho__pb2.StatusResponse.FromString,
                 _registered_method=True)
-        self.TraverseLinks = channel.unary_unary(
-                '/kumiho.KumihoService/TraverseLinks',
-                request_serializer=kumiho__pb2.TraverseLinksRequest.SerializeToString,
-                response_deserializer=kumiho__pb2.TraverseLinksResponse.FromString,
+        self.TraverseEdges = channel.unary_unary(
+                '/kumiho.KumihoService/TraverseEdges',
+                request_serializer=kumiho__pb2.TraverseEdgesRequest.SerializeToString,
+                response_deserializer=kumiho__pb2.TraverseEdgesResponse.FromString,
                 _registered_method=True)
         self.FindShortestPath = channel.unary_unary(
                 '/kumiho.KumihoService/FindShortestPath',
@@ -250,30 +250,30 @@ class KumihoServiceStub(object):
                 request_serializer=kumiho__pb2.ImpactAnalysisRequest.SerializeToString,
                 response_deserializer=kumiho__pb2.ImpactAnalysisResponse.FromString,
                 _registered_method=True)
-        self.CreateCollection = channel.unary_unary(
-                '/kumiho.KumihoService/CreateCollection',
-                request_serializer=kumiho__pb2.CreateCollectionRequest.SerializeToString,
-                response_deserializer=kumiho__pb2.ProductResponse.FromString,
+        self.CreateBundle = channel.unary_unary(
+                '/kumiho.KumihoService/CreateBundle',
+                request_serializer=kumiho__pb2.CreateBundleRequest.SerializeToString,
+                response_deserializer=kumiho__pb2.ItemResponse.FromString,
                 _registered_method=True)
-        self.AddCollectionMember = channel.unary_unary(
-                '/kumiho.KumihoService/AddCollectionMember',
-                request_serializer=kumiho__pb2.AddCollectionMemberRequest.SerializeToString,
-                response_deserializer=kumiho__pb2.AddCollectionMemberResponse.FromString,
+        self.AddBundleMember = channel.unary_unary(
+                '/kumiho.KumihoService/AddBundleMember',
+                request_serializer=kumiho__pb2.AddBundleMemberRequest.SerializeToString,
+                response_deserializer=kumiho__pb2.AddBundleMemberResponse.FromString,
                 _registered_method=True)
-        self.RemoveCollectionMember = channel.unary_unary(
-                '/kumiho.KumihoService/RemoveCollectionMember',
-                request_serializer=kumiho__pb2.RemoveCollectionMemberRequest.SerializeToString,
-                response_deserializer=kumiho__pb2.RemoveCollectionMemberResponse.FromString,
+        self.RemoveBundleMember = channel.unary_unary(
+                '/kumiho.KumihoService/RemoveBundleMember',
+                request_serializer=kumiho__pb2.RemoveBundleMemberRequest.SerializeToString,
+                response_deserializer=kumiho__pb2.RemoveBundleMemberResponse.FromString,
                 _registered_method=True)
-        self.GetCollectionMembers = channel.unary_unary(
-                '/kumiho.KumihoService/GetCollectionMembers',
-                request_serializer=kumiho__pb2.GetCollectionMembersRequest.SerializeToString,
-                response_deserializer=kumiho__pb2.GetCollectionMembersResponse.FromString,
+        self.GetBundleMembers = channel.unary_unary(
+                '/kumiho.KumihoService/GetBundleMembers',
+                request_serializer=kumiho__pb2.GetBundleMembersRequest.SerializeToString,
+                response_deserializer=kumiho__pb2.GetBundleMembersResponse.FromString,
                 _registered_method=True)
-        self.GetCollectionHistory = channel.unary_unary(
-                '/kumiho.KumihoService/GetCollectionHistory',
-                request_serializer=kumiho__pb2.GetCollectionHistoryRequest.SerializeToString,
-                response_deserializer=kumiho__pb2.GetCollectionHistoryResponse.FromString,
+        self.GetBundleHistory = channel.unary_unary(
+                '/kumiho.KumihoService/GetBundleHistory',
+                request_serializer=kumiho__pb2.GetBundleHistoryRequest.SerializeToString,
+                response_deserializer=kumiho__pb2.GetBundleHistoryResponse.FromString,
                 _registered_method=True)
         self.GetTenantUsage = channel.unary_unary(
                 '/kumiho.KumihoService/GetTenantUsage',
@@ -321,76 +321,76 @@ class KumihoServiceServicer(object):
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
-    def CreateGroup(self, request, context):
-        """Group methods
+    def CreateSpace(self, request, context):
+        """Space methods
         """
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
-    def GetGroup(self, request, context):
+    def GetSpace(self, request, context):
         """Missing associated documentation comment in .proto file."""
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
-    def GetChildGroups(self, request, context):
+    def GetChildSpaces(self, request, context):
         """Missing associated documentation comment in .proto file."""
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
-    def DeleteGroup(self, request, context):
+    def DeleteSpace(self, request, context):
         """Missing associated documentation comment in .proto file."""
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
-    def UpdateGroupMetadata(self, request, context):
+    def UpdateSpaceMetadata(self, request, context):
         """Missing associated documentation comment in .proto file."""
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
-    def CreateProduct(self, request, context):
-        """Product methods
+    def CreateItem(self, request, context):
+        """Item methods
         """
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
-    def GetProduct(self, request, context):
+    def GetItem(self, request, context):
         """Missing associated documentation comment in .proto file."""
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
-    def GetProducts(self, request, context):
+    def GetItems(self, request, context):
         """Missing associated documentation comment in .proto file."""
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
-    def ProductSearch(self, request, context):
+    def ItemSearch(self, request, context):
         """Missing associated documentation comment in .proto file."""
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
-    def DeleteProduct(self, request, context):
+    def DeleteItem(self, request, context):
         """Missing associated documentation comment in .proto file."""
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
-    def UpdateProductMetadata(self, request, context):
+    def UpdateItemMetadata(self, request, context):
         """Missing associated documentation comment in .proto file."""
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
     def ResolveKref(self, request, context):
-        """Version methods
+        """Revision methods
         """
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
@@ -402,49 +402,49 @@ class KumihoServiceServicer(object):
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
-    def CreateVersion(self, request, context):
+    def CreateRevision(self, request, context):
         """Missing associated documentation comment in .proto file."""
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
-    def GetVersion(self, request, context):
+    def GetRevision(self, request, context):
         """Missing associated documentation comment in .proto file."""
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
-    def GetVersions(self, request, context):
+    def GetRevisions(self, request, context):
         """Missing associated documentation comment in .proto file."""
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
-    def DeleteVersion(self, request, context):
+    def DeleteRevision(self, request, context):
         """Missing associated documentation comment in .proto file."""
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
-    def PeekNextVersion(self, request, context):
+    def PeekNextRevision(self, request, context):
         """Missing associated documentation comment in .proto file."""
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
-    def UpdateVersionMetadata(self, request, context):
+    def UpdateRevisionMetadata(self, request, context):
         """Missing associated documentation comment in .proto file."""
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
-    def TagVersion(self, request, context):
+    def TagRevision(self, request, context):
         """Missing associated documentation comment in .proto file."""
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
-    def UnTagVersion(self, request, context):
+    def UnTagRevision(self, request, context):
         """Missing associated documentation comment in .proto file."""
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
@@ -462,44 +462,44 @@ class KumihoServiceServicer(object):
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
-    def SetDefaultResource(self, request, context):
+    def SetDefaultArtifact(self, request, context):
         """Missing associated documentation comment in .proto file."""
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
-    def CreateResource(self, request, context):
-        """Resource methods
+    def CreateArtifact(self, request, context):
+        """Artifact methods
         """
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
-    def GetResource(self, request, context):
+    def GetArtifact(self, request, context):
         """Missing associated documentation comment in .proto file."""
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
-    def GetResources(self, request, context):
+    def GetArtifacts(self, request, context):
         """Missing associated documentation comment in .proto file."""
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
-    def GetResourcesByLocation(self, request, context):
+    def GetArtifactsByLocation(self, request, context):
         """Missing associated documentation comment in .proto file."""
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
-    def DeleteResource(self, request, context):
+    def DeleteArtifact(self, request, context):
         """Missing associated documentation comment in .proto file."""
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
-    def UpdateResourceMetadata(self, request, context):
+    def UpdateArtifactMetadata(self, request, context):
         """Missing associated documentation comment in .proto file."""
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
@@ -507,7 +507,7 @@ class KumihoServiceServicer(object):
 
     def SetAttribute(self, request, context):
         """Attribute methods (granular metadata operations)
-        These work on any entity type (Version, Product, Resource, Group) identified by kref
+        These work on any entity type (Revision, Item, Artifact, Space) identified by kref
         """
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
@@ -525,26 +525,26 @@ class KumihoServiceServicer(object):
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
-    def CreateLink(self, request, context):
-        """Link methods
+    def CreateEdge(self, request, context):
+        """Edge methods
         """
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
-    def GetLinks(self, request, context):
+    def GetEdges(self, request, context):
         """Missing associated documentation comment in .proto file."""
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
-    def DeleteLink(self, request, context):
+    def DeleteEdge(self, request, context):
         """Missing associated documentation comment in .proto file."""
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
-    def TraverseLinks(self, request, context):
+    def TraverseEdges(self, request, context):
         """Graph Traversal methods
         """
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
@@ -563,32 +563,32 @@ class KumihoServiceServicer(object):
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
-    def CreateCollection(self, request, context):
-        """Collection methods
+    def CreateBundle(self, request, context):
+        """Bundle methods
         """
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
-    def AddCollectionMember(self, request, context):
+    def AddBundleMember(self, request, context):
         """Missing associated documentation comment in .proto file."""
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
-    def RemoveCollectionMember(self, request, context):
+    def RemoveBundleMember(self, request, context):
         """Missing associated documentation comment in .proto file."""
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
-    def GetCollectionMembers(self, request, context):
+    def GetBundleMembers(self, request, context):
         """Missing associated documentation comment in .proto file."""
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
-    def GetCollectionHistory(self, request, context):
+    def GetBundleHistory(self, request, context):
         """Missing associated documentation comment in .proto file."""
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
@@ -638,109 +638,109 @@ def add_KumihoServiceServicer_to_server(servicer, server):
                     request_deserializer=kumiho__pb2.DeleteProjectRequest.FromString,
                     response_serializer=kumiho__pb2.StatusResponse.SerializeToString,
             ),
-            'CreateGroup': grpc.unary_unary_rpc_method_handler(
-                    servicer.CreateGroup,
-                    request_deserializer=kumiho__pb2.CreateGroupRequest.FromString,
-                    response_serializer=kumiho__pb2.GroupResponse.SerializeToString,
+            'CreateSpace': grpc.unary_unary_rpc_method_handler(
+                    servicer.CreateSpace,
+                    request_deserializer=kumiho__pb2.CreateSpaceRequest.FromString,
+                    response_serializer=kumiho__pb2.SpaceResponse.SerializeToString,
             ),
-            'GetGroup': grpc.unary_unary_rpc_method_handler(
-                    servicer.GetGroup,
-                    request_deserializer=kumiho__pb2.GetGroupRequest.FromString,
-                    response_serializer=kumiho__pb2.GroupResponse.SerializeToString,
+            'GetSpace': grpc.unary_unary_rpc_method_handler(
+                    servicer.GetSpace,
+                    request_deserializer=kumiho__pb2.GetSpaceRequest.FromString,
+                    response_serializer=kumiho__pb2.SpaceResponse.SerializeToString,
             ),
-            'GetChildGroups': grpc.unary_unary_rpc_method_handler(
-                    servicer.GetChildGroups,
-                    request_deserializer=kumiho__pb2.GetChildGroupsRequest.FromString,
-                    response_serializer=kumiho__pb2.GetChildGroupsResponse.SerializeToString,
+            'GetChildSpaces': grpc.unary_unary_rpc_method_handler(
+                    servicer.GetChildSpaces,
+                    request_deserializer=kumiho__pb2.GetChildSpacesRequest.FromString,
+                    response_serializer=kumiho__pb2.GetChildSpacesResponse.SerializeToString,
             ),
-            'DeleteGroup': grpc.unary_unary_rpc_method_handler(
-                    servicer.DeleteGroup,
-                    request_deserializer=kumiho__pb2.DeleteGroupRequest.FromString,
+            'DeleteSpace': grpc.unary_unary_rpc_method_handler(
+                    servicer.DeleteSpace,
+                    request_deserializer=kumiho__pb2.DeleteSpaceRequest.FromString,
                     response_serializer=kumiho__pb2.StatusResponse.SerializeToString,
             ),
-            'UpdateGroupMetadata': grpc.unary_unary_rpc_method_handler(
-                    servicer.UpdateGroupMetadata,
+            'UpdateSpaceMetadata': grpc.unary_unary_rpc_method_handler(
+                    servicer.UpdateSpaceMetadata,
                     request_deserializer=kumiho__pb2.UpdateMetadataRequest.FromString,
-                    response_serializer=kumiho__pb2.GroupResponse.SerializeToString,
+                    response_serializer=kumiho__pb2.SpaceResponse.SerializeToString,
             ),
-            'CreateProduct': grpc.unary_unary_rpc_method_handler(
-                    servicer.CreateProduct,
-                    request_deserializer=kumiho__pb2.CreateProductRequest.FromString,
-                    response_serializer=kumiho__pb2.ProductResponse.SerializeToString,
+            'CreateItem': grpc.unary_unary_rpc_method_handler(
+                    servicer.CreateItem,
+                    request_deserializer=kumiho__pb2.CreateItemRequest.FromString,
+                    response_serializer=kumiho__pb2.ItemResponse.SerializeToString,
             ),
-            'GetProduct': grpc.unary_unary_rpc_method_handler(
-                    servicer.GetProduct,
-                    request_deserializer=kumiho__pb2.GetProductRequest.FromString,
-                    response_serializer=kumiho__pb2.ProductResponse.SerializeToString,
+            'GetItem': grpc.unary_unary_rpc_method_handler(
+                    servicer.GetItem,
+                    request_deserializer=kumiho__pb2.GetItemRequest.FromString,
+                    response_serializer=kumiho__pb2.ItemResponse.SerializeToString,
             ),
-            'GetProducts': grpc.unary_unary_rpc_method_handler(
-                    servicer.GetProducts,
-                    request_deserializer=kumiho__pb2.GetProductsRequest.FromString,
-                    response_serializer=kumiho__pb2.GetProductsResponse.SerializeToString,
+            'GetItems': grpc.unary_unary_rpc_method_handler(
+                    servicer.GetItems,
+                    request_deserializer=kumiho__pb2.GetItemsRequest.FromString,
+                    response_serializer=kumiho__pb2.GetItemsResponse.SerializeToString,
             ),
-            'ProductSearch': grpc.unary_unary_rpc_method_handler(
-                    servicer.ProductSearch,
-                    request_deserializer=kumiho__pb2.ProductSearchRequest.FromString,
-                    response_serializer=kumiho__pb2.GetProductsResponse.SerializeToString,
+            'ItemSearch': grpc.unary_unary_rpc_method_handler(
+                    servicer.ItemSearch,
+                    request_deserializer=kumiho__pb2.ItemSearchRequest.FromString,
+                    response_serializer=kumiho__pb2.GetItemsResponse.SerializeToString,
             ),
-            'DeleteProduct': grpc.unary_unary_rpc_method_handler(
-                    servicer.DeleteProduct,
-                    request_deserializer=kumiho__pb2.DeleteProductRequest.FromString,
+            'DeleteItem': grpc.unary_unary_rpc_method_handler(
+                    servicer.DeleteItem,
+                    request_deserializer=kumiho__pb2.DeleteItemRequest.FromString,
                     response_serializer=kumiho__pb2.StatusResponse.SerializeToString,
             ),
-            'UpdateProductMetadata': grpc.unary_unary_rpc_method_handler(
-                    servicer.UpdateProductMetadata,
+            'UpdateItemMetadata': grpc.unary_unary_rpc_method_handler(
+                    servicer.UpdateItemMetadata,
                     request_deserializer=kumiho__pb2.UpdateMetadataRequest.FromString,
-                    response_serializer=kumiho__pb2.ProductResponse.SerializeToString,
+                    response_serializer=kumiho__pb2.ItemResponse.SerializeToString,
             ),
             'ResolveKref': grpc.unary_unary_rpc_method_handler(
                     servicer.ResolveKref,
                     request_deserializer=kumiho__pb2.ResolveKrefRequest.FromString,
-                    response_serializer=kumiho__pb2.VersionResponse.SerializeToString,
+                    response_serializer=kumiho__pb2.RevisionResponse.SerializeToString,
             ),
             'ResolveLocation': grpc.unary_unary_rpc_method_handler(
                     servicer.ResolveLocation,
                     request_deserializer=kumiho__pb2.ResolveLocationRequest.FromString,
                     response_serializer=kumiho__pb2.ResolveLocationResponse.SerializeToString,
             ),
-            'CreateVersion': grpc.unary_unary_rpc_method_handler(
-                    servicer.CreateVersion,
-                    request_deserializer=kumiho__pb2.CreateVersionRequest.FromString,
-                    response_serializer=kumiho__pb2.VersionResponse.SerializeToString,
+            'CreateRevision': grpc.unary_unary_rpc_method_handler(
+                    servicer.CreateRevision,
+                    request_deserializer=kumiho__pb2.CreateRevisionRequest.FromString,
+                    response_serializer=kumiho__pb2.RevisionResponse.SerializeToString,
             ),
-            'GetVersion': grpc.unary_unary_rpc_method_handler(
-                    servicer.GetVersion,
+            'GetRevision': grpc.unary_unary_rpc_method_handler(
+                    servicer.GetRevision,
                     request_deserializer=kumiho__pb2.KrefRequest.FromString,
-                    response_serializer=kumiho__pb2.VersionResponse.SerializeToString,
+                    response_serializer=kumiho__pb2.RevisionResponse.SerializeToString,
             ),
-            'GetVersions': grpc.unary_unary_rpc_method_handler(
-                    servicer.GetVersions,
-                    request_deserializer=kumiho__pb2.GetVersionsRequest.FromString,
-                    response_serializer=kumiho__pb2.GetVersionsResponse.SerializeToString,
+            'GetRevisions': grpc.unary_unary_rpc_method_handler(
+                    servicer.GetRevisions,
+                    request_deserializer=kumiho__pb2.GetRevisionsRequest.FromString,
+                    response_serializer=kumiho__pb2.GetRevisionsResponse.SerializeToString,
             ),
-            'DeleteVersion': grpc.unary_unary_rpc_method_handler(
-                    servicer.DeleteVersion,
-                    request_deserializer=kumiho__pb2.DeleteVersionRequest.FromString,
+            'DeleteRevision': grpc.unary_unary_rpc_method_handler(
+                    servicer.DeleteRevision,
+                    request_deserializer=kumiho__pb2.DeleteRevisionRequest.FromString,
                     response_serializer=kumiho__pb2.StatusResponse.SerializeToString,
             ),
-            'PeekNextVersion': grpc.unary_unary_rpc_method_handler(
-                    servicer.PeekNextVersion,
-                    request_deserializer=kumiho__pb2.PeekNextVersionRequest.FromString,
-                    response_serializer=kumiho__pb2.PeekNextVersionResponse.SerializeToString,
+            'PeekNextRevision': grpc.unary_unary_rpc_method_handler(
+                    servicer.PeekNextRevision,
+                    request_deserializer=kumiho__pb2.PeekNextRevisionRequest.FromString,
+                    response_serializer=kumiho__pb2.PeekNextRevisionResponse.SerializeToString,
             ),
-            'UpdateVersionMetadata': grpc.unary_unary_rpc_method_handler(
-                    servicer.UpdateVersionMetadata,
+            'UpdateRevisionMetadata': grpc.unary_unary_rpc_method_handler(
+                    servicer.UpdateRevisionMetadata,
                     request_deserializer=kumiho__pb2.UpdateMetadataRequest.FromString,
-                    response_serializer=kumiho__pb2.VersionResponse.SerializeToString,
+                    response_serializer=kumiho__pb2.RevisionResponse.SerializeToString,
             ),
-            'TagVersion': grpc.unary_unary_rpc_method_handler(
-                    servicer.TagVersion,
-                    request_deserializer=kumiho__pb2.TagVersionRequest.FromString,
+            'TagRevision': grpc.unary_unary_rpc_method_handler(
+                    servicer.TagRevision,
+                    request_deserializer=kumiho__pb2.TagRevisionRequest.FromString,
                     response_serializer=kumiho__pb2.StatusResponse.SerializeToString,
             ),
-            'UnTagVersion': grpc.unary_unary_rpc_method_handler(
-                    servicer.UnTagVersion,
-                    request_deserializer=kumiho__pb2.UnTagVersionRequest.FromString,
+            'UnTagRevision': grpc.unary_unary_rpc_method_handler(
+                    servicer.UnTagRevision,
+                    request_deserializer=kumiho__pb2.UnTagRevisionRequest.FromString,
                     response_serializer=kumiho__pb2.StatusResponse.SerializeToString,
             ),
             'HasTag': grpc.unary_unary_rpc_method_handler(
@@ -753,40 +753,40 @@ def add_KumihoServiceServicer_to_server(servicer, server):
                     request_deserializer=kumiho__pb2.WasTaggedRequest.FromString,
                     response_serializer=kumiho__pb2.WasTaggedResponse.SerializeToString,
             ),
-            'SetDefaultResource': grpc.unary_unary_rpc_method_handler(
-                    servicer.SetDefaultResource,
-                    request_deserializer=kumiho__pb2.SetDefaultResourceRequest.FromString,
+            'SetDefaultArtifact': grpc.unary_unary_rpc_method_handler(
+                    servicer.SetDefaultArtifact,
+                    request_deserializer=kumiho__pb2.SetDefaultArtifactRequest.FromString,
                     response_serializer=kumiho__pb2.StatusResponse.SerializeToString,
             ),
-            'CreateResource': grpc.unary_unary_rpc_method_handler(
-                    servicer.CreateResource,
-                    request_deserializer=kumiho__pb2.CreateResourceRequest.FromString,
-                    response_serializer=kumiho__pb2.ResourceResponse.SerializeToString,
+            'CreateArtifact': grpc.unary_unary_rpc_method_handler(
+                    servicer.CreateArtifact,
+                    request_deserializer=kumiho__pb2.CreateArtifactRequest.FromString,
+                    response_serializer=kumiho__pb2.ArtifactResponse.SerializeToString,
             ),
-            'GetResource': grpc.unary_unary_rpc_method_handler(
-                    servicer.GetResource,
-                    request_deserializer=kumiho__pb2.GetResourceRequest.FromString,
-                    response_serializer=kumiho__pb2.ResourceResponse.SerializeToString,
+            'GetArtifact': grpc.unary_unary_rpc_method_handler(
+                    servicer.GetArtifact,
+                    request_deserializer=kumiho__pb2.GetArtifactRequest.FromString,
+                    response_serializer=kumiho__pb2.ArtifactResponse.SerializeToString,
             ),
-            'GetResources': grpc.unary_unary_rpc_method_handler(
-                    servicer.GetResources,
-                    request_deserializer=kumiho__pb2.GetResourcesRequest.FromString,
-                    response_serializer=kumiho__pb2.GetResourcesResponse.SerializeToString,
+            'GetArtifacts': grpc.unary_unary_rpc_method_handler(
+                    servicer.GetArtifacts,
+                    request_deserializer=kumiho__pb2.GetArtifactsRequest.FromString,
+                    response_serializer=kumiho__pb2.GetArtifactsResponse.SerializeToString,
             ),
-            'GetResourcesByLocation': grpc.unary_unary_rpc_method_handler(
-                    servicer.GetResourcesByLocation,
-                    request_deserializer=kumiho__pb2.GetResourcesByLocationRequest.FromString,
-                    response_serializer=kumiho__pb2.GetResourcesByLocationResponse.SerializeToString,
+            'GetArtifactsByLocation': grpc.unary_unary_rpc_method_handler(
+                    servicer.GetArtifactsByLocation,
+                    request_deserializer=kumiho__pb2.GetArtifactsByLocationRequest.FromString,
+                    response_serializer=kumiho__pb2.GetArtifactsByLocationResponse.SerializeToString,
             ),
-            'DeleteResource': grpc.unary_unary_rpc_method_handler(
-                    servicer.DeleteResource,
-                    request_deserializer=kumiho__pb2.DeleteResourceRequest.FromString,
+            'DeleteArtifact': grpc.unary_unary_rpc_method_handler(
+                    servicer.DeleteArtifact,
+                    request_deserializer=kumiho__pb2.DeleteArtifactRequest.FromString,
                     response_serializer=kumiho__pb2.StatusResponse.SerializeToString,
             ),
-            'UpdateResourceMetadata': grpc.unary_unary_rpc_method_handler(
-                    servicer.UpdateResourceMetadata,
+            'UpdateArtifactMetadata': grpc.unary_unary_rpc_method_handler(
+                    servicer.UpdateArtifactMetadata,
                     request_deserializer=kumiho__pb2.UpdateMetadataRequest.FromString,
-                    response_serializer=kumiho__pb2.ResourceResponse.SerializeToString,
+                    response_serializer=kumiho__pb2.ArtifactResponse.SerializeToString,
             ),
             'SetAttribute': grpc.unary_unary_rpc_method_handler(
                     servicer.SetAttribute,
@@ -803,25 +803,25 @@ def add_KumihoServiceServicer_to_server(servicer, server):
                     request_deserializer=kumiho__pb2.DeleteAttributeRequest.FromString,
                     response_serializer=kumiho__pb2.StatusResponse.SerializeToString,
             ),
-            'CreateLink': grpc.unary_unary_rpc_method_handler(
-                    servicer.CreateLink,
-                    request_deserializer=kumiho__pb2.CreateLinkRequest.FromString,
+            'CreateEdge': grpc.unary_unary_rpc_method_handler(
+                    servicer.CreateEdge,
+                    request_deserializer=kumiho__pb2.CreateEdgeRequest.FromString,
                     response_serializer=kumiho__pb2.StatusResponse.SerializeToString,
             ),
-            'GetLinks': grpc.unary_unary_rpc_method_handler(
-                    servicer.GetLinks,
-                    request_deserializer=kumiho__pb2.GetLinksRequest.FromString,
-                    response_serializer=kumiho__pb2.GetLinksResponse.SerializeToString,
+            'GetEdges': grpc.unary_unary_rpc_method_handler(
+                    servicer.GetEdges,
+                    request_deserializer=kumiho__pb2.GetEdgesRequest.FromString,
+                    response_serializer=kumiho__pb2.GetEdgesResponse.SerializeToString,
             ),
-            'DeleteLink': grpc.unary_unary_rpc_method_handler(
-                    servicer.DeleteLink,
-                    request_deserializer=kumiho__pb2.DeleteLinkRequest.FromString,
+            'DeleteEdge': grpc.unary_unary_rpc_method_handler(
+                    servicer.DeleteEdge,
+                    request_deserializer=kumiho__pb2.DeleteEdgeRequest.FromString,
                     response_serializer=kumiho__pb2.StatusResponse.SerializeToString,
             ),
-            'TraverseLinks': grpc.unary_unary_rpc_method_handler(
-                    servicer.TraverseLinks,
-                    request_deserializer=kumiho__pb2.TraverseLinksRequest.FromString,
-                    response_serializer=kumiho__pb2.TraverseLinksResponse.SerializeToString,
+            'TraverseEdges': grpc.unary_unary_rpc_method_handler(
+                    servicer.TraverseEdges,
+                    request_deserializer=kumiho__pb2.TraverseEdgesRequest.FromString,
+                    response_serializer=kumiho__pb2.TraverseEdgesResponse.SerializeToString,
             ),
             'FindShortestPath': grpc.unary_unary_rpc_method_handler(
                     servicer.FindShortestPath,
@@ -833,30 +833,30 @@ def add_KumihoServiceServicer_to_server(servicer, server):
                     request_deserializer=kumiho__pb2.ImpactAnalysisRequest.FromString,
                     response_serializer=kumiho__pb2.ImpactAnalysisResponse.SerializeToString,
             ),
-            'CreateCollection': grpc.unary_unary_rpc_method_handler(
-                    servicer.CreateCollection,
-                    request_deserializer=kumiho__pb2.CreateCollectionRequest.FromString,
-                    response_serializer=kumiho__pb2.ProductResponse.SerializeToString,
+            'CreateBundle': grpc.unary_unary_rpc_method_handler(
+                    servicer.CreateBundle,
+                    request_deserializer=kumiho__pb2.CreateBundleRequest.FromString,
+                    response_serializer=kumiho__pb2.ItemResponse.SerializeToString,
             ),
-            'AddCollectionMember': grpc.unary_unary_rpc_method_handler(
-                    servicer.AddCollectionMember,
-                    request_deserializer=kumiho__pb2.AddCollectionMemberRequest.FromString,
-                    response_serializer=kumiho__pb2.AddCollectionMemberResponse.SerializeToString,
+            'AddBundleMember': grpc.unary_unary_rpc_method_handler(
+                    servicer.AddBundleMember,
+                    request_deserializer=kumiho__pb2.AddBundleMemberRequest.FromString,
+                    response_serializer=kumiho__pb2.AddBundleMemberResponse.SerializeToString,
             ),
-            'RemoveCollectionMember': grpc.unary_unary_rpc_method_handler(
-                    servicer.RemoveCollectionMember,
-                    request_deserializer=kumiho__pb2.RemoveCollectionMemberRequest.FromString,
-                    response_serializer=kumiho__pb2.RemoveCollectionMemberResponse.SerializeToString,
+            'RemoveBundleMember': grpc.unary_unary_rpc_method_handler(
+                    servicer.RemoveBundleMember,
+                    request_deserializer=kumiho__pb2.RemoveBundleMemberRequest.FromString,
+                    response_serializer=kumiho__pb2.RemoveBundleMemberResponse.SerializeToString,
             ),
-            'GetCollectionMembers': grpc.unary_unary_rpc_method_handler(
-                    servicer.GetCollectionMembers,
-                    request_deserializer=kumiho__pb2.GetCollectionMembersRequest.FromString,
-                    response_serializer=kumiho__pb2.GetCollectionMembersResponse.SerializeToString,
+            'GetBundleMembers': grpc.unary_unary_rpc_method_handler(
+                    servicer.GetBundleMembers,
+                    request_deserializer=kumiho__pb2.GetBundleMembersRequest.FromString,
+                    response_serializer=kumiho__pb2.GetBundleMembersResponse.SerializeToString,
             ),
-            'GetCollectionHistory': grpc.unary_unary_rpc_method_handler(
-                    servicer.GetCollectionHistory,
-                    request_deserializer=kumiho__pb2.GetCollectionHistoryRequest.FromString,
-                    response_serializer=kumiho__pb2.GetCollectionHistoryResponse.SerializeToString,
+            'GetBundleHistory': grpc.unary_unary_rpc_method_handler(
+                    servicer.GetBundleHistory,
+                    request_deserializer=kumiho__pb2.GetBundleHistoryRequest.FromString,
+                    response_serializer=kumiho__pb2.GetBundleHistoryResponse.SerializeToString,
             ),
             'GetTenantUsage': grpc.unary_unary_rpc_method_handler(
                     servicer.GetTenantUsage,
@@ -994,7 +994,7 @@ class KumihoService(object):
             _registered_method=True)
 
     @staticmethod
-    def CreateGroup(request,
+    def CreateSpace(request,
             target,
             options=(),
             channel_credentials=None,
@@ -1007,9 +1007,9 @@ class KumihoService(object):
         return grpc.experimental.unary_unary(
             request,
             target,
-            '/kumiho.KumihoService/CreateGroup',
-            kumiho__pb2.CreateGroupRequest.SerializeToString,
-            kumiho__pb2.GroupResponse.FromString,
+            '/kumiho.KumihoService/CreateSpace',
+            kumiho__pb2.CreateSpaceRequest.SerializeToString,
+            kumiho__pb2.SpaceResponse.FromString,
             options,
             channel_credentials,
             insecure,
@@ -1021,7 +1021,7 @@ class KumihoService(object):
             _registered_method=True)
 
     @staticmethod
-    def GetGroup(request,
+    def GetSpace(request,
             target,
             options=(),
             channel_credentials=None,
@@ -1034,9 +1034,9 @@ class KumihoService(object):
         return grpc.experimental.unary_unary(
             request,
             target,
-            '/kumiho.KumihoService/GetGroup',
-            kumiho__pb2.GetGroupRequest.SerializeToString,
-            kumiho__pb2.GroupResponse.FromString,
+            '/kumiho.KumihoService/GetSpace',
+            kumiho__pb2.GetSpaceRequest.SerializeToString,
+            kumiho__pb2.SpaceResponse.FromString,
             options,
             channel_credentials,
             insecure,
@@ -1048,7 +1048,7 @@ class KumihoService(object):
             _registered_method=True)
 
     @staticmethod
-    def GetChildGroups(request,
+    def GetChildSpaces(request,
             target,
             options=(),
             channel_credentials=None,
@@ -1061,9 +1061,9 @@ class KumihoService(object):
         return grpc.experimental.unary_unary(
             request,
             target,
-            '/kumiho.KumihoService/GetChildGroups',
-            kumiho__pb2.GetChildGroupsRequest.SerializeToString,
-            kumiho__pb2.GetChildGroupsResponse.FromString,
+            '/kumiho.KumihoService/GetChildSpaces',
+            kumiho__pb2.GetChildSpacesRequest.SerializeToString,
+            kumiho__pb2.GetChildSpacesResponse.FromString,
             options,
             channel_credentials,
             insecure,
@@ -1075,7 +1075,7 @@ class KumihoService(object):
             _registered_method=True)
 
     @staticmethod
-    def DeleteGroup(request,
+    def DeleteSpace(request,
             target,
             options=(),
             channel_credentials=None,
@@ -1088,8 +1088,8 @@ class KumihoService(object):
         return grpc.experimental.unary_unary(
             request,
             target,
-            '/kumiho.KumihoService/DeleteGroup',
-            kumiho__pb2.DeleteGroupRequest.SerializeToString,
+            '/kumiho.KumihoService/DeleteSpace',
+            kumiho__pb2.DeleteSpaceRequest.SerializeToString,
             kumiho__pb2.StatusResponse.FromString,
             options,
             channel_credentials,
@@ -1102,7 +1102,7 @@ class KumihoService(object):
             _registered_method=True)
 
     @staticmethod
-    def UpdateGroupMetadata(request,
+    def UpdateSpaceMetadata(request,
             target,
             options=(),
             channel_credentials=None,
@@ -1115,9 +1115,9 @@ class KumihoService(object):
         return grpc.experimental.unary_unary(
             request,
             target,
-            '/kumiho.KumihoService/UpdateGroupMetadata',
+            '/kumiho.KumihoService/UpdateSpaceMetadata',
             kumiho__pb2.UpdateMetadataRequest.SerializeToString,
-            kumiho__pb2.GroupResponse.FromString,
+            kumiho__pb2.SpaceResponse.FromString,
             options,
             channel_credentials,
             insecure,
@@ -1129,7 +1129,7 @@ class KumihoService(object):
             _registered_method=True)
 
     @staticmethod
-    def CreateProduct(request,
+    def CreateItem(request,
             target,
             options=(),
             channel_credentials=None,
@@ -1142,9 +1142,9 @@ class KumihoService(object):
         return grpc.experimental.unary_unary(
             request,
             target,
-            '/kumiho.KumihoService/CreateProduct',
-            kumiho__pb2.CreateProductRequest.SerializeToString,
-            kumiho__pb2.ProductResponse.FromString,
+            '/kumiho.KumihoService/CreateItem',
+            kumiho__pb2.CreateItemRequest.SerializeToString,
+            kumiho__pb2.ItemResponse.FromString,
             options,
             channel_credentials,
             insecure,
@@ -1156,7 +1156,7 @@ class KumihoService(object):
             _registered_method=True)
 
     @staticmethod
-    def GetProduct(request,
+    def GetItem(request,
             target,
             options=(),
             channel_credentials=None,
@@ -1169,9 +1169,9 @@ class KumihoService(object):
         return grpc.experimental.unary_unary(
             request,
             target,
-            '/kumiho.KumihoService/GetProduct',
-            kumiho__pb2.GetProductRequest.SerializeToString,
-            kumiho__pb2.ProductResponse.FromString,
+            '/kumiho.KumihoService/GetItem',
+            kumiho__pb2.GetItemRequest.SerializeToString,
+            kumiho__pb2.ItemResponse.FromString,
             options,
             channel_credentials,
             insecure,
@@ -1183,7 +1183,7 @@ class KumihoService(object):
             _registered_method=True)
 
     @staticmethod
-    def GetProducts(request,
+    def GetItems(request,
             target,
             options=(),
             channel_credentials=None,
@@ -1196,9 +1196,9 @@ class KumihoService(object):
         return grpc.experimental.unary_unary(
             request,
             target,
-            '/kumiho.KumihoService/GetProducts',
-            kumiho__pb2.GetProductsRequest.SerializeToString,
-            kumiho__pb2.GetProductsResponse.FromString,
+            '/kumiho.KumihoService/GetItems',
+            kumiho__pb2.GetItemsRequest.SerializeToString,
+            kumiho__pb2.GetItemsResponse.FromString,
             options,
             channel_credentials,
             insecure,
@@ -1210,7 +1210,7 @@ class KumihoService(object):
             _registered_method=True)
 
     @staticmethod
-    def ProductSearch(request,
+    def ItemSearch(request,
             target,
             options=(),
             channel_credentials=None,
@@ -1223,9 +1223,9 @@ class KumihoService(object):
         return grpc.experimental.unary_unary(
             request,
             target,
-            '/kumiho.KumihoService/ProductSearch',
-            kumiho__pb2.ProductSearchRequest.SerializeToString,
-            kumiho__pb2.GetProductsResponse.FromString,
+            '/kumiho.KumihoService/ItemSearch',
+            kumiho__pb2.ItemSearchRequest.SerializeToString,
+            kumiho__pb2.GetItemsResponse.FromString,
             options,
             channel_credentials,
             insecure,
@@ -1237,7 +1237,7 @@ class KumihoService(object):
             _registered_method=True)
 
     @staticmethod
-    def DeleteProduct(request,
+    def DeleteItem(request,
             target,
             options=(),
             channel_credentials=None,
@@ -1250,8 +1250,8 @@ class KumihoService(object):
         return grpc.experimental.unary_unary(
             request,
             target,
-            '/kumiho.KumihoService/DeleteProduct',
-            kumiho__pb2.DeleteProductRequest.SerializeToString,
+            '/kumiho.KumihoService/DeleteItem',
+            kumiho__pb2.DeleteItemRequest.SerializeToString,
             kumiho__pb2.StatusResponse.FromString,
             options,
             channel_credentials,
@@ -1264,7 +1264,7 @@ class KumihoService(object):
             _registered_method=True)
 
     @staticmethod
-    def UpdateProductMetadata(request,
+    def UpdateItemMetadata(request,
             target,
             options=(),
             channel_credentials=None,
@@ -1277,9 +1277,9 @@ class KumihoService(object):
         return grpc.experimental.unary_unary(
             request,
             target,
-            '/kumiho.KumihoService/UpdateProductMetadata',
+            '/kumiho.KumihoService/UpdateItemMetadata',
             kumiho__pb2.UpdateMetadataRequest.SerializeToString,
-            kumiho__pb2.ProductResponse.FromString,
+            kumiho__pb2.ItemResponse.FromString,
             options,
             channel_credentials,
             insecure,
@@ -1306,7 +1306,7 @@ class KumihoService(object):
             target,
             '/kumiho.KumihoService/ResolveKref',
             kumiho__pb2.ResolveKrefRequest.SerializeToString,
-            kumiho__pb2.VersionResponse.FromString,
+            kumiho__pb2.RevisionResponse.FromString,
             options,
             channel_credentials,
             insecure,
@@ -1345,7 +1345,7 @@ class KumihoService(object):
             _registered_method=True)
 
     @staticmethod
-    def CreateVersion(request,
+    def CreateRevision(request,
             target,
             options=(),
             channel_credentials=None,
@@ -1358,9 +1358,9 @@ class KumihoService(object):
         return grpc.experimental.unary_unary(
             request,
             target,
-            '/kumiho.KumihoService/CreateVersion',
-            kumiho__pb2.CreateVersionRequest.SerializeToString,
-            kumiho__pb2.VersionResponse.FromString,
+            '/kumiho.KumihoService/CreateRevision',
+            kumiho__pb2.CreateRevisionRequest.SerializeToString,
+            kumiho__pb2.RevisionResponse.FromString,
             options,
             channel_credentials,
             insecure,
@@ -1372,7 +1372,7 @@ class KumihoService(object):
             _registered_method=True)
 
     @staticmethod
-    def GetVersion(request,
+    def GetRevision(request,
             target,
             options=(),
             channel_credentials=None,
@@ -1385,9 +1385,9 @@ class KumihoService(object):
         return grpc.experimental.unary_unary(
             request,
             target,
-            '/kumiho.KumihoService/GetVersion',
+            '/kumiho.KumihoService/GetRevision',
             kumiho__pb2.KrefRequest.SerializeToString,
-            kumiho__pb2.VersionResponse.FromString,
+            kumiho__pb2.RevisionResponse.FromString,
             options,
             channel_credentials,
             insecure,
@@ -1399,7 +1399,7 @@ class KumihoService(object):
             _registered_method=True)
 
     @staticmethod
-    def GetVersions(request,
+    def GetRevisions(request,
             target,
             options=(),
             channel_credentials=None,
@@ -1412,9 +1412,9 @@ class KumihoService(object):
         return grpc.experimental.unary_unary(
             request,
             target,
-            '/kumiho.KumihoService/GetVersions',
-            kumiho__pb2.GetVersionsRequest.SerializeToString,
-            kumiho__pb2.GetVersionsResponse.FromString,
+            '/kumiho.KumihoService/GetRevisions',
+            kumiho__pb2.GetRevisionsRequest.SerializeToString,
+            kumiho__pb2.GetRevisionsResponse.FromString,
             options,
             channel_credentials,
             insecure,
@@ -1426,7 +1426,7 @@ class KumihoService(object):
             _registered_method=True)
 
     @staticmethod
-    def DeleteVersion(request,
+    def DeleteRevision(request,
             target,
             options=(),
             channel_credentials=None,
@@ -1439,8 +1439,8 @@ class KumihoService(object):
         return grpc.experimental.unary_unary(
             request,
             target,
-            '/kumiho.KumihoService/DeleteVersion',
-            kumiho__pb2.DeleteVersionRequest.SerializeToString,
+            '/kumiho.KumihoService/DeleteRevision',
+            kumiho__pb2.DeleteRevisionRequest.SerializeToString,
             kumiho__pb2.StatusResponse.FromString,
             options,
             channel_credentials,
@@ -1453,7 +1453,7 @@ class KumihoService(object):
             _registered_method=True)
 
     @staticmethod
-    def PeekNextVersion(request,
+    def PeekNextRevision(request,
             target,
             options=(),
             channel_credentials=None,
@@ -1466,9 +1466,9 @@ class KumihoService(object):
         return grpc.experimental.unary_unary(
             request,
             target,
-            '/kumiho.KumihoService/PeekNextVersion',
-            kumiho__pb2.PeekNextVersionRequest.SerializeToString,
-            kumiho__pb2.PeekNextVersionResponse.FromString,
+            '/kumiho.KumihoService/PeekNextRevision',
+            kumiho__pb2.PeekNextRevisionRequest.SerializeToString,
+            kumiho__pb2.PeekNextRevisionResponse.FromString,
             options,
             channel_credentials,
             insecure,
@@ -1480,7 +1480,7 @@ class KumihoService(object):
             _registered_method=True)
 
     @staticmethod
-    def UpdateVersionMetadata(request,
+    def UpdateRevisionMetadata(request,
             target,
             options=(),
             channel_credentials=None,
@@ -1493,9 +1493,9 @@ class KumihoService(object):
         return grpc.experimental.unary_unary(
             request,
             target,
-            '/kumiho.KumihoService/UpdateVersionMetadata',
+            '/kumiho.KumihoService/UpdateRevisionMetadata',
             kumiho__pb2.UpdateMetadataRequest.SerializeToString,
-            kumiho__pb2.VersionResponse.FromString,
+            kumiho__pb2.RevisionResponse.FromString,
             options,
             channel_credentials,
             insecure,
@@ -1507,7 +1507,7 @@ class KumihoService(object):
             _registered_method=True)
 
     @staticmethod
-    def TagVersion(request,
+    def TagRevision(request,
             target,
             options=(),
             channel_credentials=None,
@@ -1520,8 +1520,8 @@ class KumihoService(object):
         return grpc.experimental.unary_unary(
             request,
             target,
-            '/kumiho.KumihoService/TagVersion',
-            kumiho__pb2.TagVersionRequest.SerializeToString,
+            '/kumiho.KumihoService/TagRevision',
+            kumiho__pb2.TagRevisionRequest.SerializeToString,
             kumiho__pb2.StatusResponse.FromString,
             options,
             channel_credentials,
@@ -1534,7 +1534,7 @@ class KumihoService(object):
             _registered_method=True)
 
     @staticmethod
-    def UnTagVersion(request,
+    def UnTagRevision(request,
             target,
             options=(),
             channel_credentials=None,
@@ -1547,8 +1547,8 @@ class KumihoService(object):
         return grpc.experimental.unary_unary(
             request,
             target,
-            '/kumiho.KumihoService/UnTagVersion',
-            kumiho__pb2.UnTagVersionRequest.SerializeToString,
+            '/kumiho.KumihoService/UnTagRevision',
+            kumiho__pb2.UnTagRevisionRequest.SerializeToString,
             kumiho__pb2.StatusResponse.FromString,
             options,
             channel_credentials,
@@ -1615,7 +1615,7 @@ class KumihoService(object):
             _registered_method=True)
 
     @staticmethod
-    def SetDefaultResource(request,
+    def SetDefaultArtifact(request,
             target,
             options=(),
             channel_credentials=None,
@@ -1628,8 +1628,8 @@ class KumihoService(object):
         return grpc.experimental.unary_unary(
             request,
             target,
-            '/kumiho.KumihoService/SetDefaultResource',
-            kumiho__pb2.SetDefaultResourceRequest.SerializeToString,
+            '/kumiho.KumihoService/SetDefaultArtifact',
+            kumiho__pb2.SetDefaultArtifactRequest.SerializeToString,
             kumiho__pb2.StatusResponse.FromString,
             options,
             channel_credentials,
@@ -1642,7 +1642,7 @@ class KumihoService(object):
             _registered_method=True)
 
     @staticmethod
-    def CreateResource(request,
+    def CreateArtifact(request,
             target,
             options=(),
             channel_credentials=None,
@@ -1655,9 +1655,9 @@ class KumihoService(object):
         return grpc.experimental.unary_unary(
             request,
             target,
-            '/kumiho.KumihoService/CreateResource',
-            kumiho__pb2.CreateResourceRequest.SerializeToString,
-            kumiho__pb2.ResourceResponse.FromString,
+            '/kumiho.KumihoService/CreateArtifact',
+            kumiho__pb2.CreateArtifactRequest.SerializeToString,
+            kumiho__pb2.ArtifactResponse.FromString,
             options,
             channel_credentials,
             insecure,
@@ -1669,7 +1669,7 @@ class KumihoService(object):
             _registered_method=True)
 
     @staticmethod
-    def GetResource(request,
+    def GetArtifact(request,
             target,
             options=(),
             channel_credentials=None,
@@ -1682,9 +1682,9 @@ class KumihoService(object):
         return grpc.experimental.unary_unary(
             request,
             target,
-            '/kumiho.KumihoService/GetResource',
-            kumiho__pb2.GetResourceRequest.SerializeToString,
-            kumiho__pb2.ResourceResponse.FromString,
+            '/kumiho.KumihoService/GetArtifact',
+            kumiho__pb2.GetArtifactRequest.SerializeToString,
+            kumiho__pb2.ArtifactResponse.FromString,
             options,
             channel_credentials,
             insecure,
@@ -1696,7 +1696,7 @@ class KumihoService(object):
             _registered_method=True)
 
     @staticmethod
-    def GetResources(request,
+    def GetArtifacts(request,
             target,
             options=(),
             channel_credentials=None,
@@ -1709,9 +1709,9 @@ class KumihoService(object):
         return grpc.experimental.unary_unary(
             request,
             target,
-            '/kumiho.KumihoService/GetResources',
-            kumiho__pb2.GetResourcesRequest.SerializeToString,
-            kumiho__pb2.GetResourcesResponse.FromString,
+            '/kumiho.KumihoService/GetArtifacts',
+            kumiho__pb2.GetArtifactsRequest.SerializeToString,
+            kumiho__pb2.GetArtifactsResponse.FromString,
             options,
             channel_credentials,
             insecure,
@@ -1723,7 +1723,7 @@ class KumihoService(object):
             _registered_method=True)
 
     @staticmethod
-    def GetResourcesByLocation(request,
+    def GetArtifactsByLocation(request,
             target,
             options=(),
             channel_credentials=None,
@@ -1736,9 +1736,9 @@ class KumihoService(object):
         return grpc.experimental.unary_unary(
             request,
             target,
-            '/kumiho.KumihoService/GetResourcesByLocation',
-            kumiho__pb2.GetResourcesByLocationRequest.SerializeToString,
-            kumiho__pb2.GetResourcesByLocationResponse.FromString,
+            '/kumiho.KumihoService/GetArtifactsByLocation',
+            kumiho__pb2.GetArtifactsByLocationRequest.SerializeToString,
+            kumiho__pb2.GetArtifactsByLocationResponse.FromString,
             options,
             channel_credentials,
             insecure,
@@ -1750,7 +1750,7 @@ class KumihoService(object):
             _registered_method=True)
 
     @staticmethod
-    def DeleteResource(request,
+    def DeleteArtifact(request,
             target,
             options=(),
             channel_credentials=None,
@@ -1763,8 +1763,8 @@ class KumihoService(object):
         return grpc.experimental.unary_unary(
             request,
             target,
-            '/kumiho.KumihoService/DeleteResource',
-            kumiho__pb2.DeleteResourceRequest.SerializeToString,
+            '/kumiho.KumihoService/DeleteArtifact',
+            kumiho__pb2.DeleteArtifactRequest.SerializeToString,
             kumiho__pb2.StatusResponse.FromString,
             options,
             channel_credentials,
@@ -1777,7 +1777,7 @@ class KumihoService(object):
             _registered_method=True)
 
     @staticmethod
-    def UpdateResourceMetadata(request,
+    def UpdateArtifactMetadata(request,
             target,
             options=(),
             channel_credentials=None,
@@ -1790,9 +1790,9 @@ class KumihoService(object):
         return grpc.experimental.unary_unary(
             request,
             target,
-            '/kumiho.KumihoService/UpdateResourceMetadata',
+            '/kumiho.KumihoService/UpdateArtifactMetadata',
             kumiho__pb2.UpdateMetadataRequest.SerializeToString,
-            kumiho__pb2.ResourceResponse.FromString,
+            kumiho__pb2.ArtifactResponse.FromString,
             options,
             channel_credentials,
             insecure,
@@ -1885,7 +1885,7 @@ class KumihoService(object):
             _registered_method=True)
 
     @staticmethod
-    def CreateLink(request,
+    def CreateEdge(request,
             target,
             options=(),
             channel_credentials=None,
@@ -1898,8 +1898,8 @@ class KumihoService(object):
         return grpc.experimental.unary_unary(
             request,
             target,
-            '/kumiho.KumihoService/CreateLink',
-            kumiho__pb2.CreateLinkRequest.SerializeToString,
+            '/kumiho.KumihoService/CreateEdge',
+            kumiho__pb2.CreateEdgeRequest.SerializeToString,
             kumiho__pb2.StatusResponse.FromString,
             options,
             channel_credentials,
@@ -1912,7 +1912,7 @@ class KumihoService(object):
             _registered_method=True)
 
     @staticmethod
-    def GetLinks(request,
+    def GetEdges(request,
             target,
             options=(),
             channel_credentials=None,
@@ -1925,9 +1925,9 @@ class KumihoService(object):
         return grpc.experimental.unary_unary(
             request,
             target,
-            '/kumiho.KumihoService/GetLinks',
-            kumiho__pb2.GetLinksRequest.SerializeToString,
-            kumiho__pb2.GetLinksResponse.FromString,
+            '/kumiho.KumihoService/GetEdges',
+            kumiho__pb2.GetEdgesRequest.SerializeToString,
+            kumiho__pb2.GetEdgesResponse.FromString,
             options,
             channel_credentials,
             insecure,
@@ -1939,7 +1939,7 @@ class KumihoService(object):
             _registered_method=True)
 
     @staticmethod
-    def DeleteLink(request,
+    def DeleteEdge(request,
             target,
             options=(),
             channel_credentials=None,
@@ -1952,8 +1952,8 @@ class KumihoService(object):
         return grpc.experimental.unary_unary(
             request,
             target,
-            '/kumiho.KumihoService/DeleteLink',
-            kumiho__pb2.DeleteLinkRequest.SerializeToString,
+            '/kumiho.KumihoService/DeleteEdge',
+            kumiho__pb2.DeleteEdgeRequest.SerializeToString,
             kumiho__pb2.StatusResponse.FromString,
             options,
             channel_credentials,
@@ -1966,7 +1966,7 @@ class KumihoService(object):
             _registered_method=True)
 
     @staticmethod
-    def TraverseLinks(request,
+    def TraverseEdges(request,
             target,
             options=(),
             channel_credentials=None,
@@ -1979,9 +1979,9 @@ class KumihoService(object):
         return grpc.experimental.unary_unary(
             request,
             target,
-            '/kumiho.KumihoService/TraverseLinks',
-            kumiho__pb2.TraverseLinksRequest.SerializeToString,
-            kumiho__pb2.TraverseLinksResponse.FromString,
+            '/kumiho.KumihoService/TraverseEdges',
+            kumiho__pb2.TraverseEdgesRequest.SerializeToString,
+            kumiho__pb2.TraverseEdgesResponse.FromString,
             options,
             channel_credentials,
             insecure,
@@ -2047,7 +2047,7 @@ class KumihoService(object):
             _registered_method=True)
 
     @staticmethod
-    def CreateCollection(request,
+    def CreateBundle(request,
             target,
             options=(),
             channel_credentials=None,
@@ -2060,9 +2060,9 @@ class KumihoService(object):
         return grpc.experimental.unary_unary(
             request,
             target,
-            '/kumiho.KumihoService/CreateCollection',
-            kumiho__pb2.CreateCollectionRequest.SerializeToString,
-            kumiho__pb2.ProductResponse.FromString,
+            '/kumiho.KumihoService/CreateBundle',
+            kumiho__pb2.CreateBundleRequest.SerializeToString,
+            kumiho__pb2.ItemResponse.FromString,
             options,
             channel_credentials,
             insecure,
@@ -2074,7 +2074,7 @@ class KumihoService(object):
             _registered_method=True)
 
     @staticmethod
-    def AddCollectionMember(request,
+    def AddBundleMember(request,
             target,
             options=(),
             channel_credentials=None,
@@ -2087,9 +2087,9 @@ class KumihoService(object):
         return grpc.experimental.unary_unary(
             request,
             target,
-            '/kumiho.KumihoService/AddCollectionMember',
-            kumiho__pb2.AddCollectionMemberRequest.SerializeToString,
-            kumiho__pb2.AddCollectionMemberResponse.FromString,
+            '/kumiho.KumihoService/AddBundleMember',
+            kumiho__pb2.AddBundleMemberRequest.SerializeToString,
+            kumiho__pb2.AddBundleMemberResponse.FromString,
             options,
             channel_credentials,
             insecure,
@@ -2101,7 +2101,7 @@ class KumihoService(object):
             _registered_method=True)
 
     @staticmethod
-    def RemoveCollectionMember(request,
+    def RemoveBundleMember(request,
             target,
             options=(),
             channel_credentials=None,
@@ -2114,9 +2114,9 @@ class KumihoService(object):
         return grpc.experimental.unary_unary(
             request,
             target,
-            '/kumiho.KumihoService/RemoveCollectionMember',
-            kumiho__pb2.RemoveCollectionMemberRequest.SerializeToString,
-            kumiho__pb2.RemoveCollectionMemberResponse.FromString,
+            '/kumiho.KumihoService/RemoveBundleMember',
+            kumiho__pb2.RemoveBundleMemberRequest.SerializeToString,
+            kumiho__pb2.RemoveBundleMemberResponse.FromString,
             options,
             channel_credentials,
             insecure,
@@ -2128,7 +2128,7 @@ class KumihoService(object):
             _registered_method=True)
 
     @staticmethod
-    def GetCollectionMembers(request,
+    def GetBundleMembers(request,
             target,
             options=(),
             channel_credentials=None,
@@ -2141,9 +2141,9 @@ class KumihoService(object):
         return grpc.experimental.unary_unary(
             request,
             target,
-            '/kumiho.KumihoService/GetCollectionMembers',
-            kumiho__pb2.GetCollectionMembersRequest.SerializeToString,
-            kumiho__pb2.GetCollectionMembersResponse.FromString,
+            '/kumiho.KumihoService/GetBundleMembers',
+            kumiho__pb2.GetBundleMembersRequest.SerializeToString,
+            kumiho__pb2.GetBundleMembersResponse.FromString,
             options,
             channel_credentials,
             insecure,
@@ -2155,7 +2155,7 @@ class KumihoService(object):
             _registered_method=True)
 
     @staticmethod
-    def GetCollectionHistory(request,
+    def GetBundleHistory(request,
             target,
             options=(),
             channel_credentials=None,
@@ -2168,9 +2168,9 @@ class KumihoService(object):
         return grpc.experimental.unary_unary(
             request,
             target,
-            '/kumiho.KumihoService/GetCollectionHistory',
-            kumiho__pb2.GetCollectionHistoryRequest.SerializeToString,
-            kumiho__pb2.GetCollectionHistoryResponse.FromString,
+            '/kumiho.KumihoService/GetBundleHistory',
+            kumiho__pb2.GetBundleHistoryRequest.SerializeToString,
+            kumiho__pb2.GetBundleHistoryResponse.FromString,
             options,
             channel_credentials,
             insecure,

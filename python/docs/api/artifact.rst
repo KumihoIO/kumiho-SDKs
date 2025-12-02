@@ -1,7 +1,7 @@
-kumiho.link
-===========
+kumiho.artifact
+===============
 
-.. automodule:: kumiho.link
+.. automodule:: kumiho.artifact
    :members:
    :undoc-members:
    :show-inheritance:

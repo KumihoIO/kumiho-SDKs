@@ -2,7 +2,7 @@
 
 This module provides the :class:`Project` class, which represents the top-level
 container for organizing assets in Kumiho. Projects serve as namespaces that
-contain groups, products, versions, and resources.
+contain spaces, items, revisions, and artifacts.
 
 Example:
     Creating and working with projects::
@@ -12,34 +12,34 @@ Example:
         # Create a new project
         project = kumiho.create_project("film-2024", "Feature film VFX assets")
 
-        # Create group structure
-        chars = project.create_group("characters")
-        envs = project.create_group("environments")
+        # Create space structure
+        chars = project.create_space("characters")
+        envs = project.create_space("environments")
 
-        # Create products within groups
-        hero = chars.create_product("hero", "model")
+        # Create items within spaces
+        hero = chars.create_item("hero", "model")
 
-        # List all groups
-        for group in project.get_groups(recursive=True):
-            print(group.path)
+        # List all spaces
+        for space in project.get_spaces(recursive=True):
+            print(space.path)
 """
 
 from typing import TYPE_CHECKING, Dict, List, Optional
 
 from .base import KumihoObject
-from .group import Group
+from .space import Space
 from .proto.kumiho_pb2 import ProjectResponse
 
 if TYPE_CHECKING:
     from .client import _Client
-    from .collection import Collection
+    from .bundle import Bundle
 
 
 class Project(KumihoObject):
     """A Kumiho project—the top-level container for assets.
 
     Projects are the root of the Kumiho hierarchy. Each project has its own
-    namespace for groups and products, and manages access control and settings
+    namespace for spaces and items, and manages access control and settings
     independently.
 
     Projects support both public and private access modes, allowing you to
@@ -62,16 +62,16 @@ class Project(KumihoObject):
             # Get existing project
             project = kumiho.get_project("my-project")
 
-            # Create groups
-            assets = project.create_group("assets")
-            shots = project.create_group("shots")
+            # Create spaces
+            assets = project.create_space("assets")
+            shots = project.create_space("shots")
 
-            # Navigate to nested groups
-            char_group = project.get_group("assets/characters")
+            # Navigate to nested spaces
+            char_space = project.get_space("assets/characters")
 
-            # List all groups recursively
-            for group in project.get_groups(recursive=True):
-                print(f"  {group.path}")
+            # List all spaces recursively
+            for space in project.get_spaces(recursive=True):
+                print(f"  {space.path}")
 
             # Update project settings
             project.set_public(True)  # Enable public access
@@ -104,77 +104,77 @@ class Project(KumihoObject):
         """Return a string representation of the Project."""
         return f"<kumiho.Project id='{self.project_id}' name='{self.name}'>"
 
-    def create_group(self, name: str, parent_path: Optional[str] = None) -> Group:
-        """Create a group within this project.
+    def create_space(self, name: str, parent_path: Optional[str] = None) -> Space:
+        """Create a space within this project.
 
         Args:
-            name: The name of the group to create.
+            name: The name of the space to create.
             parent_path: Optional parent path. If not provided, creates
-                the group at the project root (e.g., "/project-name").
+                the space at the project root (e.g., "/project-name").
 
         Returns:
-            Group: The newly created Group object.
+            Space: The newly created Space object.
 
         Example:
             >>> project = kumiho.get_project("film-2024")
             >>> # Create at root
-            >>> chars = project.create_group("characters")
-            >>> # Create nested group
-            >>> heroes = project.create_group("heroes", parent_path="/film-2024/characters")
+            >>> chars = project.create_space("characters")
+            >>> # Create nested space
+            >>> heroes = project.create_space("heroes", parent_path="/film-2024/characters")
         """
         base_parent = parent_path or f"/{self.name}"
-        return self._client.create_group(parent_path=base_parent, group_name=name)
+        return self._client.create_space(parent_path=base_parent, space_name=name)
 
-    def create_collection(
+    def create_bundle(
         self,
-        collection_name: str,
+        bundle_name: str,
         parent_path: Optional[str] = None,
         metadata: Optional[Dict[str, str]] = None
-    ) -> 'Collection':
-        """Create a new collection within this project.
+    ) -> 'Bundle':
+        """Create a new bundle within this project.
 
-        Collections are special products that aggregate other products.
-        They provide a way to group related products together and maintain
-        an audit trail of membership changes through version history.
+        Bundles are special items that aggregate other items.
+        They provide a way to group related items together and maintain
+        an audit trail of membership changes through revision history.
 
         Args:
-            collection_name: The name of the collection. Must be unique within
-                the parent group.
-            parent_path: Optional parent path for the collection. If not provided,
-                creates the collection at the project root (``/{project_name}``).
-            metadata: Optional key-value metadata for the collection.
+            bundle_name: The name of the bundle. Must be unique within
+                the parent space.
+            parent_path: Optional parent path for the bundle. If not provided,
+                creates the bundle at the project root (``/{project_name}``).
+            metadata: Optional key-value metadata for the bundle.
 
         Returns:
-            Collection: The newly created Collection object with type "collection".
+            Bundle: The newly created Bundle object with kind "bundle".
 
         Raises:
-            grpc.RpcError: If the collection name is already taken or if there
+            grpc.RpcError: If the bundle name is already taken or if there
                 is a connection error.
 
         See Also:
-            :class:`~kumiho.collection.Collection`: The Collection class.
-            :meth:`~kumiho.group.Group.create_collection`: Create collection in a group.
+            :class:`~kumiho.bundle.Bundle`: The Bundle class.
+            :meth:`~kumiho.space.Space.create_bundle`: Create bundle in a space.
 
         Example::
 
             >>> project = kumiho.get_project("film-2024")
             >>> # Create at project root
-            >>> bundle = project.create_collection("release-bundle")
+            >>> bundle = project.create_bundle("release-bundle")
             >>>
-            >>> # Create in specific group
-            >>> bundle = project.create_collection(
+            >>> # Create in specific space
+            >>> bundle = project.create_bundle(
             ...     "character-bundle",
             ...     parent_path="/film-2024/assets"
             ... )
             >>>
-            >>> # Add products to the collection
-            >>> hero = project.get_group("models").get_product("hero", "model")
+            >>> # Add items to the bundle
+            >>> hero = project.get_space("models").get_item("hero", "model")
             >>> bundle.add_member(hero)
         """
         base_parent = parent_path or f"/{self.name}"
-        return self._client.create_collection(
+        return self._client.create_bundle(
             parent_path=base_parent,
-            collection_name=collection_name,
+            bundle_name=bundle_name,
             metadata=metadata
         )
 
@@ -189,8 +189,8 @@ class Project(KumihoObject):
             StatusResponse: Response indicating success or failure.
 
         Warning:
-            Force deletion is irreversible and removes all groups, products,
-            versions, resources, and links within the project.
+            Force deletion is irreversible and removes all spaces, items,
+            revisions, artifacts, and edges within the project.
 
         Example:
             >>> project = kumiho.get_project("old-project")
@@ -243,61 +243,61 @@ class Project(KumihoObject):
             allow_public=allow_public
         )
 
-    def get_group(self, name: str, parent_path: Optional[str] = None) -> Group:
-        """Get an existing group within this project.
+    def get_space(self, name: str, parent_path: Optional[str] = None) -> Space:
+        """Get an existing space within this project.
 
         Args:
-            name: The name of the group, or an absolute path starting with "/".
+            name: The name of the space, or an absolute path starting with "/".
             parent_path: Optional parent path if name is a relative name.
 
         Returns:
-            Group: The Group object.
+            Space: The Space object.
 
         Raises:
-            grpc.RpcError: If the group is not found.
+            grpc.RpcError: If the space is not found.
 
         Example:
             >>> # Get by absolute path
-            >>> group = project.get_group("/film-2024/characters")
+            >>> space = project.get_space("/film-2024/characters")
 
             >>> # Get by relative name (from project root)
-            >>> group = project.get_group("characters")
+            >>> space = project.get_space("characters")
 
-            >>> # Get nested group with parent path
-            >>> heroes = project.get_group("heroes", parent_path="/film-2024/characters")
+            >>> # Get nested space with parent path
+            >>> heroes = project.get_space("heroes", parent_path="/film-2024/characters")
         """
         if name.startswith("/"):
             path = name
         else:
             base_parent = parent_path or f"/{self.name}"
             path = f"{base_parent.rstrip('/')}/{name}"
-        return self._client.get_group(path)
+        return self._client.get_space(path)
 
-    def get_groups(
+    def get_spaces(
         self,
         parent_path: Optional[str] = None,
         recursive: bool = False
-    ) -> List[Group]:
-        """List groups within this project.
+    ) -> List[Space]:
+        """List spaces within this project.
 
         Args:
             parent_path: Optional path to start from. Defaults to project root.
-            recursive: If True, include all nested groups. If False (default),
+            recursive: If True, include all nested spaces. If False (default),
                 only direct children.
 
         Returns:
-            List[Group]: A list of Group objects.
+            List[Space]: A list of Space objects.
 
         Example:
             >>> # List direct children only
-            >>> groups = project.get_groups()
-            >>> for g in groups:
-            ...     print(g.name)
+            >>> spaces = project.get_spaces()
+            >>> for s in spaces:
+            ...     print(s.name)
 
-            >>> # List all groups recursively
-            >>> all_groups = project.get_groups(recursive=True)
-            >>> for g in all_groups:
-            ...     print(g.path)
+            >>> # List all spaces recursively
+            >>> all_spaces = project.get_spaces(recursive=True)
+            >>> for s in all_spaces:
+            ...     print(s.path)
         """
         base_parent = parent_path or f"/{self.name}"
-        return self._client.get_child_groups(base_parent, recursive=recursive)
+        return self._client.get_child_spaces(base_parent, recursive=recursive)

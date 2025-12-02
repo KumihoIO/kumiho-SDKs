@@ -78,100 +78,99 @@ project = kumiho.create_project(
 project = kumiho.get_project("kref://my-project")
 ```
 
-### Groups
+### Spaces
 
-Groups organize assets within a project (e.g., by type, department, or episode):
+Spaces organize assets within a project (e.g., by type, department, or episode):
 
 ```python
-# Create a group
-group = project.create_group("characters")
+# Create a space
+space = project.create_space("characters")
 
-# List groups in a project
-groups = project.get_groups()
+# List spaces in a project
+spaces = project.get_spaces()
 ```
 
-### Products
+### Items
 
-Products represent individual assets with their metadata:
+Items represent individual assets with their metadata:
 
 ```python
-# Create a product
-product = group.create_product(
-    product_name="hero",
-    product_type="model"
+# Create an item
+item = space.create_item(
+    item_name="hero",
+    kind="model"
 )
 
-# Get a product by Kref
-product = kumiho.get_product("kref://my-project/characters/hero.model")
+# Get an item by Kref
+item = kumiho.get_item("kref://my-project/characters/hero.model")
 ```
 
-### Versions
+### Revisions
 
-Versions track changes to products over time:
+Revisions track changes to items over time:
 
 ```python
-# Create a new version with metadata
-version = product.create_version(
+# Create a new revision with metadata
+revision = item.create_revision(
     metadata={
         "artist": "jane",
         "notes": "Updated rigging for better deformation"
     }
 )
 
-# Get a specific version
-version = kumiho.get_version("kref://my-project/characters/hero.model?v=2")
+# Get a specific revision
+revision = kumiho.get_revision("kref://my-project/characters/hero.model?v=2")
 
 # Update metadata later
-version.set_metadata({"render_engine": "arnold"})
+revision.set_metadata({"render_engine": "arnold"})
 ```
 
-### Resources
+### Artifacts
 
-Resources are file references attached to a version. Files stay on your local storage—Kumiho only tracks the location:
+Artifacts are file references attached to a revision. Files stay on your local storage—Kumiho only tracks the location:
 
 ```python
-# Add a file resource
-resource = version.create_resource(
+# Add a file artifact
+artifact = revision.create_artifact(
     name="hero_model.fbx",
     location="smb://server/projects/hero/hero_model.fbx"
 )
 
-# Add metadata to the resource
-resource.set_metadata({
+# Add metadata to the artifact
+artifact.set_metadata({
     "size": "1024000",
     "checksum": "sha256:abc123...",
     "format": "fbx"
 })
 
-# Get a specific resource
-resource = kumiho.get_resource(
+# Get a specific artifact
+artifact = kumiho.get_artifact(
     "kref://my-project/characters/hero.model?v=1&r=hero_model.fbx"
 )
 ```
 
-### Links
+### Edges
 
-Links track relationships between assets for lineage:
+Edges track relationships between assets for lineage:
 
 ```python
 import kumiho
 
-# Get the target version first
-texture = kumiho.get_version("kref://my-project/textures/hero_skin.texture?v=1")
+# Get the target revision first
+texture = kumiho.get_revision("kref://my-project/textures/hero_skin.texture?v=1")
 
-# Create a dependency link with optional metadata
-link = version.create_link(
-    target_version=texture,
-    link_type=kumiho.DEPENDS_ON,
+# Create a dependency edge with optional metadata
+edge = revision.create_edge(
+    target_revision=texture,
+    edge_type=kumiho.DEPENDS_ON,
     metadata={"usage": "skin material"}
 )
-)
 
-# Get outgoing links
-links = version.get_links()
+# Get outgoing edges
+edges = revision.get_edges()
 
-# Get incoming links (what depends on this version)
-dependents = version.get_links(direction=kumiho.INCOMING)
+# Get incoming edges (what depends on this revision)
+dependents = revision.get_edges(direction=kumiho.INCOMING)
 ```
 
 ## Kref URIs
@@ -179,24 +178,24 @@ dependents = version.get_links(direction=kumiho.INCOMING)
 Kumiho uses a URI scheme called "Kref" to reference assets:
 
 ```
-kref://project/group/product.type?v=N&r=resource_name
+kref://project/space/item.kind?v=N&r=artifact_name
 ```
 
 Components:
 - `project`: Project name
-- `group`: Group name within the project
-- `product`: Product name
-- `type`: Product type (model, texture, animation, etc.)
-- `v=N`: Version number (optional)
-- `r=resource_name`: Resource name (optional)
+- `space`: Space name within the project
+- `item`: Item name
+- `kind`: Item kind (model, texture, animation, etc.)
+- `v=N`: Revision number (optional)
+- `r=artifact_name`: Artifact name (optional)
 
 Examples:
 ```
 kref://my-project                              # Project
-kref://my-project/characters                   # Group
-kref://my-project/characters/hero.model        # Product (latest version)
-kref://my-project/characters/hero.model?v=2    # Specific version
-kref://my-project/characters/hero.model?v=2&r=model.fbx  # Specific resource
+kref://my-project/characters                   # Space
+kref://my-project/characters/hero.model        # Item (latest revision)
+kref://my-project/characters/hero.model?v=2    # Specific revision
+kref://my-project/characters/hero.model?v=2&r=model.fbx  # Specific artifact
 ```
 
 ## Error Handling
@@ -220,13 +219,13 @@ except KumihoError as e:
 2. **Batch operations**: When creating many assets, consider using
    transactions or batch APIs (coming soon).
 
-3. **Store file metadata**: Always include checksums and sizes for resources
+3. **Store file metadata**: Always include checksums and sizes for artifacts
    to enable integrity verification.
 
-4. **Use meaningful names**: Project, group, and product names become part
+4. **Use meaningful names**: Project, space, and item names become part
    of Kref URIs, so use URL-safe, descriptive names.
 
-5. **Track lineage**: Use links to track dependencies between assets for
+5. **Track lineage**: Use edges to track dependencies between assets for
    full provenance.
 
 ## Next Steps

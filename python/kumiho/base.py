@@ -34,8 +34,8 @@ class KumihoObject:
     This abstract base class provides common functionality shared by all
     Kumiho objects, including access to the client for making API calls.
 
-    All domain objects (:class:`Project`, :class:`Group`, :class:`Product`,
-    :class:`Version`, :class:`Resource`, :class:`Link`) inherit from this class.
+    All domain objects (:class:`Project`, :class:`Space`, :class:`Item`,
+    :class:`Revision`, :class:`Artifact`, :class:`Edge`) inherit from this class.
 
     Attributes:
         _client: The client instance for making API calls (internal).

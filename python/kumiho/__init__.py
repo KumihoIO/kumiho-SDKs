@@ -1,7 +1,7 @@
 """Kumiho Python Client Library.
 
 Kumiho is a graph-native creative and AI asset management system that tracks
-versions, relationships, and lineage without uploading original files to the
+revisions, relationships, and lineage without uploading original files to the
 cloud. This SDK provides a Pythonic interface to the Kumiho gRPC backend.
 
 Getting Started:
@@ -16,13 +16,13 @@ Getting Started:
         # Create a project
         project = kumiho.create_project("my-vfx-project", "VFX assets for commercial")
 
-        # Create groups and products
-        group = project.create_group("characters")
-        product = group.create_product("hero", "model")
+        # Create spaces and items
+        space = project.create_space("characters")
+        item = space.create_item("hero", "model")
 
-        # Create versions and resources
-        version = product.create_version()
-        resource = version.create_resource("main", "/path/to/hero.fbx")
+        # Create revisions and artifacts
+        revision = item.create_revision()
+        artifact = revision.create_artifact("main", "/path/to/hero.fbx")
 
     For more control, you can create a client manually::
 
@@ -37,12 +37,12 @@ Getting Started:
             projects = kumiho.get_projects()
 
 Key Concepts:
-    - **Project**: Top-level container for all assets and groups.
-    - **Group**: Hierarchical folder structure within a project.
-    - **Product**: A versioned asset (model, texture, workflow, etc.).
-    - **Version**: A specific iteration of a product with resources.
-    - **Resource**: A file reference (path/URI) within a version.
-    - **Link**: A relationship between versions (dependencies, references).
+    - **Project**: Top-level container for all assets and spaces.
+    - **Space**: Hierarchical folder structure within a project.
+    - **Item**: A versioned asset (model, texture, workflow, etc.).
+    - **Revision**: A specific iteration of an item with artifacts.
+    - **Artifact**: A file reference (path/URI) within a revision.
+    - **Edge**: A relationship between revisions (dependencies, references).
     - **Kref**: A URI-based unique identifier for any Kumiho object.
 
 Authentication:
@@ -72,27 +72,27 @@ Example:
         if not project:
             project = kumiho.create_project("my-project", "My VFX project")
 
-        # Navigate to asset group
-        assets = project.get_group("assets") or project.create_group("assets")
+        # Navigate to asset space
+        assets = project.get_space("assets") or project.create_space("assets")
 
-        # Create a new model product
-        model = assets.create_product("character", "model")
+        # Create a new model item
+        model = assets.create_item("character", "model")
 
-        # Create first version
-        v1 = model.create_version(metadata={"author": "artist1"})
-        v1.create_resource("mesh", "/projects/char/v1/mesh.fbx")
-        v1.create_resource("textures", "/projects/char/v1/textures.zip")
+        # Create first revision
+        v1 = model.create_revision(metadata={"author": "artist1"})
+        v1.create_artifact("mesh", "/projects/char/v1/mesh.fbx")
+        v1.create_artifact("textures", "/projects/char/v1/textures.zip")
         v1.tag("approved")
-        v1.tag("published") # published tag is reserved tag within Kumiho as version with immutable semantics
+        v1.tag("published") # published tag is reserved tag within Kumiho as revision with immutable semantics
 
         # Query by kref
-        product = kumiho.get_product("kref://my-project/assets/character.model")
-        version = kumiho.get_version("kref://my-project/assets/character.model?v=1")
+        item = kumiho.get_item("kref://my-project/assets/character.model")
+        revision = kumiho.get_revision("kref://my-project/assets/character.model?v=1")
 
         # Search across project
-        models = kumiho.product_search(
+        models = kumiho.item_search(
             context_filter="my-project",
-            ptype_filter="model"
+            kind_filter="model"
         )
 
 Note:
@@ -106,8 +106,8 @@ See Also:
 
 Attributes:
     __version__ (str): The current version of the kumiho package.
-    LATEST_TAG (str): Standard tag name for the latest version.
-    PUBLISHED_TAG (str): Standard tag name for published versions.
+    LATEST_TAG (str): Standard tag name for the latest revision.
+    PUBLISHED_TAG (str): Standard tag name for published revisions.
 """
 
 __version__ = "0.3.0"
@@ -118,58 +118,58 @@ from typing import Dict, List, Optional, Iterator, Tuple
 # Import the main classes to make them available at the package level.
 from .base import KumihoObject, KumihoError
 from .client import _Client
-from .collection import (
-    Collection,
-    CollectionMember,
-    CollectionVersionHistory,
-    ReservedProductTypeError,
-    RESERVED_PRODUCT_TYPES,
+from .bundle import (
+    Bundle,
+    BundleMember,
+    BundleRevisionHistory,
+    ReservedKindError,
+    RESERVED_KINDS,
 )
 from .event import Event
-from .group import Group
+from .space import Space
 from .kref import Kref, KrefValidationError, validate_kref, is_valid_kref
-from .link import (
-    Link,
-    LinkType,
-    LinkDirection,
-    LinkTypeValidationError,
-    validate_link_type,
-    is_valid_link_type,
+from .edge import (
+    Edge,
+    EdgeType,
+    EdgeDirection,
+    EdgeTypeValidationError,
+    validate_edge_type,
+    is_valid_edge_type,
     PathStep,
-    VersionPath,
-    ImpactedVersion,
+    RevisionPath,
+    ImpactedRevision,
     TraversalResult,
     ShortestPathResult,
 )
-from .product import Product
+from .item import Item
 from .project import Project
-from .resource import Resource
+from .artifact import Artifact
 from .proto.kumiho_pb2 import StatusResponse
-from .version import Version
+from .revision import Revision
 from .client import ProjectLimitError
 from .discovery import client_from_discovery
 from ._bootstrap import bootstrap_default_client
 
-# Expose LinkType constants for convenience
-BELONGS_TO = LinkType.BELONGS_TO
-CREATED_FROM = LinkType.CREATED_FROM
+# Expose EdgeType constants for convenience
+BELONGS_TO = EdgeType.BELONGS_TO
+CREATED_FROM = EdgeType.CREATED_FROM
 
 # Constants
 LATEST_TAG = "latest"
-"""str: Standard tag name indicating the latest version of a product."""
+"""str: Standard tag name indicating the latest revision of an item."""
 
 PUBLISHED_TAG = "published"
-"""str: Standard tag name indicating a published/released version."""
+"""str: Standard tag name indicating a published/released revision."""
 
-REFERENCED = LinkType.REFERENCED
-DEPENDS_ON = LinkType.DEPENDS_ON
-DERIVED_FROM = LinkType.DERIVED_FROM
-CONTAINS = LinkType.CONTAINS
+REFERENCED = EdgeType.REFERENCED
+DEPENDS_ON = EdgeType.DEPENDS_ON
+DERIVED_FROM = EdgeType.DERIVED_FROM
+CONTAINS = EdgeType.CONTAINS
 
-# Expose LinkDirection constants for convenience
-OUTGOING = LinkDirection.OUTGOING
-INCOMING = LinkDirection.INCOMING
-BOTH = LinkDirection.BOTH
+# Expose EdgeDirection constants for convenience
+OUTGOING = EdgeDirection.OUTGOING
+INCOMING = EdgeDirection.INCOMING
+BOTH = EdgeDirection.BOTH
 
 # Instantiate a default client instance for convenience.
 _default_client: Optional[_Client] = None
@@ -384,7 +384,7 @@ def create_project(name: str, description: str = "") -> Project:
     """Create a new project.
 
     Projects are the top-level containers for all assets. Each project
-    has its own namespace for groups and products.
+    has its own namespace for spaces and items.
 
     Args:
         name: The unique name for the project. Must be URL-safe
@@ -437,7 +437,7 @@ def get_project(name: str) -> Optional[Project]:
     Example:
         >>> project = kumiho.get_project("commercial-2024")
         >>> if project:
-        ...     groups = project.get_groups()
+        ...     spaces = project.get_spaces()
     """
     return get_client().get_project(name)
 
@@ -454,8 +454,8 @@ def delete_project(project_id: str, force: bool = False) -> StatusResponse:
         StatusResponse: A StatusResponse indicating success or failure.
 
     Warning:
-        Force deletion is irreversible and removes all groups, products,
-        versions, resources, and links within the project.
+        Force deletion is irreversible and removes all spaces, items,
+        revisions, artifacts, and edges within the project.
 
     Example:
         >>> # Soft delete (deprecate)
@@ -467,136 +467,136 @@ def delete_project(project_id: str, force: bool = False) -> StatusResponse:
     return get_client().delete_project(project_id=project_id, force=force)
 
 
-def product_search(
+def item_search(
     context_filter: str = "",
     name_filter: str = "",
-    ptype_filter: str = ""
-) -> List[Product]:
-    """Search for products across projects and groups.
+    kind_filter: str = ""
+) -> List[Item]:
+    """Search for items across projects and spaces.
 
     Args:
-        context_filter: Filter by project or group path. Supports glob
+        context_filter: Filter by project or space path. Supports glob
             patterns like ``project-*`` or ``*/characters/*``.
-        name_filter: Filter by product name. Supports wildcards.
-        ptype_filter: Filter by product type (e.g., "model", "texture").
+        name_filter: Filter by item name. Supports wildcards.
+        kind_filter: Filter by item kind (e.g., "model", "texture").
 
     Returns:
-        List[Product]: A list of Product objects matching the filters.
+        List[Item]: A list of Item objects matching the filters.
 
     Example:
         >>> # Find all models in any project
-        >>> models = kumiho.product_search(ptype_filter="model")
+        >>> models = kumiho.item_search(kind_filter="model")
 
         >>> # Find character assets in a specific project
-        >>> chars = kumiho.product_search(
+        >>> chars = kumiho.item_search(
         ...     context_filter="film-project/characters",
-        ...     ptype_filter="model"
+        ...     kind_filter="model"
         ... )
 
         >>> # Wildcard search
-        >>> heroes = kumiho.product_search(name_filter="hero*")
+        >>> heroes = kumiho.item_search(name_filter="hero*")
     """
-    return get_client().product_search(context_filter, name_filter, ptype_filter)
+    return get_client().item_search(context_filter, name_filter, kind_filter)
 
 
-def get_product(kref: str) -> Product:
-    """Get a product by its kref URI.
+def get_item(kref: str) -> Item:
+    """Get an item by its kref URI.
 
     Args:
-        kref: The kref URI of the product
-            (e.g., "kref://project/group/product.type").
+        kref: The kref URI of the item
+            (e.g., "kref://project/space/item.kind").
 
     Returns:
-        Product: The Product object.
+        Item: The Item object.
 
     Raises:
-        grpc.RpcError: If the product is not found.
+        grpc.RpcError: If the item is not found.
 
     Example:
-        >>> product = kumiho.get_product(
+        >>> item = kumiho.get_item(
         ...     "kref://film-project/characters/hero.model"
         ... )
-        >>> versions = product.get_versions()
+        >>> revisions = item.get_revisions()
     """
-    return get_client().get_product_by_kref(kref)
+    return get_client().get_item_by_kref(kref)
 
 
-def get_version(kref: str) -> Version:
-    """Get a version by its kref URI.
+def get_revision(kref: str) -> Revision:
+    """Get a revision by its kref URI.
 
     Args:
-        kref: The kref URI of the version
-            (e.g., "kref://project/group/product.type?v=1").
+        kref: The kref URI of the revision
+            (e.g., "kref://project/space/item.kind?v=1").
 
     Returns:
-        Version: The Version object.
+        Revision: The Revision object.
 
     Raises:
-        grpc.RpcError: If the version is not found.
+        grpc.RpcError: If the revision is not found.
 
     Example:
-        >>> version = kumiho.get_version(
+        >>> revision = kumiho.get_revision(
         ...     "kref://film-project/characters/hero.model?v=3"
         ... )
-        >>> resources = version.get_resources()
-        >>> for r in resources:
-        ...     print(r.location)
+        >>> artifacts = revision.get_artifacts()
+        >>> for a in artifacts:
+        ...     print(a.location)
     """
-    return get_client().get_version(kref)
+    return get_client().get_revision(kref)
 
 
-def get_resource(kref: str) -> Resource:
-    """Get a resource by its kref URI.
+def get_artifact(kref: str) -> Artifact:
+    """Get an artifact by its kref URI.
 
     Args:
-        kref: The kref URI of the resource
-            (e.g., "kref://project/group/product.type?v=1&r=main").
+        kref: The kref URI of the artifact
+            (e.g., "kref://project/space/item.kind?v=1&r=main").
 
     Returns:
-        Resource: The Resource object.
+        Artifact: The Artifact object.
 
     Raises:
-        grpc.RpcError: If the resource is not found.
-        ValueError: If the kref is missing the resource name (&r=).
+        grpc.RpcError: If the artifact is not found.
+        ValueError: If the kref is missing the artifact name (&r=).
 
     Example:
-        >>> resource = kumiho.get_resource(
+        >>> artifact = kumiho.get_artifact(
         ...     "kref://film-project/characters/hero.model?v=3&r=mesh"
         ... )
-        >>> print(resource.location)
+        >>> print(artifact.location)
         /projects/film/char/hero_v3.fbx
     """
-    return get_client().get_resource_by_kref(kref)
+    return get_client().get_artifact_by_kref(kref)
 
 
-def get_resources_by_location(location: str) -> List[Resource]:
-    """Find all resources at a specific file location.
+def get_artifacts_by_location(location: str) -> List[Artifact]:
+    """Find all artifacts at a specific file location.
 
-    This is useful for reverse lookups—finding which Kumiho resources
+    This is useful for reverse lookups—finding which Kumiho artifacts
     reference a particular file path.
 
     Args:
         location: The file path or URI to search for.
 
     Returns:
-        List[Resource]: A list of Resource objects at that location.
+        List[Artifact]: A list of Artifact objects at that location.
 
     Example:
-        >>> resources = kumiho.get_resources_by_location(
+        >>> artifacts = kumiho.get_artifacts_by_location(
         ...     "/shared/assets/hero_v3.fbx"
         ... )
-        >>> for r in resources:
-        ...     print(f"{r.kref} -> {r.location}")
+        >>> for a in artifacts:
+        ...     print(f"{a.kref} -> {a.location}")
     """
-    return get_client().get_resources_by_location(location)
+    return get_client().get_artifacts_by_location(location)
 
 
 def set_attribute(kref: str, key: str, value: str) -> bool:
     """Set a single metadata attribute on any entity.
 
     This allows granular updates to metadata without replacing the entire
-    metadata map. Works on any entity type (Version, Product, Resource,
-    or Group) identified by kref.
+    metadata map. Works on any entity type (Revision, Item, Artifact,
+    or Space) identified by kref.
 
     Args:
         kref: The kref URI of the entity.
@@ -670,11 +670,11 @@ def event_stream(
     """Subscribe to real-time events from the Kumiho server.
 
     Events are streamed as they occur, allowing you to react to changes
-    in the database such as new versions, tag changes, or deletions.
+    in the database such as new revisions, tag changes, or deletions.
 
     Args:
         routing_key_filter: Filter events by routing key pattern.
-            Supports wildcards (e.g., ``product.model.*``, ``version.#``).
+            Supports wildcards (e.g., ``item.model.*``, ``revision.#``).
         kref_filter: Filter events by kref pattern.
             Supports glob patterns (e.g., ``kref://projectA/**/*.model``).
 
@@ -682,13 +682,13 @@ def event_stream(
         Event: Event objects as they occur.
 
     Example:
-        >>> # Watch for all version events in a project
+        >>> # Watch for all revision events in a project
         >>> for event in kumiho.event_stream(
-        ...     routing_key_filter="version.*",
+        ...     routing_key_filter="revision.*",
         ...     kref_filter="kref://film-project/**"
         ... ):
         ...     print(f"{event.routing_key}: {event.kref}")
-        ...     if event.routing_key == "version.tagged":
+        ...     if event.routing_key == "revision.tagged":
         ...         print(f"  Tag: {event.details.get('tag')}")
 
     Note:
@@ -701,8 +701,8 @@ def event_stream(
 def resolve(kref: str) -> Optional[str]:
     """Resolve a kref URI to a file location.
 
-    This is a convenience function to get the file path for a resource
-    or the default resource of a version.
+    This is a convenience function to get the file path for an artifact
+    or the default artifact of a revision.
 
     Args:
         kref: The kref URI to resolve.
@@ -711,14 +711,14 @@ def resolve(kref: str) -> Optional[str]:
         Optional[str]: The file location string, or None if not resolvable.
 
     Example:
-        >>> # Resolve a specific resource
+        >>> # Resolve a specific artifact
         >>> path = kumiho.resolve(
         ...     "kref://film-project/chars/hero.model?v=3&r=mesh"
         ... )
         >>> print(path)
         /projects/film/char/hero_v3.fbx
 
-        >>> # Resolve version's default resource
+        >>> # Resolve revision's default artifact
         >>> path = kumiho.resolve(
         ...     "kref://film-project/chars/hero.model?v=3"
         ... )
@@ -796,27 +796,27 @@ __all__ = [
     "KumihoObject",
     "KumihoError",
     "Project",
-    "Group",
-    "Product",
-    "Version",
-    "Resource",
-    "Link",
+    "Space",
+    "Item",
+    "Revision",
+    "Artifact",
+    "Edge",
     "Kref",
     "Event",
     "ProjectLimitError",
-    # Collection classes
-    "Collection",
-    "CollectionMember",
-    "CollectionVersionHistory",
-    "ReservedProductTypeError",
-    "RESERVED_PRODUCT_TYPES",
+    # Bundle classes
+    "Bundle",
+    "BundleMember",
+    "BundleRevisionHistory",
+    "ReservedKindError",
+    "RESERVED_KINDS",
     # Validation
     "KrefValidationError",
-    "LinkTypeValidationError",
+    "EdgeTypeValidationError",
     "validate_kref",
-    "validate_link_type",
+    "validate_edge_type",
     "is_valid_kref",
-    "is_valid_link_type",
+    "is_valid_edge_type",
     # Connection
     "connect",
     "use_client",
@@ -826,16 +826,16 @@ __all__ = [
     # Constants
     "LATEST_TAG",
     "PUBLISHED_TAG",
-    # Link types
-    "LinkType",
+    # Edge types
+    "EdgeType",
     "BELONGS_TO",
     "CREATED_FROM",
     "REFERENCED",
     "DEPENDS_ON",
     "DERIVED_FROM",
     "CONTAINS",
-    # Link directions
-    "LinkDirection",
+    # Edge directions
+    "EdgeDirection",
     "OUTGOING",
     "INCOMING",
     "BOTH",
@@ -844,11 +844,11 @@ __all__ = [
     "get_projects",
     "get_project",
     "delete_project",
-    "product_search",
-    "get_product",
-    "get_version",
-    "get_resource",
-    "get_resources_by_location",
+    "item_search",
+    "get_item",
+    "get_revision",
+    "get_artifact",
+    "get_artifacts_by_location",
     "set_attribute",
     "get_attribute",
     "delete_attribute",

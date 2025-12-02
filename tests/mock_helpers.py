@@ -28,15 +28,18 @@ def mock_get_projects_response(projects=None):
 def mock_status_response(success=True, message="ok"):
     return kumiho_pb2.StatusResponse(success=success, message=message)
 
-def mock_group_response(path, **kwargs):
-    return kumiho_pb2.GroupResponse(path=path, **kwargs)
+def mock_space_response(path, **kwargs):
+    return kumiho_pb2.SpaceResponse(path=path, **kwargs)
+
+# Backwards compatibility alias
+mock_group_response = mock_space_response
 
 def mock_kref(uri):
     return kumiho_pb2.Kref(uri=uri)
 
-def mock_version_response(
+def mock_revision_response(
     kref_uri,
-    product_kref_uri,
+    item_kref_uri,
     number=1,
     latest=True,
     tags=None,
@@ -46,9 +49,9 @@ def mock_version_response(
     deprecated=False,
     published=False
 ):
-    return kumiho_pb2.VersionResponse(
+    return kumiho_pb2.RevisionResponse(
         kref=kumiho_pb2.Kref(uri=kref_uri),
-        product_kref=kumiho_pb2.Kref(uri=product_kref_uri),
+        item_kref=kumiho_pb2.Kref(uri=item_kref_uri),
         number=number,
         latest=latest,
         tags=tags or [],
@@ -59,49 +62,70 @@ def mock_version_response(
         published=published
     )
 
-def mock_product_response(
+# Backwards compatibility alias
+mock_version_response = mock_revision_response
+
+def mock_item_response(
     kref_uri,
     name,
-    product_name,
-    product_type,
+    item_name,
+    kind,
     author="test_author",
     username="test_user",
     deprecated=False,
     metadata=None
 ):
-    return kumiho_pb2.ProductResponse(
+    return kumiho_pb2.ItemResponse(
         kref=kumiho_pb2.Kref(uri=kref_uri),
         name=name,
-        product_name=product_name,
-        product_type=product_type,
+        item_name=item_name,
+        kind=kind,
         author=author,
         username=username,
         deprecated=deprecated,
         metadata=metadata or {}
     )
 
-def mock_get_products_response(products=None):
-    return kumiho_pb2.GetProductsResponse(products=products or [])
+# Backwards compatibility alias
+mock_product_response = mock_item_response
 
-def mock_create_group_request(parent_path, group_name):
-    return kumiho_pb2.CreateGroupRequest(parent_path=parent_path, group_name=group_name)
+def mock_get_items_response(items=None):
+    return kumiho_pb2.GetItemsResponse(items=items or [])
 
-def mock_get_group_request(path_or_kref):
-    return kumiho_pb2.GetGroupRequest(path_or_kref=path_or_kref)
+# Backwards compatibility alias
+mock_get_products_response = mock_get_items_response
+
+def mock_create_space_request(parent_path, space_name):
+    return kumiho_pb2.CreateSpaceRequest(parent_path=parent_path, space_name=space_name)
+
+# Backwards compatibility alias
+mock_create_group_request = mock_create_space_request
+
+def mock_get_space_request(path_or_kref):
+    return kumiho_pb2.GetSpaceRequest(path_or_kref=path_or_kref)
+
+# Backwards compatibility alias
+mock_get_group_request = mock_get_space_request
 
 def mock_kref_request(uri):
     return kumiho_pb2.KrefRequest(kref=kumiho_pb2.Kref(uri=uri))
 
-def mock_get_product_request(parent_path, product_name, product_type):
-    return kumiho_pb2.GetProductRequest(
+def mock_get_item_request(parent_path, item_name, kind):
+    return kumiho_pb2.GetItemRequest(
         parent_path=parent_path,
-        product_name=product_name,
-        product_type=product_type
+        item_name=item_name,
+        kind=kind
     )
 
-def mock_product_search_request(context_filter, product_name_filter="", product_type_filter=""):
-    return kumiho_pb2.ProductSearchRequest(
+# Backwards compatibility alias
+mock_get_product_request = mock_get_item_request
+
+def mock_item_search_request(context_filter, item_name_filter="", kind_filter=""):
+    return kumiho_pb2.ItemSearchRequest(
         context_filter=context_filter,
-        product_name_filter=product_name_filter,
-        product_type_filter=product_type_filter
+        item_name_filter=item_name_filter,
+        kind_filter=kind_filter
     )
+
+# Backwards compatibility alias
+mock_product_search_request = mock_item_search_request

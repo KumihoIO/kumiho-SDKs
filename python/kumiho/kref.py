@@ -1,31 +1,31 @@
-"""Kref module for Kumiho resource references.
+"""Kref module for Kumiho artifact references.
 
 This module provides the :class:`Kref` class, which represents a Kumiho
-Resource Reference—a URI-based unique identifier for any object in the
+Artifact Reference—a URI-based unique identifier for any object in the
 Kumiho system.
 
 Kref Format:
     The kref URI follows this pattern::
 
-        kref://project/group/product.type?v=VERSION&r=RESOURCE
+        kref://project/space/item.kind?v=REVISION&r=ARTIFACT
 
     Components:
         - ``project``: The project name
-        - ``group``: The group path (can be nested: ``group/subgroup``)
-        - ``product.type``: Product name and type separated by dot
-        - ``?v=VERSION``: Optional version number (default: 1)
-        - ``&r=RESOURCE``: Optional resource name
+        - ``space``: The space path (can be nested: ``space/subspace``)
+        - ``item.kind``: Item name and kind separated by dot
+        - ``?v=REVISION``: Optional revision number (default: 1)
+        - ``&r=ARTIFACT``: Optional artifact name
 
 Examples:
-    Product kref::
+    Item kref::
 
         kref://film-2024/characters/hero.model
 
-    Version kref::
+    Revision kref::
 
         kref://film-2024/characters/hero.model?v=3
 
-    Resource kref::
+    Artifact kref::
 
         kref://film-2024/characters/hero.model?v=3&r=mesh
 
@@ -38,11 +38,11 @@ Usage::
     kref = Kref("kref://project/models/hero.model?v=2&r=mesh")
 
     # Extract components
-    print(kref.get_group())        # "project/models"
-    print(kref.get_product_name()) # "hero.model"
-    print(kref.get_type())         # "model"
-    print(kref.get_version())      # 2
-    print(kref.get_resource_name()) # "mesh"
+    print(kref.get_space())        # "project/models"
+    print(kref.get_item_name())    # "hero.model"
+    print(kref.get_kind())         # "model"
+    print(kref.get_revision())     # 2
+    print(kref.get_artifact_name()) # "mesh"
 
     # Use as string
     print(f"Reference: {kref}")  # Works like a string
@@ -59,12 +59,18 @@ class KrefValidationError(ValueError):
 
 
 # Regex for validating Kref URIs.
-# Valid format: kref://project/group/product.type?v=VERSION&r=RESOURCE
+# Valid formats:
+#   - Item: kref://project/space/item.kind?v=REVISION&r=ARTIFACT
+#   - Space: kref://project/space or kref:///space (root-level)
 # Each path segment must be alphanumeric with dots, underscores, or hyphens.
 _KREF_PATTERN = re.compile(
-    r'^kref://[a-zA-Z0-9][a-zA-Z0-9._-]*'
-    r'(/[a-zA-Z0-9][a-zA-Z0-9._-]*)*'
-    r'(\?v=\d+(&r=[a-zA-Z0-9._-]+)?)?$'
+    r'^kref://'                                    # scheme
+    r'(/[a-zA-Z0-9][a-zA-Z0-9._-]*'               # space path starting with / (root-level)
+    r'(/[a-zA-Z0-9][a-zA-Z0-9._-]*)*'             # optional nested path segments
+    r'|'                                           # OR
+    r'[a-zA-Z0-9][a-zA-Z0-9._-]*'                 # project/item path segment
+    r'(/[a-zA-Z0-9][a-zA-Z0-9._-]*)*)'            # optional nested path segments
+    r'(\?v=\d+(&r=[a-zA-Z0-9._-]+)?)?$'           # optional version and resource
 )
 
 
@@ -88,7 +94,7 @@ def validate_kref(uri: str) -> None:
         from kumiho.kref import validate_kref, KrefValidationError
         
         try:
-            validate_kref("kref://project/group/product.type?v=1")
+            validate_kref("kref://project/space/item.kind?v=1")
         except KrefValidationError as e:
             print(f"Invalid kref: {e}")
     """
@@ -110,7 +116,7 @@ def validate_kref(uri: str) -> None:
     # Check format with regex
     if not _KREF_PATTERN.match(uri):
         raise KrefValidationError(
-            f"Invalid kref URI '{uri}': must be format kref://project/group/product.type"
+            f"Invalid kref URI '{uri}': must be format kref://project/space/item.kind"
         )
 
 
@@ -127,7 +133,7 @@ def is_valid_kref(uri: str) -> bool:
     
         from kumiho.kref import is_valid_kref
         
-        if is_valid_kref("kref://project/group/product.type"):
+        if is_valid_kref("kref://project/space/item.kind"):
             print("Valid!")
     """
     try:
@@ -138,14 +144,14 @@ def is_valid_kref(uri: str) -> bool:
 
 
 class Kref(str):
-    """A Kumiho Resource Reference (URI-based unique identifier).
+    """A Kumiho Artifact Reference (URI-based unique identifier).
 
     Kref is a subclass of ``str``, so it behaves like a string but provides
     utility methods for parsing and extracting components from the URI.
 
     The kref format is::
 
-        kref://project/group/product.type?v=VERSION&r=RESOURCE
+        kref://project/space/item.kind?v=REVISION&r=ARTIFACT
 
     Attributes:
         uri (str): The URI string (for backward compatibility).
@@ -161,8 +167,8 @@ class Kref(str):
         print(kref)  # kref://my-project/assets/hero.model?v=2
 
         # Parse components
-        print(kref.get_group())   # "my-project/assets"
-        print(kref.get_version()) # 2
+        print(kref.get_space())    # "my-project/assets"
+        print(kref.get_revision()) # 2
 
         # Compare with strings
         if kref == "kref://my-project/assets/hero.model?v=2":
@@ -239,7 +245,7 @@ class Kref(str):
         Returns the part after ``kref://`` and before any query parameters.
 
         Returns:
-            str: The path (e.g., "project/group/product.type").
+            str: The path (e.g., "project/space/item.kind").
 
         Example:
             >>> Kref("kref://project/models/hero.model?v=1").get_path()
@@ -249,16 +255,16 @@ class Kref(str):
             return self
         return self.split("://", 1)[1].split("?", 1)[0]
 
-    def get_group(self) -> str:
-        """Extract the group path from the URI.
+    def get_space(self) -> str:
+        """Extract the space path from the URI.
 
-        Returns the path up to but not including the product name.
+        Returns the path up to but not including the item name.
 
         Returns:
-            str: The group path (e.g., "project/models").
+            str: The space path (e.g., "project/models").
 
         Example:
-            >>> Kref("kref://project/models/hero.model").get_group()
+            >>> Kref("kref://project/models/hero.model").get_space()
             'project/models'
         """
         path = self.get_path()
@@ -266,14 +272,14 @@ class Kref(str):
             return path
         return path.rsplit("/", 1)[0]
 
-    def get_product_name(self) -> str:
-        """Extract the product name with type from the URI.
+    def get_item_name(self) -> str:
+        """Extract the item name with kind from the URI.
 
         Returns:
-            str: The product name including type (e.g., "hero.model").
+            str: The item name including kind (e.g., "hero.model").
 
         Example:
-            >>> Kref("kref://project/models/hero.model").get_product_name()
+            >>> Kref("kref://project/models/hero.model").get_item_name()
             'hero.model'
         """
         path = self.get_path()
@@ -281,46 +287,46 @@ class Kref(str):
             return ""
         return path.rsplit("/", 1)[1]
 
-    def get_type(self) -> str:
-        """Extract the product type from the URI.
+    def get_kind(self) -> str:
+        """Extract the item kind from the URI.
 
         Returns:
-            str: The product type (e.g., "model", "texture").
+            str: The item kind (e.g., "model", "texture").
 
         Example:
-            >>> Kref("kref://project/models/hero.model").get_type()
+            >>> Kref("kref://project/models/hero.model").get_kind()
             'model'
         """
-        name = self.get_product_name()
+        name = self.get_item_name()
         if "." not in name:
             return ""
         return name.split(".", 1)[1]
 
-    def get_version(self) -> int:
-        """Extract the version number from the URI query string.
+    def get_revision(self) -> int:
+        """Extract the revision number from the URI query string.
 
         Returns:
-            int: The version number, or 1 if not specified.
+            int: The revision number, or 1 if not specified.
 
         Example:
-            >>> Kref("kref://project/models/hero.model?v=3").get_version()
+            >>> Kref("kref://project/models/hero.model?v=3").get_revision()
             3
-            >>> Kref("kref://project/models/hero.model").get_version()
+            >>> Kref("kref://project/models/hero.model").get_revision()
             1
         """
         match = re.search(r'\?v=(\d+)', self)
         return int(match.group(1)) if match else 1
 
-    def get_resource_name(self) -> Optional[str]:
-        """Extract the resource name from the URI query string.
+    def get_artifact_name(self) -> Optional[str]:
+        """Extract the artifact name from the URI query string.
 
         Returns:
-            Optional[str]: The resource name if present, None otherwise.
+            Optional[str]: The artifact name if present, None otherwise.
 
         Example:
-            >>> Kref("kref://project/models/hero.model?v=1&r=mesh").get_resource_name()
+            >>> Kref("kref://project/models/hero.model?v=1&r=mesh").get_artifact_name()
             'mesh'
-            >>> Kref("kref://project/models/hero.model?v=1").get_resource_name()
+            >>> Kref("kref://project/models/hero.model?v=1").get_artifact_name()
             None
         """
         match = re.search(r'&r=([^&]+)', self)
