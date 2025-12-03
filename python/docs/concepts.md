@@ -501,19 +501,163 @@ kumiho.connect()  # Uses cached credentials and tenant info
 
 ## Event Streaming
 
-Kumiho supports real-time event streaming for reactive workflows:
+Kumiho supports real-time event streaming for reactive workflows. Events are emitted whenever assets change, enabling live dashboards, automated pipelines, and integrations.
+
+### Basic Usage
 
 ```python
-# Stream events from a project
-for event in project.stream_events():
-    if event.event_type == "revision.created":
-        print(f"New revision: {event.payload}")
+import kumiho
+
+# Stream all events
+for event in kumiho.event_stream():
+    print(f"{event.routing_key}: {event.kref}")
+
+# Filter by routing key (wildcards supported)
+for event in kumiho.event_stream(routing_key_filter="revision.*"):
+    if event.action == "created":
+        print(f"New revision: {event.kref}")
+
+# Filter by kref pattern (glob syntax)
+for event in kumiho.event_stream(kref_filter="kref://my-project/**/*.model"):
+    print(f"Model changed: {event.kref}")
 ```
 
-**Event types:**
-- `revision.created`: New revision was published
-- `edge.created`: New relationship was created
-- `artifact.added`: Artifact was added to a revision
+### Event Object
+
+Each event contains:
+
+| Attribute | Type | Description |
+|-----------|------|-------------|
+| `routing_key` | `str` | Event type (e.g., `revision.created`, `artifact.added`) |
+| `kref` | `str` | Kref URI of the affected resource |
+| `action` | `str` | Action performed (`created`, `updated`, `deleted`, `tagged`) |
+| `timestamp` | `datetime` | When the event occurred |
+| `metadata` | `dict` | Additional event metadata |
+| `cursor` | `str` | Cursor for resumable streaming (Creator+ tiers) |
+
+### Event Types (Routing Keys)
+
+| Routing Key | Description |
+|-------------|-------------|
+| `space.created` | New space was created |
+| `space.updated` | Space metadata was updated |
+| `space.deleted` | Space was deleted |
+| `item.created` | New item was created |
+| `item.updated` | Item metadata was updated |
+| `item.deleted` | Item was deleted |
+| `revision.created` | New revision was published |
+| `revision.tagged` | Revision was tagged (e.g., "published") |
+| `revision.untagged` | Tag was removed from revision |
+| `artifact.added` | Artifact was added to a revision |
+| `artifact.deleted` | Artifact was removed |
+| `edge.created` | New relationship was created |
+| `edge.deleted` | Relationship was removed |
+
+### Tier-Based Capabilities
+
+Event streaming capabilities vary by subscription tier:
+
+| Feature | Free | Creator | Studio | Enterprise |
+|---------|------|---------|--------|------------|
+| Real-time streaming | ✅ | ✅ | ✅ | ✅ |
+| Routing key filters | ✅ | ✅ | ✅ | ✅ |
+| Kref glob filters | ✅ | ✅ | ✅ | ✅ |
+| Event persistence | ❌ | 1 hour | 24 hours | 30 days |
+| Cursor-based resume | ❌ | ✅ | ✅ | ✅ |
+| Replay from buffer | ❌ | ✅ | ✅ | ✅ |
+| Consumer groups | ❌ | ❌ | ❌ | ✅ |
+| BYO Kafka bridge | ❌ | ❌ | ✅ Pro | ✅ |
+
+> **Note**: Creator tier and above features are **Coming Soon**. Currently only Free tier (real-time streaming) is available.
+
+### Query Tier Capabilities
+
+Check your tenant's streaming capabilities at runtime:
+
+```python
+from kumiho import get_event_capabilities
+
+caps = get_event_capabilities()
+print(f"Tier: {caps.tier}")
+print(f"Supports replay: {caps.supports_replay}")
+print(f"Supports cursor: {caps.supports_cursor}")
+print(f"Max retention: {caps.max_retention_hours} hours")
+print(f"Buffer size: {caps.max_buffer_size} events")
+```
+
+### Resumable Streaming (Coming Soon - Creator+)
+
+For Creator tier and above, you can resume from where you left off:
+
+```python
+import kumiho
+
+# Save cursor for recovery
+last_cursor = None
+
+for event in kumiho.event_stream(routing_key_filter="revision.*"):
+    process_event(event)
+    last_cursor = event.cursor  # Persist this
+    
+# Later, resume from last position
+for event in kumiho.event_stream(cursor=last_cursor):
+    process_event(event)
+```
+
+### Replay from Beginning (Coming Soon - Creator+)
+
+Replay all events in the buffer:
+
+```python
+# Replay entire buffer (useful for initial sync)
+for event in kumiho.event_stream(from_beginning=True):
+    sync_to_local_db(event)
+```
+
+### Feature-Gated Streaming
+
+Write code that adapts to your tier:
+
+```python
+import kumiho
+
+caps = kumiho.get_event_capabilities()
+
+if caps.supports_cursor:
+    # Creator+ tier: use cursor for reliability
+    cursor = load_saved_cursor()
+    stream = kumiho.event_stream(cursor=cursor)
+else:
+    # Free tier: real-time only
+    stream = kumiho.event_stream()
+
+for event in stream:
+    process_event(event)
+    if event.cursor:
+        save_cursor(event.cursor)
+```
+
+### Use Cases by Tier
+
+**Free Tier** (Available Now):
+- Live dashboard updates
+- Real-time notifications during active sessions
+- Development and testing
+
+**Creator Tier** (Coming Soon):
+- Overnight batch processing with morning resume
+- Intermittent connectivity scenarios
+- Small team collaboration with reliable delivery
+
+**Studio Tier** (Coming Soon):
+- Integration with existing Kafka pipelines (BYO Kafka)
+- Render farm job triggering
+- Data warehouse ingestion
+
+**Enterprise Tier** (Coming Soon):
+- Mission-critical production pipelines
+- Parallel processing with consumer groups
+- Full audit trail with 30-day retention
 
 ## Next Steps
 

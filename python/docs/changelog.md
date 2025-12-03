@@ -5,6 +5,25 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.0] - 2025-12-03
+
+### Added
+- **Event streaming cursor support**: `Event.cursor` attribute for resumable streaming
+- **EventCapabilities API**: `get_event_capabilities()` to query tier-based streaming features
+- **New event_stream() parameters**:
+  - `cursor`: Resume from last position (Creator+ tiers, Coming Soon)
+  - `consumer_group`: Load-balanced consumption (Enterprise tier, Coming Soon)
+  - `from_beginning`: Replay entire buffer (Creator+ tiers, Coming Soon)
+- Tier capability documentation with Coming Soon markers
+
+### Changed
+- Updated event streaming documentation with tier matrix
+- Event object now includes `cursor` attribute (None for Free tier)
+
+### Notes
+- Creator tier and above streaming features are planned but not yet deployed
+- Free tier provides real-time streaming without persistence
+
 ## [0.3.0] - 2024-XX-XX
 
 ### Added

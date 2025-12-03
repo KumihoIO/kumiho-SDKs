@@ -80,6 +80,7 @@ from .proto.kumiho_pb2 import (
     GetArtifactsByLocationRequest,
     GetTenantUsageRequest,
     GetRevisionsRequest,
+    GetEventCapabilitiesRequest,
     HasTagRequest,
     KrefRequest,
     Edge as PbEdge,
@@ -1552,7 +1553,14 @@ class _Client:
         ]
 
     # Event Streaming
-    def event_stream(self, routing_key_filter: str = "", kref_filter: str = "") -> Iterator[Event]:
+    def event_stream(
+        self,
+        routing_key_filter: str = "",
+        kref_filter: str = "",
+        cursor: Optional[str] = None,
+        consumer_group: Optional[str] = None,
+        from_beginning: bool = False,
+    ) -> Iterator[Event]:
         """Subscribe to the event stream from the Kumiho server.
 
         Args:
@@ -1560,13 +1568,86 @@ class _Client:
                                 Supports wildcards, e.g., "item.model.*"
             kref_filter: A filter for the kref URIs to receive events for.
                         Supports wildcards, e.g., "kref://projectA/**/*.model"
+            cursor: Resume from a previous cursor position (Creator tier+).
+                    Pass the cursor from the last received event to continue
+                    from that point after reconnection.
+            consumer_group: Consumer group name for load-balanced delivery
+                           (Enterprise tier only). Multiple consumers in the
+                           same group each receive different events.
+            from_beginning: Start from earliest available events instead of
+                           live-only (Creator tier+, subject to retention).
 
         Yields:
-            Event objects representing changes in the database.
+            Event objects representing changes in the database. Each event
+            includes a ``cursor`` field that can be saved for resumption.
+
+        Example::
+
+            last_cursor = load_cursor_from_disk()  # Load previous position
+            try:
+                for event in client.event_stream(
+                    routing_key_filter="revision.*",
+                    cursor=last_cursor
+                ):
+                    process_event(event)
+                    save_cursor_to_disk(event.cursor)  # Save for next run
+            except grpc.RpcError:
+                pass  # Reconnect with saved cursor
         """
-        req = EventStreamRequest(routing_key_filter=routing_key_filter, kref_filter=kref_filter)
+        req = EventStreamRequest(
+            routing_key_filter=routing_key_filter,
+            kref_filter=kref_filter,
+        )
+        if cursor:
+            req.cursor = cursor
+        if consumer_group:
+            req.consumer_group = consumer_group
+        if from_beginning:
+            req.from_beginning = True
+        
         for pb_event in self.stub.EventStream(req):
             yield Event(pb_event)
+
+    def get_event_capabilities(self) -> "EventCapabilities":
+        """Get event streaming capabilities for the current tenant tier.
+
+        Returns the capabilities available based on the authenticated tenant's
+        subscription tier. Use this to determine which features are available
+        before using cursor-based resume or consumer groups.
+
+        Returns:
+            EventCapabilities with the following attributes:
+                - supports_replay: Can replay past events
+                - supports_cursor: Can resume from cursor
+                - supports_consumer_groups: Can use consumer groups (Enterprise)
+                - max_retention_hours: Event retention period (-1 = unlimited)
+                - max_buffer_size: Max events in buffer (-1 = unlimited)
+                - tier: Tier name (free, creator, studio, enterprise)
+
+        Example::
+
+            caps = client.get_event_capabilities()
+            if caps.supports_cursor:
+                # Use cursor-based streaming
+                last_cursor = load_saved_cursor()
+                for event in client.event_stream(cursor=last_cursor):
+                    ...
+            else:
+                # Free tier - no cursor support
+                for event in client.event_stream():
+                    ...
+        """
+        from .event import EventCapabilities
+        req = GetEventCapabilitiesRequest()
+        resp = self.stub.GetEventCapabilities(req)
+        return EventCapabilities(
+            supports_replay=resp.supports_replay,
+            supports_cursor=resp.supports_cursor,
+            supports_consumer_groups=resp.supports_consumer_groups,
+            max_retention_hours=resp.max_retention_hours,
+            max_buffer_size=resp.max_buffer_size,
+            tier=resp.tier,
+        )
 
 
 class _ClientCallDetails(grpc.ClientCallDetails):

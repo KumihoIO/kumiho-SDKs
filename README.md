@@ -2,6 +2,8 @@
 
 [![PyPI version](https://img.shields.io/pypi/v/kumiho.svg)](https://pypi.org/project/kumiho/)
 [![Python versions](https://img.shields.io/pypi/pyversions/kumiho.svg)](https://pypi.org/project/kumiho/)
+[![Documentation Status](https://readthedocs.org/projects/kumiho/badge/?version=latest)](https://docs.kumiho.io/python/)
+[![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 
 The official Python SDK for [Kumiho Cloud](https://kumiho.io) — a graph-native creative and AI asset management platform for VFX, animation, and AI-driven workflows.
 
@@ -12,8 +14,9 @@ The official Python SDK for [Kumiho Cloud](https://kumiho.io) — a graph-native
 - **AI Lineage Tracking**: Track AI model training data / GenAI image, video output provenance and dependencies
 - **BYO Storage**: Files stay on your local/NAS/on-prem storage — only metadata is in the cloud
 - **Multi-Tenant SaaS**: Secure, region-aware multi-tenant architecture
-- **Event Streaming**: Real-time notifications for asset changes
+- **Event Streaming**: Real-time notifications for asset changes with tier-based capabilities
 - **Graph Traversal**: Powerful dependency analysis and impact assessment
+- **Type-Safe**: Full type hints for IDE autocomplete and static analysis
 
 ## Installation
 
@@ -111,6 +114,9 @@ revision = kumiho.get_revision("kref://my-project/characters/hero.model?r=3")
 
 # Reference a specific artifact
 artifact = kumiho.get_artifact("kref://my-project/characters/hero.model?r=3&a=mesh.fbx")
+
+# Reference by tag
+published = kumiho.get_revision("kref://my-project/characters/hero.model?t=published")
 ```
 
 ### Edges (Relationships)
@@ -176,10 +182,39 @@ history = bundle.get_history()  # Full audit trail
 React to changes in real-time:
 
 ```python
-for event in kumiho.event_stream():
-    print(f"Event: {event.routing_key}")
-    print(f"Kref: {event.kref}")
-    print(f"Author: {event.author}")
+import kumiho
+
+# Stream all events with filtering
+for event in kumiho.event_stream(routing_key_filter="revision.*"):
+    print(f"{event.action}: {event.kref}")
+
+# Filter by kref pattern (glob syntax)
+for event in kumiho.event_stream(kref_filter="kref://my-project/**/*.model"):
+    print(f"Model changed: {event.kref}")
+```
+
+#### Tier-Based Streaming Capabilities
+
+| Feature | Free | Creator | Studio | Enterprise |
+|---------|------|---------|--------|------------|
+| Real-time streaming | ✅ | ✅ | ✅ | ✅ |
+| Routing key filters | ✅ | ✅ | ✅ | ✅ |
+| Kref glob filters | ✅ | ✅ | ✅ | ✅ |
+| Event persistence | ❌ | 1 hour | 24 hours | 30 days |
+| Cursor-based resume | ❌ | ✅ | ✅ | ✅ |
+| Consumer groups | ❌ | ❌ | ❌ | ✅ |
+
+> **Note**: Creator tier and above features are **Coming Soon**. Currently only Free tier is available.
+
+```python
+# Check your tier's capabilities
+caps = kumiho.get_event_capabilities()
+print(f"Tier: {caps.tier}, Replay: {caps.supports_replay}")
+
+# Resumable streaming (Creator+ tiers, Coming Soon)
+for event in kumiho.event_stream(cursor=saved_cursor):
+    process(event)
+    save_cursor(event.cursor)  # Persist for recovery
 ```
 
 ## Environment Variables
@@ -251,25 +286,73 @@ Add to your VS Code `settings.json`:
 
 ### Available Tools
 
-The MCP server exposes these tools to AI assistants:
+The MCP server exposes 39 tools organized by category:
+
+#### Read Operations
 
 | Tool | Description |
 |------|-------------|
 | `kumiho_list_projects` | List all accessible projects |
 | `kumiho_get_project` | Get project details by name |
 | `kumiho_get_spaces` | Get spaces within a project |
-| `kumiho_search_items` | Search for items by name, kind, or context |
-| `kumiho_get_item` | Get item details by kref |
-| `kumiho_get_revision` | Get revision details by kref |
-| `kumiho_get_artifacts` | Get artifacts for a revision |
-| `kumiho_get_dependencies` | Get all dependencies of a revision |
-| `kumiho_get_dependents` | Get all dependents of a revision |
-| `kumiho_analyze_impact` | Analyze impact of changes |
-| `kumiho_find_path` | Find path between two revisions |
+| `kumiho_get_space` | Get a space by path |
+| `kumiho_get_item` | Get an item by kref URI |
+| `kumiho_search_items` | Search items with filters |
+| `kumiho_get_item_revisions` | Get all revisions for an item |
+| `kumiho_get_revision` | Get a revision by kref |
+| `kumiho_get_revision_by_tag` | Get revision by tag (latest, published, etc.) |
+| `kumiho_get_artifacts` | Get all artifacts for a revision |
+| `kumiho_get_artifact` | Get a single artifact by kref |
+| `kumiho_get_bundle` | Get a bundle by kref |
 | `kumiho_resolve_kref` | Resolve kref to file location |
-| `kumiho_create_revision` | Create a new revision |
-| `kumiho_tag_revision` | Apply a tag to a revision |
+| `kumiho_get_artifacts_by_location` | Reverse lookup artifacts by file path |
+
+#### Graph Traversal
+
+| Tool | Description |
+|------|-------------|
+| `kumiho_get_dependencies` | Get what a revision depends on |
+| `kumiho_get_dependents` | Get what depends on a revision |
+| `kumiho_analyze_impact` | Analyze downstream impact of changes |
+| `kumiho_find_path` | Find shortest path between revisions |
+| `kumiho_get_edges` | Get edges (relationships) for a revision |
+
+#### Create Operations
+
+| Tool | Description |
+|------|-------------|
+| `kumiho_create_project` | Create a new project |
+| `kumiho_create_space` | Create a space within a project |
+| `kumiho_create_item` | Create an item within a space |
+| `kumiho_create_revision` | Create a new revision for an item |
+| `kumiho_create_artifact` | Create an artifact for a revision |
+| `kumiho_create_bundle` | Create a bundle to group items |
 | `kumiho_create_edge` | Create relationship between revisions |
+| `kumiho_tag_revision` | Apply a tag to a revision |
+
+#### Update Operations
+
+| Tool | Description |
+|------|-------------|
+| `kumiho_untag_revision` | Remove a tag from a revision |
+| `kumiho_set_metadata` | Set metadata on item or revision |
+| `kumiho_deprecate_item` | Mark an item as deprecated |
+| `kumiho_add_bundle_member` | Add an item to a bundle |
+| `kumiho_remove_bundle_member` | Remove an item from a bundle |
+| `kumiho_get_bundle_members` | List all items in a bundle |
+
+#### Delete Operations
+
+| Tool | Description |
+|------|-------------|
+| `kumiho_delete_project` | Delete a project |
+| `kumiho_delete_space` | Delete a space |
+| `kumiho_delete_item` | Delete an item |
+| `kumiho_delete_revision` | Delete a revision |
+| `kumiho_delete_artifact` | Delete an artifact |
+| `kumiho_delete_edge` | Delete a relationship |
+
+For full MCP documentation, see [MCP Server Integration](python/docs/mcp.md).
 
 ### Example AI Interactions
 
@@ -310,7 +393,23 @@ pytest tests/ --cov=kumiho
 - [Core Concepts](https://docs.kumiho.io/python/concepts.html)
 - [API Reference](https://docs.kumiho.io/python/api/kumiho.html)
 
+## Requirements
+
+- Python 3.10+
+- Kumiho Cloud account ([sign up](https://kumiho.io))
+
 ## License
 
 Apache 2.0 - See [LICENSE](LICENSE) for details.
+
+## Contributing
+
+Contributions are welcome! See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
+
+## Links
+
+- **Website**: [kumiho.io](https://kumiho.io)
+- **Documentation**: [docs.kumiho.io](https://docs.kumiho.io)
+- **GitHub**: [github.com/kumihoclouds/kumiho-python](https://github.com/kumihoclouds/kumiho-python)
+- **PyPI**: [pypi.org/project/kumiho](https://pypi.org/project/kumiho)
 

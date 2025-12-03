@@ -851,15 +851,27 @@ class GetBundleHistoryResponse(_message.Message):
     def __init__(self, history: _Optional[_Iterable[_Union[BundleRevisionHistory, _Mapping]]] = ...) -> None: ...
 
 class EventStreamRequest(_message.Message):
-    __slots__ = ("routing_key_filter", "kref_filter")
+    __slots__ = ("routing_key_filter", "kref_filter", "cursor", "consumer_group", "from_latest", "from_cursor", "from_timestamp", "from_beginning")
     ROUTING_KEY_FILTER_FIELD_NUMBER: _ClassVar[int]
     KREF_FILTER_FIELD_NUMBER: _ClassVar[int]
+    CURSOR_FIELD_NUMBER: _ClassVar[int]
+    CONSUMER_GROUP_FIELD_NUMBER: _ClassVar[int]
+    FROM_LATEST_FIELD_NUMBER: _ClassVar[int]
+    FROM_CURSOR_FIELD_NUMBER: _ClassVar[int]
+    FROM_TIMESTAMP_FIELD_NUMBER: _ClassVar[int]
+    FROM_BEGINNING_FIELD_NUMBER: _ClassVar[int]
     routing_key_filter: str
     kref_filter: str
-    def __init__(self, routing_key_filter: _Optional[str] = ..., kref_filter: _Optional[str] = ...) -> None: ...
+    cursor: str
+    consumer_group: str
+    from_latest: bool
+    from_cursor: str
+    from_timestamp: str
+    from_beginning: bool
+    def __init__(self, routing_key_filter: _Optional[str] = ..., kref_filter: _Optional[str] = ..., cursor: _Optional[str] = ..., consumer_group: _Optional[str] = ..., from_latest: bool = ..., from_cursor: _Optional[str] = ..., from_timestamp: _Optional[str] = ..., from_beginning: bool = ...) -> None: ...
 
 class Event(_message.Message):
-    __slots__ = ("routing_key", "kref", "timestamp", "author", "tenant_id", "details", "username")
+    __slots__ = ("routing_key", "kref", "timestamp", "author", "tenant_id", "details", "username", "cursor")
     class DetailsEntry(_message.Message):
         __slots__ = ("key", "value")
         KEY_FIELD_NUMBER: _ClassVar[int]
@@ -874,6 +886,7 @@ class Event(_message.Message):
     TENANT_ID_FIELD_NUMBER: _ClassVar[int]
     DETAILS_FIELD_NUMBER: _ClassVar[int]
     USERNAME_FIELD_NUMBER: _ClassVar[int]
+    CURSOR_FIELD_NUMBER: _ClassVar[int]
     routing_key: str
     kref: Kref
     timestamp: str
@@ -881,7 +894,28 @@ class Event(_message.Message):
     tenant_id: str
     details: _containers.ScalarMap[str, str]
     username: str
-    def __init__(self, routing_key: _Optional[str] = ..., kref: _Optional[_Union[Kref, _Mapping]] = ..., timestamp: _Optional[str] = ..., author: _Optional[str] = ..., tenant_id: _Optional[str] = ..., details: _Optional[_Mapping[str, str]] = ..., username: _Optional[str] = ...) -> None: ...
+    cursor: str
+    def __init__(self, routing_key: _Optional[str] = ..., kref: _Optional[_Union[Kref, _Mapping]] = ..., timestamp: _Optional[str] = ..., author: _Optional[str] = ..., tenant_id: _Optional[str] = ..., details: _Optional[_Mapping[str, str]] = ..., username: _Optional[str] = ..., cursor: _Optional[str] = ...) -> None: ...
+
+class GetEventCapabilitiesRequest(_message.Message):
+    __slots__ = ()
+    def __init__(self) -> None: ...
+
+class EventCapabilities(_message.Message):
+    __slots__ = ("supports_replay", "supports_cursor", "supports_consumer_groups", "max_retention_hours", "max_buffer_size", "tier")
+    SUPPORTS_REPLAY_FIELD_NUMBER: _ClassVar[int]
+    SUPPORTS_CURSOR_FIELD_NUMBER: _ClassVar[int]
+    SUPPORTS_CONSUMER_GROUPS_FIELD_NUMBER: _ClassVar[int]
+    MAX_RETENTION_HOURS_FIELD_NUMBER: _ClassVar[int]
+    MAX_BUFFER_SIZE_FIELD_NUMBER: _ClassVar[int]
+    TIER_FIELD_NUMBER: _ClassVar[int]
+    supports_replay: bool
+    supports_cursor: bool
+    supports_consumer_groups: bool
+    max_retention_hours: int
+    max_buffer_size: int
+    tier: str
+    def __init__(self, supports_replay: bool = ..., supports_cursor: bool = ..., supports_consumer_groups: bool = ..., max_retention_hours: _Optional[int] = ..., max_buffer_size: _Optional[int] = ..., tier: _Optional[str] = ...) -> None: ...
 
 class CreateProjectRequest(_message.Message):
     __slots__ = ("name", "description")

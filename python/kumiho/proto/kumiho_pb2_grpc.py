@@ -285,6 +285,11 @@ class KumihoServiceStub(object):
                 request_serializer=kumiho__pb2.EventStreamRequest.SerializeToString,
                 response_deserializer=kumiho__pb2.Event.FromString,
                 _registered_method=True)
+        self.GetEventCapabilities = channel.unary_unary(
+                '/kumiho.KumihoService/GetEventCapabilities',
+                request_serializer=kumiho__pb2.GetEventCapabilitiesRequest.SerializeToString,
+                response_deserializer=kumiho__pb2.EventCapabilities.FromString,
+                _registered_method=True)
         self.SetDeprecated = channel.unary_unary(
                 '/kumiho.KumihoService/SetDeprecated',
                 request_serializer=kumiho__pb2.SetDeprecatedRequest.SerializeToString,
@@ -608,6 +613,13 @@ class KumihoServiceServicer(object):
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
+    def GetEventCapabilities(self, request, context):
+        """Get event streaming capabilities for the authenticated tenant's tier
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
     def SetDeprecated(self, request, context):
         """Deprecation methods
         """
@@ -867,6 +879,11 @@ def add_KumihoServiceServicer_to_server(servicer, server):
                     servicer.EventStream,
                     request_deserializer=kumiho__pb2.EventStreamRequest.FromString,
                     response_serializer=kumiho__pb2.Event.SerializeToString,
+            ),
+            'GetEventCapabilities': grpc.unary_unary_rpc_method_handler(
+                    servicer.GetEventCapabilities,
+                    request_deserializer=kumiho__pb2.GetEventCapabilitiesRequest.FromString,
+                    response_serializer=kumiho__pb2.EventCapabilities.SerializeToString,
             ),
             'SetDeprecated': grpc.unary_unary_rpc_method_handler(
                     servicer.SetDeprecated,
@@ -2225,6 +2242,33 @@ class KumihoService(object):
             '/kumiho.KumihoService/EventStream',
             kumiho__pb2.EventStreamRequest.SerializeToString,
             kumiho__pb2.Event.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def GetEventCapabilities(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/kumiho.KumihoService/GetEventCapabilities',
+            kumiho__pb2.GetEventCapabilitiesRequest.SerializeToString,
+            kumiho__pb2.EventCapabilities.FromString,
             options,
             channel_credentials,
             insecure,

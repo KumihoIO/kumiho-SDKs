@@ -125,7 +125,7 @@ from .bundle import (
     ReservedKindError,
     RESERVED_KINDS,
 )
-from .event import Event
+from .event import Event, EventCapabilities
 from .space import Space
 from .kref import Kref, KrefValidationError, validate_kref, is_valid_kref
 from .edge import (
@@ -690,7 +690,10 @@ def delete_attribute(kref: str, key: str) -> bool:
 
 def event_stream(
     routing_key_filter: str = "",
-    kref_filter: str = ""
+    kref_filter: str = "",
+    cursor: Optional[str] = None,
+    consumer_group: Optional[str] = None,
+    from_beginning: bool = False,
 ) -> Iterator[Event]:
     """Subscribe to real-time events from the Kumiho server.
 
@@ -702,25 +705,80 @@ def event_stream(
             Supports wildcards (e.g., ``item.model.*``, ``revision.#``).
         kref_filter: Filter events by kref pattern.
             Supports glob patterns (e.g., ``kref://projectA/**/*.model``).
+        cursor: Resume from a previous cursor position (Creator tier+).
+            Pass the cursor from the last received event to continue
+            from that point after reconnection.
+        consumer_group: Consumer group name for load-balanced delivery
+            (Enterprise tier only). Multiple consumers in the same group
+            each receive different events.
+        from_beginning: Start from earliest available events instead of
+            live-only (Creator tier+, subject to retention limits).
 
     Yields:
-        Event: Event objects as they occur.
+        Event: Event objects as they occur. Each event includes a ``cursor``
+            field that can be saved for resumption.
 
     Example:
-        >>> # Watch for all revision events in a project
-        >>> for event in kumiho.event_stream(
-        ...     routing_key_filter="revision.*",
-        ...     kref_filter="kref://film-project/**"
-        ... ):
-        ...     print(f"{event.routing_key}: {event.kref}")
-        ...     if event.routing_key == "revision.tagged":
-        ...         print(f"  Tag: {event.details.get('tag')}")
+        >>> # Watch for all revision events with cursor tracking
+        >>> last_cursor = None
+        >>> try:
+        ...     for event in kumiho.event_stream(
+        ...         routing_key_filter="revision.*",
+        ...         kref_filter="kref://film-project/**",
+        ...         cursor=last_cursor
+        ...     ):
+        ...         print(f"{event.routing_key}: {event.kref}")
+        ...         last_cursor = event.cursor  # Save for reconnection
+        ...         if event.routing_key == "revision.tagged":
+        ...             print(f"  Tag: {event.details.get('tag')}")
+        ... except ConnectionError:
+        ...     # Reconnect using saved cursor
+        ...     pass
 
     Note:
         This is a blocking iterator. Use in a separate thread or
         async context for production applications.
+        
+        Cursor-based resume requires Creator tier or above. Use
+        :func:`get_event_capabilities` to check your tier's capabilities.
     """
-    return get_client().event_stream(routing_key_filter, kref_filter)
+    return get_client().event_stream(
+        routing_key_filter, kref_filter, cursor, consumer_group, from_beginning
+    )
+
+
+def get_event_capabilities() -> EventCapabilities:
+    """Get event streaming capabilities for the current tenant tier.
+
+    Returns the capabilities available based on the authenticated tenant's
+    subscription tier. Use this to determine which features (cursor resume,
+    consumer groups, replay) are available before using them.
+
+    Returns:
+        EventCapabilities: Object with capability flags and limits:
+            - supports_replay: Can replay past events
+            - supports_cursor: Can resume from cursor
+            - supports_consumer_groups: Can use consumer groups (Enterprise)
+            - max_retention_hours: Event retention period (-1 = unlimited)
+            - max_buffer_size: Max events in buffer (-1 = unlimited)
+            - tier: Tier name (free, creator, studio, enterprise)
+
+    Example:
+        >>> caps = kumiho.get_event_capabilities()
+        >>> print(f"Tier: {caps.tier}")
+        Tier: creator
+        >>> if caps.supports_cursor:
+        ...     # Use cursor-based streaming
+        ...     last_cursor = load_saved_cursor()
+        ...     for event in kumiho.event_stream(cursor=last_cursor):
+        ...         process(event)
+        ...         save_cursor(event.cursor)
+        ... else:
+        ...     # Free tier - no cursor support
+        ...     for event in kumiho.event_stream():
+        ...         process(event)
+    """
+    return get_client().get_event_capabilities()
 
 
 def resolve(kref: str) -> Optional[str]:
@@ -879,6 +937,8 @@ __all__ = [
     "get_attribute",
     "delete_attribute",
     "event_stream",
+    "get_event_capabilities",
+    "EventCapabilities",
     "resolve",
 ]
 

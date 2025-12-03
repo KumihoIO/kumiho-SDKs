@@ -168,9 +168,76 @@ The SDK provides powerful graph traversal methods on `Revision` objects:
 
 ## Events
 
-`kumiho.event_stream(routing_key_filter="", kref_filter="")` yields `Event`
-objects from the server so you can react to changes. Use wildcard-capable
-routing key and Kref filters to scope the feed.
+The SDK provides real-time event streaming with tier-based capabilities.
+
+### Event Streaming
+
+`kumiho.event_stream(routing_key_filter="", kref_filter="", cursor=None, consumer_group=None, from_beginning=False)` 
+yields `Event` objects from the server so you can react to changes.
+
+**Parameters:**
+- `routing_key_filter`: Filter by event type with wildcards (e.g., `"revision.*"`)
+- `kref_filter`: Filter by kref glob pattern (e.g., `"kref://project/**/*.model"`)
+- `cursor`: Resume from cursor position (Creator+ tiers, Coming Soon)
+- `consumer_group`: Consumer group for load balancing (Enterprise tier, Coming Soon)
+- `from_beginning`: Start from beginning of buffer (Creator+ tiers, Coming Soon)
+
+**Event object attributes:**
+- `routing_key`: Event type (e.g., `"revision.created"`)
+- `kref`: Affected resource Kref URI
+- `action`: Action performed (`"created"`, `"updated"`, `"deleted"`, `"tagged"`)
+- `timestamp`: When the event occurred
+- `metadata`: Additional event metadata dict
+- `cursor`: Cursor for resumable streaming (Creator+ tiers)
+
+```python
+import kumiho
+
+# Basic streaming
+for event in kumiho.event_stream(routing_key_filter="revision.*"):
+    print(f"{event.action}: {event.kref}")
+    
+# With cursor resume (Creator+ tiers, Coming Soon)
+for event in kumiho.event_stream(cursor=saved_cursor):
+    process(event)
+    save_cursor(event.cursor)
+```
+
+### EventCapabilities
+
+`kumiho.get_event_capabilities()` returns an `EventCapabilities` dataclass 
+describing your tenant's streaming capabilities.
+
+**EventCapabilities attributes:**
+- `supports_replay`: `bool` - Can replay past events
+- `supports_cursor`: `bool` - Cursor-based resume available
+- `supports_consumer_groups`: `bool` - Consumer group support (Enterprise)
+- `max_retention_hours`: `int` - Event retention window (0 = no persistence)
+- `max_buffer_size`: `int` - Maximum events in buffer
+- `tier`: `str` - Current tier name (`"free"`, `"creator"`, `"studio"`, `"enterprise"`)
+
+```python
+from kumiho import get_event_capabilities
+
+caps = get_event_capabilities()
+if caps.supports_cursor:
+    stream = kumiho.event_stream(cursor=last_cursor)
+else:
+    stream = kumiho.event_stream()
+```
+
+### Tier Capabilities
+
+| Feature | Free | Creator | Studio | Enterprise |
+|---------|------|---------|--------|------------|
+| Real-time streaming | ✅ | ✅ | ✅ | ✅ |
+| `supports_replay` | ❌ | ✅ | ✅ | ✅ |
+| `supports_cursor` | ❌ | ✅ | ✅ | ✅ |
+| `supports_consumer_groups` | ❌ | ❌ | ❌ | ✅ |
+| `max_retention_hours` | 0 | 1 | 24 | 720 |
+| `max_buffer_size` | 100 | 10,000 | 100,000 | ∞ |
+
+> **Note**: Creator tier and above features are **Coming Soon**. Currently only Free tier is available.
 
 ## Kref resolution and artifact lookup
 
