@@ -1,0 +1,82 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "kumiho-cli"
+version = "1.0.0"
+description = "Command-line tools for Kumiho Cloud asset management"
+readme = "README.md"
+requires-python = ">=3.8"
+license = {text = "Apache-2.0"}
+authors = [
+    {name = "Kumiho Clouds", email = "support@kumiho.cloud"}
+]
+maintainers = [
+    {name = "Kumiho Clouds", email = "support@kumiho.cloud"}
+]
+keywords = [
+    "kumiho",
+    "cli",
+    "authentication",
+    "asset-management",
+    "firebase",
+]
+classifiers = [
+    "Development Status :: 5 - Production/Stable",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: Apache Software License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Topic :: System :: Systems Administration :: Authentication/Directory",
+    "Typing :: Typed",
+]
+
+dependencies = [
+    "requests>=2.31.0",
+]
+
+[project.urls]
+Homepage = "https://kumiho.io"
+Documentation = "https://docs.kumiho.io"
+Repository = "https://github.com/kumihoclouds/kumiho-python"
+Issues = "https://github.com/kumihoclouds/kumiho-python/issues"
+Changelog = "https://github.com/kumihoclouds/kumiho-python/blob/main/kumiho-cli/CHANGELOG.md"
+
+[project.scripts]
+kumiho-cli = "kumiho_cli.cli:main"
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.2.0",
+    "pytest-cov>=4.1.0",
+    "mypy>=1.8.0",
+    "types-requests>=2.31.0",
+]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["kumiho_cli*"]
+
+[tool.setuptools.package-data]
+kumiho_cli = ["py.typed"]
+
+[tool.mypy]
+python_version = "3.8"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = false
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-v --tb=short"
+
+[tool.coverage.run]
+source = ["kumiho_cli"]

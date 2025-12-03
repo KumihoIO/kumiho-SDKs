@@ -1,104 +1,183 @@
 # Kumiho Python SDK - Release Notes
 
-## v0.3.0 (December 2025) - Initial Public Release 🎉
+## kumiho 0.4.0 (December 2024) - Package Restructuring 📦
 
-We're excited to announce the first public release of the **Kumiho Python SDK** — the official Python client for [Kumiho Cloud](https://kumiho.io), a graph-native creative and AI asset management platform.
+### 🎯 Overview
 
-### ✨ Highlights
+This release restructures the Kumiho Python SDK into two separate PyPI packages for better modularity and independent versioning.
 
-- **First PyPI Release**: Install with `pip install kumiho`
-- **Graph-Native Asset Management**: Built on Neo4j for powerful relationship tracking
-- **MCP Server Integration**: AI assistant support for GitHub Copilot, Claude, Cursor, and more
-- **Full Type Safety**: Complete type hints for IDE autocomplete and static analysis
+### 📦 Package Split
 
-### 🚀 Features
+Starting with v0.4.0, Kumiho is distributed as **two separate packages**:
 
-#### Core SDK
-- **Project Management**: Create, list, and manage projects with multi-tenant support
-- **Space Hierarchy**: Organize assets in hierarchical folder structures
-- **Item Versioning**: Semantic versioning for creative assets with full revision history
-- **Artifact Tracking**: Reference files on your local/NAS/on-prem storage (BYO Storage philosophy)
-- **Kref URIs**: Universal URI-based addressing for any Kumiho entity
-  ```
-  kref://project/space/item.kind?r=revision&a=artifact
-  ```
+| Package | Version | Description | Install |
+|---------|---------|-------------|---------|
+| **kumiho** | 0.4.0 | Core SDK library | `pip install kumiho` |
+| **kumiho-cli** | 1.0.0 | CLI tools & MCP server | `pip install kumiho-cli` |
 
-#### Graph Traversal & Lineage
-- **Dependency Tracking**: Track what assets depend on each other
-- **Impact Analysis**: Understand downstream effects of changes
-- **Path Finding**: Find shortest paths between revisions
-- **Edge Types**: `DEPENDS_ON`, `DERIVED_FROM`, `REFERENCED`, `CONTAINS`, `CREATED_FROM`
+### ⚠️ Breaking Changes
 
-#### AI Lineage Tracking
-- Track AI model training data provenance
-- GenAI image/video output lineage
-- Full dependency graphs for AI-generated assets
+**Removed from `kumiho` package**:
+- `kumiho-auth` CLI command (moved to `kumiho-cli` package)
 
-#### Event Streaming
-- Real-time notifications for asset changes
-- Routing key and kref glob filtering
-- Tier-based capabilities (persistence, cursor-based resume)
+**Migration**:
+```bash
+# Before (v0.3.0)
+pip install kumiho
+kumiho-auth login  # This worked
 
-#### Bundles
-- Aggregate items into versioned collections
-- Full audit trail with history tracking
+# After (v0.4.0)
+pip install kumiho kumiho-cli
+kumiho-cli login   # New command name
 
-#### Authentication
-- Firebase authentication integration
-- Built-in CLI: `kumiho-auth login`
-- Automatic token refresh
-- Credential caching at `~/.kumiho/`
+# Or install with CLI extra
+pip install kumiho[cli]
+kumiho-cli login
+```
 
-#### MCP Server (Model Context Protocol)
-- 39 tools for AI assistant integration
-- Read, create, update, and delete operations
-- Graph traversal capabilities
-- Install with `pip install kumiho[mcp]`
-- Run with `kumiho-mcp`
+### ✨ What's New
+
+- **Optional CLI Dependency**: Install `kumiho[cli]` to get both packages
+- **Cleaner SDK**: Core SDK no longer includes CLI dependencies
+- **Independent Versioning**: CLI tools can be updated without SDK changes
 
 ### 📦 Installation
 
 ```bash
-# Standard installation
+# Core SDK only (for programmatic use)
 pip install kumiho
 
-# With MCP server support
-pip install kumiho[mcp]
+# SDK + CLI tools (for interactive development)
+pip install kumiho[cli]
 
-# For development
-pip install kumiho[dev]
+# Or install separately
+pip install kumiho kumiho-cli
 ```
 
-### 🔧 Quick Start
+### 🔧 Usage
 
+**SDK (unchanged)**:
 ```python
 import kumiho
 
-# Authenticate and configure
+# Auto-configure from cached credentials
 kumiho.auto_configure_from_discovery()
 
-# Create a project
-project = kumiho.create_project("my-vfx-project", "VFX assets for 2025 film")
-
-# Create hierarchy
-space = project.create_space("characters")
+# Create and manage assets
+project = kumiho.create_project("my-project")
+space = project.create_space("assets")
 item = space.create_item("hero", "model")
+```
 
-# Create revision with metadata
-revision = item.create_revision(metadata={"artist": "jane", "software": "maya-2024"})
+**CLI (new package)**:
+```bash
+# Authentication
+kumiho-cli login
+kumiho-cli refresh
+kumiho-cli whoami
 
-# Attach file artifacts
-revision.create_artifact("hero_model.fbx", "smb://studio-nas/projects/film/hero_model.fbx")
-
-# Tag for approval workflow
-revision.tag("approved")
+# MCP Server (unchanged)
+kumiho-mcp
 ```
 
 ### 📋 Requirements
 
 - Python 3.10+
-- gRPC and Protocol Buffers
-- Firebase authentication (via `kumiho-auth` CLI)
+- `kumiho-cli` package for authentication (optional)
+
+### 📚 Documentation
+
+- **SDK Documentation**: [docs.kumiho.io/python](https://docs.kumiho.io/python)
+- **CLI Documentation**: See `kumiho-cli` package README
+
+### 🔗 Related Packages
+
+- [kumiho-cli](https://pypi.org/project/kumiho-cli/) - CLI tools (v1.0.0)
+
+---
+
+## kumiho-cli 1.0.0 (December 2024) - Initial Release 🎉
+
+### 🎯 Overview
+
+First standalone release of Kumiho CLI tools, extracted from the main `kumiho` package for independent versioning and lighter dependencies.
+
+### ✨ Features
+
+**Authentication Commands**:
+- `kumiho-cli login` - Interactive Firebase authentication
+- `kumiho-cli refresh` - Refresh cached tokens
+- `kumiho-cli whoami` - Display current user info
+
+**MCP Server** (Model Context Protocol):
+- `kumiho-mcp` - Start MCP server for AI assistants
+- 39 tools for GitHub Copilot, Claude, Cursor integration
+- Graph traversal and asset management capabilities
+
+**Credential Management**:
+- Secure storage in `~/.kumiho/kumiho_authentication.json`
+- Automatic token refresh
+- Firebase ID token + Control Plane JWT exchange
+- Environment variable support
+
+### 📦 Installation
+
+```bash
+# Standalone installation
+pip install kumiho-cli
+
+# Or with pipx (recommended for CLI tools)
+pipx install kumiho-cli
+
+# Or as part of kumiho SDK
+pip install kumiho[cli]
+```
+
+### 🔧 Quick Start
+
+```bash
+# Login to Kumiho Cloud
+kumiho-cli login
+
+# Check authentication status
+kumiho-cli whoami
+
+# Refresh tokens
+kumiho-cli refresh
+
+# Start MCP server for AI assistants
+kumiho-mcp
+```
+
+### 🌐 Cross-SDK Support
+
+The `kumiho-cli` package provides authentication for **all Kumiho SDKs**:
+
+**Python**:
+```python
+import kumiho
+kumiho.auto_configure_from_discovery()  # Uses ~/.kumiho/ credentials
+```
+
+**C++**:
+```cpp
+auto client = kumiho::Client::createFromEnv();  // Reads ~/.kumiho/
+```
+
+**Dart**:
+```dart
+final client = await KumihoClient.fromEnv();  // Reads ~/.kumiho/
+```
+
+**FastAPI**:
+```bash
+export KUMIHO_TOKEN=$(kumiho-cli get-token)  # For deployment
+```
+
+### 📋 Requirements
+
+- Python 3.8+ (lower requirement than SDK)
+- `requests>=2.31.0` (lightweight dependencies)
 
 ### 🌐 Supported Platforms
 
@@ -106,26 +185,33 @@ revision.tag("approved")
 - macOS
 - Linux
 
+### � Security
+
+- Credentials stored with `0600` permissions
+- Supports environment variable overrides
+- No credentials in code or version control
+
 ### 📚 Documentation
 
-- **Full Documentation**: [docs.kumiho.io/python](https://docs.kumiho.io/python)
-- **API Reference**: [docs.kumiho.io/python/api](https://docs.kumiho.io/python/api)
-- **GitHub Repository**: [github.com/kumihoclouds/kumiho-python](https://github.com/kumihoclouds/kumiho-python)
-
-### 🔗 Related SDKs
-
-- [Kumiho C++ SDK](https://docs.kumiho.io/cpp)
-- [Kumiho Dart SDK](https://docs.kumiho.io/dart)
-- [Kumiho FastAPI](https://docs.kumiho.io/fastapi)
+- **Full README**: [GitHub](https://github.com/kumihoclouds/kumiho-python/tree/main/kumiho-cli)
+- **Environment Variables**: See README for `KUMIHO_*` variables
 
 ### 📄 License
 
 Apache License 2.0
 
-### 🙏 Acknowledgments
+---
 
-Thank you to the VFX and creative technology community for feedback and inspiration in building a graph-native asset management solution.
+## Previous Releases
+
+### v0.3.0 (November 2024)
+
+- Initial development release
+- Integrated authentication CLI
+- MCP server support
+- Graph traversal features
 
 ---
 
-**Full Changelog**: https://github.com/kumihoclouds/kumiho-python/commits/v0.3.0
+**Repository**: https://github.com/kumihoclouds/kumiho-python  
+**Issues**: https://github.com/kumihoclouds/kumiho-python/issues
