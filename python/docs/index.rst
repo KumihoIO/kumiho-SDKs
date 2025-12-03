@@ -29,6 +29,7 @@ Key Features
 - **AI Lineage Tracking**: Track AI model training data provenance and dependencies
 - **BYO Storage**: Files stay on your local/NAS/on-prem storage
 - **Multi-Tenant SaaS**: Secure, region-aware multi-tenant architecture
+- **MCP Integration**: Connect AI assistants like GitHub Copilot and Claude directly
 
 Quick Start
 -----------
@@ -101,6 +102,7 @@ Contents
    getting-started
    concepts
    authentication
+   mcp
 
 .. toctree::
    :maxdepth: 2
@@ -115,6 +117,7 @@ Contents
    api/artifact
    api/edge
    api/kref
+   api/mcp_server
 
 .. toctree::
    :maxdepth: 1

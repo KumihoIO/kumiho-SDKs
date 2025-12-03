@@ -237,7 +237,7 @@ kref://my-project                              # Project
 kref://my-project/characters                   # Space
 kref://my-project/characters/hero.model        # Item (latest revision)
 kref://my-project/characters/hero.model?v=2    # Specific revision
-kref://my-project/characters/hero.model?v=2&r=model.fbx  # Specific artifact
+kref://my-project/characters/hero.model?v=2&r=model  # Specific artifact
 ```
 
 ## Error Handling
@@ -270,8 +270,47 @@ except KumihoError as e:
 5. **Track lineage**: Use edges to track dependencies between assets for
    full provenance.
 
+## AI Assistant Integration (MCP)
+
+The Kumiho SDK includes a Model Context Protocol (MCP) server that lets AI
+assistants like GitHub Copilot and Claude interact with your Kumiho assets
+directly.
+
+### Quick Setup
+
+1. Install with MCP support:
+   ```bash
+   pip install kumiho[mcp]
+   ```
+
+2. Authenticate:
+   ```bash
+   kumiho-auth login
+   ```
+
+3. Add to VS Code settings.json:
+   ```json
+   {
+       "mcp": {
+           "servers": {
+               "kumiho": {
+                   "command": "kumiho-mcp"
+               }
+           }
+       }
+   }
+   ```
+
+Once configured, you can ask your AI assistant questions like:
+- "List all my Kumiho projects"
+- "What assets depend on the hero model?"
+- "Create a new revision for kref://film-2024/characters/hero.model"
+
+For full documentation, see the [MCP Integration Guide](mcp.md).
+
 ## Next Steps
 
 - Read the [Concepts](concepts.md) guide for deeper understanding
+- Learn about [MCP Integration](mcp.md) for AI assistant support
 - Explore the [API Reference](api/kumiho.rst) for all available methods
 - Check out [Examples](https://github.com/kumihoclouds/kumiho-python/tree/main/examples)

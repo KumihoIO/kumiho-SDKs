@@ -213,6 +213,73 @@ with kumiho.use_client(tenant_b):
     projects_b = kumiho.get_projects()
 ```
 
+## MCP Server (Model Context Protocol)
+
+Kumiho includes an MCP server that enables AI assistants (GitHub Copilot, Claude, Cursor, etc.) to interact with your asset graph.
+
+### Installation
+
+```bash
+pip install kumiho[mcp]
+```
+
+### Running the MCP Server
+
+```bash
+# Ensure you're authenticated first
+kumiho-auth login
+
+# Start the MCP server
+kumiho-mcp
+```
+
+### VS Code Configuration
+
+Add to your VS Code `settings.json`:
+
+```json
+{
+    "mcp": {
+        "servers": {
+            "kumiho": {
+                "command": "kumiho-mcp"
+            }
+        }
+    }
+}
+```
+
+### Available Tools
+
+The MCP server exposes these tools to AI assistants:
+
+| Tool | Description |
+|------|-------------|
+| `kumiho_list_projects` | List all accessible projects |
+| `kumiho_get_project` | Get project details by name |
+| `kumiho_get_spaces` | Get spaces within a project |
+| `kumiho_search_items` | Search for items by name, kind, or context |
+| `kumiho_get_item` | Get item details by kref |
+| `kumiho_get_revision` | Get revision details by kref |
+| `kumiho_get_artifacts` | Get artifacts for a revision |
+| `kumiho_get_dependencies` | Get all dependencies of a revision |
+| `kumiho_get_dependents` | Get all dependents of a revision |
+| `kumiho_analyze_impact` | Analyze impact of changes |
+| `kumiho_find_path` | Find path between two revisions |
+| `kumiho_resolve_kref` | Resolve kref to file location |
+| `kumiho_create_revision` | Create a new revision |
+| `kumiho_tag_revision` | Apply a tag to a revision |
+| `kumiho_create_edge` | Create relationship between revisions |
+
+### Example AI Interactions
+
+With the MCP server running, you can ask your AI assistant:
+
+- "What are all the dependencies of this model?"
+- "What would be impacted if I change this texture?"
+- "Find all model assets in the characters space"
+- "What's the path from this render to its source scene?"
+
 ## Running Tests
 
 The test suite includes both unit tests (mocked) and integration tests (require live server):
@@ -246,3 +313,4 @@ pytest tests/ --cov=kumiho
 ## License
 
 Apache 2.0 - See [LICENSE](LICENSE) for details.
+

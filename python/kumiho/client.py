@@ -674,6 +674,7 @@ class _Client:
         req = CreateRevisionRequest(item_kref=item_kref.to_pb(), metadata=metadata or {}, number=number)
         resp = self.stub.CreateRevision(req)
         return Revision(resp, self)
+
     def get_revision(self, kref_uri: str) -> Revision:
         """Get a revision by its kref URI, with optional tag/time resolution.
 
