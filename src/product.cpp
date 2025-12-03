@@ -61,7 +61,7 @@ std::shared_ptr<Version> Product::createVersion(const Metadata& metadata) {
 }
 
 std::shared_ptr<Version> Product::getVersion(int version_number) {
-    std::string kref_uri = getKref().uri() + "?v=" + std::to_string(version_number);
+    std::string kref_uri = getKref().uri() + "?r=" + std::to_string(version_number);
     return client_->getVersion(kref_uri);
 }
 

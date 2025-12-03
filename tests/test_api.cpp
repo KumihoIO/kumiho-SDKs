@@ -9,6 +9,8 @@
 #include <thread>
 #include <string>
 #include <cstdlib> // For getenv
+#include <iomanip> // For std::put_time
+#include <sstream> // For std::ostringstream
 
 using ::testing::_;
 using ::testing::Return;
@@ -16,7 +18,6 @@ using ::testing::SetArgPointee;
 using ::testing::DoAll;
 
 // --- Constants ---
-const std::string ADMIN_USER = "kaveone";
 const std::string PUBLISHED_TAG = "published";
 
 // --- Helper Functions ---
@@ -35,65 +36,65 @@ public:
     MOCK_METHOD(grpc::Status, UpdateProject, (grpc::ClientContext* context, const kumiho::UpdateProjectRequest& request, kumiho::ProjectResponse* response), (override));
     MOCK_METHOD(grpc::Status, DeleteProject, (grpc::ClientContext* context, const kumiho::DeleteProjectRequest& request, kumiho::StatusResponse* response), (override));
 
-    // Group methods
-    MOCK_METHOD(grpc::Status, CreateGroup, (grpc::ClientContext* context, const kumiho::CreateGroupRequest& request, kumiho::GroupResponse* response), (override));
-    MOCK_METHOD(grpc::Status, GetGroup, (grpc::ClientContext* context, const kumiho::GetGroupRequest& request, kumiho::GroupResponse* response), (override));
-    MOCK_METHOD(grpc::Status, GetChildGroups, (grpc::ClientContext* context, const kumiho::GetChildGroupsRequest& request, kumiho::GetChildGroupsResponse* response), (override));
-    MOCK_METHOD(grpc::Status, DeleteGroup, (grpc::ClientContext* context, const kumiho::DeleteGroupRequest& request, kumiho::StatusResponse* response), (override));
-    MOCK_METHOD(grpc::Status, UpdateGroupMetadata, (grpc::ClientContext* context, const kumiho::UpdateMetadataRequest& request, kumiho::GroupResponse* response), (override));
+    // Space methods (formerly Group)
+    MOCK_METHOD(grpc::Status, CreateSpace, (grpc::ClientContext* context, const kumiho::CreateSpaceRequest& request, kumiho::SpaceResponse* response), (override));
+    MOCK_METHOD(grpc::Status, GetSpace, (grpc::ClientContext* context, const kumiho::GetSpaceRequest& request, kumiho::SpaceResponse* response), (override));
+    MOCK_METHOD(grpc::Status, GetChildSpaces, (grpc::ClientContext* context, const kumiho::GetChildSpacesRequest& request, kumiho::GetChildSpacesResponse* response), (override));
+    MOCK_METHOD(grpc::Status, DeleteSpace, (grpc::ClientContext* context, const kumiho::DeleteSpaceRequest& request, kumiho::StatusResponse* response), (override));
+    MOCK_METHOD(grpc::Status, UpdateSpaceMetadata, (grpc::ClientContext* context, const kumiho::UpdateMetadataRequest& request, kumiho::SpaceResponse* response), (override));
 
-    // Product methods
-    MOCK_METHOD(grpc::Status, CreateProduct, (grpc::ClientContext* context, const kumiho::CreateProductRequest& request, kumiho::ProductResponse* response), (override));
-    MOCK_METHOD(grpc::Status, GetProduct, (grpc::ClientContext* context, const kumiho::GetProductRequest& request, kumiho::ProductResponse* response), (override));
-    MOCK_METHOD(grpc::Status, GetProducts, (grpc::ClientContext* context, const kumiho::GetProductsRequest& request, kumiho::GetProductsResponse* response), (override));
-    MOCK_METHOD(grpc::Status, ProductSearch, (grpc::ClientContext* context, const kumiho::ProductSearchRequest& request, kumiho::GetProductsResponse* response), (override));
-    MOCK_METHOD(grpc::Status, DeleteProduct, (grpc::ClientContext* context, const kumiho::DeleteProductRequest& request, kumiho::StatusResponse* response), (override));
-    MOCK_METHOD(grpc::Status, UpdateProductMetadata, (grpc::ClientContext* context, const kumiho::UpdateMetadataRequest& request, kumiho::ProductResponse* response), (override));
+    // Item methods (formerly Product)
+    MOCK_METHOD(grpc::Status, CreateItem, (grpc::ClientContext* context, const kumiho::CreateItemRequest& request, kumiho::ItemResponse* response), (override));
+    MOCK_METHOD(grpc::Status, GetItem, (grpc::ClientContext* context, const kumiho::GetItemRequest& request, kumiho::ItemResponse* response), (override));
+    MOCK_METHOD(grpc::Status, GetItems, (grpc::ClientContext* context, const kumiho::GetItemsRequest& request, kumiho::GetItemsResponse* response), (override));
+    MOCK_METHOD(grpc::Status, ItemSearch, (grpc::ClientContext* context, const kumiho::ItemSearchRequest& request, kumiho::GetItemsResponse* response), (override));
+    MOCK_METHOD(grpc::Status, DeleteItem, (grpc::ClientContext* context, const kumiho::DeleteItemRequest& request, kumiho::StatusResponse* response), (override));
+    MOCK_METHOD(grpc::Status, UpdateItemMetadata, (grpc::ClientContext* context, const kumiho::UpdateMetadataRequest& request, kumiho::ItemResponse* response), (override));
 
-    // Version methods
-    MOCK_METHOD(grpc::Status, ResolveKref, (grpc::ClientContext* context, const kumiho::ResolveKrefRequest& request, kumiho::VersionResponse* response), (override));
+    // Revision methods (formerly Version)
+    MOCK_METHOD(grpc::Status, ResolveKref, (grpc::ClientContext* context, const kumiho::ResolveKrefRequest& request, kumiho::RevisionResponse* response), (override));
     MOCK_METHOD(grpc::Status, ResolveLocation, (grpc::ClientContext* context, const kumiho::ResolveLocationRequest& request, kumiho::ResolveLocationResponse* response), (override));
-    MOCK_METHOD(grpc::Status, CreateVersion, (grpc::ClientContext* context, const kumiho::CreateVersionRequest& request, kumiho::VersionResponse* response), (override));
-    MOCK_METHOD(grpc::Status, GetVersion, (grpc::ClientContext* context, const kumiho::KrefRequest& request, kumiho::VersionResponse* response), (override));
-    MOCK_METHOD(grpc::Status, GetVersions, (grpc::ClientContext* context, const kumiho::GetVersionsRequest& request, kumiho::GetVersionsResponse* response), (override));
-    MOCK_METHOD(grpc::Status, DeleteVersion, (grpc::ClientContext* context, const kumiho::DeleteVersionRequest& request, kumiho::StatusResponse* response), (override));
-    MOCK_METHOD(grpc::Status, PeekNextVersion, (grpc::ClientContext* context, const kumiho::PeekNextVersionRequest& request, kumiho::PeekNextVersionResponse* response), (override));
-    MOCK_METHOD(grpc::Status, UpdateVersionMetadata, (grpc::ClientContext* context, const kumiho::UpdateMetadataRequest& request, kumiho::VersionResponse* response), (override));
-    MOCK_METHOD(grpc::Status, TagVersion, (grpc::ClientContext* context, const kumiho::TagVersionRequest& request, kumiho::StatusResponse* response), (override));
-    MOCK_METHOD(grpc::Status, UnTagVersion, (grpc::ClientContext* context, const kumiho::UnTagVersionRequest& request, kumiho::StatusResponse* response), (override));
+    MOCK_METHOD(grpc::Status, CreateRevision, (grpc::ClientContext* context, const kumiho::CreateRevisionRequest& request, kumiho::RevisionResponse* response), (override));
+    MOCK_METHOD(grpc::Status, GetRevision, (grpc::ClientContext* context, const kumiho::KrefRequest& request, kumiho::RevisionResponse* response), (override));
+    MOCK_METHOD(grpc::Status, GetRevisions, (grpc::ClientContext* context, const kumiho::GetRevisionsRequest& request, kumiho::GetRevisionsResponse* response), (override));
+    MOCK_METHOD(grpc::Status, DeleteRevision, (grpc::ClientContext* context, const kumiho::DeleteRevisionRequest& request, kumiho::StatusResponse* response), (override));
+    MOCK_METHOD(grpc::Status, PeekNextRevision, (grpc::ClientContext* context, const kumiho::PeekNextRevisionRequest& request, kumiho::PeekNextRevisionResponse* response), (override));
+    MOCK_METHOD(grpc::Status, UpdateRevisionMetadata, (grpc::ClientContext* context, const kumiho::UpdateMetadataRequest& request, kumiho::RevisionResponse* response), (override));
+    MOCK_METHOD(grpc::Status, TagRevision, (grpc::ClientContext* context, const kumiho::TagRevisionRequest& request, kumiho::StatusResponse* response), (override));
+    MOCK_METHOD(grpc::Status, UnTagRevision, (grpc::ClientContext* context, const kumiho::UnTagRevisionRequest& request, kumiho::StatusResponse* response), (override));
     MOCK_METHOD(grpc::Status, HasTag, (grpc::ClientContext* context, const kumiho::HasTagRequest& request, kumiho::HasTagResponse* response), (override));
     MOCK_METHOD(grpc::Status, WasTagged, (grpc::ClientContext* context, const kumiho::WasTaggedRequest& request, kumiho::WasTaggedResponse* response), (override));
-    MOCK_METHOD(grpc::Status, SetDefaultResource, (grpc::ClientContext* context, const kumiho::SetDefaultResourceRequest& request, kumiho::StatusResponse* response), (override));
+    MOCK_METHOD(grpc::Status, SetDefaultArtifact, (grpc::ClientContext* context, const kumiho::SetDefaultArtifactRequest& request, kumiho::StatusResponse* response), (override));
 
-    // Resource methods
-    MOCK_METHOD(grpc::Status, CreateResource, (grpc::ClientContext* context, const kumiho::CreateResourceRequest& request, kumiho::ResourceResponse* response), (override));
-    MOCK_METHOD(grpc::Status, GetResource, (grpc::ClientContext* context, const kumiho::GetResourceRequest& request, kumiho::ResourceResponse* response), (override));
-    MOCK_METHOD(grpc::Status, GetResources, (grpc::ClientContext* context, const kumiho::GetResourcesRequest& request, kumiho::GetResourcesResponse* response), (override));
-    MOCK_METHOD(grpc::Status, GetResourcesByLocation, (grpc::ClientContext* context, const kumiho::GetResourcesByLocationRequest& request, kumiho::GetResourcesByLocationResponse* response), (override));
-    MOCK_METHOD(grpc::Status, DeleteResource, (grpc::ClientContext* context, const kumiho::DeleteResourceRequest& request, kumiho::StatusResponse* response), (override));
-    MOCK_METHOD(grpc::Status, UpdateResourceMetadata, (grpc::ClientContext* context, const kumiho::UpdateMetadataRequest& request, kumiho::ResourceResponse* response), (override));
+    // Artifact methods (formerly Resource)
+    MOCK_METHOD(grpc::Status, CreateArtifact, (grpc::ClientContext* context, const kumiho::CreateArtifactRequest& request, kumiho::ArtifactResponse* response), (override));
+    MOCK_METHOD(grpc::Status, GetArtifact, (grpc::ClientContext* context, const kumiho::GetArtifactRequest& request, kumiho::ArtifactResponse* response), (override));
+    MOCK_METHOD(grpc::Status, GetArtifacts, (grpc::ClientContext* context, const kumiho::GetArtifactsRequest& request, kumiho::GetArtifactsResponse* response), (override));
+    MOCK_METHOD(grpc::Status, GetArtifactsByLocation, (grpc::ClientContext* context, const kumiho::GetArtifactsByLocationRequest& request, kumiho::GetArtifactsByLocationResponse* response), (override));
+    MOCK_METHOD(grpc::Status, DeleteArtifact, (grpc::ClientContext* context, const kumiho::DeleteArtifactRequest& request, kumiho::StatusResponse* response), (override));
+    MOCK_METHOD(grpc::Status, UpdateArtifactMetadata, (grpc::ClientContext* context, const kumiho::UpdateMetadataRequest& request, kumiho::ArtifactResponse* response), (override));
 
     // Attribute methods
     MOCK_METHOD(grpc::Status, SetAttribute, (grpc::ClientContext* context, const kumiho::SetAttributeRequest& request, kumiho::StatusResponse* response), (override));
     MOCK_METHOD(grpc::Status, GetAttribute, (grpc::ClientContext* context, const kumiho::GetAttributeRequest& request, kumiho::GetAttributeResponse* response), (override));
     MOCK_METHOD(grpc::Status, DeleteAttribute, (grpc::ClientContext* context, const kumiho::DeleteAttributeRequest& request, kumiho::StatusResponse* response), (override));
 
-    // Link methods
-    MOCK_METHOD(grpc::Status, CreateLink, (grpc::ClientContext* context, const kumiho::CreateLinkRequest& request, kumiho::StatusResponse* response), (override));
-    MOCK_METHOD(grpc::Status, GetLinks, (grpc::ClientContext* context, const kumiho::GetLinksRequest& request, kumiho::GetLinksResponse* response), (override));
-    MOCK_METHOD(grpc::Status, DeleteLink, (grpc::ClientContext* context, const kumiho::DeleteLinkRequest& request, kumiho::StatusResponse* response), (override));
+    // Edge methods (formerly Link)
+    MOCK_METHOD(grpc::Status, CreateEdge, (grpc::ClientContext* context, const kumiho::CreateEdgeRequest& request, kumiho::StatusResponse* response), (override));
+    MOCK_METHOD(grpc::Status, GetEdges, (grpc::ClientContext* context, const kumiho::GetEdgesRequest& request, kumiho::GetEdgesResponse* response), (override));
+    MOCK_METHOD(grpc::Status, DeleteEdge, (grpc::ClientContext* context, const kumiho::DeleteEdgeRequest& request, kumiho::StatusResponse* response), (override));
 
     // Graph traversal methods
-    MOCK_METHOD(grpc::Status, TraverseLinks, (grpc::ClientContext* context, const kumiho::TraverseLinksRequest& request, kumiho::TraverseLinksResponse* response), (override));
+    MOCK_METHOD(grpc::Status, TraverseEdges, (grpc::ClientContext* context, const kumiho::TraverseEdgesRequest& request, kumiho::TraverseEdgesResponse* response), (override));
     MOCK_METHOD(grpc::Status, FindShortestPath, (grpc::ClientContext* context, const kumiho::ShortestPathRequest& request, kumiho::ShortestPathResponse* response), (override));
     MOCK_METHOD(grpc::Status, AnalyzeImpact, (grpc::ClientContext* context, const kumiho::ImpactAnalysisRequest& request, kumiho::ImpactAnalysisResponse* response), (override));
 
-    // Collection methods
-    MOCK_METHOD(grpc::Status, CreateCollection, (grpc::ClientContext* context, const kumiho::CreateCollectionRequest& request, kumiho::ProductResponse* response), (override));
-    MOCK_METHOD(grpc::Status, AddCollectionMember, (grpc::ClientContext* context, const kumiho::AddCollectionMemberRequest& request, kumiho::AddCollectionMemberResponse* response), (override));
-    MOCK_METHOD(grpc::Status, RemoveCollectionMember, (grpc::ClientContext* context, const kumiho::RemoveCollectionMemberRequest& request, kumiho::RemoveCollectionMemberResponse* response), (override));
-    MOCK_METHOD(grpc::Status, GetCollectionMembers, (grpc::ClientContext* context, const kumiho::GetCollectionMembersRequest& request, kumiho::GetCollectionMembersResponse* response), (override));
-    MOCK_METHOD(grpc::Status, GetCollectionHistory, (grpc::ClientContext* context, const kumiho::GetCollectionHistoryRequest& request, kumiho::GetCollectionHistoryResponse* response), (override));
+    // Bundle methods (formerly Collection)
+    MOCK_METHOD(grpc::Status, CreateBundle, (grpc::ClientContext* context, const kumiho::CreateBundleRequest& request, kumiho::ItemResponse* response), (override));
+    MOCK_METHOD(grpc::Status, AddBundleMember, (grpc::ClientContext* context, const kumiho::AddBundleMemberRequest& request, kumiho::AddBundleMemberResponse* response), (override));
+    MOCK_METHOD(grpc::Status, RemoveBundleMember, (grpc::ClientContext* context, const kumiho::RemoveBundleMemberRequest& request, kumiho::RemoveBundleMemberResponse* response), (override));
+    MOCK_METHOD(grpc::Status, GetBundleMembers, (grpc::ClientContext* context, const kumiho::GetBundleMembersRequest& request, kumiho::GetBundleMembersResponse* response), (override));
+    MOCK_METHOD(grpc::Status, GetBundleHistory, (grpc::ClientContext* context, const kumiho::GetBundleHistoryRequest& request, kumiho::GetBundleHistoryResponse* response), (override));
 
     // Tenant methods
     MOCK_METHOD(grpc::Status, GetTenantUsage, (grpc::ClientContext* context, const kumiho::GetTenantUsageRequest& request, kumiho::TenantUsageResponse* response), (override));
@@ -115,73 +116,73 @@ public:
     grpc::ClientAsyncResponseReaderInterface<kumiho::StatusResponse>* AsyncDeleteProjectRaw(grpc::ClientContext*, const kumiho::DeleteProjectRequest&, grpc::CompletionQueue*) override { return nullptr; }
     grpc::ClientAsyncResponseReaderInterface<kumiho::StatusResponse>* PrepareAsyncDeleteProjectRaw(grpc::ClientContext*, const kumiho::DeleteProjectRequest&, grpc::CompletionQueue*) override { return nullptr; }
     
-    // Group async methods
-    grpc::ClientAsyncResponseReaderInterface<kumiho::GroupResponse>* AsyncCreateGroupRaw(grpc::ClientContext*, const kumiho::CreateGroupRequest&, grpc::CompletionQueue*) override { return nullptr; }
-    grpc::ClientAsyncResponseReaderInterface<kumiho::GroupResponse>* PrepareAsyncCreateGroupRaw(grpc::ClientContext*, const kumiho::CreateGroupRequest&, grpc::CompletionQueue*) override { return nullptr; }
-    grpc::ClientAsyncResponseReaderInterface<kumiho::GroupResponse>* AsyncGetGroupRaw(grpc::ClientContext*, const kumiho::GetGroupRequest&, grpc::CompletionQueue*) override { return nullptr; }
-    grpc::ClientAsyncResponseReaderInterface<kumiho::GroupResponse>* PrepareAsyncGetGroupRaw(grpc::ClientContext*, const kumiho::GetGroupRequest&, grpc::CompletionQueue*) override { return nullptr; }
-    grpc::ClientAsyncResponseReaderInterface<kumiho::GetChildGroupsResponse>* AsyncGetChildGroupsRaw(grpc::ClientContext*, const kumiho::GetChildGroupsRequest&, grpc::CompletionQueue*) override { return nullptr; }
-    grpc::ClientAsyncResponseReaderInterface<kumiho::GetChildGroupsResponse>* PrepareAsyncGetChildGroupsRaw(grpc::ClientContext*, const kumiho::GetChildGroupsRequest&, grpc::CompletionQueue*) override { return nullptr; }
-    grpc::ClientAsyncResponseReaderInterface<kumiho::StatusResponse>* AsyncDeleteGroupRaw(grpc::ClientContext*, const kumiho::DeleteGroupRequest&, grpc::CompletionQueue*) override { return nullptr; }
-    grpc::ClientAsyncResponseReaderInterface<kumiho::StatusResponse>* PrepareAsyncDeleteGroupRaw(grpc::ClientContext*, const kumiho::DeleteGroupRequest&, grpc::CompletionQueue*) override { return nullptr; }
-    grpc::ClientAsyncResponseReaderInterface<kumiho::GroupResponse>* AsyncUpdateGroupMetadataRaw(grpc::ClientContext*, const kumiho::UpdateMetadataRequest&, grpc::CompletionQueue*) override { return nullptr; }
-    grpc::ClientAsyncResponseReaderInterface<kumiho::GroupResponse>* PrepareAsyncUpdateGroupMetadataRaw(grpc::ClientContext*, const kumiho::UpdateMetadataRequest&, grpc::CompletionQueue*) override { return nullptr; }
+    // Space async methods (formerly Group)
+    grpc::ClientAsyncResponseReaderInterface<kumiho::SpaceResponse>* AsyncCreateSpaceRaw(grpc::ClientContext*, const kumiho::CreateSpaceRequest&, grpc::CompletionQueue*) override { return nullptr; }
+    grpc::ClientAsyncResponseReaderInterface<kumiho::SpaceResponse>* PrepareAsyncCreateSpaceRaw(grpc::ClientContext*, const kumiho::CreateSpaceRequest&, grpc::CompletionQueue*) override { return nullptr; }
+    grpc::ClientAsyncResponseReaderInterface<kumiho::SpaceResponse>* AsyncGetSpaceRaw(grpc::ClientContext*, const kumiho::GetSpaceRequest&, grpc::CompletionQueue*) override { return nullptr; }
+    grpc::ClientAsyncResponseReaderInterface<kumiho::SpaceResponse>* PrepareAsyncGetSpaceRaw(grpc::ClientContext*, const kumiho::GetSpaceRequest&, grpc::CompletionQueue*) override { return nullptr; }
+    grpc::ClientAsyncResponseReaderInterface<kumiho::GetChildSpacesResponse>* AsyncGetChildSpacesRaw(grpc::ClientContext*, const kumiho::GetChildSpacesRequest&, grpc::CompletionQueue*) override { return nullptr; }
+    grpc::ClientAsyncResponseReaderInterface<kumiho::GetChildSpacesResponse>* PrepareAsyncGetChildSpacesRaw(grpc::ClientContext*, const kumiho::GetChildSpacesRequest&, grpc::CompletionQueue*) override { return nullptr; }
+    grpc::ClientAsyncResponseReaderInterface<kumiho::StatusResponse>* AsyncDeleteSpaceRaw(grpc::ClientContext*, const kumiho::DeleteSpaceRequest&, grpc::CompletionQueue*) override { return nullptr; }
+    grpc::ClientAsyncResponseReaderInterface<kumiho::StatusResponse>* PrepareAsyncDeleteSpaceRaw(grpc::ClientContext*, const kumiho::DeleteSpaceRequest&, grpc::CompletionQueue*) override { return nullptr; }
+    grpc::ClientAsyncResponseReaderInterface<kumiho::SpaceResponse>* AsyncUpdateSpaceMetadataRaw(grpc::ClientContext*, const kumiho::UpdateMetadataRequest&, grpc::CompletionQueue*) override { return nullptr; }
+    grpc::ClientAsyncResponseReaderInterface<kumiho::SpaceResponse>* PrepareAsyncUpdateSpaceMetadataRaw(grpc::ClientContext*, const kumiho::UpdateMetadataRequest&, grpc::CompletionQueue*) override { return nullptr; }
     
-    // Product async methods
-    grpc::ClientAsyncResponseReaderInterface<kumiho::ProductResponse>* AsyncCreateProductRaw(grpc::ClientContext*, const kumiho::CreateProductRequest&, grpc::CompletionQueue*) override { return nullptr; }
-    grpc::ClientAsyncResponseReaderInterface<kumiho::ProductResponse>* PrepareAsyncCreateProductRaw(grpc::ClientContext*, const kumiho::CreateProductRequest&, grpc::CompletionQueue*) override { return nullptr; }
-    grpc::ClientAsyncResponseReaderInterface<kumiho::ProductResponse>* AsyncGetProductRaw(grpc::ClientContext*, const kumiho::GetProductRequest&, grpc::CompletionQueue*) override { return nullptr; }
-    grpc::ClientAsyncResponseReaderInterface<kumiho::ProductResponse>* PrepareAsyncGetProductRaw(grpc::ClientContext*, const kumiho::GetProductRequest&, grpc::CompletionQueue*) override { return nullptr; }
-    grpc::ClientAsyncResponseReaderInterface<kumiho::GetProductsResponse>* AsyncGetProductsRaw(grpc::ClientContext*, const kumiho::GetProductsRequest&, grpc::CompletionQueue*) override { return nullptr; }
-    grpc::ClientAsyncResponseReaderInterface<kumiho::GetProductsResponse>* PrepareAsyncGetProductsRaw(grpc::ClientContext*, const kumiho::GetProductsRequest&, grpc::CompletionQueue*) override { return nullptr; }
-    grpc::ClientAsyncResponseReaderInterface<kumiho::GetProductsResponse>* AsyncProductSearchRaw(grpc::ClientContext*, const kumiho::ProductSearchRequest&, grpc::CompletionQueue*) override { return nullptr; }
-    grpc::ClientAsyncResponseReaderInterface<kumiho::GetProductsResponse>* PrepareAsyncProductSearchRaw(grpc::ClientContext*, const kumiho::ProductSearchRequest&, grpc::CompletionQueue*) override { return nullptr; }
-    grpc::ClientAsyncResponseReaderInterface<kumiho::StatusResponse>* AsyncDeleteProductRaw(grpc::ClientContext*, const kumiho::DeleteProductRequest&, grpc::CompletionQueue*) override { return nullptr; }
-    grpc::ClientAsyncResponseReaderInterface<kumiho::StatusResponse>* PrepareAsyncDeleteProductRaw(grpc::ClientContext*, const kumiho::DeleteProductRequest&, grpc::CompletionQueue*) override { return nullptr; }
-    grpc::ClientAsyncResponseReaderInterface<kumiho::ProductResponse>* AsyncUpdateProductMetadataRaw(grpc::ClientContext*, const kumiho::UpdateMetadataRequest&, grpc::CompletionQueue*) override { return nullptr; }
-    grpc::ClientAsyncResponseReaderInterface<kumiho::ProductResponse>* PrepareAsyncUpdateProductMetadataRaw(grpc::ClientContext*, const kumiho::UpdateMetadataRequest&, grpc::CompletionQueue*) override { return nullptr; }
+    // Item async methods (formerly Product)
+    grpc::ClientAsyncResponseReaderInterface<kumiho::ItemResponse>* AsyncCreateItemRaw(grpc::ClientContext*, const kumiho::CreateItemRequest&, grpc::CompletionQueue*) override { return nullptr; }
+    grpc::ClientAsyncResponseReaderInterface<kumiho::ItemResponse>* PrepareAsyncCreateItemRaw(grpc::ClientContext*, const kumiho::CreateItemRequest&, grpc::CompletionQueue*) override { return nullptr; }
+    grpc::ClientAsyncResponseReaderInterface<kumiho::ItemResponse>* AsyncGetItemRaw(grpc::ClientContext*, const kumiho::GetItemRequest&, grpc::CompletionQueue*) override { return nullptr; }
+    grpc::ClientAsyncResponseReaderInterface<kumiho::ItemResponse>* PrepareAsyncGetItemRaw(grpc::ClientContext*, const kumiho::GetItemRequest&, grpc::CompletionQueue*) override { return nullptr; }
+    grpc::ClientAsyncResponseReaderInterface<kumiho::GetItemsResponse>* AsyncGetItemsRaw(grpc::ClientContext*, const kumiho::GetItemsRequest&, grpc::CompletionQueue*) override { return nullptr; }
+    grpc::ClientAsyncResponseReaderInterface<kumiho::GetItemsResponse>* PrepareAsyncGetItemsRaw(grpc::ClientContext*, const kumiho::GetItemsRequest&, grpc::CompletionQueue*) override { return nullptr; }
+    grpc::ClientAsyncResponseReaderInterface<kumiho::GetItemsResponse>* AsyncItemSearchRaw(grpc::ClientContext*, const kumiho::ItemSearchRequest&, grpc::CompletionQueue*) override { return nullptr; }
+    grpc::ClientAsyncResponseReaderInterface<kumiho::GetItemsResponse>* PrepareAsyncItemSearchRaw(grpc::ClientContext*, const kumiho::ItemSearchRequest&, grpc::CompletionQueue*) override { return nullptr; }
+    grpc::ClientAsyncResponseReaderInterface<kumiho::StatusResponse>* AsyncDeleteItemRaw(grpc::ClientContext*, const kumiho::DeleteItemRequest&, grpc::CompletionQueue*) override { return nullptr; }
+    grpc::ClientAsyncResponseReaderInterface<kumiho::StatusResponse>* PrepareAsyncDeleteItemRaw(grpc::ClientContext*, const kumiho::DeleteItemRequest&, grpc::CompletionQueue*) override { return nullptr; }
+    grpc::ClientAsyncResponseReaderInterface<kumiho::ItemResponse>* AsyncUpdateItemMetadataRaw(grpc::ClientContext*, const kumiho::UpdateMetadataRequest&, grpc::CompletionQueue*) override { return nullptr; }
+    grpc::ClientAsyncResponseReaderInterface<kumiho::ItemResponse>* PrepareAsyncUpdateItemMetadataRaw(grpc::ClientContext*, const kumiho::UpdateMetadataRequest&, grpc::CompletionQueue*) override { return nullptr; }
     
-    // Version async methods
-    grpc::ClientAsyncResponseReaderInterface<kumiho::VersionResponse>* AsyncResolveKrefRaw(grpc::ClientContext*, const kumiho::ResolveKrefRequest&, grpc::CompletionQueue*) override { return nullptr; }
-    grpc::ClientAsyncResponseReaderInterface<kumiho::VersionResponse>* PrepareAsyncResolveKrefRaw(grpc::ClientContext*, const kumiho::ResolveKrefRequest&, grpc::CompletionQueue*) override { return nullptr; }
+    // Revision async methods (formerly Version)
+    grpc::ClientAsyncResponseReaderInterface<kumiho::RevisionResponse>* AsyncResolveKrefRaw(grpc::ClientContext*, const kumiho::ResolveKrefRequest&, grpc::CompletionQueue*) override { return nullptr; }
+    grpc::ClientAsyncResponseReaderInterface<kumiho::RevisionResponse>* PrepareAsyncResolveKrefRaw(grpc::ClientContext*, const kumiho::ResolveKrefRequest&, grpc::CompletionQueue*) override { return nullptr; }
     grpc::ClientAsyncResponseReaderInterface<kumiho::ResolveLocationResponse>* AsyncResolveLocationRaw(grpc::ClientContext*, const kumiho::ResolveLocationRequest&, grpc::CompletionQueue*) override { return nullptr; }
     grpc::ClientAsyncResponseReaderInterface<kumiho::ResolveLocationResponse>* PrepareAsyncResolveLocationRaw(grpc::ClientContext*, const kumiho::ResolveLocationRequest&, grpc::CompletionQueue*) override { return nullptr; }
-    grpc::ClientAsyncResponseReaderInterface<kumiho::VersionResponse>* AsyncCreateVersionRaw(grpc::ClientContext*, const kumiho::CreateVersionRequest&, grpc::CompletionQueue*) override { return nullptr; }
-    grpc::ClientAsyncResponseReaderInterface<kumiho::VersionResponse>* PrepareAsyncCreateVersionRaw(grpc::ClientContext*, const kumiho::CreateVersionRequest&, grpc::CompletionQueue*) override { return nullptr; }
-    grpc::ClientAsyncResponseReaderInterface<kumiho::VersionResponse>* AsyncGetVersionRaw(grpc::ClientContext*, const kumiho::KrefRequest&, grpc::CompletionQueue*) override { return nullptr; }
-    grpc::ClientAsyncResponseReaderInterface<kumiho::VersionResponse>* PrepareAsyncGetVersionRaw(grpc::ClientContext*, const kumiho::KrefRequest&, grpc::CompletionQueue*) override { return nullptr; }
-    grpc::ClientAsyncResponseReaderInterface<kumiho::GetVersionsResponse>* AsyncGetVersionsRaw(grpc::ClientContext*, const kumiho::GetVersionsRequest&, grpc::CompletionQueue*) override { return nullptr; }
-    grpc::ClientAsyncResponseReaderInterface<kumiho::GetVersionsResponse>* PrepareAsyncGetVersionsRaw(grpc::ClientContext*, const kumiho::GetVersionsRequest&, grpc::CompletionQueue*) override { return nullptr; }
-    grpc::ClientAsyncResponseReaderInterface<kumiho::StatusResponse>* AsyncDeleteVersionRaw(grpc::ClientContext*, const kumiho::DeleteVersionRequest&, grpc::CompletionQueue*) override { return nullptr; }
-    grpc::ClientAsyncResponseReaderInterface<kumiho::StatusResponse>* PrepareAsyncDeleteVersionRaw(grpc::ClientContext*, const kumiho::DeleteVersionRequest&, grpc::CompletionQueue*) override { return nullptr; }
-    grpc::ClientAsyncResponseReaderInterface<kumiho::PeekNextVersionResponse>* AsyncPeekNextVersionRaw(grpc::ClientContext*, const kumiho::PeekNextVersionRequest&, grpc::CompletionQueue*) override { return nullptr; }
-    grpc::ClientAsyncResponseReaderInterface<kumiho::PeekNextVersionResponse>* PrepareAsyncPeekNextVersionRaw(grpc::ClientContext*, const kumiho::PeekNextVersionRequest&, grpc::CompletionQueue*) override { return nullptr; }
-    grpc::ClientAsyncResponseReaderInterface<kumiho::VersionResponse>* AsyncUpdateVersionMetadataRaw(grpc::ClientContext*, const kumiho::UpdateMetadataRequest&, grpc::CompletionQueue*) override { return nullptr; }
-    grpc::ClientAsyncResponseReaderInterface<kumiho::VersionResponse>* PrepareAsyncUpdateVersionMetadataRaw(grpc::ClientContext*, const kumiho::UpdateMetadataRequest&, grpc::CompletionQueue*) override { return nullptr; }
-    grpc::ClientAsyncResponseReaderInterface<kumiho::StatusResponse>* AsyncTagVersionRaw(grpc::ClientContext*, const kumiho::TagVersionRequest&, grpc::CompletionQueue*) override { return nullptr; }
-    grpc::ClientAsyncResponseReaderInterface<kumiho::StatusResponse>* PrepareAsyncTagVersionRaw(grpc::ClientContext*, const kumiho::TagVersionRequest&, grpc::CompletionQueue*) override { return nullptr; }
-    grpc::ClientAsyncResponseReaderInterface<kumiho::StatusResponse>* AsyncUnTagVersionRaw(grpc::ClientContext*, const kumiho::UnTagVersionRequest&, grpc::CompletionQueue*) override { return nullptr; }
-    grpc::ClientAsyncResponseReaderInterface<kumiho::StatusResponse>* PrepareAsyncUnTagVersionRaw(grpc::ClientContext*, const kumiho::UnTagVersionRequest&, grpc::CompletionQueue*) override { return nullptr; }
+    grpc::ClientAsyncResponseReaderInterface<kumiho::RevisionResponse>* AsyncCreateRevisionRaw(grpc::ClientContext*, const kumiho::CreateRevisionRequest&, grpc::CompletionQueue*) override { return nullptr; }
+    grpc::ClientAsyncResponseReaderInterface<kumiho::RevisionResponse>* PrepareAsyncCreateRevisionRaw(grpc::ClientContext*, const kumiho::CreateRevisionRequest&, grpc::CompletionQueue*) override { return nullptr; }
+    grpc::ClientAsyncResponseReaderInterface<kumiho::RevisionResponse>* AsyncGetRevisionRaw(grpc::ClientContext*, const kumiho::KrefRequest&, grpc::CompletionQueue*) override { return nullptr; }
+    grpc::ClientAsyncResponseReaderInterface<kumiho::RevisionResponse>* PrepareAsyncGetRevisionRaw(grpc::ClientContext*, const kumiho::KrefRequest&, grpc::CompletionQueue*) override { return nullptr; }
+    grpc::ClientAsyncResponseReaderInterface<kumiho::GetRevisionsResponse>* AsyncGetRevisionsRaw(grpc::ClientContext*, const kumiho::GetRevisionsRequest&, grpc::CompletionQueue*) override { return nullptr; }
+    grpc::ClientAsyncResponseReaderInterface<kumiho::GetRevisionsResponse>* PrepareAsyncGetRevisionsRaw(grpc::ClientContext*, const kumiho::GetRevisionsRequest&, grpc::CompletionQueue*) override { return nullptr; }
+    grpc::ClientAsyncResponseReaderInterface<kumiho::StatusResponse>* AsyncDeleteRevisionRaw(grpc::ClientContext*, const kumiho::DeleteRevisionRequest&, grpc::CompletionQueue*) override { return nullptr; }
+    grpc::ClientAsyncResponseReaderInterface<kumiho::StatusResponse>* PrepareAsyncDeleteRevisionRaw(grpc::ClientContext*, const kumiho::DeleteRevisionRequest&, grpc::CompletionQueue*) override { return nullptr; }
+    grpc::ClientAsyncResponseReaderInterface<kumiho::PeekNextRevisionResponse>* AsyncPeekNextRevisionRaw(grpc::ClientContext*, const kumiho::PeekNextRevisionRequest&, grpc::CompletionQueue*) override { return nullptr; }
+    grpc::ClientAsyncResponseReaderInterface<kumiho::PeekNextRevisionResponse>* PrepareAsyncPeekNextRevisionRaw(grpc::ClientContext*, const kumiho::PeekNextRevisionRequest&, grpc::CompletionQueue*) override { return nullptr; }
+    grpc::ClientAsyncResponseReaderInterface<kumiho::RevisionResponse>* AsyncUpdateRevisionMetadataRaw(grpc::ClientContext*, const kumiho::UpdateMetadataRequest&, grpc::CompletionQueue*) override { return nullptr; }
+    grpc::ClientAsyncResponseReaderInterface<kumiho::RevisionResponse>* PrepareAsyncUpdateRevisionMetadataRaw(grpc::ClientContext*, const kumiho::UpdateMetadataRequest&, grpc::CompletionQueue*) override { return nullptr; }
+    grpc::ClientAsyncResponseReaderInterface<kumiho::StatusResponse>* AsyncTagRevisionRaw(grpc::ClientContext*, const kumiho::TagRevisionRequest&, grpc::CompletionQueue*) override { return nullptr; }
+    grpc::ClientAsyncResponseReaderInterface<kumiho::StatusResponse>* PrepareAsyncTagRevisionRaw(grpc::ClientContext*, const kumiho::TagRevisionRequest&, grpc::CompletionQueue*) override { return nullptr; }
+    grpc::ClientAsyncResponseReaderInterface<kumiho::StatusResponse>* AsyncUnTagRevisionRaw(grpc::ClientContext*, const kumiho::UnTagRevisionRequest&, grpc::CompletionQueue*) override { return nullptr; }
+    grpc::ClientAsyncResponseReaderInterface<kumiho::StatusResponse>* PrepareAsyncUnTagRevisionRaw(grpc::ClientContext*, const kumiho::UnTagRevisionRequest&, grpc::CompletionQueue*) override { return nullptr; }
     grpc::ClientAsyncResponseReaderInterface<kumiho::HasTagResponse>* AsyncHasTagRaw(grpc::ClientContext*, const kumiho::HasTagRequest&, grpc::CompletionQueue*) override { return nullptr; }
     grpc::ClientAsyncResponseReaderInterface<kumiho::HasTagResponse>* PrepareAsyncHasTagRaw(grpc::ClientContext*, const kumiho::HasTagRequest&, grpc::CompletionQueue*) override { return nullptr; }
     grpc::ClientAsyncResponseReaderInterface<kumiho::WasTaggedResponse>* AsyncWasTaggedRaw(grpc::ClientContext*, const kumiho::WasTaggedRequest&, grpc::CompletionQueue*) override { return nullptr; }
     grpc::ClientAsyncResponseReaderInterface<kumiho::WasTaggedResponse>* PrepareAsyncWasTaggedRaw(grpc::ClientContext*, const kumiho::WasTaggedRequest&, grpc::CompletionQueue*) override { return nullptr; }
-    grpc::ClientAsyncResponseReaderInterface<kumiho::StatusResponse>* AsyncSetDefaultResourceRaw(grpc::ClientContext*, const kumiho::SetDefaultResourceRequest&, grpc::CompletionQueue*) override { return nullptr; }
-    grpc::ClientAsyncResponseReaderInterface<kumiho::StatusResponse>* PrepareAsyncSetDefaultResourceRaw(grpc::ClientContext*, const kumiho::SetDefaultResourceRequest&, grpc::CompletionQueue*) override { return nullptr; }
+    grpc::ClientAsyncResponseReaderInterface<kumiho::StatusResponse>* AsyncSetDefaultArtifactRaw(grpc::ClientContext*, const kumiho::SetDefaultArtifactRequest&, grpc::CompletionQueue*) override { return nullptr; }
+    grpc::ClientAsyncResponseReaderInterface<kumiho::StatusResponse>* PrepareAsyncSetDefaultArtifactRaw(grpc::ClientContext*, const kumiho::SetDefaultArtifactRequest&, grpc::CompletionQueue*) override { return nullptr; }
     
-    // Resource async methods
-    grpc::ClientAsyncResponseReaderInterface<kumiho::ResourceResponse>* AsyncCreateResourceRaw(grpc::ClientContext*, const kumiho::CreateResourceRequest&, grpc::CompletionQueue*) override { return nullptr; }
-    grpc::ClientAsyncResponseReaderInterface<kumiho::ResourceResponse>* PrepareAsyncCreateResourceRaw(grpc::ClientContext*, const kumiho::CreateResourceRequest&, grpc::CompletionQueue*) override { return nullptr; }
-    grpc::ClientAsyncResponseReaderInterface<kumiho::ResourceResponse>* AsyncGetResourceRaw(grpc::ClientContext*, const kumiho::GetResourceRequest&, grpc::CompletionQueue*) override { return nullptr; }
-    grpc::ClientAsyncResponseReaderInterface<kumiho::ResourceResponse>* PrepareAsyncGetResourceRaw(grpc::ClientContext*, const kumiho::GetResourceRequest&, grpc::CompletionQueue*) override { return nullptr; }
-    grpc::ClientAsyncResponseReaderInterface<kumiho::GetResourcesResponse>* AsyncGetResourcesRaw(grpc::ClientContext*, const kumiho::GetResourcesRequest&, grpc::CompletionQueue*) override { return nullptr; }
-    grpc::ClientAsyncResponseReaderInterface<kumiho::GetResourcesResponse>* PrepareAsyncGetResourcesRaw(grpc::ClientContext*, const kumiho::GetResourcesRequest&, grpc::CompletionQueue*) override { return nullptr; }
-    grpc::ClientAsyncResponseReaderInterface<kumiho::GetResourcesByLocationResponse>* AsyncGetResourcesByLocationRaw(grpc::ClientContext*, const kumiho::GetResourcesByLocationRequest&, grpc::CompletionQueue*) override { return nullptr; }
-    grpc::ClientAsyncResponseReaderInterface<kumiho::GetResourcesByLocationResponse>* PrepareAsyncGetResourcesByLocationRaw(grpc::ClientContext*, const kumiho::GetResourcesByLocationRequest&, grpc::CompletionQueue*) override { return nullptr; }
-    grpc::ClientAsyncResponseReaderInterface<kumiho::StatusResponse>* AsyncDeleteResourceRaw(grpc::ClientContext*, const kumiho::DeleteResourceRequest&, grpc::CompletionQueue*) override { return nullptr; }
-    grpc::ClientAsyncResponseReaderInterface<kumiho::StatusResponse>* PrepareAsyncDeleteResourceRaw(grpc::ClientContext*, const kumiho::DeleteResourceRequest&, grpc::CompletionQueue*) override { return nullptr; }
-    grpc::ClientAsyncResponseReaderInterface<kumiho::ResourceResponse>* AsyncUpdateResourceMetadataRaw(grpc::ClientContext*, const kumiho::UpdateMetadataRequest&, grpc::CompletionQueue*) override { return nullptr; }
-    grpc::ClientAsyncResponseReaderInterface<kumiho::ResourceResponse>* PrepareAsyncUpdateResourceMetadataRaw(grpc::ClientContext*, const kumiho::UpdateMetadataRequest&, grpc::CompletionQueue*) override { return nullptr; }
+    // Artifact async methods (formerly Resource)
+    grpc::ClientAsyncResponseReaderInterface<kumiho::ArtifactResponse>* AsyncCreateArtifactRaw(grpc::ClientContext*, const kumiho::CreateArtifactRequest&, grpc::CompletionQueue*) override { return nullptr; }
+    grpc::ClientAsyncResponseReaderInterface<kumiho::ArtifactResponse>* PrepareAsyncCreateArtifactRaw(grpc::ClientContext*, const kumiho::CreateArtifactRequest&, grpc::CompletionQueue*) override { return nullptr; }
+    grpc::ClientAsyncResponseReaderInterface<kumiho::ArtifactResponse>* AsyncGetArtifactRaw(grpc::ClientContext*, const kumiho::GetArtifactRequest&, grpc::CompletionQueue*) override { return nullptr; }
+    grpc::ClientAsyncResponseReaderInterface<kumiho::ArtifactResponse>* PrepareAsyncGetArtifactRaw(grpc::ClientContext*, const kumiho::GetArtifactRequest&, grpc::CompletionQueue*) override { return nullptr; }
+    grpc::ClientAsyncResponseReaderInterface<kumiho::GetArtifactsResponse>* AsyncGetArtifactsRaw(grpc::ClientContext*, const kumiho::GetArtifactsRequest&, grpc::CompletionQueue*) override { return nullptr; }
+    grpc::ClientAsyncResponseReaderInterface<kumiho::GetArtifactsResponse>* PrepareAsyncGetArtifactsRaw(grpc::ClientContext*, const kumiho::GetArtifactsRequest&, grpc::CompletionQueue*) override { return nullptr; }
+    grpc::ClientAsyncResponseReaderInterface<kumiho::GetArtifactsByLocationResponse>* AsyncGetArtifactsByLocationRaw(grpc::ClientContext*, const kumiho::GetArtifactsByLocationRequest&, grpc::CompletionQueue*) override { return nullptr; }
+    grpc::ClientAsyncResponseReaderInterface<kumiho::GetArtifactsByLocationResponse>* PrepareAsyncGetArtifactsByLocationRaw(grpc::ClientContext*, const kumiho::GetArtifactsByLocationRequest&, grpc::CompletionQueue*) override { return nullptr; }
+    grpc::ClientAsyncResponseReaderInterface<kumiho::StatusResponse>* AsyncDeleteArtifactRaw(grpc::ClientContext*, const kumiho::DeleteArtifactRequest&, grpc::CompletionQueue*) override { return nullptr; }
+    grpc::ClientAsyncResponseReaderInterface<kumiho::StatusResponse>* PrepareAsyncDeleteArtifactRaw(grpc::ClientContext*, const kumiho::DeleteArtifactRequest&, grpc::CompletionQueue*) override { return nullptr; }
+    grpc::ClientAsyncResponseReaderInterface<kumiho::ArtifactResponse>* AsyncUpdateArtifactMetadataRaw(grpc::ClientContext*, const kumiho::UpdateMetadataRequest&, grpc::CompletionQueue*) override { return nullptr; }
+    grpc::ClientAsyncResponseReaderInterface<kumiho::ArtifactResponse>* PrepareAsyncUpdateArtifactMetadataRaw(grpc::ClientContext*, const kumiho::UpdateMetadataRequest&, grpc::CompletionQueue*) override { return nullptr; }
     
     // Attribute async methods
     grpc::ClientAsyncResponseReaderInterface<kumiho::StatusResponse>* AsyncSetAttributeRaw(grpc::ClientContext*, const kumiho::SetAttributeRequest&, grpc::CompletionQueue*) override { return nullptr; }
@@ -191,33 +192,33 @@ public:
     grpc::ClientAsyncResponseReaderInterface<kumiho::StatusResponse>* AsyncDeleteAttributeRaw(grpc::ClientContext*, const kumiho::DeleteAttributeRequest&, grpc::CompletionQueue*) override { return nullptr; }
     grpc::ClientAsyncResponseReaderInterface<kumiho::StatusResponse>* PrepareAsyncDeleteAttributeRaw(grpc::ClientContext*, const kumiho::DeleteAttributeRequest&, grpc::CompletionQueue*) override { return nullptr; }
     
-    // Link async methods
-    grpc::ClientAsyncResponseReaderInterface<kumiho::StatusResponse>* AsyncCreateLinkRaw(grpc::ClientContext*, const kumiho::CreateLinkRequest&, grpc::CompletionQueue*) override { return nullptr; }
-    grpc::ClientAsyncResponseReaderInterface<kumiho::StatusResponse>* PrepareAsyncCreateLinkRaw(grpc::ClientContext*, const kumiho::CreateLinkRequest&, grpc::CompletionQueue*) override { return nullptr; }
-    grpc::ClientAsyncResponseReaderInterface<kumiho::GetLinksResponse>* AsyncGetLinksRaw(grpc::ClientContext*, const kumiho::GetLinksRequest&, grpc::CompletionQueue*) override { return nullptr; }
-    grpc::ClientAsyncResponseReaderInterface<kumiho::GetLinksResponse>* PrepareAsyncGetLinksRaw(grpc::ClientContext*, const kumiho::GetLinksRequest&, grpc::CompletionQueue*) override { return nullptr; }
-    grpc::ClientAsyncResponseReaderInterface<kumiho::StatusResponse>* AsyncDeleteLinkRaw(grpc::ClientContext*, const kumiho::DeleteLinkRequest&, grpc::CompletionQueue*) override { return nullptr; }
-    grpc::ClientAsyncResponseReaderInterface<kumiho::StatusResponse>* PrepareAsyncDeleteLinkRaw(grpc::ClientContext*, const kumiho::DeleteLinkRequest&, grpc::CompletionQueue*) override { return nullptr; }
+    // Edge async methods (formerly Link)
+    grpc::ClientAsyncResponseReaderInterface<kumiho::StatusResponse>* AsyncCreateEdgeRaw(grpc::ClientContext*, const kumiho::CreateEdgeRequest&, grpc::CompletionQueue*) override { return nullptr; }
+    grpc::ClientAsyncResponseReaderInterface<kumiho::StatusResponse>* PrepareAsyncCreateEdgeRaw(grpc::ClientContext*, const kumiho::CreateEdgeRequest&, grpc::CompletionQueue*) override { return nullptr; }
+    grpc::ClientAsyncResponseReaderInterface<kumiho::GetEdgesResponse>* AsyncGetEdgesRaw(grpc::ClientContext*, const kumiho::GetEdgesRequest&, grpc::CompletionQueue*) override { return nullptr; }
+    grpc::ClientAsyncResponseReaderInterface<kumiho::GetEdgesResponse>* PrepareAsyncGetEdgesRaw(grpc::ClientContext*, const kumiho::GetEdgesRequest&, grpc::CompletionQueue*) override { return nullptr; }
+    grpc::ClientAsyncResponseReaderInterface<kumiho::StatusResponse>* AsyncDeleteEdgeRaw(grpc::ClientContext*, const kumiho::DeleteEdgeRequest&, grpc::CompletionQueue*) override { return nullptr; }
+    grpc::ClientAsyncResponseReaderInterface<kumiho::StatusResponse>* PrepareAsyncDeleteEdgeRaw(grpc::ClientContext*, const kumiho::DeleteEdgeRequest&, grpc::CompletionQueue*) override { return nullptr; }
     
     // Graph traversal async methods
-    grpc::ClientAsyncResponseReaderInterface<kumiho::TraverseLinksResponse>* AsyncTraverseLinksRaw(grpc::ClientContext*, const kumiho::TraverseLinksRequest&, grpc::CompletionQueue*) override { return nullptr; }
-    grpc::ClientAsyncResponseReaderInterface<kumiho::TraverseLinksResponse>* PrepareAsyncTraverseLinksRaw(grpc::ClientContext*, const kumiho::TraverseLinksRequest&, grpc::CompletionQueue*) override { return nullptr; }
+    grpc::ClientAsyncResponseReaderInterface<kumiho::TraverseEdgesResponse>* AsyncTraverseEdgesRaw(grpc::ClientContext*, const kumiho::TraverseEdgesRequest&, grpc::CompletionQueue*) override { return nullptr; }
+    grpc::ClientAsyncResponseReaderInterface<kumiho::TraverseEdgesResponse>* PrepareAsyncTraverseEdgesRaw(grpc::ClientContext*, const kumiho::TraverseEdgesRequest&, grpc::CompletionQueue*) override { return nullptr; }
     grpc::ClientAsyncResponseReaderInterface<kumiho::ShortestPathResponse>* AsyncFindShortestPathRaw(grpc::ClientContext*, const kumiho::ShortestPathRequest&, grpc::CompletionQueue*) override { return nullptr; }
     grpc::ClientAsyncResponseReaderInterface<kumiho::ShortestPathResponse>* PrepareAsyncFindShortestPathRaw(grpc::ClientContext*, const kumiho::ShortestPathRequest&, grpc::CompletionQueue*) override { return nullptr; }
     grpc::ClientAsyncResponseReaderInterface<kumiho::ImpactAnalysisResponse>* AsyncAnalyzeImpactRaw(grpc::ClientContext*, const kumiho::ImpactAnalysisRequest&, grpc::CompletionQueue*) override { return nullptr; }
     grpc::ClientAsyncResponseReaderInterface<kumiho::ImpactAnalysisResponse>* PrepareAsyncAnalyzeImpactRaw(grpc::ClientContext*, const kumiho::ImpactAnalysisRequest&, grpc::CompletionQueue*) override { return nullptr; }
     
-    // Collection async methods
-    grpc::ClientAsyncResponseReaderInterface<kumiho::ProductResponse>* AsyncCreateCollectionRaw(grpc::ClientContext*, const kumiho::CreateCollectionRequest&, grpc::CompletionQueue*) override { return nullptr; }
-    grpc::ClientAsyncResponseReaderInterface<kumiho::ProductResponse>* PrepareAsyncCreateCollectionRaw(grpc::ClientContext*, const kumiho::CreateCollectionRequest&, grpc::CompletionQueue*) override { return nullptr; }
-    grpc::ClientAsyncResponseReaderInterface<kumiho::AddCollectionMemberResponse>* AsyncAddCollectionMemberRaw(grpc::ClientContext*, const kumiho::AddCollectionMemberRequest&, grpc::CompletionQueue*) override { return nullptr; }
-    grpc::ClientAsyncResponseReaderInterface<kumiho::AddCollectionMemberResponse>* PrepareAsyncAddCollectionMemberRaw(grpc::ClientContext*, const kumiho::AddCollectionMemberRequest&, grpc::CompletionQueue*) override { return nullptr; }
-    grpc::ClientAsyncResponseReaderInterface<kumiho::RemoveCollectionMemberResponse>* AsyncRemoveCollectionMemberRaw(grpc::ClientContext*, const kumiho::RemoveCollectionMemberRequest&, grpc::CompletionQueue*) override { return nullptr; }
-    grpc::ClientAsyncResponseReaderInterface<kumiho::RemoveCollectionMemberResponse>* PrepareAsyncRemoveCollectionMemberRaw(grpc::ClientContext*, const kumiho::RemoveCollectionMemberRequest&, grpc::CompletionQueue*) override { return nullptr; }
-    grpc::ClientAsyncResponseReaderInterface<kumiho::GetCollectionMembersResponse>* AsyncGetCollectionMembersRaw(grpc::ClientContext*, const kumiho::GetCollectionMembersRequest&, grpc::CompletionQueue*) override { return nullptr; }
-    grpc::ClientAsyncResponseReaderInterface<kumiho::GetCollectionMembersResponse>* PrepareAsyncGetCollectionMembersRaw(grpc::ClientContext*, const kumiho::GetCollectionMembersRequest&, grpc::CompletionQueue*) override { return nullptr; }
-    grpc::ClientAsyncResponseReaderInterface<kumiho::GetCollectionHistoryResponse>* AsyncGetCollectionHistoryRaw(grpc::ClientContext*, const kumiho::GetCollectionHistoryRequest&, grpc::CompletionQueue*) override { return nullptr; }
-    grpc::ClientAsyncResponseReaderInterface<kumiho::GetCollectionHistoryResponse>* PrepareAsyncGetCollectionHistoryRaw(grpc::ClientContext*, const kumiho::GetCollectionHistoryRequest&, grpc::CompletionQueue*) override { return nullptr; }
+    // Bundle async methods (formerly Collection)
+    grpc::ClientAsyncResponseReaderInterface<kumiho::ItemResponse>* AsyncCreateBundleRaw(grpc::ClientContext*, const kumiho::CreateBundleRequest&, grpc::CompletionQueue*) override { return nullptr; }
+    grpc::ClientAsyncResponseReaderInterface<kumiho::ItemResponse>* PrepareAsyncCreateBundleRaw(grpc::ClientContext*, const kumiho::CreateBundleRequest&, grpc::CompletionQueue*) override { return nullptr; }
+    grpc::ClientAsyncResponseReaderInterface<kumiho::AddBundleMemberResponse>* AsyncAddBundleMemberRaw(grpc::ClientContext*, const kumiho::AddBundleMemberRequest&, grpc::CompletionQueue*) override { return nullptr; }
+    grpc::ClientAsyncResponseReaderInterface<kumiho::AddBundleMemberResponse>* PrepareAsyncAddBundleMemberRaw(grpc::ClientContext*, const kumiho::AddBundleMemberRequest&, grpc::CompletionQueue*) override { return nullptr; }
+    grpc::ClientAsyncResponseReaderInterface<kumiho::RemoveBundleMemberResponse>* AsyncRemoveBundleMemberRaw(grpc::ClientContext*, const kumiho::RemoveBundleMemberRequest&, grpc::CompletionQueue*) override { return nullptr; }
+    grpc::ClientAsyncResponseReaderInterface<kumiho::RemoveBundleMemberResponse>* PrepareAsyncRemoveBundleMemberRaw(grpc::ClientContext*, const kumiho::RemoveBundleMemberRequest&, grpc::CompletionQueue*) override { return nullptr; }
+    grpc::ClientAsyncResponseReaderInterface<kumiho::GetBundleMembersResponse>* AsyncGetBundleMembersRaw(grpc::ClientContext*, const kumiho::GetBundleMembersRequest&, grpc::CompletionQueue*) override { return nullptr; }
+    grpc::ClientAsyncResponseReaderInterface<kumiho::GetBundleMembersResponse>* PrepareAsyncGetBundleMembersRaw(grpc::ClientContext*, const kumiho::GetBundleMembersRequest&, grpc::CompletionQueue*) override { return nullptr; }
+    grpc::ClientAsyncResponseReaderInterface<kumiho::GetBundleHistoryResponse>* AsyncGetBundleHistoryRaw(grpc::ClientContext*, const kumiho::GetBundleHistoryRequest&, grpc::CompletionQueue*) override { return nullptr; }
+    grpc::ClientAsyncResponseReaderInterface<kumiho::GetBundleHistoryResponse>* PrepareAsyncGetBundleHistoryRaw(grpc::ClientContext*, const kumiho::GetBundleHistoryRequest&, grpc::CompletionQueue*) override { return nullptr; }
     
     // Tenant async methods
     grpc::ClientAsyncResponseReaderInterface<kumiho::TenantUsageResponse>* AsyncGetTenantUsageRaw(grpc::ClientContext*, const kumiho::GetTenantUsageRequest&, grpc::CompletionQueue*) override { return nullptr; }
@@ -247,44 +248,44 @@ protected:
 };
 
 // --- Unit Tests ---
-TEST_F(KumihoUnitTest, CreateGroup) {
-    kumiho::GroupResponse fake_response;
+TEST_F(KumihoUnitTest, CreateSpace) {
+    kumiho::SpaceResponse fake_response;
     fake_response.set_path("/projectA/seqA");
-    EXPECT_CALL(*mock_stub, CreateGroup(_, _, _))
+    EXPECT_CALL(*mock_stub, CreateSpace(_, _, _))
         .WillOnce(DoAll(SetArgPointee<2>(fake_response), Return(grpc::Status::OK)));
 
-    auto group = client->createGroup("/projectA", "seqA");
-    ASSERT_NE(group, nullptr);
-    EXPECT_EQ(group->getPath(), "/projectA/seqA");
+    auto space = client->createSpace("/projectA", "seqA");
+    ASSERT_NE(space, nullptr);
+    EXPECT_EQ(space->getPath(), "/projectA/seqA");
 }
 
-TEST_F(KumihoUnitTest, GetGroupFromPath) {
-    kumiho::GroupResponse fake_response;
+TEST_F(KumihoUnitTest, GetSpaceFromPath) {
+    kumiho::SpaceResponse fake_response;
     fake_response.set_path("/projectA/seqA");
-    EXPECT_CALL(*mock_stub, GetGroup(_, _, _))
+    EXPECT_CALL(*mock_stub, GetSpace(_, _, _))
         .WillOnce(DoAll(SetArgPointee<2>(fake_response), Return(grpc::Status::OK)));
     
-    auto group = client->getGroup("projectA/seqA");
-    ASSERT_NE(group, nullptr);
-    EXPECT_EQ(group->getPath(), "/projectA/seqA");
+    auto space = client->getSpace("projectA/seqA");
+    ASSERT_NE(space, nullptr);
+    EXPECT_EQ(space->getPath(), "/projectA/seqA");
 }
 
-TEST_F(KumihoUnitTest, ProductSearchWithContext) {
-    kumiho::GetProductsResponse fake_response;
-    auto* product_res = fake_response.add_products();
-    product_res->mutable_kref()->set_uri("kref://projectA/seqA/001/kumiho.model");
+TEST_F(KumihoUnitTest, ItemSearchWithContext) {
+    kumiho::GetItemsResponse fake_response;
+    auto* item_res = fake_response.add_items();
+    item_res->mutable_kref()->set_uri("kref://projectA/seqA/001/kumiho.model");
 
-    EXPECT_CALL(*mock_stub, ProductSearch(_, _, _))
+    EXPECT_CALL(*mock_stub, ItemSearch(_, _, _))
         .WillOnce(DoAll(SetArgPointee<2>(fake_response), Return(grpc::Status::OK)));
 
-    auto results = client->productSearch("projectA/seqA", "", "model");
+    auto results = client->itemSearch("projectA/seqA", "", "model");
     ASSERT_EQ(results.size(), 1);
     EXPECT_EQ(results[0]->getKref().uri(), "kref://projectA/seqA/001/kumiho.model");
 }
 
 TEST_F(KumihoUnitTest, ResolveKrefWithTime) {
-    kumiho::VersionResponse fake_response;
-    fake_response.mutable_kref()->set_uri("kref://obj1?v=2");
+    kumiho::RevisionResponse fake_response;
+    fake_response.mutable_kref()->set_uri("kref://obj1?r=2");
     fake_response.set_number(2);
 
     EXPECT_CALL(*mock_stub, ResolveKref(_, _, _))
@@ -292,12 +293,12 @@ TEST_F(KumihoUnitTest, ResolveKrefWithTime) {
     
     auto resolved = client->resolveKref("kref://obj1", "", "202510131200");
     ASSERT_NE(resolved, nullptr);
-    EXPECT_EQ(resolved->getVersionNumber(), 2);
+    EXPECT_EQ(resolved->getRevisionNumber(), 2);
 }
 
 TEST_F(KumihoUnitTest, ResolveKrefWithTagAndTime) {
-    kumiho::VersionResponse fake_response;
-    fake_response.mutable_kref()->set_uri("kref://obj1?v=1");
+    kumiho::RevisionResponse fake_response;
+    fake_response.mutable_kref()->set_uri("kref://obj1?r=1");
     fake_response.set_number(1);
 
     EXPECT_CALL(*mock_stub, ResolveKref(_, _, _))
@@ -305,41 +306,41 @@ TEST_F(KumihoUnitTest, ResolveKrefWithTagAndTime) {
 
     auto resolved = client->resolveKref("kref://obj1", "published", "202510101000");
     ASSERT_NE(resolved, nullptr);
-    EXPECT_EQ(resolved->getVersionNumber(), 1);
+    EXPECT_EQ(resolved->getRevisionNumber(), 1);
 }
 
 TEST_F(KumihoUnitTest, ResolveKrefInvalidTimeFormat) {
     EXPECT_THROW(client->resolveKref("kref://some_id", "", "2025-10-13 12:00:00"), std::invalid_argument);
 }
 
-TEST_F(KumihoUnitTest, ResolveProductKrefFallbackToFirstResource) {
-    // Setup: Product KREF, no default_resource, but one resource exists
-    kumiho::ProductResponse product_response;
-    product_response.mutable_kref()->set_uri("kref://group1/prod1.type");
-    EXPECT_CALL(*mock_stub, GetProduct(_, _, _))
-        .WillOnce(DoAll(SetArgPointee<2>(product_response), Return(grpc::Status::OK)));
+TEST_F(KumihoUnitTest, ResolveItemKrefFallbackToFirstArtifact) {
+    // Setup: Item KREF, no default_artifact, but one artifact exists
+    kumiho::ItemResponse item_response;
+    item_response.mutable_kref()->set_uri("kref://space1/item1.kind");
+    EXPECT_CALL(*mock_stub, GetItem(_, _, _))
+        .WillOnce(DoAll(SetArgPointee<2>(item_response), Return(grpc::Status::OK)));
 
-    kumiho::VersionResponse version_response;
-    version_response.mutable_kref()->set_uri("kref://group1/prod1.type?v=1");
-    version_response.set_number(1);
-    // No default_resource set
-    kumiho::GetVersionsResponse versions_response;
-    auto* v = versions_response.add_versions();
-    *v = version_response;
-    EXPECT_CALL(*mock_stub, GetVersions(_, _, _))
-        .WillOnce(DoAll(SetArgPointee<2>(versions_response), Return(grpc::Status::OK)));
+    kumiho::RevisionResponse revision_response;
+    revision_response.mutable_kref()->set_uri("kref://space1/item1.kind?r=1");
+    revision_response.set_number(1);
+    // No default_artifact set
+    kumiho::GetRevisionsResponse revisions_response;
+    auto* v = revisions_response.add_revisions();
+    *v = revision_response;
+    EXPECT_CALL(*mock_stub, GetRevisions(_, _, _))
+        .WillOnce(DoAll(SetArgPointee<2>(revisions_response), Return(grpc::Status::OK)));
 
-    kumiho::ResourceResponse resource_response;
-    resource_response.set_location("/path/to/resource1");
-    kumiho::GetResourcesResponse resources_response;
-    auto* r = resources_response.add_resources();
-    *r = resource_response;
-    EXPECT_CALL(*mock_stub, GetResources(_, _, _))
-        .WillOnce(DoAll(SetArgPointee<2>(resources_response), Return(grpc::Status::OK)));
+    kumiho::ArtifactResponse artifact_response;
+    artifact_response.set_location("/path/to/artifact1");
+    kumiho::GetArtifactsResponse artifacts_response;
+    auto* r = artifacts_response.add_artifacts();
+    *r = artifact_response;
+    EXPECT_CALL(*mock_stub, GetArtifacts(_, _, _))
+        .WillOnce(DoAll(SetArgPointee<2>(artifacts_response), Return(grpc::Status::OK)));
 
-    auto location = client->resolve("kref://group1/prod1.type");
+    auto location = client->resolve("kref://space1/item1.kind");
     ASSERT_TRUE(location.has_value());
-    EXPECT_EQ(location.value(), "/path/to/resource1");
+    EXPECT_EQ(location.value(), "/path/to/artifact1");
 }
 
 // --- Integration Test Fixture ---
@@ -352,64 +353,64 @@ protected:
 
     void TearDown() override {
         std::cout << "TearDown: Starting cleanup of " 
-                  << created_resources.size() << " resources, "
-                  << created_versions.size() << " versions, "
-                  << created_products.size() << " products, "
-                  << created_groups.size() << " groups" << std::endl;
+                  << created_artifacts.size() << " artifacts, "
+                  << created_revisions.size() << " revisions, "
+                  << created_items.size() << " items, "
+                  << created_spaces.size() << " spaces" << std::endl;
         
-        // Clean up created objects in reverse dependency order: resources -> versions -> products -> groups
-        for (auto it = created_resources.rbegin(); it != created_resources.rend(); ++it) {
+        // Clean up created objects in reverse dependency order: artifacts -> revisions -> items -> spaces
+        for (auto it = created_artifacts.rbegin(); it != created_artifacts.rend(); ++it) {
             try {
-                std::cout << "Deleting resource: " << (*it)->getKref().uri() << std::endl;
-                (*it)->deleteResource(true);
-                std::cout << "Successfully deleted resource" << std::endl;
+                std::cout << "Deleting artifact: " << (*it)->getKref().uri() << std::endl;
+                (*it)->deleteArtifact(true);
+                std::cout << "Successfully deleted artifact" << std::endl;
             } catch (const std::exception& e) {
-                std::cout << "ERROR: Failed to cleanup resource: " << e.what() << std::endl;
+                std::cout << "ERROR: Failed to cleanup artifact: " << e.what() << std::endl;
             }
         }
-        created_resources.clear();
+        created_artifacts.clear();
 
-        for (auto it = created_versions.rbegin(); it != created_versions.rend(); ++it) {
+        for (auto it = created_revisions.rbegin(); it != created_revisions.rend(); ++it) {
             try {
-                std::cout << "Deleting version: " << (*it)->getKref().uri() << std::endl;
-                (*it)->deleteVersion(true);
-                std::cout << "Successfully deleted version" << std::endl;
+                std::cout << "Deleting revision: " << (*it)->getKref().uri() << std::endl;
+                (*it)->deleteRevision(true);
+                std::cout << "Successfully deleted revision" << std::endl;
             } catch (const std::exception& e) {
-                std::cout << "ERROR: Failed to cleanup version: " << e.what() << std::endl;
+                std::cout << "ERROR: Failed to cleanup revision: " << e.what() << std::endl;
             }
         }
-        created_versions.clear();
+        created_revisions.clear();
 
-        for (auto it = created_products.rbegin(); it != created_products.rend(); ++it) {
+        for (auto it = created_items.rbegin(); it != created_items.rend(); ++it) {
             try {
-                std::cout << "Deleting product: " << (*it)->getKref().uri() << std::endl;
-                (*it)->deleteProduct(true);
-                std::cout << "Successfully deleted product" << std::endl;
+                std::cout << "Deleting item: " << (*it)->getKref().uri() << std::endl;
+                (*it)->deleteItem(true);
+                std::cout << "Successfully deleted item" << std::endl;
             } catch (const std::exception& e) {
-                std::cout << "ERROR: Failed to cleanup product: " << e.what() << std::endl;
+                std::cout << "ERROR: Failed to cleanup item: " << e.what() << std::endl;
             }
         }
-        created_products.clear();
+        created_items.clear();
 
-        for (auto it = created_groups.rbegin(); it != created_groups.rend(); ++it) {
+        for (auto it = created_spaces.rbegin(); it != created_spaces.rend(); ++it) {
             try {
-                std::cout << "Deleting group: " << (*it)->getPath() << std::endl;
-                (*it)->deleteGroup(true);
-                std::cout << "Successfully deleted group" << std::endl;
+                std::cout << "Deleting space: " << (*it)->getPath() << std::endl;
+                (*it)->deleteSpace(true);
+                std::cout << "Successfully deleted space" << std::endl;
             } catch (const std::exception& e) {
-                std::cout << "ERROR: Failed to cleanup group: " << e.what() << std::endl;
+                std::cout << "ERROR: Failed to cleanup space: " << e.what() << std::endl;
             }
         }
-        created_groups.clear();
+        created_spaces.clear();
         
         std::cout << "TearDown: Cleanup completed" << std::endl;
     }
 
     std::unique_ptr<kumiho::api::Client> client;
-    std::vector<std::shared_ptr<kumiho::api::Group>> created_groups;
-    std::vector<std::shared_ptr<kumiho::api::Product>> created_products;
-    std::vector<std::shared_ptr<kumiho::api::Version>> created_versions;
-    std::vector<std::shared_ptr<kumiho::api::Resource>> created_resources;
+    std::vector<std::shared_ptr<kumiho::api::Space>> created_spaces;
+    std::vector<std::shared_ptr<kumiho::api::Item>> created_items;
+    std::vector<std::shared_ptr<kumiho::api::Revision>> created_revisions;
+    std::vector<std::shared_ptr<kumiho::api::Artifact>> created_artifacts;
 };
 
 
@@ -418,196 +419,244 @@ TEST_F(KumihoApiTest, FullCreationWorkflow) {
     std::string project_name = unique_name("smoke_test_project");
     std::string asset_name = unique_name("smoke_test_asset");
 
-    auto group = client->createGroup("/", project_name);
-    ASSERT_NE(group, nullptr);
-    EXPECT_EQ(group->getPath(), "/" + project_name);
-    created_groups.push_back(group);
+    auto space = client->createSpace("/", project_name);
+    ASSERT_NE(space, nullptr);
+    EXPECT_EQ(space->getPath(), "/" + project_name);
+    created_spaces.push_back(space);
 
-    auto product = group->createProduct(asset_name, "model");
-    ASSERT_NE(product, nullptr);
-    EXPECT_EQ(product->getKref().uri(), "kref://" + project_name + "/" + asset_name + ".model");
-    created_products.push_back(product);
+    auto item = space->createItem(asset_name, "model");
+    ASSERT_NE(item, nullptr);
+    EXPECT_EQ(item->getKref().uri(), "kref://" + project_name + "/" + asset_name + ".model");
+    created_items.push_back(item);
 
-    auto version = product->createVersion();
-    ASSERT_NE(version, nullptr);
-    EXPECT_TRUE(version->getKref().uri().find("?v=1") != std::string::npos);
-    created_versions.push_back(version);
+    auto revision = item->createRevision();
+    ASSERT_NE(revision, nullptr);
+    EXPECT_TRUE(revision->getKref().uri().find("?r=1") != std::string::npos);
+    created_revisions.push_back(revision);
 
-    auto resource = version->createResource("data", "/path/to/smoke_test.dat");
-    ASSERT_NE(resource, nullptr);
-    EXPECT_TRUE(resource->getKref().uri().find("&r=data") != std::string::npos);
-    EXPECT_EQ(resource->getLocation(), "/path/to/smoke_test.dat");
-    created_resources.push_back(resource);
+    auto artifact = revision->createArtifact("data", "/path/to/smoke_test.dat");
+    ASSERT_NE(artifact, nullptr);
+    EXPECT_TRUE(artifact->getKref().uri().find("&a=data") != std::string::npos);
+    EXPECT_EQ(artifact->getLocation(), "/path/to/smoke_test.dat");
+    created_artifacts.push_back(artifact);
 }
 
-TEST_F(KumihoApiTest, VersionByTagAndTime) {
+TEST_F(KumihoApiTest, RevisionByTagAndTime) {
+    // Tests getting revisions by tag, by time, and by combined tag+time.
+    // The combined tag+time query is essential for reproducible builds:
+    // "What was the published version of this asset on June 1st?"
+    
     std::string project_name = unique_name("tag_time_test_project");
     std::string asset_name = unique_name("tag_time_test_asset");
 
-    auto group = client->createGroup("/", project_name);
-    created_groups.push_back(group);
-    auto product = group->createProduct(asset_name, "item");
-    created_products.push_back(product);
-    auto version1 = product->createVersion();
-    created_versions.push_back(version1);
-    auto version2 = product->createVersion();
-    created_versions.push_back(version2);
+    auto space = client->createSpace("/", project_name);
+    created_spaces.push_back(space);
+    auto item = space->createItem(asset_name, "item");
+    created_items.push_back(item);
+    auto revision1 = item->createRevision();
+    created_revisions.push_back(revision1);
+    auto revision2 = item->createRevision();
+    created_revisions.push_back(revision2);
 
-    version1->tag("hello");
+    // Tag revision1 with a custom tag
+    revision1->tag("hello");
+    
+    // Tag revision1 as published (simulating a milestone)
+    revision1->tag("published");
+    
+    // Capture the time after tagging revision1 (ISO 8601 format)
+    auto now = std::chrono::system_clock::now();
+    auto time_t_now = std::chrono::system_clock::to_time_t(now);
+    std::tm tm_now;
+#ifdef _WIN32
+    gmtime_s(&tm_now, &time_t_now);
+#else
+    gmtime_r(&time_t_now, &tm_now);
+#endif
+    std::ostringstream time_after_tag1_ss;
+    time_after_tag1_ss << std::put_time(&tm_now, "%Y-%m-%dT%H:%M:%SZ");
+    std::string time_after_tag1 = time_after_tag1_ss.str();
 
-    auto tag_version = product->getVersionByTag("hello");
-    ASSERT_NE(tag_version, nullptr);
+    // Test: get revision by tag
+    auto tag_revision = item->getRevisionByTag("hello");
+    ASSERT_NE(tag_revision, nullptr);
+    EXPECT_EQ(tag_revision->getRevisionNumber(), revision1->getRevisionNumber());
 
-    auto time_version = product->getVersionByTime(*version1->getCreatedAt());
-    ASSERT_NE(time_version, nullptr);
+    // Test: get revision by time only
+    auto time_revision = item->getRevisionByTime(*revision1->getCreatedAt());
+    ASSERT_NE(time_revision, nullptr);
+    
+    // Test: get revision by combined tag+time
+    // This answers: "What was the published version at this point in time?"
+    auto published_at_time = item->getRevisionByTagAndTime("published", time_after_tag1);
+    ASSERT_NE(published_at_time, nullptr);
+    EXPECT_EQ(published_at_time->getRevisionNumber(), revision1->getRevisionNumber());
+    
+    // Small delay to ensure timestamps are distinguishable
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    
+    // Now tag revision2 as published (superseding revision1)
+    revision2->tag("published");
+    
+    // Query for published at time_after_tag1 should still return revision1
+    // (because at that time, revision1 was the published one)
+    auto historical_published = item->getRevisionByTagAndTime("published", time_after_tag1);
+    ASSERT_NE(historical_published, nullptr);
+    EXPECT_EQ(historical_published->getRevisionNumber(), revision1->getRevisionNumber());
+    
+    // Query for published NOW should return revision2
+    auto now2 = std::chrono::system_clock::now();
+    auto current_published = item->getRevisionByTagAndTime("published", now2);
+    ASSERT_NE(current_published, nullptr);
+    EXPECT_EQ(current_published->getRevisionNumber(), revision2->getRevisionNumber());
 }
 
-TEST_F(KumihoApiTest, GetResourcesByLocation) {
+TEST_F(KumihoApiTest, GetArtifactsByLocation) {
     std::string project_name = unique_name("loc_test_project");
     std::string asset_name = unique_name("loc_test_asset");
     std::string shared_location = "/mnt/data/test_data/" + unique_name("loc_test") + ".vdb";
 
-    auto group = client->createGroup("/", project_name);
-    created_groups.push_back(group);
-    auto product = group->createProduct(asset_name, "model");
-    created_products.push_back(product);
-    auto v1 = product->createVersion();
-    created_versions.push_back(v1);
+    auto space = client->createSpace("/", project_name);
+    created_spaces.push_back(space);
+    auto item = space->createItem(asset_name, "model");
+    created_items.push_back(item);
+    auto v1 = item->createRevision();
+    created_revisions.push_back(v1);
     std::this_thread::sleep_for(std::chrono::seconds(1));
-    auto v2 = product->createVersion();
-    created_versions.push_back(v2);
+    auto v2 = item->createRevision();
+    created_revisions.push_back(v2);
 
-    auto res1 = v1->createResource("model_data", shared_location);
-    created_resources.push_back(res1);
-    auto res2 = v2->createResource("model_data", shared_location);
-    created_resources.push_back(res2);
+    auto res1 = v1->createArtifact("model_data", shared_location);
+    created_artifacts.push_back(res1);
+    auto res2 = v2->createArtifact("model_data", shared_location);
+    created_artifacts.push_back(res2);
 
-    auto found_resources = client->getResourcesByLocation(shared_location);
-    ASSERT_GE(found_resources.size(), 2);
+    auto found_artifacts = client->getArtifactsByLocation(shared_location);
+    ASSERT_GE(found_artifacts.size(), 2);
 
-    auto newest_res = found_resources[0].get();
-    auto oldest_res = found_resources[1].get();
+    auto newest_res = found_artifacts[0].get();
+    auto oldest_res = found_artifacts[1].get();
 
     EXPECT_EQ(newest_res->getKref(), res2->getKref());
-    EXPECT_EQ(newest_res->getVersionKref(), v2->getKref());
-    EXPECT_EQ(newest_res->getProductKref(), product->getKref());
+    EXPECT_EQ(newest_res->getRevisionKref(), v2->getKref());
+    EXPECT_EQ(newest_res->getItemKref(), item->getKref());
 
     EXPECT_EQ(oldest_res->getKref(), res1->getKref());
-    EXPECT_EQ(oldest_res->getVersionKref(), v1->getKref());
-    EXPECT_EQ(oldest_res->getProductKref(), product->getKref());
+    EXPECT_EQ(oldest_res->getRevisionKref(), v1->getKref());
+    EXPECT_EQ(oldest_res->getItemKref(), item->getKref());
 }
 
-TEST_F(KumihoApiTest, LinkingWorkflow) {
-    auto group = client->createGroup("/", unique_name("link_proj"));
-    created_groups.push_back(group);
+TEST_F(KumihoApiTest, EdgeWorkflow) {
+    auto space = client->createSpace("/", unique_name("edge_proj"));
+    created_spaces.push_back(space);
     
-    auto model_product = group->createProduct("character_model", "model");
-    created_products.push_back(model_product);
-    auto texture_product = group->createProduct("character_textures", "texture");
-    created_products.push_back(texture_product);
+    auto model_item = space->createItem("character_model", "model");
+    created_items.push_back(model_item);
+    auto texture_item = space->createItem("character_textures", "texture");
+    created_items.push_back(texture_item);
 
-    auto model_v1 = model_product->createVersion();
-    created_versions.push_back(model_v1);
-    auto texture_v1 = texture_product->createVersion();
-    created_versions.push_back(texture_v1);
+    auto model_v1 = model_item->createRevision();
+    created_revisions.push_back(model_v1);
+    auto texture_v1 = texture_item->createRevision();
+    created_revisions.push_back(texture_v1);
 
-    auto link = client->createLink(texture_v1->getKref(), model_v1->getKref(), "texture_for");
-    ASSERT_NE(link, nullptr);
-    EXPECT_EQ(link->getSourceKref(), texture_v1->getKref());
-    EXPECT_EQ(link->getTargetKref(), model_v1->getKref());
+    auto edge = client->createEdge(texture_v1->getKref(), model_v1->getKref(), "texture_for");
+    ASSERT_NE(edge, nullptr);
+    EXPECT_EQ(edge->getSourceKref(), texture_v1->getKref());
+    EXPECT_EQ(edge->getTargetKref(), model_v1->getKref());
     
-    auto source_links = client->getLinks(texture_v1->getKref());
-    ASSERT_GE(source_links.size(), 1);
-    EXPECT_EQ(source_links[0]->getTargetKref(), model_v1->getKref());
-    EXPECT_EQ(source_links[0]->getLinkType(), "texture_for");
+    auto source_edges = client->getEdges(texture_v1->getKref());
+    ASSERT_GE(source_edges.size(), 1);
+    EXPECT_EQ(source_edges[0]->getTargetKref(), model_v1->getKref());
+    EXPECT_EQ(source_edges[0]->getEdgeType(), "texture_for");
 }
 
-TEST_F(KumihoApiTest, PeekNextVersion) {
-    auto group = client->createGroup("/", unique_name("peek_test_project"));
-    created_groups.push_back(group);
-    auto product = group->createProduct(unique_name("peek_test_asset"), "rig");
-    created_products.push_back(product);
+TEST_F(KumihoApiTest, PeekNextRevision) {
+    auto space = client->createSpace("/", unique_name("peek_test_project"));
+    created_spaces.push_back(space);
+    auto item = space->createItem(unique_name("peek_test_asset"), "rig");
+    created_items.push_back(item);
 
-    EXPECT_EQ(product->peekNextVersion(), 1);
-    auto v1 = product->createVersion();
-    created_versions.push_back(v1);
-    EXPECT_EQ(v1->getVersionNumber(), 1);
-    EXPECT_EQ(product->peekNextVersion(), 2);
-    auto v2 = product->createVersion();
-    created_versions.push_back(v2);
-    EXPECT_EQ(v2->getVersionNumber(), 2);
-    EXPECT_EQ(product->peekNextVersion(), 3);
+    EXPECT_EQ(item->peekNextRevision(), 1);
+    auto v1 = item->createRevision();
+    created_revisions.push_back(v1);
+    EXPECT_EQ(v1->getRevisionNumber(), 1);
+    EXPECT_EQ(item->peekNextRevision(), 2);
+    auto v2 = item->createRevision();
+    created_revisions.push_back(v2);
+    EXPECT_EQ(v2->getRevisionNumber(), 2);
+    EXPECT_EQ(item->peekNextRevision(), 3);
 }
 
 TEST_F(KumihoApiTest, MetadataUpdateWorkflow) {
-    auto group = client->createGroup("/", unique_name("meta_proj"));
-    created_groups.push_back(group);
-    auto product = group->createProduct(unique_name("asset"), "model");
-    created_products.push_back(product);
-    auto version = product->createVersion();
-    created_versions.push_back(version);
-    auto resource = version->createResource("geo", "/path/to/file.abc");
-    created_resources.push_back(resource);
+    auto space = client->createSpace("/", unique_name("meta_proj"));
+    created_spaces.push_back(space);
+    auto item = space->createItem(unique_name("asset"), "model");
+    created_items.push_back(item);
+    auto revision = item->createRevision();
+    created_revisions.push_back(revision);
+    auto artifact = revision->createArtifact("geo", "/path/to/file.abc");
+    created_artifacts.push_back(artifact);
 
-    auto updated_group = group->setMetadata({{"status", "active"}});
-    auto updated_product = product->setMetadata({{"pipeline_step", "modeling"}});
-    auto updated_version = version->setMetadata({{"approved_by", "lead"}});
-    auto updated_resource = resource->setMetadata({{"format", "alembic"}});
+    auto updated_space = space->setMetadata({{"status", "active"}});
+    auto updated_item = item->setMetadata({{"pipeline_step", "modeling"}});
+    auto updated_revision = revision->setMetadata({{"approved_by", "lead"}});
+    auto updated_artifact = artifact->setMetadata({{"format", "alembic"}});
 
-    ASSERT_EQ(updated_group->getMetadata().at("status"), "active");
-    ASSERT_EQ(updated_product->getMetadata().at("pipeline_step"), "modeling");
-    ASSERT_EQ(updated_version->getMetadata().at("approved_by"), "lead");
-    ASSERT_EQ(updated_resource->getMetadata().at("format"), "alembic");
+    ASSERT_EQ(updated_space->getMetadata().at("status"), "active");
+    ASSERT_EQ(updated_item->getMetadata().at("pipeline_step"), "modeling");
+    ASSERT_EQ(updated_revision->getMetadata().at("approved_by"), "lead");
+    ASSERT_EQ(updated_artifact->getMetadata().at("format"), "alembic");
 }
 
-TEST_F(KumihoApiTest, GroupDeletionLogic) {
-    auto proj = client->createGroup("/", unique_name("del_proj"));
-    auto prod = proj->createProduct("asset", "model");
-    auto empty_group = client->createGroup("/", unique_name("del_empty"));
+TEST_F(KumihoApiTest, SpaceDeletionLogic) {
+    auto proj = client->createSpace("/", unique_name("del_proj"));
+    auto item = proj->createItem("asset", "model");
+    auto empty_space = client->createSpace("/", unique_name("del_empty"));
 
-    // 1. Fail to delete non-empty group without force
-    EXPECT_THROW(proj->deleteGroup(), std::runtime_error);
+    // 1. Fail to delete non-empty space without force
+    EXPECT_THROW(proj->deleteSpace(), std::runtime_error);
 
-    // 2. Succeed in deleting non-empty group with force
-    EXPECT_NO_THROW(proj->deleteGroup(true));
-    EXPECT_THROW(client->getGroup(proj->getPath()), std::runtime_error);
+    // 2. Succeed in deleting non-empty space with force
+    EXPECT_NO_THROW(proj->deleteSpace(true));
+    EXPECT_THROW(client->getSpace(proj->getPath()), std::runtime_error);
 
-    // 3. Succeed in deleting empty group without force
-    EXPECT_NO_THROW(empty_group->deleteGroup());
-    EXPECT_THROW(client->getGroup(empty_group->getPath()), std::runtime_error);
+    // 3. Succeed in deleting empty space without force
+    EXPECT_NO_THROW(empty_space->deleteSpace());
+    EXPECT_THROW(client->getSpace(empty_space->getPath()), std::runtime_error);
 }
 
-TEST_F(KumihoApiTest, ProductDeprecationAndDeletion) {
-    auto group = client->createGroup("/", unique_name("dep_proj"));
-    created_groups.push_back(group);
-    auto prod = group->createProduct("char", "rig");
-    created_products.push_back(prod);
+TEST_F(KumihoApiTest, ItemDeprecationAndDeletion) {
+    auto space = client->createSpace("/", unique_name("dep_proj"));
+    created_spaces.push_back(space);
+    auto item = space->createItem("char", "rig");
+    created_items.push_back(item);
     
-    // 1. Deprecate the product (soft delete)
-    prod->deleteProduct();
-    auto prod_reloaded = group->getProduct("char", "rig");
-    ASSERT_TRUE(prod_reloaded->isDeprecated());
+    // 1. Deprecate the item (soft delete)
+    item->deleteItem();
+    auto item_reloaded = space->getItem("char", "rig");
+    ASSERT_TRUE(item_reloaded->isDeprecated());
     
     // 2. Re-creating it should un-deprecate it
-    auto prod_new = group->createProduct("char", "rig");
-    created_products.push_back(prod_new);
-    ASSERT_FALSE(prod_new->isDeprecated());
+    auto item_new = space->createItem("char", "rig");
+    created_items.push_back(item_new);
+    ASSERT_FALSE(item_new->isDeprecated());
     
     // 3. Hard-delete with force
-    prod_new->deleteProduct(true);
+    item_new->deleteItem(true);
     
     // 4. Verify it's gone
-    EXPECT_THROW(group->getProduct("char", "rig"), std::runtime_error);
+    EXPECT_THROW(space->getItem("char", "rig"), std::runtime_error);
 }
 
 
-TEST_F(KumihoApiTest, VersionTaggingWorkflow) {
-    auto group = client->createGroup("/", unique_name("tag_proj"));
-    created_groups.push_back(group);
-    auto prod = group->createProduct("fx", "cache");
-    created_products.push_back(prod);
-    auto v1 = prod->createVersion();
-    created_versions.push_back(v1);
+TEST_F(KumihoApiTest, RevisionTaggingWorkflow) {
+    auto space = client->createSpace("/", unique_name("tag_proj"));
+    created_spaces.push_back(space);
+    auto item = space->createItem("fx", "cache");
+    created_items.push_back(item);
+    auto v1 = item->createRevision();
+    created_revisions.push_back(v1);
 
     ASSERT_FALSE(v1->hasTag("approved"));
     
@@ -620,44 +669,44 @@ TEST_F(KumihoApiTest, VersionTaggingWorkflow) {
     ASSERT_TRUE(v1->wasTagged("approved"));
 }
 
-TEST_F(KumihoApiTest, PublishedVersionImmutability) {
-    auto group = client->createGroup("/", unique_name("immutable_proj"));
-    created_groups.push_back(group);
-    auto prod = group->createProduct("shot", "comp");
-    created_products.push_back(prod);
-    auto v1 = prod->createVersion();
-    created_versions.push_back(v1);
-    auto res = v1->createResource("main", "/path/to/exr_seq");
-    created_resources.push_back(res);
+TEST_F(KumihoApiTest, PublishedRevisionImmutability) {
+    auto space = client->createSpace("/", unique_name("immutable_proj"));
+    created_spaces.push_back(space);
+    auto item = space->createItem("shot", "comp");
+    created_items.push_back(item);
+    auto v1 = item->createRevision();
+    created_revisions.push_back(v1);
+    auto res = v1->createArtifact("main", "/path/to/exr_seq");
+    created_artifacts.push_back(res);
 
     v1->tag(PUBLISHED_TAG);
-    auto v1_reloaded = prod->getVersion(1);
+    auto v1_reloaded = item->getRevision(1);
     ASSERT_TRUE(v1_reloaded->isPublished());
 
     EXPECT_THROW(v1->setMetadata({{"new_key", "new_val"}}), std::runtime_error);
     EXPECT_THROW(res->setMetadata({{"new_key", "new_val"}}), std::runtime_error);
     EXPECT_THROW(v1->untag(PUBLISHED_TAG), std::runtime_error);
-    EXPECT_THROW(v1->deleteVersion(), std::runtime_error);
-    EXPECT_THROW(res->deleteResource(), std::runtime_error);
-    EXPECT_THROW(v1->createResource("mask", "/path/to/mask.png"), std::runtime_error);
+    EXPECT_THROW(v1->deleteRevision(), std::runtime_error);
+    EXPECT_THROW(res->deleteArtifact(), std::runtime_error);
+    EXPECT_THROW(v1->createArtifact("mask", "/path/to/mask.png"), std::runtime_error);
 }
 
-TEST_F(KumihoApiTest, GetResourceAndLocations) {
-    auto group = client->createGroup("/", unique_name("res_proj"));
-    created_groups.push_back(group);
-    auto prod = group->createProduct("set", "env");
-    created_products.push_back(prod);
-    auto v = prod->createVersion();
-    created_versions.push_back(v);
-    auto res1 = v->createResource("hdri", "/loc/hdri.exr");
-    created_resources.push_back(res1);
-    auto res2 = v->createResource("lidar", "/loc/lidar.obj");
-    created_resources.push_back(res2);
+TEST_F(KumihoApiTest, GetArtifactAndLocations) {
+    auto space = client->createSpace("/", unique_name("res_proj"));
+    created_spaces.push_back(space);
+    auto item = space->createItem("set", "env");
+    created_items.push_back(item);
+    auto v = item->createRevision();
+    created_revisions.push_back(v);
+    auto res1 = v->createArtifact("hdri", "/loc/hdri.exr");
+    created_artifacts.push_back(res1);
+    auto res2 = v->createArtifact("lidar", "/loc/lidar.obj");
+    created_artifacts.push_back(res2);
 
-    auto resources = v->getResources();
-    ASSERT_EQ(resources.size(), 2);
+    auto artifacts = v->getArtifacts();
+    ASSERT_EQ(artifacts.size(), 2);
     
-    auto lidar_res = v->getResource("lidar");
+    auto lidar_res = v->getArtifact("lidar");
     ASSERT_EQ(lidar_res->getKref(), res2->getKref());
     ASSERT_EQ(lidar_res->getLocation(), "/loc/lidar.obj");
 
@@ -672,37 +721,37 @@ TEST_F(KumihoApiTest, GetResourceAndLocations) {
     ASSERT_TRUE(found_hdri && found_lidar);
 }
 
-TEST_F(KumihoApiTest, GetProductByKref) {
-    auto group = client->createGroup("/", unique_name("kref_test_project"));
-    created_groups.push_back(group);
-    auto product = group->createProduct(unique_name("kref_test_asset"), "model");
-    created_products.push_back(product);
+TEST_F(KumihoApiTest, GetItemByKref) {
+    auto space = client->createSpace("/", unique_name("kref_test_project"));
+    created_spaces.push_back(space);
+    auto item = space->createItem(unique_name("kref_test_asset"), "model");
+    created_items.push_back(item);
     
-    // Test getting product by kref
-    auto retrieved_product = client->getProductByKref(product->getKref().uri());
-    ASSERT_NE(retrieved_product, nullptr);
-    EXPECT_EQ(retrieved_product->getKref().uri(), product->getKref().uri());
+    // Test getting item by kref
+    auto retrieved_item = client->getItemByKref(item->getKref().uri());
+    ASSERT_NE(retrieved_item, nullptr);
+    EXPECT_EQ(retrieved_item->getKref().uri(), item->getKref().uri());
 }
 
-TEST_F(KumihoApiTest, GetLatestVersion) {
-    auto group = client->createGroup("/", unique_name("latest_test_project"));
-    created_groups.push_back(group);
-    auto product = group->createProduct(unique_name("latest_test_asset"), "model");
-    created_products.push_back(product);
+TEST_F(KumihoApiTest, GetLatestRevision) {
+    auto space = client->createSpace("/", unique_name("latest_test_project"));
+    created_spaces.push_back(space);
+    auto item = space->createItem(unique_name("latest_test_asset"), "model");
+    created_items.push_back(item);
     
-    // Create multiple versions
-    auto v1 = product->createVersion();
-    created_versions.push_back(v1);
-    auto v2 = product->createVersion();
-    created_versions.push_back(v2);
-    auto v3 = product->createVersion();
-    created_versions.push_back(v3);
+    // Create multiple revisions
+    auto v1 = item->createRevision();
+    created_revisions.push_back(v1);
+    auto v2 = item->createRevision();
+    created_revisions.push_back(v2);
+    auto v3 = item->createRevision();
+    created_revisions.push_back(v3);
     
-    // Debug: Check all versions
-    auto all_versions = product->getVersions();
-    std::cout << "Total versions: " << all_versions.size() << std::endl;
-    for (const auto& v : all_versions) {
-        std::cout << "Version " << v->getVersionNumber() << ": " << v->getKref().uri() 
+    // Debug: Check all revisions
+    auto all_revisions = item->getRevisions();
+    std::cout << "Total revisions: " << all_revisions.size() << std::endl;
+    for (const auto& v : all_revisions) {
+        std::cout << "Revision " << v->getRevisionNumber() << ": " << v->getKref().uri() 
                   << " latest=" << v->isLatest() << " tags=[";
         auto tags = v->getTags();
         for (size_t i = 0; i < tags.size(); ++i) {
@@ -712,57 +761,57 @@ TEST_F(KumihoApiTest, GetLatestVersion) {
         std::cout << "]" << std::endl;
     }
     
-    // Test getting latest version
-    auto latest = product->getLatestVersion();
+    // Test getting latest revision
+    auto latest = item->getLatestRevision();
     ASSERT_NE(latest, nullptr);
-    std::cout << "Latest version: " << latest->getVersionNumber() << " kref: " << latest->getKref().uri() << std::endl;
+    std::cout << "Latest revision: " << latest->getRevisionNumber() << " kref: " << latest->getKref().uri() << std::endl;
     
-    // The latest version should be v3
-    EXPECT_EQ(latest->getVersionNumber(), 3);
+    // The latest revision should be v3
+    EXPECT_EQ(latest->getRevisionNumber(), 3);
     EXPECT_EQ(latest->getKref().uri(), v3->getKref().uri());
 }
 
 // Test navigation methods
 TEST_F(KumihoApiTest, NavigationMethods) {
-    // Create a group
-    auto group = client->createGroup("/", unique_name("test_nav"));
-    ASSERT_NE(group, nullptr);
+    // Create a space
+    auto space = client->createSpace("/", unique_name("test_nav"));
+    ASSERT_NE(space, nullptr);
     
-    // Create a product in the group
-    auto product = group->createProduct("test_product", "model");
-    ASSERT_NE(product, nullptr);
+    // Create an item in the space
+    auto item = space->createItem("test_item", "model");
+    ASSERT_NE(item, nullptr);
     
-    // Create a version
-    auto version = product->createVersion();
-    ASSERT_NE(version, nullptr);
+    // Create a revision
+    auto revision = item->createRevision();
+    ASSERT_NE(revision, nullptr);
     
-    // Test Version::getProduct()
-    auto product_from_version = version->getProduct();
-    ASSERT_NE(product_from_version, nullptr);
-    EXPECT_EQ(product_from_version->getKref().uri(), product->getKref().uri());
+    // Test Revision::getItem()
+    auto item_from_revision = revision->getItem();
+    ASSERT_NE(item_from_revision, nullptr);
+    EXPECT_EQ(item_from_revision->getKref().uri(), item->getKref().uri());
     
-    // Test Version::getGroup()
-    auto group_from_version = version->getGroup();
-    ASSERT_NE(group_from_version, nullptr);
-    EXPECT_EQ(group_from_version->getPath(), group->getPath());
+    // Test Revision::getSpace()
+    auto space_from_revision = revision->getSpace();
+    ASSERT_NE(space_from_revision, nullptr);
+    EXPECT_EQ(space_from_revision->getPath(), space->getPath());
     
-    // Test Product::getGroup()
-    auto group_from_product = product->getGroup();
-    ASSERT_NE(group_from_product, nullptr);
-    EXPECT_EQ(group_from_product->getPath(), group->getPath());
+    // Test Item::getSpace()
+    auto space_from_item = item->getSpace();
+    ASSERT_NE(space_from_item, nullptr);
+    EXPECT_EQ(space_from_item->getPath(), space->getPath());
     
-    // Test Group::getParentGroup() - should return nullptr for root-level group
-    auto parent_group = group->getParentGroup();
-    EXPECT_EQ(parent_group, nullptr);
+    // Test Space::getParentSpace() - should return nullptr for root-level space
+    auto parent_space = space->getParentSpace();
+    EXPECT_EQ(parent_space, nullptr);
     
-    // Create a subgroup to test parent navigation
-    auto subgroup = group->createGroup("subgroup");
-    ASSERT_NE(subgroup, nullptr);
+    // Create a subspace to test parent navigation
+    auto subspace = space->createSpace("subspace");
+    ASSERT_NE(subspace, nullptr);
     
-    // Test Group::getParentGroup() for subgroup
-    auto parent_of_subgroup = subgroup->getParentGroup();
-    ASSERT_NE(parent_of_subgroup, nullptr);
-    EXPECT_EQ(parent_of_subgroup->getPath(), group->getPath());
+    // Test Space::getParentSpace() for subspace
+    auto parent_of_subspace = subspace->getParentSpace();
+    ASSERT_NE(parent_of_subspace, nullptr);
+    EXPECT_EQ(parent_of_subspace->getPath(), space->getPath());
 }
 
 int main(int argc, char** argv) {

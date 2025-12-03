@@ -1,4 +1,4 @@
-#include "kumiho.h"
+#include <kumiho/kumiho.hpp>
 #include <iostream>
 #include <memory>
 #include <string>
@@ -173,8 +173,8 @@ int main(int argc, char** argv) {
         // Test server connectivity with a simple RPC call
         std::cout << "Testing server connectivity..." << std::endl;
         try {
-            // Try to get root groups as a connectivity test
-            auto test_groups = client.getChildGroups("/");
+            // Try to get root spaces as a connectivity test
+            auto test_spaces = client.getChildSpaces("/");
             std::cout << "Server connection successful." << std::endl;
         } catch (const std::exception& e) {
             std::cerr << "Error: Failed to connect to server at " << server_endpoint << std::endl;

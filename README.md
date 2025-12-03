@@ -16,6 +16,20 @@ Modern C++ client library for the Kumiho asset management and versioning platfor
 - **Streaming Events**: Real-time change notifications
 - **Discovery Service**: Automatic endpoint resolution
 
+## Terminology
+
+| New Term       | Description                          |
+|----------------|--------------------------------------|
+| **Space**      | Hierarchical container/namespace     |
+| **Item**       | Asset/entity in the graph            |
+| **Revision**   | Specific state of an item            |
+| **Artifact**   | File/location attached to a revision |
+| **Edge**       | Relationship between revisions       |
+| **Bundle**     | Curated set of items                 |
+| **Kind**       | Category/classification of an item   |
+
+> **Note**: All old method names and types are still supported as backwards-compatible aliases.
+
 ## Quick Start
 
 ### Prerequisites
@@ -49,27 +63,24 @@ using namespace kumiho::api;
 
 int main() {
     // Connect to server
-    auto client = std::make_shared<Client>("localhost:50051");
+    auto client = Client::createFromEnv();
     
     // Create a project
     auto project = client->createProject("my-project", "My first project");
-    std::cout << "Created project: " << project.name() << std::endl;
+    std::cout << "Created project: " << project->getName() << std::endl;
     
-    // Create a group hierarchy
-    auto assets = project.createGroup("assets");
-    auto characters = assets.createGroup("characters");
+    // Create a space hierarchy
+    auto assets = project->createSpace("assets");
+    auto characters = assets->createSpace("characters");
     
-    // Create a product with version
-    auto hero = characters.createProduct("hero", "model");
-    auto v1 = hero.createVersion({{"author", "artist1"}});
+    // Create an item with revision
+    auto hero = characters->createItem("hero", "model");
+    auto v1 = hero->createRevision({{"author", "artist1"}});
     
-    // Add a resource
-    v1.addResource("main_mesh", "geometry", "/path/to/hero.obj", {
-        {"format", "obj"},
-        {"vertices", "50000"}
-    });
+    // Add an artifact
+    v1->createArtifact("main_mesh", "/path/to/hero.obj");
     
-    std::cout << "Created version " << v1.versionNumber() << std::endl;
+    std::cout << "Created revision " << v1->getNumber() << std::endl;
     
     return 0;
 }
@@ -83,13 +94,13 @@ Krefs are URI-style identifiers for all entities:
 
 ```cpp
 // Parse a Kref
-Kref kref("kref://my-project/assets/hero.model/v1");
+Kref kref("kref://my-project/assets/hero.model?r=1");
 
-std::cout << "Project: " << kref.getProject() << std::endl;     // my-project
-std::cout << "Group: " << kref.getGroup() << std::endl;         // assets
-std::cout << "Product: " << kref.getProductName() << std::endl; // hero
-std::cout << "Type: " << kref.getType() << std::endl;           // model
-std::cout << "Version: " << kref.getVersion() << std::endl;     // 1
+std::cout << "Project: " << kref.getProject() << std::endl;    // my-project
+std::cout << "Space: " << kref.getSpace() << std::endl;        // assets
+std::cout << "Item: " << kref.getItemName() << std::endl;      // hero
+std::cout << "Kind: " << kref.getKind() << std::endl;          // model
+std::cout << "Revision: " << *kref.getRevision() << std::endl; // 1
 
 // Check validity
 if (kref.isValid()) {
@@ -97,73 +108,73 @@ if (kref.isValid()) {
 }
 
 // Convert to string
-std::string uri = kref.toString();
+std::string uri = kref.uri();
 ```
 
 ### Entity Hierarchy
 
 ```
 Project
-├── Group (can be nested)
-│   ├── Group
-│   │   └── Product.type
-│   │       ├── Version 1
-│   │       │   └── Resource
-│   │       └── Version 2
-│   └── Product.type
-└── Collection (special product type)
+├── Space (can be nested)
+│   ├── Space
+│   │   └── Item.kind
+│   │       ├── Revision 1
+│   │       │   └── Artifact
+│   │       └── Revision 2
+│   └── Item.kind
+└── Bundle (curated item collections)
 ```
 
-### Linking and Dependencies
+### Edges and Dependencies
 
 ```cpp
-// Create versions
-auto modelV1 = model.createVersion({});
-auto rigV1 = rig.createVersion({});
+// Create revisions
+auto modelR1 = model.createRevision({});
+auto rigR1 = rig.createRevision({});
 
-// Create a dependency link
-auto link = modelV1.createLink(rigV1.kref(), "DEPENDS_ON");
+// Create a dependency edge
+auto edge = modelR1.createEdge(rigR1.kref(), EdgeType::DEPENDS_ON);
 
-// Query links
-auto outgoing = modelV1.getLinks(LinkDirection::OUTGOING);
-auto incoming = rigV1.getLinks(LinkDirection::INCOMING);
+// Query edges
+auto outgoing = modelR1.getEdges(EdgeDirection::OUTGOING);
+auto incoming = rigR1.getEdges(EdgeDirection::INCOMING);
 
 // Traverse the graph
-auto deps = modelV1.getAllDependencies({}, 5, 100);
-for (const auto& kref : deps.version_krefs) {
+auto deps = modelR1.getAllDependencies({}, 5, 100);
+for (const auto& kref : deps.revision_krefs) {
     std::cout << "Depends on: " << kref << std::endl;
 }
 
 // Find shortest path
-auto path = modelV1.findPathTo(targetKref, {}, 10, false);
+auto path = modelR1.findPathTo(targetKref, {}, 10, false);
 if (path.path_exists) {
     std::cout << "Path length: " << path.path_length << std::endl;
 }
 
 // Impact analysis
-auto impact = rigV1.analyzeImpact({}, 5, 100);
-for (const auto& impacted : impact.impacted_versions) {
-    std::cout << "Would impact: " << impacted.version_kref << std::endl;
+auto impact = rigR1.analyzeImpact({}, 5, 100);
+for (const auto& impacted : impact.impacted_revisions) {
+    std::cout << "Would impact: " << impacted.revision_kref << std::endl;
 }
 ```
 
-### Collections
+### Bundles
 
 ```cpp
-// Create a collection
-auto collection = project.createCollection("my_collection");
+// Create a bundle
+auto bundle = project.createBundle("my_bundle");
 
 // Add members
-collection.addMember(product1);
-collection.addMember(product2);
+bundle.addMember(item1);
+bundle.addMember(item2);
 
 // List members
-for (const auto& member : collection.getMembers()) {
-    std::cout << "Member: " << member.product_kref.toString() << std::endl;
+for (const auto& member : bundle.getMembers()) {
+    std::cout << "Member: " << member.item_kref.uri() << std::endl;
 }
 
 // View history
-for (const auto& entry : collection.getHistory()) {
+for (const auto& entry : bundle.getHistory()) {
     std::cout << entry.action << " at " << entry.created_at << std::endl;
 }
 ```
@@ -186,6 +197,134 @@ while (true) {
     // Process event
 }
 ```
+
+### Time-Based Revision Queries
+
+One of Kumiho's most powerful features is **time-based revision lookup**. This enables
+reproducible builds, historical debugging, and auditing by answering questions like:
+"What was the published revision of this asset on June 1st?"
+
+#### Why Time-Based Queries Matter
+
+In production pipelines, you often need to:
+
+1. **Reproduce past renders**: Re-render a shot exactly as it was delivered months ago
+2. **Debug regressions**: Compare current assets against a known-good state from a specific date
+3. **Audit changes**: Understand what revision was used when a decision was made
+4. **Compliance**: Prove what asset revisions were in use at a particular milestone
+
+#### Supported Time Formats
+
+The `time` parameter accepts multiple formats:
+
+| Format | Example | Precision |
+|--------|---------|-----------|
+| **YYYYMMDDHHMM** | `"202406011330"` | Minute-level |
+| **ISO 8601** | `"2024-06-01T13:30:00Z"` | Second-level |
+| **std::chrono** | `system_clock::time_point` | Sub-second |
+
+#### Using Time-Based Methods
+
+```cpp
+#include <chrono>
+
+// Get revision by tag
+auto published = item->getRevisionByTag("published");
+
+// Get revision by time (YYYYMMDDHHMM format)
+auto historyRev = item->getRevisionByTime("202406011330");
+
+// Using ISO 8601 format for sub-second precision
+auto historyRev2 = item->getRevisionByTime("2024-06-01T13:30:45Z");
+
+// Using std::chrono (C++ datetime)
+auto june_1 = std::chrono::system_clock::from_time_t(1717243200);  // June 1, 2024
+auto historyRev3 = item->getRevisionByTime(june_1);
+
+// Get revision by BOTH tag and time
+// "What was the published revision on June 1st?"
+auto publishedAtTime = item->getRevisionByTagAndTime("published", "202406011330");
+if (publishedAtTime) {
+    std::cout << "On June 1, published revision was r" 
+              << publishedAtTime->getRevisionNumber() << std::endl;
+}
+
+// Using std::chrono with tag
+auto publishedAtTime2 = item->getRevisionByTagAndTime("published", june_1);
+```
+
+#### Time-Based Kref URIs
+
+You can also use time-based queries directly in Kref URIs:
+
+```cpp
+// Get published revision at a specific time
+auto revision = client->resolveKref(
+    "kref://my-project/chars/hero.model",
+    "published",      // tag
+    "202406011330"    // time (YYYYMMDDHHMM or ISO 8601)
+);
+
+// Using ISO 8601 format
+auto revision2 = client->resolveKref(
+    "kref://my-project/chars/hero.model",
+    "published",
+    "2024-06-01T13:30:00Z"
+);
+
+// Resolve to artifact location at that point in time
+auto location = client->resolve("kref://my-project/chars/hero.model?t=published&time=202406011330");
+```
+
+**Kref time query parameters:**
+| Parameter | Description |
+|-----------|-------------|
+| `t=<tag>` | Find revision with this tag (e.g., `t=published`, `t=approved`) |
+| `time=<YYYYMMDDHHMM>` | Point in time to query (e.g., `time=202406011330`) |
+
+#### Practical Examples
+
+**Reproduce a past delivery:**
+```cpp
+// Find all assets as they were for the Q2 delivery
+std::string delivery_time = "202406302359";  // June 30, 2024 23:59
+
+for (const auto& item : space->getItems()) {
+    auto rev = item->getRevisionByTagAndTime("published", delivery_time);
+    if (rev) {
+        std::cout << item->getName() << ": r" << rev->getRevisionNumber() << std::endl;
+        for (const auto& artifact : rev->getArtifacts()) {
+            std::cout << "  -> " << artifact->getLocation() << std::endl;
+        }
+    }
+}
+```
+
+**Compare current vs historical:**
+```cpp
+// What changed between two milestones?
+auto alpha_rev = item->getRevisionByTagAndTime("published", "202403010000");
+auto beta_rev = item->getRevisionByTagAndTime("published", "202406010000");
+
+if (alpha_rev && beta_rev && alpha_rev->getRevisionNumber() != beta_rev->getRevisionNumber()) {
+    std::cout << "Asset changed from r" << alpha_rev->getRevisionNumber() 
+              << " to r" << beta_rev->getRevisionNumber() << std::endl;
+}
+```
+
+#### Tags and Time
+
+The `published` tag is especially important for time-based queries because:
+
+1. **Immutability**: Published revisions cannot be modified or deleted
+2. **Stability**: Downstream consumers can rely on published revisions not changing
+3. **Audit trail**: Tag history is preserved, so you can query what was published when
+
+Common tags for time-based queries:
+- `published`: Approved for downstream consumption
+- `approved`: Supervisor-approved revisions
+- `delivered`: Revisions sent to clients
+- `milestone-alpha`, `milestone-beta`: Project milestone snapshots
 
 ### Tenant Usage
 
@@ -228,8 +367,10 @@ auto bearerToken = loadBearerToken();  // From KUMIHO_AUTH_TOKEN env
 | `getProjects()` | List all projects |
 | `getProject(name)` | Get project by name |
 | `deleteProject(id, force)` | Delete a project |
-| `getVersion(kref)` | Get version by Kref |
-| `getProduct(kref)` | Get product by Kref |
+| `getRevision(kref)` | Get revision by Kref |
+| `getItem(kref)` | Get item by Kref |
+| `resolveKref(kref, tag, time)` | Resolve Kref with optional tag/time |
+| `resolve(kref)` | Resolve Kref to artifact location |
 | `getTenantUsage()` | Get tenant usage stats |
 | `subscribeEvents(project, callback)` | Subscribe to events |
 
@@ -237,41 +378,44 @@ auto bearerToken = loadBearerToken();  // From KUMIHO_AUTH_TOKEN env
 
 | Method | Description |
 |--------|-------------|
-| `createGroup(name)` | Create a child group |
-| `getGroup(path)` | Get group by path |
-| `getGroups(recursive)` | List groups |
-| `createCollection(name)` | Create a collection |
+| `createSpace(name)` | Create a child space |
+| `getSpace(path)` | Get space by path |
+| `getSpaces(recursive)` | List spaces |
+| `createBundle(name)` | Create a bundle |
 | `setPublic(allow)` | Set public access |
 | `update(description)` | Update project |
 | `delete(force)` | Delete project |
 
-### Group
+### Space
 
 | Method | Description |
 |--------|-------------|
-| `createGroup(name)` | Create nested group |
-| `createProduct(name, type)` | Create a product |
-| `getProducts()` | List products |
-| `getProduct(name, type)` | Get product |
+| `createSpace(name)` | Create nested space |
+| `createItem(name, kind)` | Create an item |
+| `getItems()` | List items |
+| `getItem(name, kind)` | Get item |
 
-### Product
-
-| Method | Description |
-|--------|-------------|
-| `createVersion(metadata)` | Create new version |
-| `getVersions()` | List all versions |
-| `getVersion(number)` | Get version by number |
-| `getVersionByTag(tag)` | Get version by tag |
-| `getLatestVersion()` | Get latest version |
-
-### Version
+### Item
 
 | Method | Description |
 |--------|-------------|
-| `addResource(name, type, path, meta)` | Add resource |
-| `getResources()` | List resources |
-| `createLink(target, type)` | Create link |
-| `getLinks(direction)` | Get links |
+| `createRevision(metadata)` | Create new revision |
+| `getRevisions()` | List all revisions |
+| `getRevision(number)` | Get revision by number |
+| `getRevisionByTag(tag)` | Get revision by tag |
+| `getRevisionByTime(time)` | Get revision by timestamp (YYYYMMDDHHMM) |
+| `getRevisionByTagAndTime(tag, time)` | Get revision by tag and timestamp |
+| `getLatestRevision()` | Get latest revision |
+| `peekNextRevision()` | Peek at next revision number |
+
+### Revision
+
+| Method | Description |
+|--------|-------------|
+| `createArtifact(name, path, meta)` | Add artifact |
+| `getArtifacts()` | List artifacts |
+| `createEdge(target, type)` | Create edge |
+| `getEdges(direction)` | Get edges |
 | `addTag(tag)` | Add tag |
 | `removeTag(tag)` | Remove tag |
 | `updateMetadata(meta)` | Update metadata |
@@ -332,12 +476,12 @@ kumiho-cpp/
 │   ├── kumiho.hpp        # Main include
 │   ├── client.hpp        # Client class
 │   ├── project.hpp       # Project class
-│   ├── group.hpp         # Group class
-│   ├── product.hpp       # Product class
-│   ├── version.hpp       # Version class
-│   ├── resource.hpp      # Resource class
-│   ├── link.hpp          # Link class
-│   ├── collection.hpp    # Collection class
+│   ├── space.hpp         # Space class (formerly group.hpp)
+│   ├── item.hpp          # Item class (formerly product.hpp)
+│   ├── revision.hpp      # Revision class (formerly version.hpp)
+│   ├── artifact.hpp      # Artifact class (formerly resource.hpp)
+│   ├── edge.hpp          # Edge class (formerly link.hpp)
+│   ├── bundle.hpp        # Bundle class (formerly collection.hpp)
 │   ├── kref.hpp          # Kref URI handling
 │   ├── event.hpp         # Event streaming
 │   ├── discovery.hpp     # Auto-discovery

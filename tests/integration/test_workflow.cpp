@@ -92,7 +92,7 @@ TEST_F(WorkflowIntegrationTest, ClientConnection) {
 }
 
 /**
- * @test Complete workflow: Project -> Group -> Product -> Version -> Resource.
+ * @test Complete workflow: Project -> Space -> Item -> Revision -> Artifact.
  */
 TEST_F(WorkflowIntegrationTest, FullEntityHierarchy) {
     // 1. Create project
@@ -102,55 +102,55 @@ TEST_F(WorkflowIntegrationTest, FullEntityHierarchy) {
     EXPECT_EQ(project->getName(), testProjectName_);
     EXPECT_FALSE(projectId_.empty());
 
-    // 2. Create group
-    auto group = project->createGroup("assets");
-    ASSERT_NE(group, nullptr);
-    EXPECT_EQ(group->getName(), "assets");
+    // 2. Create space
+    auto space = project->createSpace("assets");
+    ASSERT_NE(space, nullptr);
+    EXPECT_EQ(space->getName(), "assets");
 
-    // 3. Create nested group
-    auto subgroup = group->createGroup("characters");
-    ASSERT_NE(subgroup, nullptr);
-    EXPECT_EQ(subgroup->getName(), "characters");
+    // 3. Create nested space
+    auto subspace = space->createSpace("characters");
+    ASSERT_NE(subspace, nullptr);
+    EXPECT_EQ(subspace->getName(), "characters");
 
-    // 4. Create product in subgroup
-    auto product = subgroup->createProduct("hero", "model");
-    ASSERT_NE(product, nullptr);
-    EXPECT_EQ(product->getProductName(), "hero");
-    EXPECT_EQ(product->getProductType(), "model");
+    // 4. Create item in subspace
+    auto item = subspace->createItem("hero", "model");
+    ASSERT_NE(item, nullptr);
+    EXPECT_EQ(item->getItemName(), "hero");
+    EXPECT_EQ(item->getKind(), "model");
 
-    // 5. Create version with metadata
-    Metadata versionMeta = {{"artist", "integration_test"}, {"tool", "cpp_sdk"}};
-    auto version = product->createVersion(versionMeta);
-    ASSERT_NE(version, nullptr);
-    EXPECT_EQ(version->getVersionNumber(), 1);
+    // 5. Create revision with metadata
+    Metadata revisionMeta = {{"artist", "integration_test"}, {"tool", "cpp_sdk"}};
+    auto revision = item->createRevision(revisionMeta);
+    ASSERT_NE(revision, nullptr);
+    EXPECT_EQ(revision->getRevisionNumber(), 1);
 
-    // 6. Add resource
-    auto resource = version->createResource("main_mesh", "/assets/hero.fbx");
-    ASSERT_NE(resource, nullptr);
-    EXPECT_EQ(resource->getName(), "main_mesh");
+    // 6. Add artifact
+    auto artifact = revision->createArtifact("main_mesh", "/assets/hero.fbx");
+    ASSERT_NE(artifact, nullptr);
+    EXPECT_EQ(artifact->getName(), "main_mesh");
 
-    // 7. Verify resource retrieval
-    auto resources = version->getResources();
-    EXPECT_GE(resources.size(), 1u);
+    // 7. Verify artifact retrieval
+    auto artifacts = revision->getArtifacts();
+    EXPECT_GE(artifacts.size(), 1u);
 
-    // 8. Create another version
-    auto version2 = product->createVersion({{"artist", "test"}, {"notes", "updated"}});
-    ASSERT_NE(version2, nullptr);
-    EXPECT_EQ(version2->getVersionNumber(), 2);
+    // 8. Create another revision
+    auto revision2 = item->createRevision({{"artist", "test"}, {"notes", "updated"}});
+    ASSERT_NE(revision2, nullptr);
+    EXPECT_EQ(revision2->getRevisionNumber(), 2);
 
-    // 9. Verify versions list
-    auto versions = product->getVersions();
-    EXPECT_EQ(versions.size(), 2u);
+    // 9. Verify revisions list
+    auto revisions = item->getRevisions();
+    EXPECT_EQ(revisions.size(), 2u);
 
-    // 10. Tag version
-    version->tag("approved");
-    auto taggedVersion = client_->resolveKref(product->getKref().uri(), "approved");
-    ASSERT_NE(taggedVersion, nullptr);
-    EXPECT_EQ(taggedVersion->getVersionNumber(), 1);
+    // 10. Tag revision
+    revision->tag("approved");
+    auto taggedRevision = client_->resolveKref(item->getKref().uri(), "approved");
+    ASSERT_NE(taggedRevision, nullptr);
+    EXPECT_EQ(taggedRevision->getRevisionNumber(), 1);
 }
 
 /**
- * @test Workflow with linking between versions.
+ * @test Workflow with linking between revisions.
  */
 TEST_F(WorkflowIntegrationTest, LinkingWorkflow) {
     // Create project
@@ -158,61 +158,61 @@ TEST_F(WorkflowIntegrationTest, LinkingWorkflow) {
     ASSERT_NE(project, nullptr);
     projectId_ = project->getProjectId();
 
-    // Create a group first (Products must be in groups)
-    auto group = project->createGroup("linking_test");
-    ASSERT_NE(group, nullptr);
+    // Create a space first (Items must be in spaces)
+    auto space = project->createSpace("linking_test");
+    ASSERT_NE(space, nullptr);
 
-    // Create source product with version
-    auto sourceProduct = group->createProduct("source_asset", "asset");
-    ASSERT_NE(sourceProduct, nullptr);
-    auto sourceVersion = sourceProduct->createVersion({});
-    ASSERT_NE(sourceVersion, nullptr);
+    // Create source item with revision
+    auto sourceItem = space->createItem("source_asset", "asset");
+    ASSERT_NE(sourceItem, nullptr);
+    auto sourceRevision = sourceItem->createRevision({});
+    ASSERT_NE(sourceRevision, nullptr);
 
-    // Create target product with version
-    auto targetProduct = group->createProduct("target_asset", "asset");
-    ASSERT_NE(targetProduct, nullptr);
-    auto targetVersion = targetProduct->createVersion({});
-    ASSERT_NE(targetVersion, nullptr);
+    // Create target item with revision
+    auto targetItem = space->createItem("target_asset", "asset");
+    ASSERT_NE(targetItem, nullptr);
+    auto targetRevision = targetItem->createRevision({});
+    ASSERT_NE(targetRevision, nullptr);
 
-    // Create dependency link
-    auto link = sourceVersion->createLink(targetVersion->getKref(), LinkType::DEPENDS_ON);
-    ASSERT_NE(link, nullptr);
-    EXPECT_STREQ(link->getLinkType().c_str(), LinkType::DEPENDS_ON);
+    // Create dependency edge
+    auto edge = sourceRevision->createEdge(targetRevision->getKref(), EdgeType::DEPENDS_ON);
+    ASSERT_NE(edge, nullptr);
+    EXPECT_STREQ(edge->getEdgeType().c_str(), EdgeType::DEPENDS_ON);
 
-    // Verify outgoing links (empty filter = all types)
-    auto outLinks = sourceVersion->getLinks("", LinkDirection::OUTGOING);
-    EXPECT_GE(outLinks.size(), 1u);
+    // Verify outgoing edges (empty filter = all types)
+    auto outEdges = sourceRevision->getEdges("", EdgeDirection::OUTGOING);
+    EXPECT_GE(outEdges.size(), 1u);
 
-    // Verify incoming links on target
-    // Note: Server may need time to propagate reverse links, so this is informational
-    auto inLinks = targetVersion->getLinks("", LinkDirection::INCOMING);
-    std::cout << "Incoming links found: " << inLinks.size() << std::endl;
-    // EXPECT_GE(inLinks.size(), 1u); // May be eventually consistent
+    // Verify incoming edges on target
+    // Note: Server may need time to propagate reverse edges, so this is informational
+    auto inEdges = targetRevision->getEdges("", EdgeDirection::INCOMING);
+    std::cout << "Incoming edges found: " << inEdges.size() << std::endl;
+    // EXPECT_GE(inEdges.size(), 1u); // May be eventually consistent
 }
 
 /**
  * @test Metadata update workflow.
  */
 TEST_F(WorkflowIntegrationTest, MetadataUpdateWorkflow) {
-    // Create project and group
+    // Create project and space
     auto project = client_->createProject(testProjectName_, "Metadata test");
     ASSERT_NE(project, nullptr);
     projectId_ = project->getProjectId();
 
-    auto group = project->createGroup("meta_group");
-    ASSERT_NE(group, nullptr);
+    auto space = project->createSpace("meta_space");
+    ASSERT_NE(space, nullptr);
 
-    auto product = group->createProduct("meta_test", "asset");
-    ASSERT_NE(product, nullptr);
+    auto item = space->createItem("meta_test", "asset");
+    ASSERT_NE(item, nullptr);
 
-    auto version = product->createVersion({{"initial", "value"}});
-    ASSERT_NE(version, nullptr);
+    auto revision = item->createRevision({{"initial", "value"}});
+    ASSERT_NE(revision, nullptr);
 
     // Update metadata using setMetadata
-    version->setMetadata({{"updated", "new_value"}, {"initial", "changed"}});
+    revision->setMetadata({{"updated", "new_value"}, {"initial", "changed"}});
 
     // Refresh and verify
-    auto refreshed = client_->getVersion(version->getKref().uri());
+    auto refreshed = client_->getRevision(revision->getKref().uri());
     ASSERT_NE(refreshed, nullptr);
     auto meta = refreshed->getMetadata();
     EXPECT_EQ(meta["updated"], "new_value");
@@ -220,47 +220,47 @@ TEST_F(WorkflowIntegrationTest, MetadataUpdateWorkflow) {
 }
 
 /**
- * @test Version tagging workflow.
+ * @test Revision tagging workflow.
  */
-TEST_F(WorkflowIntegrationTest, VersionTaggingWorkflow) {
-    // Create project and group
+TEST_F(WorkflowIntegrationTest, RevisionTaggingWorkflow) {
+    // Create project and space
     auto project = client_->createProject(testProjectName_, "Tagging test");
     ASSERT_NE(project, nullptr);
     projectId_ = project->getProjectId();
 
-    auto group = project->createGroup("tag_group");
-    ASSERT_NE(group, nullptr);
+    auto space = project->createSpace("tag_space");
+    ASSERT_NE(space, nullptr);
 
-    auto product = group->createProduct("tag_test", "asset");
-    ASSERT_NE(product, nullptr);
+    auto item = space->createItem("tag_test", "asset");
+    ASSERT_NE(item, nullptr);
 
-    auto v1 = product->createVersion({});
-    auto v2 = product->createVersion({});
-    auto v3 = product->createVersion({});
+    auto v1 = item->createRevision({});
+    auto v2 = item->createRevision({});
+    auto v3 = item->createRevision({});
     ASSERT_NE(v1, nullptr);
     ASSERT_NE(v2, nullptr);
     ASSERT_NE(v3, nullptr);
 
-    // Tag versions (note: 'latest' is a reserved system tag)
+    // Tag revisions (note: 'latest' is a reserved system tag)
     v1->tag("v1.0");
     v2->tag("v2.0");
     v2->tag("approved");
     v3->tag("approved");  // Should move tag from v2 to v3
 
     // Verify approved points to v3
-    auto approved = client_->resolveKref(product->getKref().uri(), "approved");
+    auto approved = client_->resolveKref(item->getKref().uri(), "approved");
     ASSERT_NE(approved, nullptr);
-    EXPECT_EQ(approved->getVersionNumber(), 3);
+    EXPECT_EQ(approved->getRevisionNumber(), 3);
 
     // v1.0 should still point to v1
-    auto v1Tagged = client_->resolveKref(product->getKref().uri(), "v1.0");
+    auto v1Tagged = client_->resolveKref(item->getKref().uri(), "v1.0");
     ASSERT_NE(v1Tagged, nullptr);
-    EXPECT_EQ(v1Tagged->getVersionNumber(), 1);
+    EXPECT_EQ(v1Tagged->getRevisionNumber(), 1);
 
     // 'latest' is auto-managed and should point to v3
-    auto latest = client_->resolveKref(product->getKref().uri(), "latest");
+    auto latest = client_->resolveKref(item->getKref().uri(), "latest");
     ASSERT_NE(latest, nullptr);
-    EXPECT_EQ(latest->getVersionNumber(), 3);
+    EXPECT_EQ(latest->getRevisionNumber(), 3);
 }
 
 /**

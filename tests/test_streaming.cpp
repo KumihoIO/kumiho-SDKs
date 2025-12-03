@@ -1,6 +1,6 @@
 #include <grpcpp/grpcpp.h>
 #include <gtest/gtest.h>
-#include <kumiho.h>
+#include <kumiho/kumiho.hpp>
 #include <memory>
 #include <thread>
 #include <vector>
@@ -49,16 +49,16 @@ TEST_F(KumihoStreamingTest, EventStreaming) {
     std::string project_name = unique_name_stream("stream_test_project");
     std::string asset_name = unique_name_stream("stream_test_asset");
     
-    auto group = client->createGroup("/", project_name);
-    ASSERT_NE(group, nullptr);
+    auto space = client->createSpace("/", project_name);
+    ASSERT_NE(space, nullptr);
 
-    auto product = group->createProduct(asset_name, "model");
-    ASSERT_NE(product, nullptr);
+    auto item = space->createItem(asset_name, "model");
+    ASSERT_NE(item, nullptr);
     
-    auto version = product->createVersion();
-    ASSERT_NE(version, nullptr);
+    auto revision = item->createRevision();
+    ASSERT_NE(revision, nullptr);
 
-    version->tag("published");
+    revision->tag("published");
 
     // Wait for events to be processed
     std::this_thread::sleep_for(std::chrono::seconds(2));
@@ -68,25 +68,25 @@ TEST_F(KumihoStreamingTest, EventStreaming) {
 
     ASSERT_GE(received_events.size(), 4);
 
-    // 1. Group creation event
+    // 1. Space creation event
     const auto& event1 = received_events[0];
-    EXPECT_EQ(event1.getRoutingKey(), "group.created");
+    EXPECT_EQ(event1.getRoutingKey(), "space.created");
     EXPECT_EQ(event1.getKref().uri(), "/" + project_name);
 
-    // 2. Product creation event
+    // 2. Item creation event
     const auto& event2 = received_events[1];
-    EXPECT_EQ(event2.getRoutingKey(), "product.model.created");
-    EXPECT_EQ(event2.getKref().uri(), product->getKref().uri());
+    EXPECT_EQ(event2.getRoutingKey(), "item.model.created");
+    EXPECT_EQ(event2.getKref().uri(), item->getKref().uri());
 
-    // 3. Version creation event
+    // 3. Revision creation event
     const auto& event3 = received_events[2];
-    EXPECT_EQ(event3.getRoutingKey(), "version.created");
-    EXPECT_EQ(event3.getKref().uri(), version->getKref().uri());
+    EXPECT_EQ(event3.getRoutingKey(), "revision.created");
+    EXPECT_EQ(event3.getKref().uri(), revision->getKref().uri());
 
-    // 4. Version tagging event
+    // 4. Revision tagging event
     const auto& event4 = received_events[3];
-    EXPECT_EQ(event4.getRoutingKey(), "version.tagged");
-    EXPECT_EQ(event4.getKref().uri(), version->getKref().uri());
+    EXPECT_EQ(event4.getRoutingKey(), "revision.tagged");
+    EXPECT_EQ(event4.getKref().uri(), revision->getKref().uri());
     EXPECT_EQ(event4.getDetails().at("tag"), "published");
 
     // Detach the thread as we are done. The stream will be closed

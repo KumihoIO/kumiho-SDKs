@@ -1,6 +1,13 @@
 /**
  * @file kref.cpp
  * @brief Implementation of Kref URI parsing and validation.
+ *
+ * Terminology (with backwards compatibility):
+ * - Space (formerly Group): A hierarchical container/namespace
+ * - Item (formerly Product): An asset/entity in the graph
+ * - Revision (formerly Version): A specific state of an item
+ * - Artifact (formerly Resource): A file/location attached to a revision
+ * - Kind (formerly Type): The category of an item
  */
 
 #include "kumiho/kref.hpp"
@@ -33,7 +40,7 @@ std::string Kref::getProject() const {
     return path.substr(0, pos);
 }
 
-std::string Kref::getGroup() const {
+std::string Kref::getSpace() const {
     std::string path = getPath();
     
     // Find first slash (after project)
@@ -42,24 +49,24 @@ std::string Kref::getGroup() const {
         return "";  // Project-level kref
     }
     
-    // Find last slash (before product.type)
+    // Find last slash (before item.kind)
     size_t last_slash = path.rfind('/');
     if (last_slash == first_slash) {
-        // Only one slash: project/product.type
-        // Check if it's a product (has dot) or a group
+        // Only one slash: project/item.kind
+        // Check if it's an item (has dot) or a space
         std::string remainder = path.substr(first_slash + 1);
         if (remainder.find('.') != std::string::npos) {
-            return "";  // It's a product, no group path
+            return "";  // It's an item, no space path
         }
-        return remainder;  // It's a group
+        return remainder;  // It's a space
     }
     
-    // Multiple slashes: extract group path
+    // Multiple slashes: extract space path
     return path.substr(first_slash + 1, last_slash - first_slash - 1);
 }
 
-std::string Kref::getProductName() const {
-    std::string full = getFullProductName();
+std::string Kref::getItemName() const {
+    std::string full = getFullItemName();
     size_t dot = full.find('.');
     if (dot == std::string::npos) {
         return "";
@@ -67,8 +74,8 @@ std::string Kref::getProductName() const {
     return full.substr(0, dot);
 }
 
-std::string Kref::getType() const {
-    std::string full = getFullProductName();
+std::string Kref::getKind() const {
+    std::string full = getFullItemName();
     size_t dot = full.find('.');
     if (dot == std::string::npos) {
         return "";
@@ -76,7 +83,7 @@ std::string Kref::getType() const {
     return full.substr(dot + 1);
 }
 
-std::string Kref::getFullProductName() const {
+std::string Kref::getFullItemName() const {
     std::string path = getPath();
     
     // Find the last component
@@ -88,28 +95,28 @@ std::string Kref::getFullProductName() const {
         last_component = path.substr(last_slash + 1);
     }
     
-    // Check if it's a product (contains dot)
+    // Check if it's an item (contains dot)
     if (last_component.find('.') != std::string::npos) {
         return last_component;
     }
     
-    return "";  // Not a product kref
+    return "";  // Not an item kref
 }
 
-std::optional<int> Kref::getVersion() const {
-    std::string v = getQueryParam("v");
-    if (v.empty()) {
+std::optional<int> Kref::getRevision() const {
+    std::string r = getQueryParam("r");
+    if (r.empty()) {
         return std::nullopt;
     }
     try {
-        return std::stoi(v);
+        return std::stoi(r);
     } catch (...) {
         return std::nullopt;
     }
 }
 
-std::string Kref::getResourceName() const {
-    return getQueryParam("r");
+std::string Kref::getArtifactName() const {
+    return getQueryParam("a");
 }
 
 std::string Kref::getTag() const {
