@@ -5,6 +5,14 @@
  * This module provides the Client class that handles all gRPC communication
  * with Kumiho Cloud servers. It manages connection establishment, authentication,
  * and all gRPC method calls.
+ *
+ * Terminology:
+ * - Space: A hierarchical container/namespace
+ * - Item: An asset/entity in the graph
+ * - Revision: A specific state of an item
+ * - Artifact: A file/location attached to a revision
+ * - Edge: A relationship between revisions
+ * - Bundle: A curated set of items
  */
 
 #pragma once
@@ -17,30 +25,29 @@
 #include "kumiho/types.hpp"
 #include "kumiho/kref.hpp"
 #include "kumiho/error.hpp"
+#include "kumiho/bundle.hpp"  // For BundleMember, BundleRevisionHistory in inline functions
 #include "kumiho.grpc.pb.h"
 
 namespace kumiho {
 namespace api {
 
 // Forward declarations
+// Note: Bundle, BundleMember, BundleRevisionHistory are defined in bundle.hpp (included above)
 class Project;
-class Group;
-class Product;
-class Version;
-class Resource;
-class Link;
-class Collection;
+class Space;
+class Item;
+class Revision;
+class Artifact;
+class Edge;
 class Event;
 class EventStream;
-struct CollectionMember;
-struct CollectionVersionHistory;
 
 /**
  * @brief The main client for interacting with Kumiho Cloud services.
  *
  * The Client class provides methods for all Kumiho operations including
- * creating and managing projects, groups, products, versions, resources,
- * and links.
+ * creating and managing projects, spaces, items, revisions, artifacts,
+ * and edges.
  *
  * Example:
  * @code
@@ -50,9 +57,9 @@ struct CollectionVersionHistory;
  *   // Create a project
  *   auto project = client->createProject("my-project", "My VFX assets");
  *   
- *   // Create groups and products
- *   auto group = client->createGroup("/" + project->getName(), "assets");
- *   auto product = group->createProduct("hero", "model");
+ *   // Create spaces and items
+ *   auto space = client->createSpace("/" + project->getName(), "assets");
+ *   auto item = space->createItem("hero", "model");
  * @endcode
  */
 class Client {
@@ -125,134 +132,135 @@ public:
         std::optional<std::string> description = std::nullopt
     );
 
-    // --- Group Operations ---
+    // --- Space Operations ---
 
     /**
-     * @brief Create a new group.
-     * @param parent_path The path of the parent (project or group).
-     * @param name The group name.
-     * @return The created Group.
+     * @brief Create a new space.
+     * @param parent_path The path of the parent (project or space).
+     * @param name The space name.
+     * @return The created Space.
      */
-    std::shared_ptr<Group> createGroup(const std::string& parent_path, const std::string& name);
+    std::shared_ptr<Space> createSpace(const std::string& parent_path, const std::string& name);
 
     /**
-     * @brief Get a group by path.
-     * @param path The full group path.
-     * @return The Group.
+     * @brief Get a space by path.
+     * @param path The full space path.
+     * @return The Space.
      */
-    std::shared_ptr<Group> getGroup(const std::string& path);
+    std::shared_ptr<Space> getSpace(const std::string& path);
 
     /**
-     * @brief Get child groups of a parent.
+     * @brief Get child spaces of a parent.
      * @param parent_path The parent path (empty for root).
-     * @return A list of Group objects.
+     * @return A list of Space objects.
      */
-    std::vector<std::shared_ptr<Group>> getChildGroups(const std::string& parent_path = "");
+    std::vector<std::shared_ptr<Space>> getChildSpaces(const std::string& parent_path = "");
 
     /**
-     * @brief Update group metadata.
-     * @param kref The group's Kref.
+     * @brief Update space metadata.
+     * @param kref The space's Kref.
      * @param metadata The metadata to set.
-     * @return The updated Group.
+     * @return The updated Space.
      */
-    std::shared_ptr<Group> updateGroupMetadata(const Kref& kref, const Metadata& metadata);
+    std::shared_ptr<Space> updateSpaceMetadata(const Kref& kref, const Metadata& metadata);
 
     /**
-     * @brief Delete a group.
-     * @param path The group path.
+     * @brief Delete a space.
+     * @param path The space path.
      * @param force If true, permanently delete.
      */
-    void deleteGroup(const std::string& path, bool force = false);
+    void deleteSpace(const std::string& path, bool force = false);
 
-    // --- Product Operations ---
-
-    /**
-     * @brief Create a new product.
-     * @param parent_path The parent group path.
-     * @param name The product name.
-     * @param ptype The product type.
-     * @return The created Product.
-     * @throws ReservedProductTypeError if ptype is reserved.
-     */
-    std::shared_ptr<Product> createProduct(const std::string& parent_path, const std::string& name, const std::string& ptype);
+    // --- Item Operations ---
 
     /**
-     * @brief Get a product by parent path, name, and type.
-     * @param parent_path The parent group path.
-     * @param name The product name.
-     * @param ptype The product type.
-     * @return The Product.
+     * @brief Create a new item.
+     * @param parent_path The parent space path.
+     * @param name The item name.
+     * @param kind The item kind (type).
+     * @return The created Item.
+     * @throws ReservedKindError if kind is reserved.
      */
-    std::shared_ptr<Product> getProduct(const std::string& parent_path, const std::string& name, const std::string& ptype);
+    std::shared_ptr<Item> createItem(const std::string& parent_path, const std::string& name, const std::string& kind);
 
     /**
-     * @brief Get a product by Kref.
-     * @param kref_uri The product's Kref URI.
-     * @return The Product.
+     * @brief Get an item by parent path, name, and kind.
+     * @param parent_path The parent space path.
+     * @param name The item name.
+     * @param kind The item kind.
+     * @return The Item.
      */
-    std::shared_ptr<Product> getProductByKref(const std::string& kref_uri);
+    std::shared_ptr<Item> getItem(const std::string& parent_path, const std::string& name, const std::string& kind);
 
     /**
-     * @brief Search for products.
-     * @param context_filter Filter by context (project/group path).
-     * @param name_filter Filter by product name.
-     * @param ptype_filter Filter by product type.
-     * @return A list of matching Product objects.
+     * @brief Get an item by Kref.
+     * @param kref_uri The item's Kref URI.
+     * @return The Item.
      */
-    std::vector<std::shared_ptr<Product>> productSearch(
+    std::shared_ptr<Item> getItemByKref(const std::string& kref_uri);
+
+    /**
+     * @brief Search for items.
+     * @param context_filter Filter by context (project/space path).
+     * @param name_filter Filter by item name.
+     * @param kind_filter Filter by item kind.
+     * @return A list of matching Item objects.
+     */
+    std::vector<std::shared_ptr<Item>> itemSearch(
         const std::string& context_filter = "",
         const std::string& name_filter = "",
-        const std::string& ptype_filter = ""
+        const std::string& kind_filter = ""
     );
 
     /**
-     * @brief Update product metadata.
-     * @param kref The product's Kref.
+     * @brief Update item metadata.
+     * @param kref The item's Kref.
      * @param metadata The metadata to set.
-     * @return The updated Product.
+     * @return The updated Item.
      */
-    std::shared_ptr<Product> updateProductMetadata(const Kref& kref, const Metadata& metadata);
+    std::shared_ptr<Item> updateItemMetadata(const Kref& kref, const Metadata& metadata);
 
     /**
-     * @brief Delete a product.
-     * @param kref The product's Kref.
+     * @brief Delete an item.
+     * @param kref The item's Kref.
      * @param force If true, permanently delete.
      */
-    void deleteProduct(const Kref& kref, bool force = false);
+    void deleteItem(const Kref& kref, bool force = false);
 
     /**
-     * @brief Set product deprecated status.
-     * @param kref The product's Kref.
+     * @brief Set item deprecated status.
+     * @param kref The item's Kref.
      * @param deprecated True to deprecate, false to restore.
      */
-    void setProductDeprecated(const Kref& kref, bool deprecated);
+    void setItemDeprecated(const Kref& kref, bool deprecated);
 
-    // --- Version Operations ---
+    // --- Revision Operations ---
 
     /**
-     * @brief Create a new version.
-     * @param product_kref The parent product's Kref.
+     * @brief Create a new revision.
+     * @param item_kref The parent item's Kref.
      * @param metadata Optional metadata.
-     * @param number Optional specific version number (0 for auto).
-     * @return The created Version.
+     * @param number Optional specific revision number (0 for auto).
+     * @return The created Revision.
      */
-    std::shared_ptr<Version> createVersion(const Kref& product_kref, const Metadata& metadata = {}, int number = 0);
+    std::shared_ptr<Revision> createRevision(const Kref& item_kref, const Metadata& metadata = {}, int number = 0);
 
     /**
-     * @brief Get a version by Kref.
-     * @param kref_uri The version's Kref URI.
-     * @return The Version.
+     * @brief Get a revision by Kref.
+     * @param kref_uri The revision's Kref URI.
+     * @return The Revision.
      */
-    std::shared_ptr<Version> getVersion(const std::string& kref_uri);
+    std::shared_ptr<Revision> getRevision(const std::string& kref_uri);
 
     /**
-     * @brief Resolve a Kref to a version.
+     * @brief Resolve a Kref to a revision.
      * @param kref_uri The Kref URI.
-     * @param tag Optional tag to resolve.
-     * @param time Optional time in YYYYMMDDHHMM format.
-     * @return The Version, or nullptr if not found.
+     * @param tag Optional tag to resolve (e.g., "published", "approved").
+     * @param time Optional time in YYYYMMDDHHMM format (e.g., "202406011330")
+     *             or ISO 8601 format (e.g., "2024-06-01T13:30:00Z").
+     * @return The Revision, or nullptr if not found.
      */
-    std::shared_ptr<Version> resolveKref(const std::string& kref_uri, const std::string& tag = "", const std::string& time = "");
+    std::shared_ptr<Revision> resolveKref(const std::string& kref_uri, const std::string& tag = "", const std::string& time = "");
 
     /**
      * @brief Resolve a Kref to a location.
@@ -262,199 +270,199 @@ public:
     std::optional<std::string> resolve(const std::string& kref_uri);
 
     /**
-     * @brief Get all versions of a product.
-     * @param product_kref The product's Kref.
-     * @return A list of Version objects.
+     * @brief Get all revisions of an item.
+     * @param item_kref The item's Kref.
+     * @return A list of Revision objects.
      */
-    std::vector<std::shared_ptr<Version>> getVersions(const Kref& product_kref);
+    std::vector<std::shared_ptr<Revision>> getRevisions(const Kref& item_kref);
 
     /**
-     * @brief Peek at the next version number.
-     * @param product_kref The product's Kref.
-     * @return The next version number.
+     * @brief Peek at the next revision number.
+     * @param item_kref The item's Kref.
+     * @return The next revision number.
      */
-    int peekNextVersion(const Kref& product_kref);
+    int peekNextRevision(const Kref& item_kref);
 
     /**
-     * @brief Update version metadata.
-     * @param kref The version's Kref.
+     * @brief Update revision metadata.
+     * @param kref The revision's Kref.
      * @param metadata The metadata to set.
-     * @return The updated Version.
+     * @return The updated Revision.
      */
-    std::shared_ptr<Version> updateVersionMetadata(const Kref& kref, const Metadata& metadata);
+    std::shared_ptr<Revision> updateRevisionMetadata(const Kref& kref, const Metadata& metadata);
 
     /**
-     * @brief Add a tag to a version.
-     * @param kref The version's Kref.
+     * @brief Add a tag to a revision.
+     * @param kref The revision's Kref.
      * @param tag The tag to add.
      */
-    void tagVersion(const Kref& kref, const std::string& tag);
+    void tagRevision(const Kref& kref, const std::string& tag);
 
     /**
-     * @brief Remove a tag from a version.
-     * @param kref The version's Kref.
+     * @brief Remove a tag from a revision.
+     * @param kref The revision's Kref.
      * @param tag The tag to remove.
      */
-    void untagVersion(const Kref& kref, const std::string& tag);
+    void untagRevision(const Kref& kref, const std::string& tag);
 
     /**
-     * @brief Check if a version has a tag.
-     * @param kref The version's Kref.
+     * @brief Check if a revision has a tag.
+     * @param kref The revision's Kref.
      * @param tag The tag to check.
-     * @return True if the version has the tag.
+     * @return True if the revision has the tag.
      */
     bool hasTag(const Kref& kref, const std::string& tag);
 
     /**
-     * @brief Check if a version ever had a tag.
-     * @param kref The version's Kref.
+     * @brief Check if a revision ever had a tag.
+     * @param kref The revision's Kref.
      * @param tag The tag to check.
-     * @return True if the version ever had the tag.
+     * @return True if the revision ever had the tag.
      */
     bool wasTagged(const Kref& kref, const std::string& tag);
 
     /**
-     * @brief Set version deprecated status.
-     * @param kref The version's Kref.
+     * @brief Set revision deprecated status.
+     * @param kref The revision's Kref.
      * @param deprecated True to deprecate, false to restore.
      */
-    void setVersionDeprecated(const Kref& kref, bool deprecated);
+    void setRevisionDeprecated(const Kref& kref, bool deprecated);
 
     /**
-     * @brief Delete a version.
-     * @param kref The version's Kref.
+     * @brief Delete a revision.
+     * @param kref The revision's Kref.
      * @param force If true, permanently delete.
      */
-    void deleteVersion(const Kref& kref, bool force = false);
+    void deleteRevision(const Kref& kref, bool force = false);
 
-    // --- Resource Operations ---
+    // --- Artifact Operations ---
 
     /**
-     * @brief Create a new resource.
-     * @param version_kref The parent version's Kref.
-     * @param name The resource name.
+     * @brief Create a new artifact.
+     * @param revision_kref The parent revision's Kref.
+     * @param name The artifact name.
      * @param location The file path or URI.
-     * @return The created Resource.
+     * @return The created Artifact.
      */
-    std::shared_ptr<Resource> createResource(const Kref& version_kref, const std::string& name, const std::string& location);
+    std::shared_ptr<Artifact> createArtifact(const Kref& revision_kref, const std::string& name, const std::string& location);
 
     /**
-     * @brief Get a resource by version and name.
-     * @param version_kref The version's Kref.
-     * @param name The resource name.
-     * @return The Resource.
+     * @brief Get an artifact by revision and name.
+     * @param revision_kref The revision's Kref.
+     * @param name The artifact name.
+     * @return The Artifact.
      */
-    std::shared_ptr<Resource> getResource(const Kref& version_kref, const std::string& name);
+    std::shared_ptr<Artifact> getArtifact(const Kref& revision_kref, const std::string& name);
 
     /**
-     * @brief Get all resources for a version.
-     * @param version_kref The version's Kref.
-     * @return A list of Resource objects.
+     * @brief Get all artifacts for a revision.
+     * @param revision_kref The revision's Kref.
+     * @return A list of Artifact objects.
      */
-    std::vector<std::shared_ptr<Resource>> getResources(const Kref& version_kref);
+    std::vector<std::shared_ptr<Artifact>> getArtifacts(const Kref& revision_kref);
 
     /**
-     * @brief Get resources by location.
+     * @brief Get artifacts by location.
      * @param location The file location to search.
-     * @return A list of matching Resource objects.
+     * @return A list of matching Artifact objects.
      */
-    std::vector<std::shared_ptr<Resource>> getResourcesByLocation(const std::string& location);
+    std::vector<std::shared_ptr<Artifact>> getArtifactsByLocation(const std::string& location);
 
     /**
-     * @brief Set the default resource for a version.
-     * @param version_kref The version's Kref.
-     * @param resource_name The resource name to set as default.
+     * @brief Set the default artifact for a revision.
+     * @param revision_kref The revision's Kref.
+     * @param artifact_name The artifact name to set as default.
      */
-    void setDefaultResource(const Kref& version_kref, const std::string& resource_name);
+    void setDefaultArtifact(const Kref& revision_kref, const std::string& artifact_name);
 
     /**
-     * @brief Update resource metadata.
-     * @param kref The resource's Kref.
+     * @brief Update artifact metadata.
+     * @param kref The artifact's Kref.
      * @param metadata The metadata to set.
-     * @return The updated Resource.
+     * @return The updated Artifact.
      */
-    std::shared_ptr<Resource> updateResourceMetadata(const Kref& kref, const Metadata& metadata);
+    std::shared_ptr<Artifact> updateArtifactMetadata(const Kref& kref, const Metadata& metadata);
 
     /**
-     * @brief Delete a resource.
-     * @param kref The resource's Kref.
+     * @brief Delete an artifact.
+     * @param kref The artifact's Kref.
      * @param force If true, permanently delete.
      */
-    void deleteResource(const Kref& kref, bool force = false);
+    void deleteArtifact(const Kref& kref, bool force = false);
 
     /**
-     * @brief Set resource deprecated status.
-     * @param kref The resource's Kref.
+     * @brief Set artifact deprecated status.
+     * @param kref The artifact's Kref.
      * @param deprecated True to deprecate, false to restore.
      */
-    void setResourceDeprecated(const Kref& kref, bool deprecated);
+    void setArtifactDeprecated(const Kref& kref, bool deprecated);
 
-    // --- Link Operations ---
+    // --- Edge Operations ---
 
     /**
-     * @brief Create a link between versions.
-     * @param source_kref The source version's Kref.
-     * @param target_kref The target version's Kref.
-     * @param link_type The link type (e.g., "DEPENDS_ON").
-     * @param metadata Optional link metadata.
-     * @return The created Link.
+     * @brief Create an edge between revisions.
+     * @param source_kref The source revision's Kref.
+     * @param target_kref The target revision's Kref.
+     * @param edge_type The edge type (e.g., "DEPENDS_ON").
+     * @param metadata Optional edge metadata.
+     * @return The created Edge.
      */
-    std::shared_ptr<Link> createLink(
+    std::shared_ptr<Edge> createEdge(
         const Kref& source_kref,
         const Kref& target_kref,
-        const std::string& link_type,
+        const std::string& edge_type,
         const Metadata& metadata = {}
     );
 
     /**
-     * @brief Get links for a version.
-     * @param kref The version's Kref.
-     * @param link_type_filter Filter by link type (empty = all).
-     * @return A list of Link objects.
+     * @brief Get edges for a revision.
+     * @param kref The revision's Kref.
+     * @param edge_type_filter Filter by edge type (empty = all).
+     * @return A list of Edge objects.
      */
-    std::vector<std::shared_ptr<Link>> getLinks(const Kref& kref, const std::string& link_type_filter = "");
+    std::vector<std::shared_ptr<Edge>> getEdges(const Kref& kref, const std::string& edge_type_filter = "");
 
     /**
-     * @brief Delete a link.
-     * @param source_kref The source version's Kref.
-     * @param target_kref The target version's Kref.
-     * @param link_type The link type.
+     * @brief Delete an edge.
+     * @param source_kref The source revision's Kref.
+     * @param target_kref The target revision's Kref.
+     * @param edge_type The edge type.
      */
-    void deleteLink(const Kref& source_kref, const Kref& target_kref, const std::string& link_type);
+    void deleteEdge(const Kref& source_kref, const Kref& target_kref, const std::string& edge_type);
 
     // --- Graph Traversal Operations ---
 
     /**
-     * @brief Traverse links from a starting version.
+     * @brief Traverse edges from a starting revision.
      *
-     * Performs a breadth-first traversal of the version graph following
-     * links in the specified direction.
+     * Performs a breadth-first traversal of the revision graph following
+     * edges in the specified direction.
      *
-     * @param origin_kref The starting version's Kref.
+     * @param origin_kref The starting revision's Kref.
      * @param direction The direction to traverse (OUTGOING or INCOMING).
-     * @param link_type_filter Filter by link types (empty = all types).
+     * @param edge_type_filter Filter by edge types (empty = all types).
      * @param max_depth Maximum traversal depth (default: 10, max: 20).
      * @param limit Maximum number of results (default: 100, max: 1000).
      * @param include_path Whether to include full path info.
-     * @return TraversalResult containing discovered versions.
+     * @return TraversalResult containing discovered revisions.
      */
-    TraversalResult traverseLinks(
+    TraversalResult traverseEdges(
         const Kref& origin_kref,
         int direction,
-        const std::vector<std::string>& link_type_filter = {},
+        const std::vector<std::string>& edge_type_filter = {},
         int max_depth = 10,
         int limit = 100,
         bool include_path = false
     );
 
     /**
-     * @brief Find the shortest path between two versions.
+     * @brief Find the shortest path between two revisions.
      *
-     * Uses graph traversal to find how two versions are connected.
+     * Uses graph traversal to find how two revisions are connected.
      *
-     * @param source_kref The source version's Kref.
-     * @param target_kref The target version's Kref.
-     * @param link_type_filter Filter by link types (empty = all).
+     * @param source_kref The source revision's Kref.
+     * @param target_kref The target revision's Kref.
+     * @param edge_type_filter Filter by edge types (empty = all).
      * @param max_depth Maximum path length to search (default: 10).
      * @param all_shortest If true, return all shortest paths.
      * @return ShortestPathResult containing the path(s).
@@ -462,26 +470,26 @@ public:
     ShortestPathResult findShortestPath(
         const Kref& source_kref,
         const Kref& target_kref,
-        const std::vector<std::string>& link_type_filter = {},
+        const std::vector<std::string>& edge_type_filter = {},
         int max_depth = 10,
         bool all_shortest = false
     );
 
     /**
-     * @brief Analyze the impact of changes to a version.
+     * @brief Analyze the impact of changes to a revision.
      *
-     * Returns all versions that directly or indirectly depend on
-     * the specified version, sorted by impact depth.
+     * Returns all revisions that directly or indirectly depend on
+     * the specified revision, sorted by impact depth.
      *
-     * @param version_kref The version to analyze.
-     * @param link_type_filter Link types to follow (empty = all).
+     * @param revision_kref The revision to analyze.
+     * @param edge_type_filter Edge types to follow (empty = all).
      * @param max_depth Maximum traversal depth (default: 10).
      * @param limit Maximum results (default: 100).
-     * @return ImpactAnalysisResult with impacted versions.
+     * @return ImpactAnalysisResult with impacted revisions.
      */
     ImpactAnalysisResult analyzeImpact(
-        const Kref& version_kref,
-        const std::vector<std::string>& link_type_filter = {},
+        const Kref& revision_kref,
+        const std::vector<std::string>& edge_type_filter = {},
         int max_depth = 10,
         int limit = 100
     );
@@ -524,59 +532,59 @@ public:
      */
     bool deleteAttribute(const Kref& kref, const std::string& key);
 
-    // --- Collection Operations ---
+    // --- Bundle Operations ---
 
     /**
-     * @brief Create a collection.
-     * @param parent_path The parent group path.
-     * @param name The collection name.
-     * @return The created Collection.
+     * @brief Create a bundle.
+     * @param parent_path The parent space path.
+     * @param name The bundle name.
+     * @return The created Bundle.
      */
-    std::shared_ptr<Collection> createCollection(const std::string& parent_path, const std::string& name);
+    std::shared_ptr<Bundle> createBundle(const std::string& parent_path, const std::string& name);
 
     /**
-     * @brief Create a collection using a parent Kref.
+     * @brief Create a bundle using a parent Kref.
      * @param parent_kref The parent's Kref.
-     * @param name The collection name.
-     * @return The created Collection.
+     * @param name The bundle name.
+     * @return The created Bundle.
      */
-    std::shared_ptr<Collection> createCollection(const Kref& parent_kref, const std::string& name);
+    std::shared_ptr<Bundle> createBundle(const Kref& parent_kref, const std::string& name);
 
     /**
-     * @brief Get a collection by parent path and name.
-     * @param parent_path The parent group path.
-     * @param name The collection name.
-     * @return The Collection.
+     * @brief Get a bundle by parent path and name.
+     * @param parent_path The parent space path.
+     * @param name The bundle name.
+     * @return The Bundle.
      */
-    std::shared_ptr<Collection> getCollection(const std::string& parent_path, const std::string& name);
+    std::shared_ptr<Bundle> getBundle(const std::string& parent_path, const std::string& name);
 
     /**
-     * @brief Add a member to a collection.
-     * @param collection_kref The collection's Kref.
-     * @param product_kref The product to add.
+     * @brief Add a member to a bundle.
+     * @param bundle_kref The bundle's Kref.
+     * @param item_kref The item to add.
      */
-    void addCollectionMember(const Kref& collection_kref, const Kref& product_kref);
+    void addBundleMember(const Kref& bundle_kref, const Kref& item_kref);
 
     /**
-     * @brief Remove a member from a collection.
-     * @param collection_kref The collection's Kref.
-     * @param product_kref The product to remove.
+     * @brief Remove a member from a bundle.
+     * @param bundle_kref The bundle's Kref.
+     * @param item_kref The item to remove.
      */
-    void removeCollectionMember(const Kref& collection_kref, const Kref& product_kref);
+    void removeBundleMember(const Kref& bundle_kref, const Kref& item_kref);
 
     /**
-     * @brief Get collection members.
-     * @param collection_kref The collection's Kref.
-     * @return A list of CollectionMember objects.
+     * @brief Get bundle members.
+     * @param bundle_kref The bundle's Kref.
+     * @return A list of BundleMember objects.
      */
-    std::vector<CollectionMember> getCollectionMembers(const Kref& collection_kref);
+    std::vector<BundleMember> getBundleMembers(const Kref& bundle_kref);
 
     /**
-     * @brief Get collection history.
-     * @param collection_kref The collection's Kref.
-     * @return A list of CollectionVersionHistory objects.
+     * @brief Get bundle history.
+     * @param bundle_kref The bundle's Kref.
+     * @return A list of BundleRevisionHistory objects.
      */
-    std::vector<CollectionVersionHistory> getCollectionHistory(const Kref& collection_kref);
+    std::vector<BundleRevisionHistory> getBundleHistory(const Kref& bundle_kref);
 
     // --- Tenant Operations ---
 
@@ -637,15 +645,20 @@ private:
 // --- Convenience Functions ---
 
 /**
- * @brief Create nested groups from a path.
+ * @brief Create nested spaces from a path.
  *
- * Creates intermediate groups if they don't exist.
+ * Creates intermediate spaces if they don't exist.
  *
  * @param client The client to use.
- * @param path The full path of groups to create (e.g., "project/seq/shot").
- * @return The final Group in the path.
+ * @param path The full path of spaces to create (e.g., "project/seq/shot").
+ * @return The final Space in the path.
  */
-std::shared_ptr<Group> createGroup(std::shared_ptr<Client> client, const std::string& path);
+std::shared_ptr<Space> createSpace(std::shared_ptr<Client> client, const std::string& path);
+
+// Backwards compatibility alias
+inline std::shared_ptr<Space> createGroup(std::shared_ptr<Client> client, const std::string& path) {
+    return createSpace(client, path);
+}
 
 /**
  * @brief Get the current username from environment.

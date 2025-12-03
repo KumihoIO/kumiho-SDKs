@@ -95,29 +95,35 @@ public:
 };
 
 /**
- * @brief Exception for link type validation failures.
+ * @brief Exception for edge type validation failures.
  *
- * Thrown when a link type does not match the required format
+ * Thrown when an edge type does not match the required format
  * (uppercase, alphanumeric with underscores, 1-50 chars).
  */
-class LinkTypeValidationError : public ValidationError {
+class EdgeTypeValidationError : public ValidationError {
 public:
-    explicit LinkTypeValidationError(const std::string& message)
+    explicit EdgeTypeValidationError(const std::string& message)
         : ValidationError(message) {}
 };
 
+// Backwards compatibility alias
+using LinkTypeValidationError = EdgeTypeValidationError;
+
 /**
- * @brief Exception for reserved product type violations.
+ * @brief Exception for reserved kind violations.
  *
- * Thrown when attempting to create a product with a reserved type
- * (e.g., "collection") using createProduct() instead of the
+ * Thrown when attempting to create an item with a reserved kind
+ * (e.g., "bundle") using createItem() instead of the
  * dedicated method.
  */
-class ReservedProductTypeError : public ValidationError {
+class ReservedKindError : public ValidationError {
 public:
-    explicit ReservedProductTypeError(const std::string& message)
+    explicit ReservedKindError(const std::string& message)
         : ValidationError(message) {}
 };
+
+// Backwards compatibility alias
+using ReservedProductTypeError = ReservedKindError;
 
 /**
  * @brief Exception for discovery failures.

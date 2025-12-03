@@ -5,7 +5,7 @@
 
 #include <gtest/gtest.h>
 #include <kumiho/types.hpp>
-#include <kumiho/link.hpp>
+#include <kumiho/edge.hpp>
 
 using namespace kumiho::api;
 
@@ -79,38 +79,38 @@ class PathStepTest : public ::testing::Test {};
 
 TEST_F(PathStepTest, Construction) {
     PathStep step;
-    step.version_kref = "kref://proj/group/prod.type?v=1";
-    step.link_type = "DEPENDS_ON";
+    step.revision_kref = "kref://proj/space/item.kind?r=1";
+    step.edge_type = "DEPENDS_ON";
     step.depth = 2;
     
-    EXPECT_EQ(step.version_kref, "kref://proj/group/prod.type?v=1");
-    EXPECT_EQ(step.link_type, "DEPENDS_ON");
+    EXPECT_EQ(step.revision_kref, "kref://proj/space/item.kind?r=1");
+    EXPECT_EQ(step.edge_type, "DEPENDS_ON");
     EXPECT_EQ(step.depth, 2);
 }
 
-// --- VersionPath Tests ---
+// --- RevisionPath Tests ---
 
-class VersionPathTest : public ::testing::Test {};
+class RevisionPathTest : public ::testing::Test {};
 
-TEST_F(VersionPathTest, EmptyPath) {
-    VersionPath path;
+TEST_F(RevisionPathTest, EmptyPath) {
+    RevisionPath path;
     
     EXPECT_TRUE(path.empty());
     EXPECT_EQ(path.total_depth, 0);
 }
 
-TEST_F(VersionPathTest, PathWithSteps) {
-    VersionPath path;
+TEST_F(RevisionPathTest, PathWithSteps) {
+    RevisionPath path;
     path.total_depth = 3;
     
     PathStep step1;
-    step1.version_kref = "kref://proj/a.type?v=1";
-    step1.link_type = "DEPENDS_ON";
+    step1.revision_kref = "kref://proj/a.kind?r=1";
+    step1.edge_type = "DEPENDS_ON";
     step1.depth = 0;
     
     PathStep step2;
-    step2.version_kref = "kref://proj/b.type?v=1";
-    step2.link_type = "DEPENDS_ON";
+    step2.revision_kref = "kref://proj/b.kind?r=1";
+    step2.edge_type = "DEPENDS_ON";
     step2.depth = 1;
     
     path.steps.push_back(step1);
@@ -129,20 +129,20 @@ TEST_F(TraversalResultTest, DefaultValues) {
     TraversalResult result;
     
     EXPECT_TRUE(result.paths.empty());
-    EXPECT_TRUE(result.version_krefs.empty());
-    EXPECT_TRUE(result.links.empty());
+    EXPECT_TRUE(result.revision_krefs.empty());
+    EXPECT_TRUE(result.edges.empty());
     EXPECT_EQ(result.total_count, 0);
     EXPECT_FALSE(result.truncated);
 }
 
 TEST_F(TraversalResultTest, WithResults) {
     TraversalResult result;
-    result.version_krefs.push_back("kref://proj/a.type?v=1");
-    result.version_krefs.push_back("kref://proj/b.type?v=2");
+    result.revision_krefs.push_back("kref://proj/a.kind?r=1");
+    result.revision_krefs.push_back("kref://proj/b.kind?r=2");
     result.total_count = 2;
     result.truncated = false;
     
-    EXPECT_EQ(result.version_krefs.size(), 2);
+    EXPECT_EQ(result.revision_krefs.size(), 2);
     EXPECT_EQ(result.total_count, 2);
     EXPECT_FALSE(result.truncated);
 }
@@ -165,7 +165,7 @@ TEST_F(ShortestPathResultTest, PathFound) {
     result.path_exists = true;
     result.path_length = 2;
     
-    VersionPath path;
+    RevisionPath path;
     path.total_depth = 2;
     result.paths.push_back(path);
     
@@ -174,22 +174,22 @@ TEST_F(ShortestPathResultTest, PathFound) {
     EXPECT_NE(result.first_path(), nullptr);
 }
 
-// --- ImpactedVersion Tests ---
+// --- ImpactedRevision Tests ---
 
-class ImpactedVersionTest : public ::testing::Test {};
+class ImpactedRevisionTest : public ::testing::Test {};
 
-TEST_F(ImpactedVersionTest, Construction) {
-    ImpactedVersion iv;
-    iv.version_kref = "kref://proj/a.type?v=1";
-    iv.product_kref = "kref://proj/a.type";
-    iv.impact_depth = 3;
-    iv.impact_path_types.push_back("DEPENDS_ON");
-    iv.impact_path_types.push_back("DERIVED_FROM");
+TEST_F(ImpactedRevisionTest, Construction) {
+    ImpactedRevision ir;
+    ir.revision_kref = "kref://proj/a.kind?r=1";
+    ir.item_kref = "kref://proj/a.kind";
+    ir.impact_depth = 3;
+    ir.impact_path_types.push_back("DEPENDS_ON");
+    ir.impact_path_types.push_back("DERIVED_FROM");
     
-    EXPECT_EQ(iv.version_kref, "kref://proj/a.type?v=1");
-    EXPECT_EQ(iv.product_kref, "kref://proj/a.type");
-    EXPECT_EQ(iv.impact_depth, 3);
-    EXPECT_EQ(iv.impact_path_types.size(), 2);
+    EXPECT_EQ(ir.revision_kref, "kref://proj/a.kind?r=1");
+    EXPECT_EQ(ir.item_kref, "kref://proj/a.kind");
+    EXPECT_EQ(ir.impact_depth, 3);
+    EXPECT_EQ(ir.impact_path_types.size(), 2);
 }
 
 // --- ImpactAnalysisResult Tests ---
@@ -199,7 +199,7 @@ class ImpactAnalysisResultTest : public ::testing::Test {};
 TEST_F(ImpactAnalysisResultTest, DefaultValues) {
     ImpactAnalysisResult result;
     
-    EXPECT_TRUE(result.impacted_versions.empty());
+    EXPECT_TRUE(result.impacted_revisions.empty());
     EXPECT_EQ(result.total_impacted, 0);
     EXPECT_FALSE(result.truncated);
 }
@@ -207,37 +207,37 @@ TEST_F(ImpactAnalysisResultTest, DefaultValues) {
 TEST_F(ImpactAnalysisResultTest, WithImpact) {
     ImpactAnalysisResult result;
     
-    ImpactedVersion iv;
-    iv.version_kref = "kref://proj/a.type?v=1";
-    iv.impact_depth = 1;
-    result.impacted_versions.push_back(iv);
+    ImpactedRevision ir;
+    ir.revision_kref = "kref://proj/a.kind?r=1";
+    ir.impact_depth = 1;
+    result.impacted_revisions.push_back(ir);
     result.total_impacted = 1;
     
-    EXPECT_EQ(result.impacted_versions.size(), 1);
+    EXPECT_EQ(result.impacted_revisions.size(), 1);
     EXPECT_EQ(result.total_impacted, 1);
 }
 
-// --- LinkType Tests ---
+// --- EdgeType Tests ---
 
-class LinkTypeTest : public ::testing::Test {};
+class EdgeTypeTest : public ::testing::Test {};
 
-TEST_F(LinkTypeTest, PredefinedTypes) {
-    EXPECT_STREQ(LinkType::DEPENDS_ON, "DEPENDS_ON");
-    EXPECT_STREQ(LinkType::DERIVED_FROM, "DERIVED_FROM");
-    EXPECT_STREQ(LinkType::CREATED_FROM, "CREATED_FROM");
-    EXPECT_STREQ(LinkType::REFERENCED, "REFERENCED");
-    EXPECT_STREQ(LinkType::CONTAINS, "CONTAINS");
-    EXPECT_STREQ(LinkType::BELONGS_TO, "BELONGS_TO");
+TEST_F(EdgeTypeTest, PredefinedTypes) {
+    EXPECT_STREQ(EdgeType::DEPENDS_ON, "DEPENDS_ON");
+    EXPECT_STREQ(EdgeType::DERIVED_FROM, "DERIVED_FROM");
+    EXPECT_STREQ(EdgeType::CREATED_FROM, "CREATED_FROM");
+    EXPECT_STREQ(EdgeType::REFERENCED, "REFERENCED");
+    EXPECT_STREQ(EdgeType::CONTAINS, "CONTAINS");
+    EXPECT_STREQ(EdgeType::BELONGS_TO, "BELONGS_TO");
 }
 
-// --- LinkDirection Tests ---
+// --- EdgeDirection Tests ---
 
-class LinkDirectionTest : public ::testing::Test {};
+class EdgeDirectionTest : public ::testing::Test {};
 
-TEST_F(LinkDirectionTest, EnumValues) {
-    EXPECT_EQ(static_cast<int>(LinkDirection::OUTGOING), 0);
-    EXPECT_EQ(static_cast<int>(LinkDirection::INCOMING), 1);
-    EXPECT_EQ(static_cast<int>(LinkDirection::BOTH), 2);
+TEST_F(EdgeDirectionTest, EnumValues) {
+    EXPECT_EQ(static_cast<int>(EdgeDirection::OUTGOING), 0);
+    EXPECT_EQ(static_cast<int>(EdgeDirection::INCOMING), 1);
+    EXPECT_EQ(static_cast<int>(EdgeDirection::BOTH), 2);
 }
 
 // --- Constants Tests ---
@@ -249,14 +249,14 @@ TEST_F(ConstantsTest, TagConstants) {
     EXPECT_STREQ(PUBLISHED_TAG, "published");
 }
 
-TEST_F(ConstantsTest, ReservedProductTypes) {
-    EXPECT_EQ(RESERVED_PRODUCT_TYPES.size(), 1);
-    EXPECT_EQ(RESERVED_PRODUCT_TYPES[0], "collection");
+TEST_F(ConstantsTest, ReservedKinds) {
+    EXPECT_EQ(RESERVED_KINDS.size(), 1);
+    EXPECT_EQ(RESERVED_KINDS[0], "bundle");
 }
 
-TEST_F(ConstantsTest, IsReservedProductType) {
-    EXPECT_TRUE(isReservedProductType("collection"));
-    EXPECT_FALSE(isReservedProductType("model"));
-    EXPECT_FALSE(isReservedProductType("texture"));
-    EXPECT_FALSE(isReservedProductType("Collection"));  // Case sensitive
+TEST_F(ConstantsTest, IsReservedKind) {
+    EXPECT_TRUE(isReservedKind("bundle"));
+    EXPECT_FALSE(isReservedKind("model"));
+    EXPECT_FALSE(isReservedKind("texture"));
+    EXPECT_FALSE(isReservedKind("Bundle"));  // Case sensitive
 }

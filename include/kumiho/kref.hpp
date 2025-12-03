@@ -3,7 +3,14 @@
  * @brief Kref (Kumiho Reference) URI parser and utilities.
  *
  * Kref is the URI-based unique identifier system for Kumiho objects.
- * Format: kref://project/group/product.type?v=1&r=resource
+ * Format: kref://project/space/item.kind?r=1&a=artifact
+ *
+ * Terminology:
+ * - Space: A hierarchical container/namespace
+ * - Item: An asset/entity in the graph
+ * - Revision: A specific state of an item
+ * - Artifact: A file/location attached to a revision
+ * - Kind: The category of an item
  */
 
 #pragma once
@@ -21,21 +28,21 @@ namespace api {
  *
  * Kref URIs follow the format:
  * - Project: `kref://project-name`
- * - Group: `kref://project/group/subgroup`
- * - Product: `kref://project/group/product.type`
- * - Version: `kref://project/group/product.type?v=1`
- * - Resource: `kref://project/group/product.type?v=1&r=resource`
+ * - Space: `kref://project/space/subspace`
+ * - Item: `kref://project/space/item.kind`
+ * - Revision: `kref://project/space/item.kind?r=1`
+ * - Artifact: `kref://project/space/item.kind?r=1&a=artifact`
  *
  * Legacy format with `kumiho://` prefix is also supported.
  *
  * Example:
  * @code
- *   Kref kref("kref://my-project/assets/hero.model?v=1");
- *   std::cout << kref.getProject();     // "my-project"
- *   std::cout << kref.getGroup();       // "assets"
- *   std::cout << kref.getProductName(); // "hero"
- *   std::cout << kref.getType();        // "model"
- *   std::cout << kref.getVersion();     // 1
+ *   Kref kref("kref://my-project/assets/hero.model?r=1");
+ *   std::cout << kref.getProject();   // "my-project"
+ *   std::cout << kref.getSpace();     // "assets"
+ *   std::cout << kref.getItemName();  // "hero"
+ *   std::cout << kref.getKind();      // "model"
+ *   std::cout << kref.getRevision();  // 1
  * @endcode
  */
 class Kref : public std::string {
@@ -65,40 +72,58 @@ public:
     std::string getProject() const;
 
     /**
-     * @brief Get the group path (path between project and product).
-     * @return The group path, or empty if this is a project-level kref.
+     * @brief Get the space path (path between project and item).
+     * @return The space path, or empty if this is a project-level kref.
      */
-    std::string getGroup() const;
+    std::string getSpace() const;
+    
+    // Backwards compatibility alias
+    std::string getGroup() const { return getSpace(); }
 
     /**
-     * @brief Get the base product name (without type).
-     * @return The product name, or empty if this is a group-level kref.
+     * @brief Get the base item name (without kind).
+     * @return The item name, or empty if this is a space-level kref.
      */
-    std::string getProductName() const;
+    std::string getItemName() const;
+    
+    // Backwards compatibility alias
+    std::string getProductName() const { return getItemName(); }
 
     /**
-     * @brief Get the product type.
-     * @return The product type (e.g., "model", "texture"), or empty.
+     * @brief Get the item kind.
+     * @return The item kind (e.g., "model", "texture"), or empty.
      */
-    std::string getType() const;
+    std::string getKind() const;
+    
+    // Backwards compatibility alias
+    std::string getType() const { return getKind(); }
 
     /**
-     * @brief Get the full product name including type.
-     * @return The full product name (e.g., "hero.model"), or empty.
+     * @brief Get the full item name including kind.
+     * @return The full item name (e.g., "hero.model"), or empty.
      */
-    std::string getFullProductName() const;
+    std::string getFullItemName() const;
+    
+    // Backwards compatibility alias
+    std::string getFullProductName() const { return getFullItemName(); }
 
     /**
-     * @brief Get the version number if present.
-     * @return The version number, or std::nullopt if not specified.
+     * @brief Get the revision number if present.
+     * @return The revision number, or std::nullopt if not specified.
      */
-    std::optional<int> getVersion() const;
+    std::optional<int> getRevision() const;
+    
+    // Backwards compatibility alias
+    std::optional<int> getVersion() const { return getRevision(); }
 
     /**
-     * @brief Get the resource name if present.
-     * @return The resource name, or empty if not specified.
+     * @brief Get the artifact name if present.
+     * @return The artifact name, or empty if not specified.
      */
-    std::string getResourceName() const;
+    std::string getArtifactName() const;
+    
+    // Backwards compatibility alias
+    std::string getResourceName() const { return getArtifactName(); }
 
     /**
      * @brief Get the tag query parameter if present.

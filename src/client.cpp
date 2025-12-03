@@ -1,16 +1,24 @@
 /**
  * @file client.cpp
  * @brief Implementation of Client class with all gRPC operations.
+ *
+ * Terminology (with backwards compatibility):
+ * - Space (formerly Group): A hierarchical container/namespace
+ * - Item (formerly Product): An asset/entity in the graph
+ * - Revision (formerly Version): A specific state of an item
+ * - Artifact (formerly Resource): A file/location attached to a revision
+ * - Edge (formerly Link): A relationship between revisions
+ * - Bundle (formerly Collection): A curated set of items
  */
 
 #include "kumiho/client.hpp"
 #include "kumiho/project.hpp"
-#include "kumiho/group.hpp"
-#include "kumiho/product.hpp"
-#include "kumiho/version.hpp"
-#include "kumiho/resource.hpp"
-#include "kumiho/link.hpp"
-#include "kumiho/collection.hpp"
+#include "kumiho/space.hpp"
+#include "kumiho/item.hpp"
+#include "kumiho/revision.hpp"
+#include "kumiho/artifact.hpp"
+#include "kumiho/edge.hpp"
+#include "kumiho/bundle.hpp"
 #include "kumiho/event.hpp"
 #include "kumiho/error.hpp"
 #include "kumiho/token_loader.hpp"
@@ -285,213 +293,213 @@ std::shared_ptr<Project> Client::updateProject(
     return std::make_shared<Project>(res, this);
 }
 
-// --- Group Operations ---
+// --- Space Operations (formerly Group) ---
 
-std::shared_ptr<Group> Client::createGroup(const std::string& parent_path, const std::string& name) {
-    ::kumiho::CreateGroupRequest req;
+std::shared_ptr<Space> Client::createSpace(const std::string& parent_path, const std::string& name) {
+    ::kumiho::CreateSpaceRequest req;
     req.set_parent_path(parent_path);
-    req.set_group_name(name);
+    req.set_space_name(name);
 
-    ::kumiho::GroupResponse res;
+    ::kumiho::SpaceResponse res;
     grpc::ClientContext context; configureContext(context);
-    grpc::Status status = stub_->CreateGroup(&context, req, &res);
+    grpc::Status status = stub_->CreateSpace(&context, req, &res);
 
     if (!status.ok()) {
-        throw RpcError("CreateGroup failed: " + status.error_message(), static_cast<int>(status.error_code()));
+        throw RpcError("CreateSpace failed: " + status.error_message(), static_cast<int>(status.error_code()));
     }
-    return std::make_shared<Group>(res, this);
+    return std::make_shared<Space>(res, this);
 }
 
-std::shared_ptr<Group> Client::getGroup(const std::string& path) {
-    ::kumiho::GetGroupRequest req;
+std::shared_ptr<Space> Client::getSpace(const std::string& path) {
+    ::kumiho::GetSpaceRequest req;
     req.set_path_or_kref(path);
 
-    ::kumiho::GroupResponse res;
+    ::kumiho::SpaceResponse res;
     grpc::ClientContext context; configureContext(context);
-    grpc::Status status = stub_->GetGroup(&context, req, &res);
+    grpc::Status status = stub_->GetSpace(&context, req, &res);
 
     if (!status.ok()) {
         if (status.error_code() == grpc::StatusCode::NOT_FOUND) {
-            throw NotFoundError("Group not found: " + path);
+            throw NotFoundError("Space not found: " + path);
         }
-        throw RpcError("GetGroup failed: " + status.error_message(), static_cast<int>(status.error_code()));
+        throw RpcError("GetSpace failed: " + status.error_message(), static_cast<int>(status.error_code()));
     }
-    return std::make_shared<Group>(res, this);
+    return std::make_shared<Space>(res, this);
 }
 
-std::vector<std::shared_ptr<Group>> Client::getChildGroups(const std::string& parent_path) {
-    ::kumiho::GetChildGroupsRequest req;
+std::vector<std::shared_ptr<Space>> Client::getChildSpaces(const std::string& parent_path) {
+    ::kumiho::GetChildSpacesRequest req;
     req.set_parent_path(parent_path);
 
-    ::kumiho::GetChildGroupsResponse res;
+    ::kumiho::GetChildSpacesResponse res;
     grpc::ClientContext context; configureContext(context);
-    grpc::Status status = stub_->GetChildGroups(&context, req, &res);
+    grpc::Status status = stub_->GetChildSpaces(&context, req, &res);
 
     if (!status.ok()) {
-        throw RpcError("GetChildGroups failed: " + status.error_message(), static_cast<int>(status.error_code()));
+        throw RpcError("GetChildSpaces failed: " + status.error_message(), static_cast<int>(status.error_code()));
     }
 
-    std::vector<std::shared_ptr<Group>> groups;
-    for (const auto& pb : res.groups()) {
-        groups.push_back(std::make_shared<Group>(pb, this));
+    std::vector<std::shared_ptr<Space>> spaces;
+    for (const auto& pb : res.spaces()) {
+        spaces.push_back(std::make_shared<Space>(pb, this));
     }
-    return groups;
+    return spaces;
 }
 
-std::shared_ptr<Group> Client::updateGroupMetadata(const Kref& kref, const Metadata& metadata) {
+std::shared_ptr<Space> Client::updateSpaceMetadata(const Kref& kref, const Metadata& metadata) {
     ::kumiho::UpdateMetadataRequest req;
     req.mutable_kref()->set_uri(kref.uri());
     for (const auto& pair : metadata) {
         (*req.mutable_metadata())[pair.first] = pair.second;
     }
 
-    ::kumiho::GroupResponse res;
+    ::kumiho::SpaceResponse res;
     grpc::ClientContext context; configureContext(context);
-    grpc::Status status = stub_->UpdateGroupMetadata(&context, req, &res);
+    grpc::Status status = stub_->UpdateSpaceMetadata(&context, req, &res);
 
     if (!status.ok()) {
-        throw RpcError("UpdateGroupMetadata failed: " + status.error_message(), static_cast<int>(status.error_code()));
+        throw RpcError("UpdateSpaceMetadata failed: " + status.error_message(), static_cast<int>(status.error_code()));
     }
-    return std::make_shared<Group>(res, this);
+    return std::make_shared<Space>(res, this);
 }
 
-void Client::deleteGroup(const std::string& path, bool force) {
-    ::kumiho::DeleteGroupRequest req;
+void Client::deleteSpace(const std::string& path, bool force) {
+    ::kumiho::DeleteSpaceRequest req;
     req.set_path(path);
     req.set_force(force);
 
     ::kumiho::StatusResponse res;
     grpc::ClientContext context; configureContext(context);
-    grpc::Status status = stub_->DeleteGroup(&context, req, &res);
+    grpc::Status status = stub_->DeleteSpace(&context, req, &res);
 
     if (!status.ok()) {
-        throw RpcError("DeleteGroup failed: " + status.error_message(), static_cast<int>(status.error_code()));
+        throw RpcError("DeleteSpace failed: " + status.error_message(), static_cast<int>(status.error_code()));
     }
 }
 
-// --- Product Operations ---
+// --- Item Operations (formerly Product) ---
 
-std::shared_ptr<Product> Client::createProduct(const std::string& parent_path, const std::string& name, const std::string& ptype) {
-    if (isReservedProductType(ptype)) {
-        throw ReservedProductTypeError(
-            "Product type '" + ptype + "' is reserved. Use createCollection() instead."
+std::shared_ptr<Item> Client::createItem(const std::string& parent_path, const std::string& name, const std::string& kind) {
+    if (isReservedKind(kind)) {
+        throw ReservedKindError(
+            "Item kind '" + kind + "' is reserved. Use createBundle() instead."
         );
     }
 
-    ::kumiho::CreateProductRequest req;
+    ::kumiho::CreateItemRequest req;
     req.set_parent_path(parent_path);
-    req.set_product_name(name);
-    req.set_product_type(ptype);
+    req.set_item_name(name);
+    req.set_kind(kind);
 
-    ::kumiho::ProductResponse res;
+    ::kumiho::ItemResponse res;
     grpc::ClientContext context; configureContext(context);
-    grpc::Status status = stub_->CreateProduct(&context, req, &res);
+    grpc::Status status = stub_->CreateItem(&context, req, &res);
 
     if (!status.ok()) {
-        throw RpcError("CreateProduct failed: " + status.error_message(), static_cast<int>(status.error_code()));
+        throw RpcError("CreateItem failed: " + status.error_message(), static_cast<int>(status.error_code()));
     }
-    return std::make_shared<Product>(res, this);
+    return std::make_shared<Item>(res, this);
 }
 
-std::shared_ptr<Product> Client::getProduct(const std::string& parent_path, const std::string& name, const std::string& ptype) {
-    ::kumiho::GetProductRequest req;
+std::shared_ptr<Item> Client::getItem(const std::string& parent_path, const std::string& name, const std::string& kind) {
+    ::kumiho::GetItemRequest req;
     req.set_parent_path(parent_path);
-    req.set_product_name(name);
-    req.set_product_type(ptype);
+    req.set_item_name(name);
+    req.set_kind(kind);
 
-    ::kumiho::ProductResponse res;
+    ::kumiho::ItemResponse res;
     grpc::ClientContext context; configureContext(context);
-    grpc::Status status = stub_->GetProduct(&context, req, &res);
+    grpc::Status status = stub_->GetItem(&context, req, &res);
 
     if (!status.ok()) {
         if (status.error_code() == grpc::StatusCode::NOT_FOUND) {
-            throw NotFoundError("Product not found: " + parent_path + "/" + name + "." + ptype);
+            throw NotFoundError("Item not found: " + parent_path + "/" + name + "." + kind);
         }
-        throw RpcError("GetProduct failed: " + status.error_message(), static_cast<int>(status.error_code()));
+        throw RpcError("GetItem failed: " + status.error_message(), static_cast<int>(status.error_code()));
     }
-    return std::make_shared<Product>(res, this);
+    return std::make_shared<Item>(res, this);
 }
 
-std::shared_ptr<Product> Client::getProductByKref(const std::string& kref_uri) {
+std::shared_ptr<Item> Client::getItemByKref(const std::string& kref_uri) {
     Kref kref(kref_uri);
     std::string path = kref.getPath();
     
     size_t slash_pos = path.rfind('/');
     if (slash_pos == std::string::npos) {
-        throw ValidationError("Invalid product kref format: " + kref_uri);
+        throw ValidationError("Invalid item kref format: " + kref_uri);
     }
     
-    std::string group_path = "/" + path.substr(0, slash_pos);
-    std::string product_name_type = path.substr(slash_pos + 1);
+    std::string space_path = "/" + path.substr(0, slash_pos);
+    std::string item_name_kind = path.substr(slash_pos + 1);
     
-    size_t dot_pos = product_name_type.find('.');
+    size_t dot_pos = item_name_kind.find('.');
     if (dot_pos == std::string::npos) {
-        throw ValidationError("Invalid product name.type format: " + product_name_type);
+        throw ValidationError("Invalid item name.kind format: " + item_name_kind);
     }
     
-    std::string product_name = product_name_type.substr(0, dot_pos);
-    std::string product_type = product_name_type.substr(dot_pos + 1);
+    std::string item_name = item_name_kind.substr(0, dot_pos);
+    std::string kind = item_name_kind.substr(dot_pos + 1);
     
-    return getProduct(group_path, product_name, product_type);
+    return getItem(space_path, item_name, kind);
 }
 
-std::vector<std::shared_ptr<Product>> Client::productSearch(
+std::vector<std::shared_ptr<Item>> Client::itemSearch(
     const std::string& context_filter,
     const std::string& name_filter,
-    const std::string& ptype_filter
+    const std::string& kind_filter
 ) {
-    ::kumiho::ProductSearchRequest req;
+    ::kumiho::ItemSearchRequest req;
     req.set_context_filter(context_filter);
-    req.set_product_name_filter(name_filter);
-    req.set_product_type_filter(ptype_filter);
+    req.set_item_name_filter(name_filter);
+    req.set_kind_filter(kind_filter);
 
-    ::kumiho::GetProductsResponse res;
+    ::kumiho::GetItemsResponse res;
     grpc::ClientContext context; configureContext(context);
-    grpc::Status status = stub_->ProductSearch(&context, req, &res);
+    grpc::Status status = stub_->ItemSearch(&context, req, &res);
 
     if (!status.ok()) {
-        throw RpcError("ProductSearch failed: " + status.error_message(), static_cast<int>(status.error_code()));
+        throw RpcError("ItemSearch failed: " + status.error_message(), static_cast<int>(status.error_code()));
     }
 
-    std::vector<std::shared_ptr<Product>> products;
-    for (const auto& pb : res.products()) {
-        products.push_back(std::make_shared<Product>(pb, this));
+    std::vector<std::shared_ptr<Item>> items;
+    for (const auto& pb : res.items()) {
+        items.push_back(std::make_shared<Item>(pb, this));
     }
-    return products;
+    return items;
 }
 
-std::shared_ptr<Product> Client::updateProductMetadata(const Kref& kref, const Metadata& metadata) {
+std::shared_ptr<Item> Client::updateItemMetadata(const Kref& kref, const Metadata& metadata) {
     ::kumiho::UpdateMetadataRequest req;
     *req.mutable_kref() = kref.toPb();
     for (const auto& pair : metadata) {
         (*req.mutable_metadata())[pair.first] = pair.second;
     }
 
-    ::kumiho::ProductResponse res;
+    ::kumiho::ItemResponse res;
     grpc::ClientContext context; configureContext(context);
-    grpc::Status status = stub_->UpdateProductMetadata(&context, req, &res);
+    grpc::Status status = stub_->UpdateItemMetadata(&context, req, &res);
 
     if (!status.ok()) {
-        throw RpcError("UpdateProductMetadata failed: " + status.error_message(), static_cast<int>(status.error_code()));
+        throw RpcError("UpdateItemMetadata failed: " + status.error_message(), static_cast<int>(status.error_code()));
     }
-    return std::make_shared<Product>(res, this);
+    return std::make_shared<Item>(res, this);
 }
 
-void Client::deleteProduct(const Kref& kref, bool force) {
-    ::kumiho::DeleteProductRequest req;
+void Client::deleteItem(const Kref& kref, bool force) {
+    ::kumiho::DeleteItemRequest req;
     *req.mutable_kref() = kref.toPb();
     req.set_force(force);
 
     ::kumiho::StatusResponse res;
     grpc::ClientContext context; configureContext(context);
-    grpc::Status status = stub_->DeleteProduct(&context, req, &res);
+    grpc::Status status = stub_->DeleteItem(&context, req, &res);
 
     if (!status.ok()) {
-        throw RpcError("DeleteProduct failed: " + status.error_message(), static_cast<int>(status.error_code()));
+        throw RpcError("DeleteItem failed: " + status.error_message(), static_cast<int>(status.error_code()));
     }
 }
 
-void Client::setProductDeprecated(const Kref& kref, bool deprecated) {
+void Client::setItemDeprecated(const Kref& kref, bool deprecated) {
     ::kumiho::SetDeprecatedRequest req;
     *req.mutable_kref() = kref.toPb();
     req.set_deprecated(deprecated);
@@ -505,58 +513,70 @@ void Client::setProductDeprecated(const Kref& kref, bool deprecated) {
     }
 }
 
-// --- Version Operations ---
+// --- Revision Operations (formerly Version) ---
 
-std::shared_ptr<Version> Client::createVersion(const Kref& product_kref, const Metadata& metadata, int number) {
-    ::kumiho::CreateVersionRequest req;
-    *req.mutable_product_kref() = product_kref.toPb();
+std::shared_ptr<Revision> Client::createRevision(const Kref& item_kref, const Metadata& metadata, int number) {
+    ::kumiho::CreateRevisionRequest req;
+    *req.mutable_item_kref() = item_kref.toPb();
     for (const auto& pair : metadata) {
         (*req.mutable_metadata())[pair.first] = pair.second;
     }
     req.set_number(number);
 
-    ::kumiho::VersionResponse res;
+    ::kumiho::RevisionResponse res;
     grpc::ClientContext context; configureContext(context);
-    grpc::Status status = stub_->CreateVersion(&context, req, &res);
+    grpc::Status status = stub_->CreateRevision(&context, req, &res);
 
     if (!status.ok()) {
-        throw RpcError("CreateVersion failed: " + status.error_message(), static_cast<int>(status.error_code()));
+        throw RpcError("CreateRevision failed: " + status.error_message(), static_cast<int>(status.error_code()));
     }
-    return std::make_shared<Version>(res, this);
+    return std::make_shared<Revision>(res, this);
 }
 
-std::shared_ptr<Version> Client::getVersion(const std::string& kref_uri) {
+std::shared_ptr<Revision> Client::getRevision(const std::string& kref_uri) {
     ::kumiho::KrefRequest req;
     req.mutable_kref()->set_uri(kref_uri);
 
-    ::kumiho::VersionResponse res;
+    ::kumiho::RevisionResponse res;
     grpc::ClientContext context; configureContext(context);
-    grpc::Status status = stub_->GetVersion(&context, req, &res);
+    grpc::Status status = stub_->GetRevision(&context, req, &res);
 
     if (!status.ok()) {
         if (status.error_code() == grpc::StatusCode::NOT_FOUND) {
-            throw NotFoundError("Version not found: " + kref_uri);
+            throw NotFoundError("Revision not found: " + kref_uri);
         }
-        throw RpcError("GetVersion failed: " + status.error_message(), static_cast<int>(status.error_code()));
+        throw RpcError("GetRevision failed: " + status.error_message(), static_cast<int>(status.error_code()));
     }
-    return std::make_shared<Version>(res, this);
+    return std::make_shared<Revision>(res, this);
 }
 
-std::shared_ptr<Version> Client::resolveKref(const std::string& kref_uri, const std::string& tag, const std::string& time) {
+std::shared_ptr<Revision> Client::resolveKref(const std::string& kref_uri, const std::string& tag, const std::string& time) {
+    std::string time_str = time;
+    
     if (!time.empty()) {
-        // Validate time format: exactly 12 digits (YYYYMMDDHHMM)
-        std::regex time_regex("^\\d{12}$");
-        if (!std::regex_match(time, time_regex)) {
-            throw ValidationError("time must be in YYYYMMDDHHMM format");
+        // Check if it's already ISO/RFC3339 format (contains 'T')
+        if (time.find('T') != std::string::npos) {
+            // Already in ISO format, pass through directly
+            time_str = time;
+        } else {
+            // Validate YYYYMMDDHHMM format: exactly 12 digits
+            std::regex time_regex("^\\d{12}$");
+            if (!std::regex_match(time, time_regex)) {
+                throw ValidationError("time must be in YYYYMMDDHHMM or ISO 8601 format (e.g., 2024-06-01T13:30:00Z)");
+            }
+            // Convert YYYYMMDDHHMM to ISO 8601 format for the server
+            // Format: YYYY-MM-DDTHH:MM:59+00:00 (use :59 seconds to include the full minute)
+            time_str = time.substr(0, 4) + "-" + time.substr(4, 2) + "-" + time.substr(6, 2) +
+                       "T" + time.substr(8, 2) + ":" + time.substr(10, 2) + ":59+00:00";
         }
     }
 
     ::kumiho::ResolveKrefRequest req;
     req.set_kref(kref_uri);
     if (!tag.empty()) req.set_tag(tag);
-    if (!time.empty()) req.set_time(time);
+    if (!time_str.empty()) req.set_time(time_str);
 
-    ::kumiho::VersionResponse res;
+    ::kumiho::RevisionResponse res;
     grpc::ClientContext context; configureContext(context);
     grpc::Status status = stub_->ResolveKref(&context, req, &res);
 
@@ -566,26 +586,26 @@ std::shared_ptr<Version> Client::resolveKref(const std::string& kref_uri, const 
         }
         throw RpcError("ResolveKref failed: " + status.error_message(), static_cast<int>(status.error_code()));
     }
-    return std::make_shared<Version>(res, this);
+    return std::make_shared<Revision>(res, this);
 }
 
 std::optional<std::string> Client::resolve(const std::string& kref_uri) {
     Kref kref(kref_uri);
     std::string path = kref.getPath();
     
-    // Try to get version and resolve to default resource location
+    // Try to get revision and resolve to default artifact location
     try {
-        auto version = resolveKref(kref_uri);
-        if (version) {
-            auto default_res = version->getDefaultResource();
+        auto revision = resolveKref(kref_uri);
+        if (revision) {
+            auto default_res = revision->getDefaultArtifact();
             if (default_res) {
-                auto resource = version->getResource(*default_res);
-                return resource->getLocation();
+                auto artifact = revision->getArtifact(*default_res);
+                return artifact->getLocation();
             }
-            // Fallback to first resource
-            auto resources = version->getResources();
-            if (!resources.empty()) {
-                return resources[0]->getLocation();
+            // Fallback to first artifact
+            auto artifacts = revision->getArtifacts();
+            if (!artifacts.empty()) {
+                return artifacts[0]->getLocation();
             }
         }
     } catch (...) {
@@ -595,81 +615,81 @@ std::optional<std::string> Client::resolve(const std::string& kref_uri) {
     return std::nullopt;
 }
 
-std::vector<std::shared_ptr<Version>> Client::getVersions(const Kref& product_kref) {
-    ::kumiho::GetVersionsRequest req;
-    *req.mutable_product_kref() = product_kref.toPb();
+std::vector<std::shared_ptr<Revision>> Client::getRevisions(const Kref& item_kref) {
+    ::kumiho::GetRevisionsRequest req;
+    *req.mutable_item_kref() = item_kref.toPb();
 
-    ::kumiho::GetVersionsResponse res;
+    ::kumiho::GetRevisionsResponse res;
     grpc::ClientContext context; configureContext(context);
-    grpc::Status status = stub_->GetVersions(&context, req, &res);
+    grpc::Status status = stub_->GetRevisions(&context, req, &res);
 
     if (!status.ok()) {
-        throw RpcError("GetVersions failed: " + status.error_message(), static_cast<int>(status.error_code()));
+        throw RpcError("GetRevisions failed: " + status.error_message(), static_cast<int>(status.error_code()));
     }
 
-    std::vector<std::shared_ptr<Version>> versions;
-    for (const auto& pb : res.versions()) {
-        versions.push_back(std::make_shared<Version>(pb, this));
+    std::vector<std::shared_ptr<Revision>> revisions;
+    for (const auto& pb : res.revisions()) {
+        revisions.push_back(std::make_shared<Revision>(pb, this));
     }
-    return versions;
+    return revisions;
 }
 
-int Client::peekNextVersion(const Kref& product_kref) {
-    ::kumiho::PeekNextVersionRequest req;
-    *req.mutable_product_kref() = product_kref.toPb();
+int Client::peekNextRevision(const Kref& item_kref) {
+    ::kumiho::PeekNextRevisionRequest req;
+    *req.mutable_item_kref() = item_kref.toPb();
 
-    ::kumiho::PeekNextVersionResponse res;
+    ::kumiho::PeekNextRevisionResponse res;
     grpc::ClientContext context; configureContext(context);
-    grpc::Status status = stub_->PeekNextVersion(&context, req, &res);
+    grpc::Status status = stub_->PeekNextRevision(&context, req, &res);
 
     if (!status.ok()) {
-        throw RpcError("PeekNextVersion failed: " + status.error_message(), static_cast<int>(status.error_code()));
+        throw RpcError("PeekNextRevision failed: " + status.error_message(), static_cast<int>(status.error_code()));
     }
     return res.number();
 }
 
-std::shared_ptr<Version> Client::updateVersionMetadata(const Kref& kref, const Metadata& metadata) {
+std::shared_ptr<Revision> Client::updateRevisionMetadata(const Kref& kref, const Metadata& metadata) {
     ::kumiho::UpdateMetadataRequest req;
     *req.mutable_kref() = kref.toPb();
     for (const auto& pair : metadata) {
         (*req.mutable_metadata())[pair.first] = pair.second;
     }
 
-    ::kumiho::VersionResponse res;
+    ::kumiho::RevisionResponse res;
     grpc::ClientContext context; configureContext(context);
-    grpc::Status status = stub_->UpdateVersionMetadata(&context, req, &res);
+    grpc::Status status = stub_->UpdateRevisionMetadata(&context, req, &res);
 
     if (!status.ok()) {
-        throw RpcError("UpdateVersionMetadata failed: " + status.error_message(), static_cast<int>(status.error_code()));
+        throw RpcError("UpdateRevisionMetadata failed: " + status.error_message(), static_cast<int>(status.error_code()));
     }
-    return std::make_shared<Version>(res, this);
+    return std::make_shared<Revision>(res, this);
 }
 
-void Client::tagVersion(const Kref& kref, const std::string& tag) {
-    ::kumiho::TagVersionRequest req;
+void Client::tagRevision(const Kref& kref, const std::string& tag) {
+    ::kumiho::TagRevisionRequest req;
     *req.mutable_kref() = kref.toPb();
     req.set_tag(tag);
 
     ::kumiho::StatusResponse res;
     grpc::ClientContext context; configureContext(context);
-    grpc::Status status = stub_->TagVersion(&context, req, &res);
+    grpc::Status status = stub_->TagRevision(&context, req, &res);
 
     if (!status.ok()) {
-        throw RpcError("TagVersion failed: " + status.error_message(), static_cast<int>(status.error_code()));
+        throw RpcError("TagRevision failed: " + status.error_message(), static_cast<int>(status.error_code()));
     }
 }
 
-void Client::untagVersion(const Kref& kref, const std::string& tag) {
-    ::kumiho::UnTagVersionRequest req;
+void Client::untagRevision(const Kref& kref, const std::string& tag) {
+    ::kumiho::UnTagRevisionRequest req;
     *req.mutable_kref() = kref.toPb();
     req.set_tag(tag);
 
     ::kumiho::StatusResponse res;
     grpc::ClientContext context; configureContext(context);
-    grpc::Status status = stub_->UnTagVersion(&context, req, &res);
+    grpc::Status status = stub_->UnTagRevision(&context, req, &res);
 
     if (!status.ok()) {
-        throw RpcError("UnTagVersion failed: " + status.error_message(), static_cast<int>(status.error_code()));
+        throw RpcError("UnTagRevision failed: " + status.error_message(), static_cast<int>(status.error_code()));
     }
 }
 
@@ -703,7 +723,7 @@ bool Client::wasTagged(const Kref& kref, const std::string& tag) {
     return res.was_tagged();
 }
 
-void Client::setVersionDeprecated(const Kref& kref, bool deprecated) {
+void Client::setRevisionDeprecated(const Kref& kref, bool deprecated) {
     ::kumiho::SetDeprecatedRequest req;
     *req.mutable_kref() = kref.toPb();
     req.set_deprecated(deprecated);
@@ -717,140 +737,140 @@ void Client::setVersionDeprecated(const Kref& kref, bool deprecated) {
     }
 }
 
-void Client::deleteVersion(const Kref& kref, bool force) {
-    ::kumiho::DeleteVersionRequest req;
+void Client::deleteRevision(const Kref& kref, bool force) {
+    ::kumiho::DeleteRevisionRequest req;
     *req.mutable_kref() = kref.toPb();
     req.set_force(force);
 
     ::kumiho::StatusResponse res;
     grpc::ClientContext context; configureContext(context);
-    grpc::Status status = stub_->DeleteVersion(&context, req, &res);
+    grpc::Status status = stub_->DeleteRevision(&context, req, &res);
 
     if (!status.ok()) {
-        throw RpcError("DeleteVersion failed: " + status.error_message(), static_cast<int>(status.error_code()));
+        throw RpcError("DeleteRevision failed: " + status.error_message(), static_cast<int>(status.error_code()));
     }
 }
 
-// --- Resource Operations ---
+// --- Artifact Operations (formerly Resource) ---
 
-std::shared_ptr<Resource> Client::createResource(const Kref& version_kref, const std::string& name, const std::string& location) {
-    ::kumiho::CreateResourceRequest req;
-    *req.mutable_version_kref() = version_kref.toPb();
+std::shared_ptr<Artifact> Client::createArtifact(const Kref& revision_kref, const std::string& name, const std::string& location) {
+    ::kumiho::CreateArtifactRequest req;
+    *req.mutable_revision_kref() = revision_kref.toPb();
     req.set_name(name);
     req.set_location(location);
 
-    ::kumiho::ResourceResponse res;
+    ::kumiho::ArtifactResponse res;
     grpc::ClientContext context; configureContext(context);
-    grpc::Status status = stub_->CreateResource(&context, req, &res);
+    grpc::Status status = stub_->CreateArtifact(&context, req, &res);
 
     if (!status.ok()) {
-        throw RpcError("CreateResource failed: " + status.error_message(), static_cast<int>(status.error_code()));
+        throw RpcError("CreateArtifact failed: " + status.error_message(), static_cast<int>(status.error_code()));
     }
-    return std::make_shared<Resource>(res, this);
+    return std::make_shared<Artifact>(res, this);
 }
 
-std::shared_ptr<Resource> Client::getResource(const Kref& version_kref, const std::string& name) {
-    ::kumiho::GetResourceRequest req;
-    *req.mutable_version_kref() = version_kref.toPb();
+std::shared_ptr<Artifact> Client::getArtifact(const Kref& revision_kref, const std::string& name) {
+    ::kumiho::GetArtifactRequest req;
+    *req.mutable_revision_kref() = revision_kref.toPb();
     req.set_name(name);
 
-    ::kumiho::ResourceResponse res;
+    ::kumiho::ArtifactResponse res;
     grpc::ClientContext context; configureContext(context);
-    grpc::Status status = stub_->GetResource(&context, req, &res);
+    grpc::Status status = stub_->GetArtifact(&context, req, &res);
 
     if (!status.ok()) {
         if (status.error_code() == grpc::StatusCode::NOT_FOUND) {
-            throw NotFoundError("Resource not found: " + name);
+            throw NotFoundError("Artifact not found: " + name);
         }
-        throw RpcError("GetResource failed: " + status.error_message(), static_cast<int>(status.error_code()));
+        throw RpcError("GetArtifact failed: " + status.error_message(), static_cast<int>(status.error_code()));
     }
-    return std::make_shared<Resource>(res, this);
+    return std::make_shared<Artifact>(res, this);
 }
 
-std::vector<std::shared_ptr<Resource>> Client::getResources(const Kref& version_kref) {
-    ::kumiho::GetResourcesRequest req;
-    *req.mutable_version_kref() = version_kref.toPb();
+std::vector<std::shared_ptr<Artifact>> Client::getArtifacts(const Kref& revision_kref) {
+    ::kumiho::GetArtifactsRequest req;
+    *req.mutable_revision_kref() = revision_kref.toPb();
 
-    ::kumiho::GetResourcesResponse res;
+    ::kumiho::GetArtifactsResponse res;
     grpc::ClientContext context; configureContext(context);
-    grpc::Status status = stub_->GetResources(&context, req, &res);
+    grpc::Status status = stub_->GetArtifacts(&context, req, &res);
 
     if (!status.ok()) {
-        throw RpcError("GetResources failed: " + status.error_message(), static_cast<int>(status.error_code()));
+        throw RpcError("GetArtifacts failed: " + status.error_message(), static_cast<int>(status.error_code()));
     }
 
-    std::vector<std::shared_ptr<Resource>> resources;
-    for (const auto& pb : res.resources()) {
-        resources.push_back(std::make_shared<Resource>(pb, this));
+    std::vector<std::shared_ptr<Artifact>> artifacts;
+    for (const auto& pb : res.artifacts()) {
+        artifacts.push_back(std::make_shared<Artifact>(pb, this));
     }
-    return resources;
+    return artifacts;
 }
 
-std::vector<std::shared_ptr<Resource>> Client::getResourcesByLocation(const std::string& location) {
-    ::kumiho::GetResourcesByLocationRequest req;
+std::vector<std::shared_ptr<Artifact>> Client::getArtifactsByLocation(const std::string& location) {
+    ::kumiho::GetArtifactsByLocationRequest req;
     req.set_location(location);
 
-    ::kumiho::GetResourcesByLocationResponse res;
+    ::kumiho::GetArtifactsByLocationResponse res;
     grpc::ClientContext context; configureContext(context);
-    grpc::Status status = stub_->GetResourcesByLocation(&context, req, &res);
+    grpc::Status status = stub_->GetArtifactsByLocation(&context, req, &res);
 
     if (!status.ok()) {
-        throw RpcError("GetResourcesByLocation failed: " + status.error_message(), static_cast<int>(status.error_code()));
+        throw RpcError("GetArtifactsByLocation failed: " + status.error_message(), static_cast<int>(status.error_code()));
     }
 
-    std::vector<std::shared_ptr<Resource>> resources;
-    for (const auto& pb : res.resources()) {
-        resources.push_back(std::make_shared<Resource>(pb, this));
+    std::vector<std::shared_ptr<Artifact>> artifacts;
+    for (const auto& pb : res.artifacts()) {
+        artifacts.push_back(std::make_shared<Artifact>(pb, this));
     }
-    return resources;
+    return artifacts;
 }
 
-void Client::setDefaultResource(const Kref& version_kref, const std::string& resource_name) {
-    ::kumiho::SetDefaultResourceRequest req;
-    *req.mutable_version_kref() = version_kref.toPb();
-    req.set_resource_name(resource_name);
+void Client::setDefaultArtifact(const Kref& revision_kref, const std::string& artifact_name) {
+    ::kumiho::SetDefaultArtifactRequest req;
+    *req.mutable_revision_kref() = revision_kref.toPb();
+    req.set_artifact_name(artifact_name);
 
     ::kumiho::StatusResponse res;
     grpc::ClientContext context; configureContext(context);
-    grpc::Status status = stub_->SetDefaultResource(&context, req, &res);
+    grpc::Status status = stub_->SetDefaultArtifact(&context, req, &res);
 
     if (!status.ok()) {
-        throw RpcError("SetDefaultResource failed: " + status.error_message(), static_cast<int>(status.error_code()));
+        throw RpcError("SetDefaultArtifact failed: " + status.error_message(), static_cast<int>(status.error_code()));
     }
 }
 
-std::shared_ptr<Resource> Client::updateResourceMetadata(const Kref& kref, const Metadata& metadata) {
+std::shared_ptr<Artifact> Client::updateArtifactMetadata(const Kref& kref, const Metadata& metadata) {
     ::kumiho::UpdateMetadataRequest req;
     *req.mutable_kref() = kref.toPb();
     for (const auto& pair : metadata) {
         (*req.mutable_metadata())[pair.first] = pair.second;
     }
 
-    ::kumiho::ResourceResponse res;
+    ::kumiho::ArtifactResponse res;
     grpc::ClientContext context; configureContext(context);
-    grpc::Status status = stub_->UpdateResourceMetadata(&context, req, &res);
+    grpc::Status status = stub_->UpdateArtifactMetadata(&context, req, &res);
 
     if (!status.ok()) {
-        throw RpcError("UpdateResourceMetadata failed: " + status.error_message(), static_cast<int>(status.error_code()));
+        throw RpcError("UpdateArtifactMetadata failed: " + status.error_message(), static_cast<int>(status.error_code()));
     }
-    return std::make_shared<Resource>(res, this);
+    return std::make_shared<Artifact>(res, this);
 }
 
-void Client::deleteResource(const Kref& kref, bool force) {
-    ::kumiho::DeleteResourceRequest req;
+void Client::deleteArtifact(const Kref& kref, bool force) {
+    ::kumiho::DeleteArtifactRequest req;
     *req.mutable_kref() = kref.toPb();
     req.set_force(force);
 
     ::kumiho::StatusResponse res;
     grpc::ClientContext context; configureContext(context);
-    grpc::Status status = stub_->DeleteResource(&context, req, &res);
+    grpc::Status status = stub_->DeleteArtifact(&context, req, &res);
 
     if (!status.ok()) {
-        throw RpcError("DeleteResource failed: " + status.error_message(), static_cast<int>(status.error_code()));
+        throw RpcError("DeleteArtifact failed: " + status.error_message(), static_cast<int>(status.error_code()));
     }
 }
 
-void Client::setResourceDeprecated(const Kref& kref, bool deprecated) {
+void Client::setArtifactDeprecated(const Kref& kref, bool deprecated) {
     ::kumiho::SetDeprecatedRequest req;
     *req.mutable_kref() = kref.toPb();
     req.set_deprecated(deprecated);
@@ -864,105 +884,105 @@ void Client::setResourceDeprecated(const Kref& kref, bool deprecated) {
     }
 }
 
-// --- Link Operations ---
+// --- Edge Operations (formerly Link) ---
 
-std::shared_ptr<Link> Client::createLink(
+std::shared_ptr<Edge> Client::createEdge(
     const Kref& source_kref,
     const Kref& target_kref,
-    const std::string& link_type,
+    const std::string& edge_type,
     const Metadata& metadata
 ) {
-    validateLinkType(link_type);
+    validateEdgeType(edge_type);
 
-    ::kumiho::CreateLinkRequest req;
-    *req.mutable_source_version_kref() = source_kref.toPb();
-    *req.mutable_target_version_kref() = target_kref.toPb();
-    req.set_link_type(link_type);
+    ::kumiho::CreateEdgeRequest req;
+    *req.mutable_source_revision_kref() = source_kref.toPb();
+    *req.mutable_target_revision_kref() = target_kref.toPb();
+    req.set_edge_type(edge_type);
     for (const auto& pair : metadata) {
         (*req.mutable_metadata())[pair.first] = pair.second;
     }
 
     ::kumiho::StatusResponse res;
     grpc::ClientContext context; configureContext(context);
-    grpc::Status status = stub_->CreateLink(&context, req, &res);
+    grpc::Status status = stub_->CreateEdge(&context, req, &res);
 
     if (!status.ok()) {
-        throw RpcError("CreateLink failed: " + status.error_message(), static_cast<int>(status.error_code()));
+        throw RpcError("CreateEdge failed: " + status.error_message(), static_cast<int>(status.error_code()));
     }
 
-    // Construct Link object from request data
-    ::kumiho::Link link_pb;
-    *link_pb.mutable_source_kref() = source_kref.toPb();
-    *link_pb.mutable_target_kref() = target_kref.toPb();
-    link_pb.set_link_type(link_type);
+    // Construct Edge object from request data
+    ::kumiho::Edge edge_pb;
+    *edge_pb.mutable_source_kref() = source_kref.toPb();
+    *edge_pb.mutable_target_kref() = target_kref.toPb();
+    edge_pb.set_edge_type(edge_type);
     for (const auto& pair : metadata) {
-        (*link_pb.mutable_metadata())[pair.first] = pair.second;
+        (*edge_pb.mutable_metadata())[pair.first] = pair.second;
     }
 
-    return std::make_shared<Link>(link_pb, this);
+    return std::make_shared<Edge>(edge_pb, this);
 }
 
-std::vector<std::shared_ptr<Link>> Client::getLinks(const Kref& kref, const std::string& link_type_filter) {
-    ::kumiho::GetLinksRequest req;
+std::vector<std::shared_ptr<Edge>> Client::getEdges(const Kref& kref, const std::string& edge_type_filter) {
+    ::kumiho::GetEdgesRequest req;
     *req.mutable_kref() = kref.toPb();
-    req.set_link_type_filter(link_type_filter);
+    req.set_edge_type_filter(edge_type_filter);
 
-    ::kumiho::GetLinksResponse res;
+    ::kumiho::GetEdgesResponse res;
     grpc::ClientContext context; configureContext(context);
-    grpc::Status status = stub_->GetLinks(&context, req, &res);
+    grpc::Status status = stub_->GetEdges(&context, req, &res);
 
     if (!status.ok()) {
-        throw RpcError("GetLinks failed: " + status.error_message(), static_cast<int>(status.error_code()));
+        throw RpcError("GetEdges failed: " + status.error_message(), static_cast<int>(status.error_code()));
     }
 
-    std::vector<std::shared_ptr<Link>> links;
-    for (const auto& pb : res.links()) {
-        links.push_back(std::make_shared<Link>(pb, this));
+    std::vector<std::shared_ptr<Edge>> edges;
+    for (const auto& pb : res.edges()) {
+        edges.push_back(std::make_shared<Edge>(pb, this));
     }
-    return links;
+    return edges;
 }
 
-void Client::deleteLink(const Kref& source_kref, const Kref& target_kref, const std::string& link_type) {
-    ::kumiho::DeleteLinkRequest req;
+void Client::deleteEdge(const Kref& source_kref, const Kref& target_kref, const std::string& edge_type) {
+    ::kumiho::DeleteEdgeRequest req;
     *req.mutable_source_kref() = source_kref.toPb();
     *req.mutable_target_kref() = target_kref.toPb();
-    req.set_link_type(link_type);
+    req.set_edge_type(edge_type);
 
     ::kumiho::StatusResponse res;
     grpc::ClientContext context; configureContext(context);
-    grpc::Status status = stub_->DeleteLink(&context, req, &res);
+    grpc::Status status = stub_->DeleteEdge(&context, req, &res);
 
     if (!status.ok()) {
-        throw RpcError("DeleteLink failed: " + status.error_message(), static_cast<int>(status.error_code()));
+        throw RpcError("DeleteEdge failed: " + status.error_message(), static_cast<int>(status.error_code()));
     }
 }
 
 // --- Graph Traversal Operations ---
 
-TraversalResult Client::traverseLinks(
+TraversalResult Client::traverseEdges(
     const Kref& origin_kref,
     int direction,
-    const std::vector<std::string>& link_type_filter,
+    const std::vector<std::string>& edge_type_filter,
     int max_depth,
     int limit,
     bool include_path
 ) {
-    ::kumiho::TraverseLinksRequest req;
+    ::kumiho::TraverseEdgesRequest req;
     *req.mutable_origin_kref() = origin_kref.toPb();
-    req.set_direction(static_cast<::kumiho::LinkDirection>(direction));
-    for (const auto& lt : link_type_filter) {
-        req.add_link_type_filter(lt);
+    req.set_direction(static_cast<::kumiho::EdgeDirection>(direction));
+    for (const auto& et : edge_type_filter) {
+        req.add_edge_type_filter(et);
     }
     req.set_max_depth(max_depth);
     req.set_limit(limit);
     req.set_include_path(include_path);
 
-    ::kumiho::TraverseLinksResponse res;
+    ::kumiho::TraverseEdgesResponse res;
     grpc::ClientContext context; configureContext(context);
-    grpc::Status status = stub_->TraverseLinks(&context, req, &res);
+    grpc::Status status = stub_->TraverseEdges(&context, req, &res);
 
     if (!status.ok()) {
-        throw RpcError("TraverseLinks failed: " + status.error_message(), static_cast<int>(status.error_code()));
+        throw RpcError("TraverseEdges failed: " + status.error_message(), static_cast<int>(status.error_code()));
     }
 
     TraversalResult result;
@@ -971,26 +991,26 @@ TraversalResult Client::traverseLinks(
 
     // Convert paths
     for (const auto& pb_path : res.paths()) {
-        VersionPath path;
+        RevisionPath path;
         path.total_depth = pb_path.total_depth();
         for (const auto& pb_step : pb_path.steps()) {
             PathStep step;
-            step.version_kref = pb_step.version_kref().uri();
-            step.link_type = pb_step.link_type();
+            step.revision_kref = pb_step.revision_kref().uri();
+            step.edge_type = pb_step.edge_type();
             step.depth = pb_step.depth();
             path.steps.push_back(step);
         }
         result.paths.push_back(path);
     }
 
-    // Convert version krefs
-    for (const auto& pb_kref : res.version_krefs()) {
-        result.version_krefs.push_back(pb_kref.uri());
+    // Convert revision krefs
+    for (const auto& pb_kref : res.revision_krefs()) {
+        result.revision_krefs.push_back(pb_kref.uri());
     }
 
-    // Convert links
-    for (const auto& pb_link : res.links()) {
-        result.links.push_back(std::make_shared<Link>(pb_link, this));
+    // Convert edges
+    for (const auto& pb_edge : res.edges()) {
+        result.edges.push_back(std::make_shared<Edge>(pb_edge, this));
     }
 
     return result;
@@ -999,15 +1019,15 @@ TraversalResult Client::traverseLinks(
 ShortestPathResult Client::findShortestPath(
     const Kref& source_kref,
     const Kref& target_kref,
-    const std::vector<std::string>& link_type_filter,
+    const std::vector<std::string>& edge_type_filter,
     int max_depth,
     bool all_shortest
 ) {
     ::kumiho::ShortestPathRequest req;
     *req.mutable_source_kref() = source_kref.toPb();
     *req.mutable_target_kref() = target_kref.toPb();
-    for (const auto& lt : link_type_filter) {
-        req.add_link_type_filter(lt);
+    for (const auto& et : edge_type_filter) {
+        req.add_edge_type_filter(et);
     }
     req.set_max_depth(max_depth);
     req.set_all_shortest(all_shortest);
@@ -1026,12 +1046,12 @@ ShortestPathResult Client::findShortestPath(
 
     // Convert paths
     for (const auto& pb_path : res.paths()) {
-        VersionPath path;
+        RevisionPath path;
         path.total_depth = pb_path.total_depth();
         for (const auto& pb_step : pb_path.steps()) {
             PathStep step;
-            step.version_kref = pb_step.version_kref().uri();
-            step.link_type = pb_step.link_type();
+            step.revision_kref = pb_step.revision_kref().uri();
+            step.edge_type = pb_step.edge_type();
             step.depth = pb_step.depth();
             path.steps.push_back(step);
         }
@@ -1042,15 +1062,15 @@ ShortestPathResult Client::findShortestPath(
 }
 
 ImpactAnalysisResult Client::analyzeImpact(
-    const Kref& version_kref,
-    const std::vector<std::string>& link_type_filter,
+    const Kref& revision_kref,
+    const std::vector<std::string>& edge_type_filter,
     int max_depth,
     int limit
 ) {
     ::kumiho::ImpactAnalysisRequest req;
-    *req.mutable_version_kref() = version_kref.toPb();
-    for (const auto& lt : link_type_filter) {
-        req.add_link_type_filter(lt);
+    *req.mutable_revision_kref() = revision_kref.toPb();
+    for (const auto& et : edge_type_filter) {
+        req.add_edge_type_filter(et);
     }
     req.set_max_depth(max_depth);
     req.set_limit(limit);
@@ -1067,16 +1087,16 @@ ImpactAnalysisResult Client::analyzeImpact(
     result.total_impacted = res.total_impacted();
     result.truncated = res.truncated();
 
-    // Convert impacted versions
-    for (const auto& pb_iv : res.impacted_versions()) {
-        ImpactedVersion iv;
-        iv.version_kref = pb_iv.version_kref().uri();
-        iv.product_kref = pb_iv.product_kref().uri();
-        iv.impact_depth = pb_iv.impact_depth();
-        for (const auto& pt : pb_iv.impact_path_types()) {
-            iv.impact_path_types.push_back(pt);
+    // Convert impacted revisions
+    for (const auto& pb_ir : res.impacted_revisions()) {
+        ImpactedRevision ir;
+        ir.revision_kref = pb_ir.revision_kref().uri();
+        ir.item_kref = pb_ir.item_kref().uri();
+        ir.impact_depth = pb_ir.impact_depth();
+        for (const auto& pt : pb_ir.impact_path_types()) {
+            ir.impact_path_types.push_back(pt);
         }
-        result.impacted_versions.push_back(iv);
+        result.impacted_revisions.push_back(ir);
     }
 
     return result;
@@ -1134,121 +1154,121 @@ bool Client::deleteAttribute(const Kref& kref, const std::string& key) {
     return res.success();
 }
 
-// --- Collection Operations ---
+// --- Bundle Operations (formerly Collection) ---
 
-std::shared_ptr<Collection> Client::createCollection(const std::string& parent_path, const std::string& name) {
-    ::kumiho::CreateCollectionRequest req;
+std::shared_ptr<Bundle> Client::createBundle(const std::string& parent_path, const std::string& name) {
+    ::kumiho::CreateBundleRequest req;
     req.set_parent_path(parent_path);
-    req.set_collection_name(name);
+    req.set_bundle_name(name);
 
-    ::kumiho::ProductResponse res;
+    ::kumiho::ItemResponse res;
     grpc::ClientContext context; configureContext(context);
-    grpc::Status status = stub_->CreateCollection(&context, req, &res);
+    grpc::Status status = stub_->CreateBundle(&context, req, &res);
 
     if (!status.ok()) {
-        throw RpcError("CreateCollection failed: " + status.error_message(), static_cast<int>(status.error_code()));
+        throw RpcError("CreateBundle failed: " + status.error_message(), static_cast<int>(status.error_code()));
     }
-    return std::make_shared<Collection>(res, this);
+    return std::make_shared<Bundle>(res, this);
 }
 
-std::shared_ptr<Collection> Client::createCollection(const Kref& parent_kref, const std::string& name) {
-    // Convert Kref to path (Kref format: kref://project/path/to/group)
+std::shared_ptr<Bundle> Client::createBundle(const Kref& parent_kref, const std::string& name) {
+    // Convert Kref to path (Kref format: kref://project/path/to/space)
     std::string path = "/" + parent_kref.getPath();
-    return createCollection(path, name);
+    return createBundle(path, name);
 }
 
-std::shared_ptr<Collection> Client::getCollection(const std::string& parent_path, const std::string& name) {
-    // Collection is a product with type "collection"
-    ::kumiho::GetProductRequest req;
+std::shared_ptr<Bundle> Client::getBundle(const std::string& parent_path, const std::string& name) {
+    // Bundle is an item with kind "bundle"
+    ::kumiho::GetItemRequest req;
     req.set_parent_path(parent_path);
-    req.set_product_name(name);
-    req.set_product_type("collection");
+    req.set_item_name(name);
+    req.set_kind("bundle");
 
-    ::kumiho::ProductResponse res;
+    ::kumiho::ItemResponse res;
     grpc::ClientContext context; configureContext(context);
-    grpc::Status status = stub_->GetProduct(&context, req, &res);
+    grpc::Status status = stub_->GetItem(&context, req, &res);
 
     if (!status.ok()) {
         if (status.error_code() == grpc::StatusCode::NOT_FOUND) {
-            throw NotFoundError("Collection not found: " + parent_path + "/" + name + ".collection");
+            throw NotFoundError("Bundle not found: " + parent_path + "/" + name + ".bundle");
         }
-        throw RpcError("GetProduct failed: " + status.error_message(), static_cast<int>(status.error_code()));
+        throw RpcError("GetItem failed: " + status.error_message(), static_cast<int>(status.error_code()));
     }
-    return std::make_shared<Collection>(res, this);
+    return std::make_shared<Bundle>(res, this);
 }
 
-void Client::addCollectionMember(const Kref& collection_kref, const Kref& product_kref) {
-    ::kumiho::AddCollectionMemberRequest req;
-    *req.mutable_collection_kref() = collection_kref.toPb();
-    *req.mutable_member_product_kref() = product_kref.toPb();
+void Client::addBundleMember(const Kref& bundle_kref, const Kref& item_kref) {
+    ::kumiho::AddBundleMemberRequest req;
+    *req.mutable_bundle_kref() = bundle_kref.toPb();
+    *req.mutable_member_item_kref() = item_kref.toPb();
 
-    ::kumiho::AddCollectionMemberResponse res;
+    ::kumiho::AddBundleMemberResponse res;
     grpc::ClientContext context; configureContext(context);
-    grpc::Status status = stub_->AddCollectionMember(&context, req, &res);
+    grpc::Status status = stub_->AddBundleMember(&context, req, &res);
 
     if (!status.ok()) {
-        throw RpcError("AddCollectionMember failed: " + status.error_message(), static_cast<int>(status.error_code()));
-    }
-}
-
-void Client::removeCollectionMember(const Kref& collection_kref, const Kref& product_kref) {
-    ::kumiho::RemoveCollectionMemberRequest req;
-    *req.mutable_collection_kref() = collection_kref.toPb();
-    *req.mutable_member_product_kref() = product_kref.toPb();
-
-    ::kumiho::RemoveCollectionMemberResponse res;
-    grpc::ClientContext context; configureContext(context);
-    grpc::Status status = stub_->RemoveCollectionMember(&context, req, &res);
-
-    if (!status.ok()) {
-        throw RpcError("RemoveCollectionMember failed: " + status.error_message(), static_cast<int>(status.error_code()));
+        throw RpcError("AddBundleMember failed: " + status.error_message(), static_cast<int>(status.error_code()));
     }
 }
 
-std::vector<CollectionMember> Client::getCollectionMembers(const Kref& collection_kref) {
-    ::kumiho::GetCollectionMembersRequest req;
-    *req.mutable_collection_kref() = collection_kref.toPb();
+void Client::removeBundleMember(const Kref& bundle_kref, const Kref& item_kref) {
+    ::kumiho::RemoveBundleMemberRequest req;
+    *req.mutable_bundle_kref() = bundle_kref.toPb();
+    *req.mutable_member_item_kref() = item_kref.toPb();
 
-    ::kumiho::GetCollectionMembersResponse res;
+    ::kumiho::RemoveBundleMemberResponse res;
     grpc::ClientContext context; configureContext(context);
-    grpc::Status status = stub_->GetCollectionMembers(&context, req, &res);
+    grpc::Status status = stub_->RemoveBundleMember(&context, req, &res);
 
     if (!status.ok()) {
-        throw RpcError("GetCollectionMembers failed: " + status.error_message(), static_cast<int>(status.error_code()));
+        throw RpcError("RemoveBundleMember failed: " + status.error_message(), static_cast<int>(status.error_code()));
+    }
+}
+
+std::vector<BundleMember> Client::getBundleMembers(const Kref& bundle_kref) {
+    ::kumiho::GetBundleMembersRequest req;
+    *req.mutable_bundle_kref() = bundle_kref.toPb();
+
+    ::kumiho::GetBundleMembersResponse res;
+    grpc::ClientContext context; configureContext(context);
+    grpc::Status status = stub_->GetBundleMembers(&context, req, &res);
+
+    if (!status.ok()) {
+        throw RpcError("GetBundleMembers failed: " + status.error_message(), static_cast<int>(status.error_code()));
     }
 
-    std::vector<CollectionMember> members;
+    std::vector<BundleMember> members;
     for (const auto& pb : res.members()) {
-        CollectionMember member;
-        member.product_kref = Kref(pb.product_kref().uri());
+        BundleMember member;
+        member.item_kref = Kref(pb.item_kref().uri());
         member.added_at = pb.added_at();
         member.added_by = pb.added_by();
         member.added_by_username = pb.added_by_username();
-        member.added_in_version = pb.added_in_version();
+        member.added_in_revision = pb.added_in_revision();
         members.push_back(member);
     }
     return members;
 }
 
-std::vector<CollectionVersionHistory> Client::getCollectionHistory(const Kref& collection_kref) {
-    ::kumiho::GetCollectionHistoryRequest req;
-    *req.mutable_collection_kref() = collection_kref.toPb();
+std::vector<BundleRevisionHistory> Client::getBundleHistory(const Kref& bundle_kref) {
+    ::kumiho::GetBundleHistoryRequest req;
+    *req.mutable_bundle_kref() = bundle_kref.toPb();
 
-    ::kumiho::GetCollectionHistoryResponse res;
+    ::kumiho::GetBundleHistoryResponse res;
     grpc::ClientContext context; configureContext(context);
-    grpc::Status status = stub_->GetCollectionHistory(&context, req, &res);
+    grpc::Status status = stub_->GetBundleHistory(&context, req, &res);
 
     if (!status.ok()) {
-        throw RpcError("GetCollectionHistory failed: " + status.error_message(), static_cast<int>(status.error_code()));
+        throw RpcError("GetBundleHistory failed: " + status.error_message(), static_cast<int>(status.error_code()));
     }
 
-    std::vector<CollectionVersionHistory> history;
+    std::vector<BundleRevisionHistory> history;
     for (const auto& pb : res.history()) {
-        CollectionVersionHistory entry;
-        entry.version_number = pb.version_number();
+        BundleRevisionHistory entry;
+        entry.revision_number = pb.revision_number();
         entry.action = pb.action();
-        if (pb.has_member_product_kref()) {
-            entry.member_product_kref = Kref(pb.member_product_kref().uri());
+        if (pb.has_member_item_kref()) {
+            entry.member_item_kref = Kref(pb.member_item_kref().uri());
         }
         entry.author = pb.author();
         entry.username = pb.username();
@@ -1295,7 +1315,7 @@ std::shared_ptr<EventStream> Client::eventStream(const std::string& routing_key_
 
 // --- Convenience Functions ---
 
-std::shared_ptr<Group> createGroup(std::shared_ptr<Client> client, const std::string& path) {
+std::shared_ptr<Space> createSpace(std::shared_ptr<Client> client, const std::string& path) {
     std::vector<std::string> parts;
     std::stringstream ss(path);
     std::string part;
@@ -1311,22 +1331,22 @@ std::shared_ptr<Group> createGroup(std::shared_ptr<Client> client, const std::st
     }
 
     std::string current_path = "/";
-    std::shared_ptr<Group> group;
+    std::shared_ptr<Space> space;
 
     for (const auto& p : parts) {
         current_path += p;
         try {
-            group = client->getGroup(current_path);
+            space = client->getSpace(current_path);
         } catch (const NotFoundError&) {
-            // Group doesn't exist, create it
+            // Space doesn't exist, create it
             std::string parent_path = current_path.substr(0, current_path.length() - p.length());
             if (parent_path.empty()) parent_path = "/";
-            group = client->createGroup(parent_path, p);
+            space = client->createSpace(parent_path, p);
         }
         current_path += "/";
     }
 
-    return group;
+    return space;
 }
 
 std::string getCurrentUser() {

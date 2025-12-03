@@ -5,8 +5,8 @@
 
 #include "kumiho/project.hpp"
 #include "kumiho/client.hpp"
-#include "kumiho/group.hpp"
-#include "kumiho/collection.hpp"
+#include "kumiho/space.hpp"
+#include "kumiho/bundle.hpp"
 #include "kumiho/error.hpp"
 
 namespace kumiho {
@@ -53,30 +53,30 @@ bool Project::isPublic() const {
     return response_.allow_public();
 }
 
-std::shared_ptr<Group> Project::createGroup(const std::string& name) {
+std::shared_ptr<Space> Project::createSpace(const std::string& name) {
     std::string parent_path = "/" + response_.name();
-    return client_->createGroup(parent_path, name);
+    return client_->createSpace(parent_path, name);
 }
 
-std::shared_ptr<Group> Project::getGroup(const std::string& path) {
+std::shared_ptr<Space> Project::getSpace(const std::string& path) {
     std::string full_path = "/" + response_.name() + "/" + path;
-    return client_->getGroup(full_path);
+    return client_->getSpace(full_path);
 }
 
-std::vector<std::shared_ptr<Group>> Project::getGroups(bool recursive) {
+std::vector<std::shared_ptr<Space>> Project::getSpaces(bool recursive) {
     std::string parent_path = "/" + response_.name();
     // TODO: Add recursive parameter support
-    return client_->getChildGroups(parent_path);
+    return client_->getChildSpaces(parent_path);
 }
 
-std::shared_ptr<Collection> Project::createCollection(const std::string& name) {
+std::shared_ptr<Bundle> Project::createBundle(const std::string& name) {
     std::string parent_path = "/" + response_.name();
-    return client_->createCollection(parent_path, name);
+    return client_->createBundle(parent_path, name);
 }
 
-std::shared_ptr<Collection> Project::getCollection(const std::string& name) {
+std::shared_ptr<Bundle> Project::getBundle(const std::string& name) {
     std::string parent_path = "/" + response_.name();
-    return client_->getCollection(parent_path, name);
+    return client_->getBundle(parent_path, name);
 }
 
 std::shared_ptr<Project> Project::setPublic(bool allow) {

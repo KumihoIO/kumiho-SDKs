@@ -63,18 +63,16 @@ target_link_libraries(protobuf_grpc_lib PRIVATE gRPC::grpc++ protobuf::libprotob
 add_library(kumiho
     src/client.cpp
     src/kref.cpp
-    src/link.cpp
+    src/edge.cpp
     src/event.cpp
-    src/group.cpp
-    src/product.cpp
-    src/version.cpp
-    src/resource.cpp
+    src/space.cpp
+    src/item.cpp
+    src/revision.cpp
+    src/artifact.cpp
     src/project.cpp
-    src/collection.cpp
+    src/bundle.cpp
     src/discovery.cpp
     src/token_loader.cpp
-    # Legacy file for backwards compatibility (to be removed after migration)
-    # client/kumiho.cpp
 )
 
 target_include_directories(kumiho PUBLIC
@@ -92,23 +90,6 @@ target_link_libraries(kumiho PUBLIC
     gRPC::grpc++
     protobuf::libprotobuf
 )
-
-# --- Example Executable ---
-add_executable(kumiho_client_example
-    client/kumiho_client_example.cpp
-)
-
-target_link_libraries(kumiho_client_example PRIVATE
-    kumiho
-)
-
-# --- Data Populator Executable (temporarily disabled - file doesn't exist) ---
-# add_executable(data_populator
-#     client/data_populator.cpp
-# )
-# target_link_libraries(data_populator PRIVATE
-#     kumiho
-# )
 
 # --- Event Listener Executable ---
 add_executable(kumiho_listener

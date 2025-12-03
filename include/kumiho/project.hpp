@@ -20,16 +20,16 @@
 namespace kumiho {
 namespace api {
 
-// Forward declarations
+// Forward declarations - use new terminology (aliases defined in types.hpp)
 class Client;
-class Group;
-class Collection;
+class Space;
+class Bundle;
 
 /**
  * @brief A Kumiho project—the top-level container for assets.
  *
  * Projects are the root of the Kumiho hierarchy. Each project has its own
- * namespace for groups and products, and manages access control and settings
+ * namespace for spaces and items, and manages access control and settings
  * independently.
  *
  * Projects support both public and private access modes, allowing you to
@@ -39,13 +39,13 @@ class Collection;
  * @code
  *   auto project = client->createProject("film-2024", "Feature film VFX assets");
  *   
- *   // Create group structure
- *   auto chars = project->createGroup("characters");
- *   auto envs = project->createGroup("environments");
+ *   // Create space structure
+ *   auto chars = project->createSpace("characters");
+ *   auto envs = project->createSpace("environments");
  *   
- *   // List all groups recursively
- *   for (const auto& group : project->getGroups(true)) {
- *       std::cout << group->getPath() << std::endl;
+ *   // List all spaces recursively
+ *   for (const auto& space : project->getSpaces(true)) {
+ *       std::cout << space->getPath() << std::endl;
  *   }
  *   
  *   // Enable public access
@@ -110,39 +110,39 @@ public:
     bool isPublic() const;
 
     /**
-     * @brief Create a group in this project.
-     * @param name The group name.
-     * @return The created Group.
+     * @brief Create a space in this project.
+     * @param name The space name.
+     * @return The created Space.
      */
-    std::shared_ptr<Group> createGroup(const std::string& name);
+    std::shared_ptr<Space> createSpace(const std::string& name);
 
     /**
-     * @brief Get a group by path.
-     * @param path The group path relative to the project (e.g., "assets/models").
-     * @return The Group.
+     * @brief Get a space by path.
+     * @param path The space path relative to the project (e.g., "assets/models").
+     * @return The Space.
      */
-    std::shared_ptr<Group> getGroup(const std::string& path);
+    std::shared_ptr<Space> getSpace(const std::string& path);
 
     /**
-     * @brief Get all groups in this project.
-     * @param recursive If true, include all descendant groups.
-     * @return A list of Group objects.
+     * @brief Get all spaces in this project.
+     * @param recursive If true, include all descendant spaces.
+     * @return A list of Space objects.
      */
-    std::vector<std::shared_ptr<Group>> getGroups(bool recursive = false);
+    std::vector<std::shared_ptr<Space>> getSpaces(bool recursive = false);
 
     /**
-     * @brief Create a collection in this project.
-     * @param name The collection name.
-     * @return The created Collection.
+     * @brief Create a bundle in this project.
+     * @param name The bundle name.
+     * @return The created Bundle.
      */
-    std::shared_ptr<Collection> createCollection(const std::string& name);
+    std::shared_ptr<Bundle> createBundle(const std::string& name);
 
     /**
-     * @brief Get a collection by name.
-     * @param name The collection name.
-     * @return The Collection.
+     * @brief Get a bundle by name.
+     * @param name The bundle name.
+     * @return The Bundle.
      */
-    std::shared_ptr<Collection> getCollection(const std::string& name);
+    std::shared_ptr<Bundle> getBundle(const std::string& name);
 
     /**
      * @brief Set public access mode.

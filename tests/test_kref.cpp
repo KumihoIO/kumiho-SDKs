@@ -79,9 +79,9 @@ TEST_F(KrefParsingTest, ParseProductWithNestedGroups) {
     EXPECT_EQ(kref.getFullProductName(), "hero.model");
 }
 
-// Test version-level Kref
-TEST_F(KrefParsingTest, ParseVersionKref) {
-    Kref kref("kref://my-project/assets/hero.model?v=3");
+// Test revision-level Kref
+TEST_F(KrefParsingTest, ParseRevisionKref) {
+    Kref kref("kref://my-project/assets/hero.model?r=3");
     
     EXPECT_EQ(kref.getProject(), "my-project");
     EXPECT_EQ(kref.getGroup(), "assets");
@@ -92,9 +92,9 @@ TEST_F(KrefParsingTest, ParseVersionKref) {
     EXPECT_EQ(kref.getResourceName(), "");
 }
 
-// Test resource-level Kref
-TEST_F(KrefParsingTest, ParseResourceKref) {
-    Kref kref("kref://my-project/assets/hero.model?v=1&r=mesh");
+// Test artifact-level Kref
+TEST_F(KrefParsingTest, ParseArtifactKref) {
+    Kref kref("kref://my-project/assets/hero.model?r=1&a=mesh");
     
     EXPECT_EQ(kref.getProject(), "my-project");
     EXPECT_EQ(kref.getGroup(), "assets");
@@ -122,7 +122,7 @@ TEST_F(KrefParsingTest, ParseKrefWithTime) {
 
 // Test Kref with multiple query params
 TEST_F(KrefParsingTest, ParseKrefWithMultipleParams) {
-    Kref kref("kref://my-project/assets/hero.model?v=2&r=texture&t=latest");
+    Kref kref("kref://my-project/assets/hero.model?r=2&a=texture&t=latest");
     
     ASSERT_TRUE(kref.getVersion().has_value());
     EXPECT_EQ(kref.getVersion().value(), 2);
@@ -132,7 +132,7 @@ TEST_F(KrefParsingTest, ParseKrefWithMultipleParams) {
 
 // Test legacy kumiho:// scheme
 TEST_F(KrefParsingTest, ParseLegacyScheme) {
-    Kref kref("kumiho://my-project/assets/hero.model?v=1");
+    Kref kref("kumiho://my-project/assets/hero.model?r=1");
     
     EXPECT_EQ(kref.getProject(), "my-project");
     EXPECT_EQ(kref.getGroup(), "assets");
@@ -152,21 +152,21 @@ TEST_F(KrefParsingTest, EmptyKref) {
 
 // Test Kref equality
 TEST_F(KrefParsingTest, KrefEquality) {
-    Kref kref1("kref://my-project/assets/hero.model?v=1");
-    Kref kref2("kref://my-project/assets/hero.model?v=1");
-    Kref kref3("kref://my-project/assets/hero.model?v=2");
+    Kref kref1("kref://my-project/assets/hero.model?r=1");
+    Kref kref2("kref://my-project/assets/hero.model?r=1");
+    Kref kref3("kref://my-project/assets/hero.model?r=2");
     
     EXPECT_TRUE(kref1 == kref2);
     EXPECT_FALSE(kref1 == kref3);
-    EXPECT_TRUE(kref1 == std::string("kref://my-project/assets/hero.model?v=1"));
+    EXPECT_TRUE(kref1 == std::string("kref://my-project/assets/hero.model?r=1"));
 }
 
 // Test Kref to protobuf conversion
 TEST_F(KrefParsingTest, KrefToProtobuf) {
-    Kref kref("kref://my-project/assets/hero.model?v=1");
+    Kref kref("kref://my-project/assets/hero.model?r=1");
     
     auto pb = kref.toPb();
-    EXPECT_EQ(pb.uri(), "kref://my-project/assets/hero.model?v=1");
+    EXPECT_EQ(pb.uri(), "kref://my-project/assets/hero.model?r=1");
 }
 
 // --- Kref Validation Tests ---
@@ -180,11 +180,11 @@ protected:
 // Test valid Kref URIs
 TEST_F(KrefValidationTest, ValidKrefs) {
     EXPECT_TRUE(isValidKref("kref://project"));
-    EXPECT_TRUE(isValidKref("kref://project/group"));
-    EXPECT_TRUE(isValidKref("kref://project/group/product.type"));
-    EXPECT_TRUE(isValidKref("kref://project/group/product.type?v=1"));
-    EXPECT_TRUE(isValidKref("kref://project/group/product.type?v=1&r=resource"));
-    EXPECT_TRUE(isValidKref("kumiho://project/group/product.type"));
+    EXPECT_TRUE(isValidKref("kref://project/space"));
+    EXPECT_TRUE(isValidKref("kref://project/space/item.kind"));
+    EXPECT_TRUE(isValidKref("kref://project/space/item.kind?r=1"));
+    EXPECT_TRUE(isValidKref("kref://project/space/item.kind?r=1&a=artifact"));
+    EXPECT_TRUE(isValidKref("kumiho://project/space/item.kind"));
 }
 
 // Test invalid Kref URIs
@@ -244,40 +244,40 @@ TEST_F(KrefEdgeCasesTest, NumericNames) {
     EXPECT_EQ(kref.getProductName(), "asset");
 }
 
-// Test version number 0
-TEST_F(KrefEdgeCasesTest, VersionZero) {
-    Kref kref("kref://proj/group/prod.type?v=0");
+// Test revision number 0
+TEST_F(KrefEdgeCasesTest, RevisionZero) {
+    Kref kref("kref://proj/space/item.kind?r=0");
     
     ASSERT_TRUE(kref.getVersion().has_value());
     EXPECT_EQ(kref.getVersion().value(), 0);
 }
 
-// Test large version number
-TEST_F(KrefEdgeCasesTest, LargeVersionNumber) {
-    Kref kref("kref://proj/group/prod.type?v=999999");
+// Test large revision number
+TEST_F(KrefEdgeCasesTest, LargeRevisionNumber) {
+    Kref kref("kref://proj/space/item.kind?r=999999");
     
     ASSERT_TRUE(kref.getVersion().has_value());
     EXPECT_EQ(kref.getVersion().value(), 999999);
 }
 
-// Test invalid version (non-numeric)
-TEST_F(KrefEdgeCasesTest, InvalidVersionFormat) {
-    Kref kref("kref://proj/group/prod.type?v=abc");
+// Test invalid revision (non-numeric)
+TEST_F(KrefEdgeCasesTest, InvalidRevisionFormat) {
+    Kref kref("kref://proj/space/item.kind?r=abc");
     
-    // Should return nullopt for non-numeric version
+    // Should return nullopt for non-numeric revision
     EXPECT_FALSE(kref.getVersion().has_value());
 }
 
 // Test query param at different positions
 TEST_F(KrefEdgeCasesTest, QueryParamOrder) {
-    // Resource before version
-    Kref kref1("kref://proj/group/prod.type?r=mesh&v=1");
+    // Artifact before revision
+    Kref kref1("kref://proj/space/item.kind?a=mesh&r=1");
     ASSERT_TRUE(kref1.getVersion().has_value());
     EXPECT_EQ(kref1.getVersion().value(), 1);
     EXPECT_EQ(kref1.getResourceName(), "mesh");
     
     // Tag first
-    Kref kref2("kref://proj/group/prod.type?t=latest&v=2&r=tex");
+    Kref kref2("kref://proj/space/item.kind?t=latest&r=2&a=tex");
     ASSERT_TRUE(kref2.getVersion().has_value());
     EXPECT_EQ(kref2.getVersion().value(), 2);
     EXPECT_EQ(kref2.getResourceName(), "tex");

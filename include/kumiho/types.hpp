@@ -20,12 +20,12 @@ namespace api {
 // Forward declarations
 class Client;
 class Project;
-class Group;
-class Product;
-class Version;
-class Resource;
-class Link;
-class Collection;
+class Space;
+class Item;
+class Revision;
+class Artifact;
+class Edge;
+class Bundle;
 class Event;
 class EventStream;
 
@@ -51,20 +51,20 @@ constexpr const char* LATEST_TAG = "latest";
 constexpr const char* PUBLISHED_TAG = "published";
 
 /**
- * @brief Reserved product types that cannot be created manually.
+ * @brief Reserved item kinds that cannot be created manually.
  * 
- * Use dedicated methods (e.g., createCollection) for these types.
+ * Use dedicated methods (e.g., createBundle) for these kinds.
  */
-inline const std::vector<std::string> RESERVED_PRODUCT_TYPES = {"collection"};
+inline const std::vector<std::string> RESERVED_KINDS = {"bundle"};
 
 /**
- * @brief Check if a product type is reserved.
- * @param ptype The product type to check.
- * @return True if the type is reserved, false otherwise.
+ * @brief Check if an item kind is reserved.
+ * @param kind The item kind to check.
+ * @return True if the kind is reserved, false otherwise.
  */
-inline bool isReservedProductType(const std::string& ptype) {
-    for (const auto& reserved : RESERVED_PRODUCT_TYPES) {
-        if (ptype == reserved) return true;
+inline bool isReservedKind(const std::string& kind) {
+    for (const auto& reserved : RESERVED_KINDS) {
+        if (kind == reserved) return true;
     }
     return false;
 }
@@ -75,26 +75,26 @@ class Kref;
 /**
  * @brief A single step in a graph traversal path.
  *
- * Represents one hop in a path between versions, including
- * the version reached and the relationship type used.
+ * Represents one hop in a path between revisions, including
+ * the revision reached and the relationship type used.
  */
 struct PathStep {
-    /** @brief The version's Kref at this step. */
-    std::string version_kref;
+    /** @brief The revision's Kref at this step. */
+    std::string revision_kref;
     
-    /** @brief The link type used to reach this node (e.g., "DEPENDS_ON"). */
-    std::string link_type;
+    /** @brief The edge type used to reach this node (e.g., "DEPENDS_ON"). */
+    std::string edge_type;
     
     /** @brief Distance from the origin (0 = origin). */
     int depth;
 };
 
 /**
- * @brief A complete path between two versions.
+ * @brief A complete path between two revisions.
  *
- * Contains the sequence of steps from a source to a target version.
+ * Contains the sequence of steps from a source to a target revision.
  */
-struct VersionPath {
+struct RevisionPath {
     /** @brief The sequence of steps in the path. */
     std::vector<PathStep> steps;
     
@@ -108,17 +108,17 @@ struct VersionPath {
 /**
  * @brief Result of a graph traversal operation.
  *
- * Contains all discovered versions and optionally the paths to reach them.
+ * Contains all discovered revisions and optionally the paths to reach them.
  */
 struct TraversalResult {
-    /** @brief Full paths to each discovered version (if include_path=true). */
-    std::vector<VersionPath> paths;
+    /** @brief Full paths to each discovered revision (if include_path=true). */
+    std::vector<RevisionPath> paths;
     
-    /** @brief Flat list of all discovered version Krefs. */
-    std::vector<std::string> version_krefs;
+    /** @brief Flat list of all discovered revision Krefs. */
+    std::vector<std::string> revision_krefs;
     
-    /** @brief All links traversed during the operation. */
-    std::vector<std::shared_ptr<Link>> links;
+    /** @brief All edges traversed during the operation. */
+    std::vector<std::shared_ptr<Edge>> edges;
     
     /** @brief Total number of nodes found. */
     int total_count = 0;
@@ -130,11 +130,11 @@ struct TraversalResult {
 /**
  * @brief Result of a shortest path query.
  *
- * Contains one or more shortest paths between two versions.
+ * Contains one or more shortest paths between two revisions.
  */
 struct ShortestPathResult {
     /** @brief One or more shortest paths found. */
-    std::vector<VersionPath> paths;
+    std::vector<RevisionPath> paths;
     
     /** @brief True if any path was found. */
     bool path_exists;
@@ -143,40 +143,40 @@ struct ShortestPathResult {
     int path_length;
     
     /** @brief Get the first path, or nullptr if none found. */
-    const VersionPath* first_path() const {
+    const RevisionPath* first_path() const {
         return paths.empty() ? nullptr : &paths[0];
     }
 };
 
 /**
- * @brief A version that would be impacted by changes.
+ * @brief A revision that would be impacted by changes.
  *
  * Used in impact analysis to identify downstream dependencies.
  */
-struct ImpactedVersion {
-    /** @brief The impacted version's Kref. */
-    std::string version_kref;
+struct ImpactedRevision {
+    /** @brief The impacted revision's Kref. */
+    std::string revision_kref;
     
-    /** @brief The product's Kref. */
-    std::string product_kref;
+    /** @brief The item's Kref. */
+    std::string item_kref;
     
     /** @brief How many hops away from the source. */
     int impact_depth;
     
-    /** @brief Link types in the impact chain. */
+    /** @brief Edge types in the impact chain. */
     std::vector<std::string> impact_path_types;
 };
 
 /**
  * @brief Result of an impact analysis operation.
  *
- * Contains all versions that would be affected by changes to a source version.
+ * Contains all revisions that would be affected by changes to a source revision.
  */
 struct ImpactAnalysisResult {
-    /** @brief All versions that would be impacted. */
-    std::vector<ImpactedVersion> impacted_versions;
+    /** @brief All revisions that would be impacted. */
+    std::vector<ImpactedRevision> impacted_revisions;
     
-    /** @brief Total number of impacted versions. */
+    /** @brief Total number of impacted revisions. */
     int total_impacted = 0;
     
     /** @brief True if results were limited/truncated. */
