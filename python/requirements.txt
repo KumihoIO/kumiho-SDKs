@@ -3,3 +3,4 @@ pytest>=8.2.0
 requests>=2.31.0
 mcp>=1.0.0
 httpx>=0.27.0
+kumiho-cli>=0.4.0

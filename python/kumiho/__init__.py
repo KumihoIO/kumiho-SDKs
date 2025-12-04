@@ -113,7 +113,7 @@ Attributes:
 __version__ = "0.3.0"
 
 import contextvars
-from typing import Dict, List, Optional, Iterator, Tuple
+from typing import Any, Dict, List, Optional, Iterator, Tuple
 
 # Import the main classes to make them available at the package level.
 from .base import KumihoObject, KumihoError
@@ -147,7 +147,7 @@ from .artifact import Artifact
 from .proto.kumiho_pb2 import StatusResponse
 from .revision import Revision
 from .client import ProjectLimitError
-from .discovery import client_from_discovery
+from .discovery import client_from_discovery, DiscoveryRecord, DiscoveryCache, DEFAULT_CACHE_PATH, _DEFAULT_CACHE_KEY
 from ._bootstrap import bootstrap_default_client
 
 # Expose EdgeType constants for convenience
@@ -374,6 +374,99 @@ def _auto_configure_from_env_if_requested() -> None:
         raise RuntimeError(
             "KUMIHO_AUTO_CONFIGURE is set, but automatic discovery bootstrap failed."
         ) from exc
+
+
+# =============================================================================
+# Tenant Info Functions
+# =============================================================================
+
+
+def get_tenant_info(tenant_hint: Optional[str] = None) -> Optional[Dict[str, Any]]:
+    """Get information about the current tenant from the discovery cache.
+
+    This retrieves tenant information that was cached during discovery,
+    including the tenant ID, tenant name/slug, roles, and region info.
+
+    Args:
+        tenant_hint: Optional tenant slug or ID to look up. If not provided,
+            looks up the default tenant (using "_default" cache key).
+
+    Returns:
+        Optional[Dict[str, Any]]: A dictionary containing tenant info:
+            - tenant_id: The unique tenant identifier
+            - tenant_name: The tenant slug/name (human-readable identifier)
+            - roles: List of roles the user has in this tenant
+            - region: Region routing information
+        Returns None if no cached info is available.
+
+    Example:
+        >>> info = kumiho.get_tenant_info()
+        >>> if info:
+        ...     print(f"Tenant: {info['tenant_name']}")
+        ...     print(f"Roles: {info['roles']}")
+        Tenant: kumihoclouds
+        Roles: ['owner', 'admin']
+
+    Note:
+        This requires that discovery has been performed (either via
+        ``auto_configure_from_discovery()`` or ``KUMIHO_AUTO_CONFIGURE=1``).
+        If using direct connection without discovery, this will return None.
+    """
+    cache = DiscoveryCache(DEFAULT_CACHE_PATH)
+    cache_key = tenant_hint or _DEFAULT_CACHE_KEY
+    record = cache.load(cache_key)
+    
+    if record is None:
+        return None
+    
+    return {
+        "tenant_id": record.tenant_id,
+        "tenant_name": record.tenant_name,
+        "roles": list(record.roles),
+        "region": record.region.to_dict() if record.region else None,
+        "guardrails": record.guardrails,
+    }
+
+
+def get_tenant_slug(tenant_hint: Optional[str] = None) -> Optional[str]:
+    """Get the tenant slug/name for use in project naming.
+
+    This is a convenience function that returns just the tenant name/slug,
+    which is useful for constructing project names like "ComfyUI@{tenant_slug}".
+
+    If tenant_name contains spaces or special characters, returns a shortened
+    tenant_id instead (first 8 characters of the UUID).
+
+    Args:
+        tenant_hint: Optional tenant slug or ID to look up.
+
+    Returns:
+        Optional[str]: The tenant slug/name, or None if not available.
+
+    Example:
+        >>> slug = kumiho.get_tenant_slug()
+        >>> project_name = f"ComfyUI@{slug or 'default'}"
+        >>> print(project_name)
+        ComfyUI@kumihoclouds
+    """
+    info = get_tenant_info(tenant_hint)
+    if not info:
+        return None
+    
+    tenant_name = info.get("tenant_name")
+    tenant_id = info.get("tenant_id")
+    
+    # Check if tenant_name is URL-safe (alphanumeric, hyphens only)
+    import re
+    if tenant_name and re.match(r'^[a-zA-Z0-9-]+$', tenant_name):
+        return tenant_name.lower()
+    
+    # Fall back to shortened tenant_id (first 8 chars of UUID)
+    if tenant_id:
+        return tenant_id.split('-')[0]  # First segment of UUID
+    
+    return tenant_name
+
 
 # =============================================================================
 # Top-level convenience functions
@@ -922,6 +1015,9 @@ __all__ = [
     "OUTGOING",
     "INCOMING",
     "BOTH",
+    # Tenant info
+    "get_tenant_info",
+    "get_tenant_slug",
     # Top-level functions
     "create_project",
     "get_projects",
@@ -943,7 +1039,7 @@ __all__ = [
 ]
 
 # Remove typing imports from public namespace
-del Dict, List, Optional, Iterator, Tuple
+del Any, Dict, List, Optional, Iterator, Tuple
 
 
 _auto_configure_from_env_if_requested()

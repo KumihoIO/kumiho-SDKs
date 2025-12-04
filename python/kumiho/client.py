@@ -1707,7 +1707,7 @@ class _MetadataInjector(
         self._metadata = tuple(metadata)
 
     def intercept_unary_unary(self, continuation, client_call_details, request):
-        _LOGGER.info(f"Injecting metadata: {self._metadata}")
+        _LOGGER.debug(f"Injecting metadata (keys: {[k for k, v in self._metadata]})")
         updated = _augment_call_details(client_call_details, self._metadata)
         return continuation(updated, request)
 
@@ -1769,7 +1769,7 @@ class _AutoLoginInterceptor(
                         )
                         
                         # Retry the RPC with the new token
-                        _LOGGER.info("Retrying RPC with new credentials...")
+                        _LOGGER.debug("Retrying RPC with refreshed credentials")
                         return continuation(updated_details, request)
                     except Exception as e:
                         _LOGGER.error(f"Auto-login failed: {e}")
