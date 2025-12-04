@@ -897,18 +897,30 @@ class _Client:
         self.stub.SetDefaultArtifact(req)
 
     # Artifact methods
-    def create_artifact(self, revision_kref: Kref, name: str, location: str) -> Artifact:
+    def create_artifact(
+        self,
+        revision_kref: Kref,
+        name: str,
+        location: str,
+        metadata: Optional[Dict[str, str]] = None,
+    ) -> Artifact:
         """Create a new artifact for a revision.
 
         Args:
             revision_kref: The kref of the parent revision.
             name: The name of the artifact.
             location: The storage location of the artifact.
+            metadata: Optional key-value metadata for the artifact.
 
         Returns:
             The created Artifact object.
         """
-        req = CreateArtifactRequest(revision_kref=revision_kref.to_pb(), name=name, location=location)
+        req = CreateArtifactRequest(
+            revision_kref=revision_kref.to_pb(),
+            name=name,
+            location=location,
+            metadata=metadata or {},
+        )
         resp = self.stub.CreateArtifact(req)
         return Artifact(resp, self)
 

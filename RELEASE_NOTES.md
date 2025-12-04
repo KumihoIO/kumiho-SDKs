@@ -1,6 +1,32 @@
 # Kumiho Python SDK - Release Notes
 
-## kumiho 0.4.2 (December 2024) - Item Properties & Kref Improvements 🎯
+## kumiho 0.4.3 (December 2025) - Stability & Performance 🚀
+
+### ✨ New Features
+
+- **Improved Connection Handling**: Better retry logic for transient network failures
+- **Enhanced Error Messages**: More descriptive error messages for common failure scenarios
+
+### 🐛 Bug Fixes
+
+- Fixed race condition in concurrent revision creation
+- Fixed memory leak in long-running sessions with many graph traversals
+- Fixed edge case where `get_space()` returned incorrect path for root-level items
+
+### 🔧 Improvements
+
+- Reduced gRPC connection overhead by reusing channels
+- Optimized batch operations for large artifact lists
+- Improved type hints coverage across all public APIs
+
+### 📦 Dependencies
+
+- Updated `grpcio` to 1.60.0+
+- Updated `protobuf` to 4.25.0+
+
+---
+
+## kumiho 0.4.2 (December 2025) - Item Properties & Kref Improvements 🎯
 
 ### ✨ New Features
 
@@ -46,7 +72,7 @@ print(kref.get_space())    # "assets/textures" (previously: "my-project/assets/t
 
 ---
 
-## kumiho 0.4.1 (December 2024) - Tenant Info & Bug Fixes 🔧
+## kumiho 0.4.1 (December 2025) - Tenant Info & Bug Fixes 🔧
 
 ### ✨ New Features
 
@@ -286,7 +312,7 @@ Apache License 2.0
 
 ## Previous Releases
 
-### v0.3.0 (November 2024)
+### v0.3.0 (November 2025)
 
 - Initial development release
 - Integrated authentication CLI

@@ -242,7 +242,13 @@ class Item(KumihoObject):
             >>> space = item.get_space()
             >>> print(space.path)  # "/project/chars"
         """
-        space_path = f"/{self.kref.get_space()}"
+        space_segment = self.kref.get_space()
+        if space_segment:
+            # Item is in a nested space: kref://project/space/item.kind
+            space_path = f"/{self.kref.get_project()}/{space_segment}"
+        else:
+            # Item is in project root space: kref://project/item.kind
+            space_path = f"/{self.kref.get_project()}"
         return self._client.get_space(space_path)
 
     def get_project(self) -> 'Project':

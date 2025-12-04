@@ -166,7 +166,12 @@ class Revision(KumihoObject):
         """Return a string representation of the Revision."""
         return f"<Revision number='{self.number}' kref='{self.kref.uri}'>"
 
-    def create_artifact(self, name: str, location: str) -> Artifact:
+    def create_artifact(
+        self,
+        name: str,
+        location: str,
+        metadata: Optional[Dict[str, str]] = None,
+    ) -> Artifact:
         """Create a new artifact for this revision.
 
         Artifacts are file references that point to actual assets on disk
@@ -176,15 +181,17 @@ class Revision(KumihoObject):
         Args:
             name: The name of the artifact (e.g., "mesh", "textures", "rig").
             location: The file path or URI where the artifact is stored.
+            metadata: Optional key-value metadata for the artifact.
 
         Returns:
             Artifact: The newly created Artifact object.
 
         Example:
             >>> mesh = revision.create_artifact("mesh", "/assets/hero.fbx")
-            >>> textures = revision.create_artifact("textures", "smb://server/tex/hero.zip")
+            >>> textures = revision.create_artifact("textures", "smb://server/tex/hero.zip",
+            ...     metadata={"format": "png", "resolution": "4k"})
         """
-        return self._client.create_artifact(self.kref, name, location)
+        return self._client.create_artifact(self.kref, name, location, metadata=metadata)
 
     def set_metadata(self, metadata: Dict[str, str]) -> 'Revision':
         """Set or update metadata for this revision.
@@ -399,7 +406,13 @@ class Revision(KumihoObject):
             >>> space = revision.get_space()
             >>> print(space.path)
         """
-        space_path = f"/{self.item_kref.get_space()}"
+        space_segment = self.item_kref.get_space()
+        if space_segment:
+            # Item is in a nested space: kref://project/space/item.kind
+            space_path = f"/{self.item_kref.get_project()}/{space_segment}"
+        else:
+            # Item is in project root space: kref://project/item.kind
+            space_path = f"/{self.item_kref.get_project()}"
         return self._client.get_space(space_path)
 
     def get_project(self) -> 'Project':
