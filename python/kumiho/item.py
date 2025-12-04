@@ -57,6 +57,8 @@ class Item(KumihoObject):
         name (str): The full name including kind (e.g., "hero.model").
         item_name (str): The base name of the item (e.g., "hero").
         kind (str): The kind of item (e.g., "model", "texture").
+        project (str): The project name this item belongs to.
+        space (str): The space path this item belongs to.
         created_at (Optional[str]): ISO timestamp when the item was created.
         author (str): The user ID who created the item.
         metadata (Dict[str, str]): Custom metadata key-value pairs.
@@ -108,11 +110,43 @@ class Item(KumihoObject):
         self.author = pb_item.author
         self.metadata = dict(pb_item.metadata)
         self.deprecated = pb_item.deprecated
+        
+        # Extract project and space from kref for convenience
+        self._project = self.kref.get_project()
+        self._space = self.kref.get_space()
         self.username = pb_item.username
 
     def __repr__(self) -> str:
         """Return a string representation of the Item."""
         return f"<Item kref='{self.kref.uri}'>"
+
+    @property
+    def project(self) -> str:
+        """Get the project name this item belongs to.
+        
+        Returns:
+            str: The project name (e.g., "my-project").
+            
+        Example:
+            >>> item = kumiho.get_item("kref://my-project/models/hero.model")
+            >>> item.project
+            'my-project'
+        """
+        return self._project
+
+    @property
+    def space(self) -> str:
+        """Get the space path this item belongs to.
+        
+        Returns:
+            str: The space path (e.g., "models" or "models/characters").
+            
+        Example:
+            >>> item = kumiho.get_item("kref://my-project/models/hero.model")
+            >>> item.space
+            'models'
+        """
+        return self._space
 
     def create_revision(
         self,
