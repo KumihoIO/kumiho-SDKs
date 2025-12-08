@@ -64,6 +64,7 @@ std::filesystem::path getCredentialsPath();
  * 3. Control plane token from credentials file
  *
  * @return The bearer token, or nullopt if no token is available.
+ * @throws ValidationError if a token is found but has invalid JWT format.
  */
 std::optional<std::string> loadBearerToken();
 
@@ -75,8 +76,22 @@ std::optional<std::string> loadBearerToken();
  * 2. id_token field from credentials file
  *
  * @return The Firebase ID token, or nullopt if not available.
+ * @throws ValidationError if a token is found but has invalid JWT format.
  */
 std::optional<std::string> loadFirebaseToken();
+
+/**
+ * @brief Validate that a token has valid JWT structure.
+ *
+ * Checks that the token has exactly 3 non-empty parts separated by dots.
+ * This catches common errors like using API keys instead of JWTs.
+ *
+ * @param token The token string to validate.
+ * @param source Description of the token source (for error messages).
+ * @return The validated token string.
+ * @throws ValidationError if the token format is invalid.
+ */
+std::string validateTokenFormat(const std::string& token, const std::string& source = "token");
 
 /**
  * @brief Check if a JWT token is a control-plane token.

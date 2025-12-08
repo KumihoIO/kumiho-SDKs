@@ -154,7 +154,12 @@ void Item::deleteItem(bool force) {
 }
 
 std::shared_ptr<Space> Item::getSpace() {
-    std::string space_path = "/" + getKref().getSpace();
+    std::string project = getKref().getProject();
+    std::string space = getKref().getSpace();
+    std::string space_path = "/" + project;
+    if (!space.empty()) {
+        space_path += "/" + space;
+    }
     return client_->getSpace(space_path);
 }
 

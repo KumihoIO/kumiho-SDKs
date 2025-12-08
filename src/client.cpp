@@ -29,6 +29,9 @@
 #include <cctype>
 #include <cstdlib>
 #include <algorithm>
+#include <chrono>
+#include <random>
+#include <iomanip>
 
 namespace kumiho {
 namespace api {
@@ -137,6 +140,24 @@ std::string ReadFileContents(const char* path) {
     return buffer.str();
 }
 
+/// Generate a unique correlation ID for end-to-end request tracing.
+/// Format: kumiho-<hex timestamp><random suffix>
+std::string generateCorrelationId() {
+    auto now = std::chrono::system_clock::now();
+    auto epoch = now.time_since_epoch();
+    auto millis = std::chrono::duration_cast<std::chrono::milliseconds>(epoch).count();
+    
+    // Generate random suffix
+    static std::random_device rd;
+    static std::mt19937 gen(rd());
+    std::uniform_int_distribution<> dis(0, 0xFFFF);
+    int random_suffix = dis(gen);
+    
+    std::stringstream ss;
+    ss << "kumiho-" << std::hex << millis << std::setfill('0') << std::setw(4) << random_suffix;
+    return ss.str();
+}
+
 }  // namespace
 
 // --- Client Implementation ---
@@ -153,6 +174,9 @@ void Client::setAuthToken(const std::string& token) {
 }
 
 void Client::configureContext(grpc::ClientContext& context) const {
+    // Add correlation ID for end-to-end tracing
+    context.AddMetadata("x-correlation-id", generateCorrelationId());
+    
     if (!auth_token_.empty()) {
         context.AddMetadata("authorization", "Bearer " + auth_token_);
     }
@@ -175,6 +199,24 @@ std::shared_ptr<Client> Client::createFromEnv() {
     const char* authority_override = std::getenv("KUMIHO_SERVER_AUTHORITY");
     if (authority_override && *authority_override != '\0') {
         config.authority = authority_override;
+    }
+
+    // Security: Warn if connecting to non-localhost without TLS
+    bool isLocalhost = (config.authority == "localhost" || 
+                        config.authority == "127.0.0.1" ||
+                        config.authority == "::1");
+    const char* require_tls_env = std::getenv("KUMIHO_REQUIRE_TLS");
+    bool requireTls = ParseFlag(require_tls_env);
+    
+    if (!isLocalhost && !config.use_tls) {
+        if (requireTls) {
+            throw ValidationError(
+                "TLS is required but connecting to " + config.authority + 
+                " without TLS. Set KUMIHO_SERVER_USE_TLS=true or use https://.");
+        }
+        std::cerr << "Warning: Connecting to " << config.authority 
+                  << " without TLS. Credentials may be transmitted in plaintext. "
+                  << "Set KUMIHO_SERVER_USE_TLS=true for production." << std::endl;
     }
 
     grpc::ChannelArguments args;

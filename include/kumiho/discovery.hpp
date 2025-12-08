@@ -101,18 +101,22 @@ struct DiscoveryRecord {
 };
 
 /**
- * @brief JSON file cache for discovery records.
+ * @brief Encrypted JSON file cache for discovery records.
  *
- * Stores discovery records in a JSON file, keyed by tenant hint.
+ * Stores discovery records in an encrypted JSON file, keyed by tenant hint.
  * The default location is ~/.kumiho/discovery-cache.json.
+ * 
+ * Cache data is encrypted at rest using a machine-specific key derived from
+ * hardware identifiers, providing defense-in-depth protection for tenant metadata.
  */
 class DiscoveryCache {
 public:
     /**
      * @brief Construct a cache with the default or specified path.
      * @param path Optional path to the cache file.
+     * @param encrypt Whether to encrypt cache data (default: true).
      */
-    explicit DiscoveryCache(const std::filesystem::path& path = {});
+    explicit DiscoveryCache(const std::filesystem::path& path = {}, bool encrypt = true);
 
     /**
      * @brief Load a cached discovery record.
@@ -136,8 +140,29 @@ public:
 
 private:
     std::filesystem::path path_;
+    bool encrypt_;
     
     std::map<std::string, std::map<std::string, std::string>> readAll();
+    
+    /**
+     * @brief Encrypt cache content for storage.
+     * @param plaintext The JSON content to encrypt.
+     * @return The encrypted content with "enc:v1:" prefix.
+     */
+    std::string encryptContent(const std::string& plaintext);
+    
+    /**
+     * @brief Decrypt cache content from storage.
+     * @param encrypted The encrypted content.
+     * @return The decrypted JSON, or empty string if decryption fails.
+     */
+    std::string decryptContent(const std::string& encrypted);
+    
+    /**
+     * @brief Get machine-specific encryption key.
+     * @return 32-byte key derived from machine ID.
+     */
+    std::vector<uint8_t> deriveKey();
 };
 
 /**

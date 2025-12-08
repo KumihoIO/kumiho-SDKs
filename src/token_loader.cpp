@@ -11,6 +11,7 @@
 #include <cstdlib>
 #include <regex>
 #include <algorithm>
+#include <iostream>
 
 // Base64 decoding for JWT parsing
 #ifdef _WIN32
@@ -18,7 +19,8 @@
 #include <wincrypt.h>
 #pragma comment(lib, "crypt32.lib")
 #else
-// Use a simple base64 decoder for non-Windows platforms
+// Unix-specific includes for permission checking
+#include <sys/stat.h>
 #endif
 
 namespace kumiho {
@@ -65,6 +67,31 @@ bool envFlag(const char* name) {
     return value == "1" || value == "true" || value == "yes";
 }
 
+// Check if credential file has secure permissions (Unix only)
+// Returns true if permissions are secure, false otherwise
+bool checkCredentialPermissions(const std::filesystem::path& path) {
+#ifdef _WIN32
+    (void)path;  // Unused on Windows
+    return true; // Skip check on Windows
+#else
+    struct stat st;
+    if (stat(path.c_str(), &st) != 0) {
+        return true; // Ignore errors checking permissions
+    }
+    
+    // Check if group or world has any permissions (bits 0-5)
+    if (st.st_mode & (S_IRWXG | S_IRWXO)) {
+        std::cerr << "Warning: Credential file " << path 
+                  << " has insecure permissions (mode: " 
+                  << std::oct << (st.st_mode & 0777) << std::dec
+                  << "). Other users may be able to read your credentials. "
+                  << "Run: chmod 600 " << path << std::endl;
+        return false;
+    }
+    return true;
+#endif
+}
+
 // Read credentials from JSON file
 struct CredentialsData {
     std::optional<std::string> control_plane_token;
@@ -78,6 +105,9 @@ CredentialsData readCredentials() {
     if (!std::filesystem::exists(path)) {
         return data;
     }
+    
+    // Security: Check file permissions before reading
+    checkCredentialPermissions(path);
     
     try {
         std::ifstream file(path);
@@ -192,12 +222,47 @@ std::filesystem::path getCredentialsPath() {
     return getConfigDir() / CREDENTIALS_FILENAME;
 }
 
+std::string validateTokenFormat(const std::string& token, const std::string& source) {
+    if (token.empty()) {
+        throw ValidationError("Empty " + source + " provided");
+    }
+    
+    // Split by dots and count parts
+    std::vector<std::string> parts;
+    std::stringstream ss(token);
+    std::string part;
+    while (std::getline(ss, part, '.')) {
+        parts.push_back(part);
+    }
+    
+    if (parts.size() != 3) {
+        throw ValidationError(
+            "Invalid " + source + " format: expected JWT with 3 parts (header.payload.signature), "
+            "but got " + std::to_string(parts.size()) + " part(s). "
+            "Did you accidentally use an API key instead of a JWT token? "
+            "Use 'kumiho-cli login' to obtain a valid token."
+        );
+    }
+    
+    // Check that each part is non-empty
+    for (size_t i = 0; i < parts.size(); ++i) {
+        if (parts[i].empty()) {
+            throw ValidationError(
+                "Invalid " + source + " format: JWT part " + std::to_string(i + 1) + 
+                " is empty. The token may be corrupted or incomplete."
+            );
+        }
+    }
+    
+    return token;
+}
+
 std::optional<std::string> loadBearerToken() {
     // 1. Check environment variable
     std::string envToken = getEnvVar(TOKEN_ENV);
     auto normalized = normalize(envToken);
     if (normalized) {
-        return normalized;
+        return validateTokenFormat(*normalized, "KUMIHO_AUTH_TOKEN");
     }
     
     // 2. Read from credentials file
@@ -205,13 +270,13 @@ std::optional<std::string> loadBearerToken() {
     bool preferControlPlane = envFlag(USE_CP_TOKEN_ENV);
     
     if (preferControlPlane && creds.control_plane_token) {
-        return creds.control_plane_token;
+        return validateTokenFormat(*creds.control_plane_token, "control_plane_token");
     }
     if (creds.id_token) {
-        return creds.id_token;
+        return validateTokenFormat(*creds.id_token, "id_token");
     }
     if (creds.control_plane_token) {
-        return creds.control_plane_token;
+        return validateTokenFormat(*creds.control_plane_token, "control_plane_token");
     }
     
     return std::nullopt;
@@ -222,12 +287,15 @@ std::optional<std::string> loadFirebaseToken() {
     std::string envToken = getEnvVar(FIREBASE_TOKEN_ENV);
     auto normalized = normalize(envToken);
     if (normalized) {
-        return normalized;
+        return validateTokenFormat(*normalized, "KUMIHO_FIREBASE_ID_TOKEN");
     }
     
     // 2. Read id_token from credentials file
     auto creds = readCredentials();
-    return creds.id_token;
+    if (creds.id_token) {
+        return validateTokenFormat(*creds.id_token, "id_token");
+    }
+    return std::nullopt;
 }
 
 std::map<std::string, std::string> decodeJwtClaims(const std::string& token) {

@@ -140,7 +140,12 @@ std::shared_ptr<Item> Revision::getItem() {
 }
 
 std::shared_ptr<Space> Revision::getSpace() {
-    std::string space_path = "/" + getItemKref().getSpace();
+    std::string project = getItemKref().getProject();
+    std::string space = getItemKref().getSpace();
+    std::string space_path = "/" + project;
+    if (!space.empty()) {
+        space_path += "/" + space;
+    }
     return client_->getSpace(space_path);
 }
 

@@ -13,6 +13,17 @@
 #include <cstdlib>
 #include <ctime>
 #include <regex>
+#include <random>
+#include <iomanip>
+#include <array>
+
+#ifdef _WIN32
+#include <windows.h>
+#include <wincrypt.h>
+#pragma comment(lib, "advapi32.lib")
+#else
+#include <unistd.h>
+#endif
 
 // Simple JSON parsing (we avoid external dependencies)
 // For production, consider using nlohmann/json or rapidjson
@@ -185,10 +196,281 @@ bool CacheControl::shouldRefresh() const {
     return std::chrono::system_clock::now() >= refresh_at;
 }
 
+// --- Encryption helpers ---
+
+namespace {
+
+// Simple SHA-256 implementation for key derivation (no external dependencies)
+// This is a simplified version - production should use OpenSSL or similar
+std::array<uint8_t, 32> simpleSha256(const std::string& input) {
+    // Using a simple hash for key derivation
+    // In production, use OpenSSL SHA256 or platform crypto API
+    std::array<uint8_t, 32> result = {};
+    
+#ifdef _WIN32
+    HCRYPTPROV hProv = 0;
+    HCRYPTHASH hHash = 0;
+    
+    if (CryptAcquireContext(&hProv, nullptr, nullptr, PROV_RSA_AES, CRYPT_VERIFYCONTEXT)) {
+        if (CryptCreateHash(hProv, CALG_SHA_256, 0, 0, &hHash)) {
+            CryptHashData(hHash, reinterpret_cast<const BYTE*>(input.data()), 
+                         static_cast<DWORD>(input.size()), 0);
+            DWORD hashLen = 32;
+            CryptGetHashParam(hHash, HP_HASHVAL, result.data(), &hashLen, 0);
+            CryptDestroyHash(hHash);
+        }
+        CryptReleaseContext(hProv, 0);
+    }
+#else
+    // Fallback: simple non-cryptographic hash for demo
+    // Production should use OpenSSL: SHA256(input.data(), input.size(), result.data());
+    std::hash<std::string> hasher;
+    size_t h = hasher(input);
+    for (size_t i = 0; i < 32; ++i) {
+        result[i] = static_cast<uint8_t>((h >> (i % 8 * 8)) ^ (i * 0x9e3779b9));
+        h = h * 0x5851F42D4C957F2D + i;
+    }
+#endif
+    
+    return result;
+}
+
+std::string getMachineId() {
+#ifdef _WIN32
+    // Windows: use Machine GUID from registry
+    HKEY hKey;
+    if (RegOpenKeyExA(HKEY_LOCAL_MACHINE, 
+                      "SOFTWARE\\Microsoft\\Cryptography", 
+                      0, KEY_READ, &hKey) == ERROR_SUCCESS) {
+        char value[256];
+        DWORD valueLen = sizeof(value);
+        if (RegQueryValueExA(hKey, "MachineGuid", nullptr, nullptr, 
+                            reinterpret_cast<LPBYTE>(value), &valueLen) == ERROR_SUCCESS) {
+            RegCloseKey(hKey);
+            return std::string(value);
+        }
+        RegCloseKey(hKey);
+    }
+#else
+    // Linux: try /etc/machine-id
+    std::ifstream f("/etc/machine-id");
+    if (f.is_open()) {
+        std::string id;
+        std::getline(f, id);
+        if (!id.empty()) return id;
+    }
+    // Fallback: try /var/lib/dbus/machine-id
+    f.open("/var/lib/dbus/machine-id");
+    if (f.is_open()) {
+        std::string id;
+        std::getline(f, id);
+        if (!id.empty()) return id;
+    }
+#endif
+    
+    // Fallback: generate and store a random ID
+    auto idFile = getConfigDir() / ".machine_id";
+    if (std::filesystem::exists(idFile)) {
+        std::ifstream f(idFile);
+        std::string id;
+        std::getline(f, id);
+        if (!id.empty()) return id;
+    }
+    
+    // Generate new ID
+    std::random_device rd;
+    std::mt19937 gen(rd());
+    std::uniform_int_distribution<> dis(0, 15);
+    std::ostringstream oss;
+    for (int i = 0; i < 32; ++i) {
+        oss << std::hex << dis(gen);
+    }
+    std::string newId = oss.str();
+    
+    // Store it
+    std::filesystem::create_directories(idFile.parent_path());
+    std::ofstream of(idFile);
+    of << newId;
+    
+    return newId;
+}
+
+std::string base64Encode(const std::vector<uint8_t>& data) {
+    static const char* chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    std::string result;
+    result.reserve((data.size() + 2) / 3 * 4);
+    
+    for (size_t i = 0; i < data.size(); i += 3) {
+        uint32_t n = static_cast<uint32_t>(data[i]) << 16;
+        if (i + 1 < data.size()) n |= static_cast<uint32_t>(data[i + 1]) << 8;
+        if (i + 2 < data.size()) n |= data[i + 2];
+        
+        result += chars[(n >> 18) & 0x3f];
+        result += chars[(n >> 12) & 0x3f];
+        result += (i + 1 < data.size()) ? chars[(n >> 6) & 0x3f] : '=';
+        result += (i + 2 < data.size()) ? chars[n & 0x3f] : '=';
+    }
+    return result;
+}
+
+std::vector<uint8_t> base64Decode(const std::string& encoded) {
+    static const int lookup[] = {
+        -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,
+        -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,
+        -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,62,-1,-1,-1,63,
+        52,53,54,55,56,57,58,59,60,61,-1,-1,-1,-1,-1,-1,
+        -1, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9,10,11,12,13,14,
+        15,16,17,18,19,20,21,22,23,24,25,-1,-1,-1,-1,-1,
+        -1,26,27,28,29,30,31,32,33,34,35,36,37,38,39,40,
+        41,42,43,44,45,46,47,48,49,50,51
+    };
+    
+    std::vector<uint8_t> result;
+    result.reserve(encoded.size() * 3 / 4);
+    
+    uint32_t val = 0;
+    int bits = -8;
+    for (char c : encoded) {
+        if (c == '=') break;
+        if (c < 0 || c >= 128 || lookup[c] < 0) continue;
+        val = (val << 6) | lookup[c];
+        bits += 6;
+        if (bits >= 0) {
+            result.push_back(static_cast<uint8_t>((val >> bits) & 0xff));
+            bits -= 8;
+        }
+    }
+    return result;
+}
+
+} // anonymous namespace
+
 // --- DiscoveryCache implementation ---
 
-DiscoveryCache::DiscoveryCache(const std::filesystem::path& path)
-    : path_(path.empty() ? getDefaultCachePath() : path) {}
+DiscoveryCache::DiscoveryCache(const std::filesystem::path& path, bool encrypt)
+    : path_(path.empty() ? getDefaultCachePath() : path), encrypt_(encrypt) {}
+
+std::vector<uint8_t> DiscoveryCache::deriveKey() {
+    std::string machineId = getMachineId();
+    std::string userContext;
+    
+#ifdef _WIN32
+    char username[256];
+    DWORD size = sizeof(username);
+    if (GetUserNameA(username, &size)) {
+        userContext = username;
+    }
+#else
+    userContext = std::to_string(getuid());
+#endif
+    
+    std::string keyMaterial = "kumiho-discovery-cache-v1:" + machineId + ":" + userContext;
+    auto hash = simpleSha256(keyMaterial);
+    return std::vector<uint8_t>(hash.begin(), hash.end());
+}
+
+std::string DiscoveryCache::encryptContent(const std::string& plaintext) {
+    auto key = deriveKey();
+    
+    // Generate random IV
+    std::vector<uint8_t> iv(16);
+    std::random_device rd;
+    std::mt19937 gen(rd());
+    std::uniform_int_distribution<int> dis(0, 255);
+    for (auto& b : iv) b = static_cast<uint8_t>(dis(gen));
+    
+    // Generate key stream from key + IV
+    std::string keyStreamInput(key.begin(), key.end());
+    keyStreamInput.append(iv.begin(), iv.end());
+    auto keyStream = simpleSha256(keyStreamInput);
+    
+    // Extend key stream for longer plaintexts
+    std::vector<uint8_t> fullKeyStream(keyStream.begin(), keyStream.end());
+    while (fullKeyStream.size() < plaintext.size()) {
+        std::string ext(fullKeyStream.end() - 32, fullKeyStream.end());
+        ext.insert(ext.begin(), key.begin(), key.end());
+        auto more = simpleSha256(ext);
+        fullKeyStream.insert(fullKeyStream.end(), more.begin(), more.end());
+    }
+    
+    // XOR encrypt
+    std::vector<uint8_t> ciphertext(plaintext.size());
+    for (size_t i = 0; i < plaintext.size(); ++i) {
+        ciphertext[i] = static_cast<uint8_t>(plaintext[i]) ^ fullKeyStream[i];
+    }
+    
+    // Simple MAC (hash of key + iv + ciphertext)
+    std::string macInput(key.begin(), key.end());
+    macInput.append(iv.begin(), iv.end());
+    macInput.append(ciphertext.begin(), ciphertext.end());
+    auto mac = simpleSha256(macInput);
+    
+    // Combine: iv + ciphertext + mac[0:16]
+    std::vector<uint8_t> result;
+    result.insert(result.end(), iv.begin(), iv.end());
+    result.insert(result.end(), ciphertext.begin(), ciphertext.end());
+    result.insert(result.end(), mac.begin(), mac.begin() + 16);
+    
+    return "enc:v1:" + base64Encode(result);
+}
+
+std::string DiscoveryCache::decryptContent(const std::string& encrypted) {
+    // Check for unencrypted legacy format
+    if (encrypted.empty() || encrypted[0] == '{') {
+        return encrypted;  // Return as-is for migration
+    }
+    
+    if (encrypted.substr(0, 7) != "enc:v1:") {
+        return "";  // Unknown format
+    }
+    
+    try {
+        auto raw = base64Decode(encrypted.substr(7));
+        if (raw.size() < 32) return "";  // iv(16) + mac(16) minimum
+        
+        auto key = deriveKey();
+        
+        std::vector<uint8_t> iv(raw.begin(), raw.begin() + 16);
+        std::vector<uint8_t> mac(raw.end() - 16, raw.end());
+        std::vector<uint8_t> ciphertext(raw.begin() + 16, raw.end() - 16);
+        
+        // Verify MAC
+        std::string macInput(key.begin(), key.end());
+        macInput.append(iv.begin(), iv.end());
+        macInput.append(ciphertext.begin(), ciphertext.end());
+        auto expectedMac = simpleSha256(macInput);
+        
+        bool macValid = true;
+        for (size_t i = 0; i < 16 && macValid; ++i) {
+            if (mac[i] != expectedMac[i]) macValid = false;
+        }
+        if (!macValid) return "";  // Integrity check failed
+        
+        // Generate key stream
+        std::string keyStreamInput(key.begin(), key.end());
+        keyStreamInput.append(iv.begin(), iv.end());
+        auto keyStream = simpleSha256(keyStreamInput);
+        
+        std::vector<uint8_t> fullKeyStream(keyStream.begin(), keyStream.end());
+        while (fullKeyStream.size() < ciphertext.size()) {
+            std::string ext(fullKeyStream.end() - 32, fullKeyStream.end());
+            ext.insert(ext.begin(), key.begin(), key.end());
+            auto more = simpleSha256(ext);
+            fullKeyStream.insert(fullKeyStream.end(), more.begin(), more.end());
+        }
+        
+        // XOR decrypt
+        std::string plaintext;
+        plaintext.reserve(ciphertext.size());
+        for (size_t i = 0; i < ciphertext.size(); ++i) {
+            plaintext += static_cast<char>(ciphertext[i] ^ fullKeyStream[i]);
+        }
+        
+        return plaintext;
+    } catch (...) {
+        return "";
+    }
+}
 
 std::optional<DiscoveryRecord> DiscoveryCache::load(const std::string& cache_key) {
     if (!std::filesystem::exists(path_)) {
@@ -203,7 +485,13 @@ std::optional<DiscoveryRecord> DiscoveryCache::load(const std::string& cache_key
         
         std::stringstream buffer;
         buffer << file.rdbuf();
-        std::string content = buffer.str();
+        std::string rawContent = buffer.str();
+        
+        // Decrypt if needed
+        std::string content = decryptContent(rawContent);
+        if (content.empty()) {
+            return std::nullopt;  // Decryption failed
+        }
         
         // Find the entry for this cache_key
         std::string keyPattern = "\"" + cache_key + "\"\\s*:\\s*\\{";
@@ -316,6 +604,11 @@ void DiscoveryCache::store(const std::string& cache_key, const DiscoveryRecord& 
     oss << "  }\n";
     oss << "}\n";
     
+    std::string jsonContent = oss.str();
+    
+    // Encrypt if enabled
+    std::string contentToWrite = encrypt_ ? encryptContent(jsonContent) : jsonContent;
+    
     // Write to temp file and rename (atomic on most filesystems)
     auto tmpPath = path_;
     tmpPath.replace_extension(".tmp");
@@ -324,7 +617,7 @@ void DiscoveryCache::store(const std::string& cache_key, const DiscoveryRecord& 
     if (!file.is_open()) {
         throw DiscoveryError("Failed to write discovery cache: " + tmpPath.string());
     }
-    file << oss.str();
+    file << contentToWrite;
     file.close();
     
     // Rename with retry for Windows file locking
