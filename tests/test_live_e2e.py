@@ -56,15 +56,13 @@ def test_create_space_without_project_fails(live_client):
     orphan_space_name = _unique("orphan_space")
     
     # Attempt to create a space without creating a project first
-    # This should fail with an internal error or similar because the project doesn't exist
+    # This should fail because the project doesn't exist
     with pytest.raises(grpc.RpcError) as e:
         live_client.create_space(parent_path="/", space_name=orphan_space_name)
     
-    # The server returns Status::internal("Failed to create or retrieve space")
-    # or potentially a more specific error if I updated the server to return one.
-    # Based on current implementation, it returns internal error.
-    assert e.value.code() == grpc.StatusCode.INTERNAL
-    assert "Failed to create or retrieve space" in e.value.details()
+    # The server returns FAILED_PRECONDITION with a helpful error message
+    assert e.value.code() == grpc.StatusCode.FAILED_PRECONDITION
+    assert "No project found" in e.value.details()
 
 
 def test_node_limit_enforcement(live_client):

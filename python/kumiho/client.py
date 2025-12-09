@@ -282,7 +282,8 @@ class _Client:
         if resolved_token:
             metadata.append(("authorization", f"Bearer {resolved_token}"))
 
-        # Apply interceptors in order: auto-login first, then metadata injection
+        # Apply interceptors in order: correlation ID, auto-login, then metadata injection
+        channel = grpc.intercept_channel(channel, _CorrelationIdInterceptor())
         if enable_auto_login:
             channel = grpc.intercept_channel(channel, _AutoLoginInterceptor())
         if metadata:
@@ -393,6 +394,24 @@ class _Client:
         authority = host
         address = f"{host}:{port}"
         use_tls = scheme in {"https", "grpcs"} or port == 443
+        
+        # Security: Warn if connecting to non-localhost without TLS
+        is_localhost = host.lower() in {"localhost", "127.0.0.1", "::1"}
+        require_tls = os.getenv("KUMIHO_REQUIRE_TLS", "").lower() in {"1", "true", "yes"}
+        if not is_localhost and not use_tls:
+            if require_tls:
+                raise ValueError(
+                    f"TLS is required but connecting to {host} without TLS. "
+                    f"Use https:// or set port 443."
+                )
+            import warnings
+            warnings.warn(
+                f"Connecting to {host} without TLS. Credentials may be transmitted "
+                f"in plaintext. Set KUMIHO_SERVER_USE_TLS=true or use https:// for production.",
+                UserWarning,
+                stacklevel=3,
+            )
+        
         return address, authority, use_tls
 
     @staticmethod
@@ -897,18 +916,30 @@ class _Client:
         self.stub.SetDefaultArtifact(req)
 
     # Artifact methods
-    def create_artifact(self, revision_kref: Kref, name: str, location: str) -> Artifact:
+    def create_artifact(
+        self,
+        revision_kref: Kref,
+        name: str,
+        location: str,
+        metadata: Optional[Dict[str, str]] = None,
+    ) -> Artifact:
         """Create a new artifact for a revision.
 
         Args:
             revision_kref: The kref of the parent revision.
             name: The name of the artifact.
             location: The storage location of the artifact.
+            metadata: Optional key-value metadata for the artifact.
 
         Returns:
             The created Artifact object.
         """
-        req = CreateArtifactRequest(revision_kref=revision_kref.to_pb(), name=name, location=location)
+        req = CreateArtifactRequest(
+            revision_kref=revision_kref.to_pb(),
+            name=name,
+            location=location,
+            metadata=metadata or {},
+        )
         resp = self.stub.CreateArtifact(req)
         return Artifact(resp, self)
 
@@ -1721,6 +1752,48 @@ class _MetadataInjector(
 
     def intercept_stream_stream(self, continuation, client_call_details, request_iterator):
         updated = _augment_call_details(client_call_details, self._metadata)
+        return continuation(updated, request_iterator)
+
+
+class _CorrelationIdInterceptor(
+    grpc.UnaryUnaryClientInterceptor,
+    grpc.UnaryStreamClientInterceptor,
+    grpc.StreamUnaryClientInterceptor,
+    grpc.StreamStreamClientInterceptor,
+):
+    """Client interceptor that generates a unique correlation ID per request.
+    
+    This enables end-to-end tracing across Control Plane and Data Plane.
+    The correlation ID is sent as the 'x-correlation-id' header.
+    """
+
+    @staticmethod
+    def _generate_correlation_id() -> str:
+        import uuid
+        return f"kumiho-{uuid.uuid4().hex[:16]}"
+
+    def _add_correlation_id(self, client_call_details):
+        correlation_id = self._generate_correlation_id()
+        _LOGGER.debug(f"Adding correlation ID: {correlation_id}")
+        return _augment_call_details(
+            client_call_details, 
+            [("x-correlation-id", correlation_id)]
+        )
+
+    def intercept_unary_unary(self, continuation, client_call_details, request):
+        updated = self._add_correlation_id(client_call_details)
+        return continuation(updated, request)
+
+    def intercept_unary_stream(self, continuation, client_call_details, request):
+        updated = self._add_correlation_id(client_call_details)
+        return continuation(updated, request)
+
+    def intercept_stream_unary(self, continuation, client_call_details, request_iterator):
+        updated = self._add_correlation_id(client_call_details)
+        return continuation(updated, request_iterator)
+
+    def intercept_stream_stream(self, continuation, client_call_details, request_iterator):
+        updated = self._add_correlation_id(client_call_details)
         return continuation(updated, request_iterator)
 
 

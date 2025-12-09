@@ -321,6 +321,270 @@ def cmd_refresh(args: argparse.Namespace) -> None:
     print("[kumiho-auth] Token refreshed.")
 
 
+def cmd_inspect(args: argparse.Namespace) -> None:
+    try:
+        import kumiho
+        from kumiho.kref import Kref
+    except ImportError:
+        print("Error: 'kumiho' package is required for inspect command. Please install it.")
+        return
+
+    # Configure client
+    try:
+        kumiho.auto_configure_from_discovery()
+    except Exception as e:
+        print(f"Warning: Auto-configuration failed: {e}")
+
+    target = args.target
+    
+    if target.startswith("kref://"):
+        try:
+            kref = Kref(target)
+            
+            if kref.get_artifact_name():
+                rev_kref_str = f"kref://{kref.get_path()}?r={kref.get_revision()}"
+                revision = kumiho.get_revision(rev_kref_str)
+                if not revision:
+                    print(f"Revision not found: {rev_kref_str}")
+                    return
+                
+                artifact = None
+                for art in revision.get_artifacts():
+                    if art.name == kref.get_artifact_name():
+                        artifact = art
+                        break
+                
+                if artifact:
+                    print(f"Type: Artifact")
+                    print(f"Kref: {target}")
+                    print(f"Name: {artifact.name}")
+                    print(f"Location: {artifact.location}")
+                    print(f"Metadata: {artifact.metadata}")
+                    print(f"Node Object: {artifact}")
+                else:
+                    print(f"Artifact '{kref.get_artifact_name()}' not found in revision {rev_kref_str}")
+                return
+
+            if "?r=" in target or "&r=" in target:
+                revision = kumiho.get_revision(target)
+                if revision:
+                    print(f"Type: Revision")
+                    print(f"Kref: {revision.kref}")
+                    print(f"Metadata: {revision.metadata}")
+                    print(f"Node Object: {revision}")
+                else:
+                    print(f"Revision not found: {target}")
+                return
+
+            item = kumiho.get_item(target)
+            if item:
+                print(f"Type: Item")
+                print(f"Kref: {item.kref}")
+                print(f"Metadata: {item.metadata}")
+                print(f"Node Object: {item}")
+            else:
+                print(f"Item not found: {target}")
+
+        except Exception as e:
+            print(f"Error resolving kref: {e}")
+
+    else:
+        try:
+            artifacts = kumiho.get_artifacts_by_location(target)
+            if not artifacts:
+                print(f"No artifacts found for location: {target}")
+                return
+                
+            print(f"Found {len(artifacts)} artifacts:")
+            for art in artifacts:
+                print(f"- {art.name} (Revision: {art.revision.kref})")
+                print(f"  Metadata: {art.metadata}")
+        except Exception as e:
+            print(f"Error searching by location: {e}")
+
+
+def cmd_whoami(args: argparse.Namespace) -> None:
+    creds = _load_credentials()
+    if not creds:
+        print("Not logged in.")
+        return
+
+    print(f"Email: {creds.email}")
+    print(f"Project ID: {creds.project_id or '<not set>'}")
+    print(f"Expires At: {time.ctime(creds.expires_at)}")
+    print(f"Credentials Path: {_credentials_path()}")
+
+
+def cmd_config(args: argparse.Namespace) -> None:
+    print("Kumiho Configuration:")
+    print(f"  Config Dir: {_config_dir()}")
+    print(f"  Credentials Path: {_credentials_path()}")
+    print(f"  Workspace Root: {_default_repo_root()}")
+    
+    # Print relevant environment variables
+    env_vars = [
+        CONFIG_ENV, API_KEY_ENV, PROJECT_ENV, REPO_ROOT_ENV, 
+        ENV_FILE_ENV, TOKEN_GRACE_ENV, CONTROL_PLANE_API_ENV
+    ]
+    
+    print("\nEnvironment Variables:")
+    for var in env_vars:
+        val = os.getenv(var)
+        if val:
+            print(f"  {var}: {val}")
+        else:
+            print(f"  {var}: <not set>")
+
+
+def cmd_search(args: argparse.Namespace) -> None:
+    try:
+        import kumiho
+    except ImportError:
+        print("Error: 'kumiho' package is required. Please install it.")
+        return
+
+    try:
+        kumiho.auto_configure_from_discovery()
+    except Exception as e:
+        print(f"Warning: Auto-configuration failed: {e}")
+
+    try:
+        results = kumiho.item_search(
+            context_filter=args.project,
+            kind_filter=args.kind,
+            name_filter=args.name
+        )
+        
+        if not results:
+            print("No items found.")
+            return
+
+        print(f"Found {len(results)} items:")
+        for item in results:
+            print(f"- {item.kref} (Type: {item.type})")
+            
+    except Exception as e:
+        print(f"Search failed: {e}")
+
+
+def cmd_tree(args: argparse.Namespace) -> None:
+    try:
+        import kumiho
+    except ImportError:
+        print("Error: 'kumiho' package is required. Please install it.")
+        return
+
+    try:
+        kumiho.auto_configure_from_discovery()
+    except Exception as e:
+        print(f"Warning: Auto-configuration failed: {e}")
+
+    target = args.target
+    
+    try:
+        if not target:
+            # List projects
+            projects = kumiho.get_projects()
+            print("Projects:")
+            for p in projects:
+                print(f"├── {p.name} ({p.project_id})")
+            return
+
+        # Check if target is a project
+        project = kumiho.get_project(target)
+        if project:
+            print(f"Project: {project.name}")
+            _print_space_tree(project.get_spaces(recursive=True))
+            return
+
+        # Check if target is a space (needs full path usually, but let's try)
+        # This part is tricky without a direct "get_space_by_path" that doesn't require project context
+        # Assuming target is like "project/space"
+        if "/" in target:
+            parts = target.split("/", 1)
+            proj_name = parts[0]
+            space_path = parts[1]
+            project = kumiho.get_project(proj_name)
+            if project:
+                space = project.get_space(space_path)
+                if space:
+                    print(f"Space: {space.path}")
+                    # We need a way to get children of a space. 
+                    # The SDK has get_spaces(recursive=True) on project, but maybe not on space?
+                    # Let's just list items in this space for now.
+                    items = space.get_items()
+                    for item in items:
+                        print(f"├── {item.name} ({item.type})")
+                    return
+
+        print(f"Target '{target}' not found or not supported for tree view.")
+
+    except Exception as e:
+        print(f"Tree failed: {e}")
+
+def _print_space_tree(spaces):
+    # Simple flat list print for now, could be improved to show hierarchy
+    for space in spaces:
+        indent = "  " * (space.path.count("/") - 1)
+        print(f"{indent}├── {space.name}/")
+
+
+def cmd_lineage(args: argparse.Namespace) -> None:
+    try:
+        import kumiho
+        from kumiho.kref import Kref
+    except ImportError:
+        print("Error: 'kumiho' package is required. Please install it.")
+        return
+
+    try:
+        kumiho.auto_configure_from_discovery()
+    except Exception as e:
+        print(f"Warning: Auto-configuration failed: {e}")
+
+    target = args.target
+    if not target.startswith("kref://"):
+        print("Error: Target must be a valid kref URI.")
+        return
+
+    try:
+        # Ensure we have a revision kref
+        if "?r=" not in target:
+             # If item kref, get latest revision
+             item = kumiho.get_item(target)
+             if not item:
+                 print(f"Item not found: {target}")
+                 return
+             # This is a bit of a guess, assuming we want the latest revision
+             # The SDK doesn't seem to have a direct "get_latest_revision" on item easily accessible here
+             # without listing all. Let's just ask the user for a revision or default to r=1 if not present?
+             # Or better, fetch the item and list revisions.
+             print("Please specify a revision (e.g. ?r=1) for lineage analysis.")
+             return
+
+        revision = kumiho.get_revision(target)
+        if not revision:
+            print(f"Revision not found: {target}")
+            return
+
+        print(f"Lineage for: {revision.kref}")
+        
+        if args.direction in ["upstream", "both"]:
+            print("\nUpstream Dependencies (Depends On):")
+            deps = revision.get_all_dependencies(max_depth=args.depth)
+            for kref in deps.revision_krefs:
+                print(f"  <- {kref}")
+
+        if args.direction in ["downstream", "both"]:
+            print("\nDownstream Dependents (Used By):")
+            deps = revision.get_all_dependents(max_depth=args.depth)
+            for kref in deps.revision_krefs:
+                print(f"  -> {kref}")
+
+    except Exception as e:
+        print(f"Lineage analysis failed: {e}")
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="KumihoClouds token helper")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -332,6 +596,33 @@ def build_parser() -> argparse.ArgumentParser:
 
     refresh = sub.add_parser("refresh", help="Refresh the cached KumihoClouds ID token using the stored refresh token")
     refresh.set_defaults(func=cmd_refresh)
+
+    inspect = sub.add_parser("inspect", help="Inspect a Kumiho object by Kref or file path")
+    inspect.add_argument("target", help="Kref URI or file path to inspect")
+    inspect.set_defaults(func=cmd_inspect)
+
+    whoami = sub.add_parser("whoami", help="Display current user and session info")
+    whoami.set_defaults(func=cmd_whoami)
+
+    config = sub.add_parser("config", help="Display configuration and environment variables")
+    config.set_defaults(func=cmd_config)
+
+    search = sub.add_parser("search", help="Search for items")
+    search.add_argument("--project", help="Filter by project name")
+    search.add_argument("--kind", help="Filter by item kind")
+    search.add_argument("name", nargs="?", help="Filter by item name (wildcards supported)")
+    search.set_defaults(func=cmd_search)
+
+    tree = sub.add_parser("tree", help="Visualize project or space hierarchy")
+    tree.add_argument("target", nargs="?", help="Project name or space path (optional)")
+    tree.set_defaults(func=cmd_tree)
+
+    lineage = sub.add_parser("lineage", help="Analyze revision lineage")
+    lineage.add_argument("target", help="Kref URI of the revision")
+    lineage.add_argument("--depth", type=int, default=5, help="Traversal depth (default: 5)")
+    lineage.add_argument("--direction", choices=["upstream", "downstream", "both"], default="both", help="Direction of analysis")
+    lineage.set_defaults(func=cmd_lineage)
+
     return parser
 
 

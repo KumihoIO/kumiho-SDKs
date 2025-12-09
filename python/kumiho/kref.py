@@ -255,22 +255,47 @@ class Kref(str):
             return self
         return self.split("://", 1)[1].split("?", 1)[0]
 
-    def get_space(self) -> str:
-        """Extract the space path from the URI.
+    def get_project(self) -> str:
+        """Extract the project name from the URI.
 
-        Returns the path up to but not including the item name.
+        Returns the first path component (project name).
 
         Returns:
-            str: The space path (e.g., "project/models").
+            str: The project name (e.g., "my-project").
 
         Example:
-            >>> Kref("kref://project/models/hero.model").get_space()
-            'project/models'
+            >>> Kref("kref://my-project/models/hero.model").get_project()
+            'my-project'
         """
         path = self.get_path()
         if "/" not in path:
             return path
-        return path.rsplit("/", 1)[0]
+        return path.split("/", 1)[0]
+
+    def get_space(self) -> str:
+        """Extract the space path from the URI (without project).
+
+        Returns the path between project and item name.
+
+        Returns:
+            str: The space path (e.g., "models" or "models/characters").
+
+        Example:
+            >>> Kref("kref://project/models/hero.model").get_space()
+            'models'
+            >>> Kref("kref://project/models/characters/hero.model").get_space()
+            'models/characters'
+        """
+        path = self.get_path()
+        if "/" not in path:
+            return ""
+        # Remove project (first segment) and item (last segment)
+        parts = path.split("/")
+        if len(parts) <= 2:
+            # Only project/item.kind - no space
+            return ""
+        # Return everything between project and item
+        return "/".join(parts[1:-1])
 
     def get_item_name(self) -> str:
         """Extract the item name with kind from the URI.

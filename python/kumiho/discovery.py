@@ -4,8 +4,13 @@ from __future__ import annotations
 
 import base64
 import binascii
+import hashlib
+import hmac
 import json
 import os
+import platform
+import secrets
+import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -134,11 +139,138 @@ class DiscoveryRecord:
         }
 
 
-class DiscoveryCache:
-    """Simple JSON file cache keyed by tenant hint."""
+def _get_machine_id() -> str:
+    """Get a stable machine identifier for deriving encryption keys.
+    
+    This provides defense-in-depth by making cache files non-portable
+    between machines. Falls back to a random ID stored in config dir.
+    """
+    # Try platform-specific methods
+    try:
+        if platform.system() == "Linux":
+            # Linux: use machine-id
+            for path in ["/etc/machine-id", "/var/lib/dbus/machine-id"]:
+                if os.path.exists(path):
+                    with open(path, "r") as f:
+                        return f.read().strip()
+        elif platform.system() == "Darwin":
+            # macOS: use hardware UUID
+            import subprocess
+            result = subprocess.run(
+                ["ioreg", "-rd1", "-c", "IOPlatformExpertDevice"],
+                capture_output=True,
+                text=True,
+                timeout=5,
+            )
+            for line in result.stdout.split("\n"):
+                if "IOPlatformUUID" in line:
+                    return line.split('"')[-2]
+        elif platform.system() == "Windows":
+            # Windows: use machine GUID
+            import winreg
+            key = winreg.OpenKey(
+                winreg.HKEY_LOCAL_MACHINE,
+                r"SOFTWARE\Microsoft\Cryptography",
+            )
+            value, _ = winreg.QueryValueEx(key, "MachineGuid")
+            return str(value)
+    except Exception:
+        pass  # Fall through to file-based ID
+    
+    # Fallback: use a randomly generated ID stored in config dir
+    from ._token_loader import _config_dir
+    id_file = _config_dir() / ".machine_id"
+    if id_file.exists():
+        return id_file.read_text(encoding="utf-8").strip()
+    
+    # Generate and store new ID
+    new_id = str(uuid.uuid4())
+    id_file.parent.mkdir(parents=True, exist_ok=True)
+    id_file.write_text(new_id, encoding="utf-8")
+    return new_id
 
-    def __init__(self, path: Optional[Path] = None) -> None:
+
+def _derive_cache_key() -> bytes:
+    """Derive an encryption key from machine ID + user context."""
+    machine_id = _get_machine_id()
+    user_context = f"{os.getlogin() if hasattr(os, 'getlogin') else ''}{os.getuid() if hasattr(os, 'getuid') else ''}"
+    key_material = f"kumiho-discovery-cache-v1:{machine_id}:{user_context}"
+    return hashlib.sha256(key_material.encode()).digest()
+
+
+def _encrypt_cache_data(plaintext: str) -> str:
+    """Encrypt cache data using XOR cipher with HMAC authentication.
+    
+    This provides defense-in-depth, not cryptographic security against
+    determined attackers. The goal is to prevent casual inspection and
+    make cache files non-portable between machines.
+    """
+    key = _derive_cache_key()
+    
+    # Generate random IV
+    iv = secrets.token_bytes(16)
+    
+    # XOR encryption (simple but effective for this use case)
+    plaintext_bytes = plaintext.encode("utf-8")
+    key_stream = hashlib.sha256(key + iv).digest()
+    
+    # Extend key stream for longer plaintexts
+    while len(key_stream) < len(plaintext_bytes):
+        key_stream += hashlib.sha256(key + key_stream[-32:]).digest()
+    
+    ciphertext = bytes(p ^ k for p, k in zip(plaintext_bytes, key_stream))
+    
+    # Add HMAC for integrity
+    mac = hmac.new(key, iv + ciphertext, hashlib.sha256).digest()[:16]
+    
+    # Format: base64(iv + ciphertext + mac)
+    encrypted = base64.b64encode(iv + ciphertext + mac).decode("ascii")
+    return f"enc:v1:{encrypted}"
+
+
+def _decrypt_cache_data(encrypted: str) -> Optional[str]:
+    """Decrypt cache data. Returns None if decryption fails."""
+    if not encrypted.startswith("enc:v1:"):
+        # Unencrypted legacy format - migrate on next write
+        return encrypted
+    
+    try:
+        key = _derive_cache_key()
+        raw = base64.b64decode(encrypted[7:])  # Skip "enc:v1:" prefix
+        
+        if len(raw) < 32:  # iv(16) + mac(16) minimum
+            return None
+        
+        iv = raw[:16]
+        mac = raw[-16:]
+        ciphertext = raw[16:-16]
+        
+        # Verify HMAC
+        expected_mac = hmac.new(key, iv + ciphertext, hashlib.sha256).digest()[:16]
+        if not hmac.compare_digest(mac, expected_mac):
+            return None  # Integrity check failed
+        
+        # Decrypt
+        key_stream = hashlib.sha256(key + iv).digest()
+        while len(key_stream) < len(ciphertext):
+            key_stream += hashlib.sha256(key + key_stream[-32:]).digest()
+        
+        plaintext = bytes(c ^ k for c, k in zip(ciphertext, key_stream))
+        return plaintext.decode("utf-8")
+    except Exception:
+        return None
+
+
+class DiscoveryCache:
+    """Encrypted JSON file cache keyed by tenant hint.
+    
+    Cache data is encrypted at rest using a machine-specific key,
+    providing defense-in-depth protection for tenant metadata.
+    """
+
+    def __init__(self, path: Optional[Path] = None, *, encrypt: bool = True) -> None:
         self.path = path or DEFAULT_CACHE_PATH
+        self._encrypt = encrypt
 
     def load(self, cache_key: str) -> Optional[DiscoveryRecord]:
         payload = self._read_all().get(cache_key)
@@ -154,8 +286,18 @@ class DiscoveryCache:
         data[cache_key] = record.to_dict()
         self.path.parent.mkdir(parents=True, exist_ok=True)
         tmp_path = self.path.with_suffix(".tmp")
+        
+        # Serialize to JSON
+        json_content = json.dumps(data, indent=2)
+        
+        # Encrypt if enabled
+        if self._encrypt:
+            content_to_write = _encrypt_cache_data(json_content)
+        else:
+            content_to_write = json_content
+        
         with tmp_path.open("w", encoding="utf-8") as handle:
-            json.dump(data, handle, indent=2)
+            handle.write(content_to_write)
         
         # Retry replacement to handle Windows file locking
         import time
@@ -178,7 +320,15 @@ class DiscoveryCache:
             return {}
         try:
             with self.path.open("r", encoding="utf-8") as handle:
-                return json.load(handle)
+                content = handle.read()
+            
+            # Try to decrypt if encrypted
+            decrypted = _decrypt_cache_data(content)
+            if decrypted is None:
+                # Decryption failed - cache may be from different machine
+                return {}
+            
+            return json.loads(decrypted)
         except (json.JSONDecodeError, OSError):
             return {}
 

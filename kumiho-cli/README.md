@@ -136,6 +136,63 @@ Display current user information.
 kumiho-cli whoami
 ```
 
+### `config`
+
+Display current configuration and environment variables.
+
+```bash
+kumiho-cli config
+```
+
+### `inspect`
+
+Inspect a Kumiho object (Item, Revision, Artifact) by Kref or file path.
+
+```bash
+# Inspect by Kref
+kumiho-cli inspect "kref://project/space/item.kind?r=1"
+
+# Inspect by local file path
+kumiho-cli inspect "/path/to/asset.jpg"
+```
+
+### `search`
+
+Search for items across projects.
+
+```bash
+kumiho-cli search --project "my-project" --kind "model" "hero*"
+```
+
+**Options:**
+- `--project`: Filter by project name
+- `--kind`: Filter by item kind (e.g., model, texture)
+- `name`: Search pattern for item name (wildcards supported)
+
+### `tree`
+
+Visualize project or space hierarchy.
+
+```bash
+# List all projects
+kumiho-cli tree
+
+# List spaces in a project
+kumiho-cli tree my-project
+```
+
+### `lineage`
+
+Analyze revision lineage (dependencies and dependents).
+
+```bash
+kumiho-cli lineage "kref://project/space/item.kind?r=1" --depth 3
+```
+
+**Options:**
+- `--depth`: Traversal depth (default: 5)
+- `--direction`: Direction of analysis: `upstream` (dependencies), `downstream` (dependents), or `both` (default: `both`)
+
 ## Security Best Practices
 
 1. **Never commit credentials**: Add `~/.kumiho/` to your `.gitignore`
