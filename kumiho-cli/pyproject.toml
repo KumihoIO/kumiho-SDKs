@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "kumiho-cli"
-version = "1.0.0"
+version = "1.1.0"
 description = "Command-line tools for Kumiho Cloud asset management"
 readme = "README.md"
 requires-python = ">=3.8"
@@ -40,6 +40,7 @@ classifiers = [
 
 dependencies = [
     "requests>=2.31.0",
+    "kumiho",
 ]
 
 [project.urls]

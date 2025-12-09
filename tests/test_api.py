@@ -22,6 +22,9 @@ PUBLISHED_TAG = "published"
 @pytest.fixture
 def mock_client(monkeypatch):
     """Pytest fixture to provide a Kumiho client with a mocked gRPC stub."""
+    # Save the original default client to restore after the test
+    original_client = kumiho._default_client
+    
     mock_stub = MagicMock()
     monkeypatch.setattr("kumiho.client.kumiho_pb2_grpc.KumihoServiceStub", lambda channel: mock_stub)
     
@@ -32,8 +35,8 @@ def mock_client(monkeypatch):
     
     yield client, mock_stub
     
-    # Teardown: Reset the default client
-    kumiho._default_client = None
+    # Teardown: Restore the original default client (may be None or the live_client)
+    kumiho._default_client = original_client
 
 def test_project_crud(mock_client):
     client, mock_stub = mock_client
