@@ -69,6 +69,15 @@ std::vector<std::shared_ptr<Space>> Project::getSpaces(bool recursive) {
     return client_->getChildSpaces(parent_path);
 }
 
+PagedList<std::shared_ptr<Item>> Project::getItems(
+    const std::string& name_filter,
+    const std::string& kind_filter,
+    std::optional<int32_t> page_size,
+    std::optional<std::string> cursor
+) {
+    return client_->itemSearch(response_.name(), name_filter, kind_filter, page_size, cursor);
+}
+
 std::shared_ptr<Bundle> Project::createBundle(const std::string& name) {
     std::string parent_path = "/" + response_.name();
     return client_->createBundle(parent_path, name);

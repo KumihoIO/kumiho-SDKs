@@ -131,6 +131,21 @@ public:
     std::vector<std::shared_ptr<Space>> getSpaces(bool recursive = false);
 
     /**
+     * @brief Search for items within this project.
+     * @param name_filter Filter by item name. Supports wildcards.
+     * @param kind_filter Filter by item kind.
+     * @param page_size Optional page size for pagination.
+     * @param cursor Optional cursor for pagination.
+     * @return A PagedList of Item objects.
+     */
+    PagedList<std::shared_ptr<Item>> getItems(
+        const std::string& name_filter = "",
+        const std::string& kind_filter = "",
+        std::optional<int32_t> page_size = std::nullopt,
+        std::optional<std::string> cursor = std::nullopt
+    );
+
+    /**
      * @brief Create a bundle in this project.
      * @param name The bundle name.
      * @return The created Bundle.

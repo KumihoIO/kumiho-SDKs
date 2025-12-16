@@ -136,11 +136,15 @@ public:
      * @brief Get all items in this space.
      * @param name_filter Optional filter by item name (supports wildcards).
      * @param kind_filter Optional filter by item kind.
-     * @return A list of Item objects.
+     * @param page_size Optional page size for pagination.
+     * @param cursor Optional cursor for pagination.
+     * @return A PagedList of Item objects.
      */
-    std::vector<std::shared_ptr<Item>> getItems(
+    PagedList<std::shared_ptr<Item>> getItems(
         const std::string& name_filter = "",
-        const std::string& kind_filter = ""
+        const std::string& kind_filter = "",
+        std::optional<int32_t> page_size = std::nullopt,
+        std::optional<std::string> cursor = std::nullopt
     );
 
     /**

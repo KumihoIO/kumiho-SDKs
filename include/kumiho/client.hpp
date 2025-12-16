@@ -204,12 +204,16 @@ public:
      * @param context_filter Filter by context (project/space path).
      * @param name_filter Filter by item name.
      * @param kind_filter Filter by item kind.
-     * @return A list of matching Item objects.
+     * @param page_size Optional page size for pagination.
+     * @param cursor Optional cursor for pagination.
+     * @return A PagedList of matching Item objects.
      */
-    std::vector<std::shared_ptr<Item>> itemSearch(
+    PagedList<std::shared_ptr<Item>> itemSearch(
         const std::string& context_filter = "",
         const std::string& name_filter = "",
-        const std::string& kind_filter = ""
+        const std::string& kind_filter = "",
+        std::optional<int32_t> page_size = std::nullopt,
+        std::optional<std::string> cursor = std::nullopt
     );
 
     /**

@@ -289,6 +289,60 @@ TEST_F(KumihoUnitTest, ItemSearchWithContext) {
     EXPECT_EQ(results[0]->getKref().uri(), "kref://projectA/seqA/001/kumiho.model");
 }
 
+TEST_F(KumihoUnitTest, Pagination) {
+    // Setup mock items
+    kumiho::ItemResponse item1_pb;
+    item1_pb.mutable_kref()->set_uri("kref://p1/s1/i1");
+    item1_pb.set_name("i1");
+    item1_pb.set_item_name("i1");
+    item1_pb.set_kind("model");
+
+    kumiho::ItemResponse item2_pb;
+    item2_pb.mutable_kref()->set_uri("kref://p1/s1/i2");
+    item2_pb.set_name("i2");
+    item2_pb.set_item_name("i2");
+    item2_pb.set_kind("model");
+
+    // Mock GetItems response with pagination
+    kumiho::GetItemsResponse response_pb;
+    *response_pb.add_items() = item1_pb;
+    *response_pb.add_items() = item2_pb;
+    
+    auto* pagination = response_pb.mutable_pagination();
+    pagination->set_next_cursor("cursor_123");
+    pagination->set_total_count(10);
+
+    // Expect GetItems call for Project::getItems
+    EXPECT_CALL(*mock_stub, GetItems(_, _, _))
+        .WillOnce(DoAll(
+            SetArgPointee<2>(response_pb),
+            Return(grpc::Status::OK)
+        ));
+
+    // Test Project::getItems
+    auto project = std::make_shared<kumiho::Project>(client, "p1", "demo", "", "", "", false);
+    auto results = project->getItems(2);
+
+    // Verify response
+    EXPECT_EQ(results.items.size(), 2);
+    EXPECT_EQ(results.next_cursor, "cursor_123");
+    EXPECT_EQ(results.total_count, 10);
+    EXPECT_EQ(results.items[0]->getName(), "i1");
+
+    // Expect GetItems call for Space::getItems
+    EXPECT_CALL(*mock_stub, GetItems(_, _, _))
+        .WillOnce(DoAll(
+            SetArgPointee<2>(response_pb),
+            Return(grpc::Status::OK)
+        ));
+
+    auto space = std::make_shared<kumiho::Space>(client, "p1/s1");
+    auto results_page2 = space->getItems(2, "cursor_123");
+
+    EXPECT_EQ(results_page2.items.size(), 2);
+    EXPECT_EQ(results_page2.next_cursor, "cursor_123");
+}
+
 TEST_F(KumihoUnitTest, ResolveKrefWithTime) {
     kumiho::RevisionResponse fake_response;
     fake_response.mutable_kref()->set_uri("kref://obj1?r=2");

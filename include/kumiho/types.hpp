@@ -37,6 +37,18 @@ class EventStream;
 using Metadata = std::map<std::string, std::string>;
 
 /**
+ * @brief A list that also contains pagination information.
+ * 
+ * @tparam T The type of items in the list.
+ */
+template <typename T>
+struct PagedList {
+    std::vector<T> items;
+    std::optional<std::string> next_cursor;
+    std::optional<int32_t> total_count;
+};
+
+/**
  * @brief Standard tag name for the latest version.
  * 
  * This tag automatically moves to the newest version of a product.

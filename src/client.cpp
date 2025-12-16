@@ -485,15 +485,23 @@ std::shared_ptr<Item> Client::getItemByKref(const std::string& kref_uri) {
     return getItem(space_path, item_name, kind);
 }
 
-std::vector<std::shared_ptr<Item>> Client::itemSearch(
+PagedList<std::shared_ptr<Item>> Client::itemSearch(
     const std::string& context_filter,
     const std::string& name_filter,
-    const std::string& kind_filter
+    const std::string& kind_filter,
+    std::optional<int32_t> page_size,
+    std::optional<std::string> cursor
 ) {
     ::kumiho::ItemSearchRequest req;
     req.set_context_filter(context_filter);
     req.set_item_name_filter(name_filter);
     req.set_kind_filter(kind_filter);
+
+    if (page_size.has_value() || cursor.has_value()) {
+        auto* pagination = req.mutable_pagination();
+        if (page_size.has_value()) pagination->set_page_size(page_size.value());
+        if (cursor.has_value()) pagination->set_cursor(cursor.value());
+    }
 
     ::kumiho::GetItemsResponse res;
     grpc::ClientContext context; configureContext(context);
@@ -503,11 +511,17 @@ std::vector<std::shared_ptr<Item>> Client::itemSearch(
         throw RpcError("ItemSearch failed: " + status.error_message(), static_cast<int>(status.error_code()));
     }
 
-    std::vector<std::shared_ptr<Item>> items;
+    PagedList<std::shared_ptr<Item>> result;
     for (const auto& pb : res.items()) {
-        items.push_back(std::make_shared<Item>(pb, this));
+        result.items.push_back(std::make_shared<Item>(pb, this));
     }
-    return items;
+
+    if (res.has_pagination()) {
+        result.next_cursor = res.pagination().next_cursor();
+        result.total_count = res.pagination().total_count();
+    }
+
+    return result;
 }
 
 std::shared_ptr<Item> Client::updateItemMetadata(const Kref& kref, const Metadata& metadata) {
