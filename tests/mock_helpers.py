@@ -89,8 +89,13 @@ def mock_item_response(
 # Backwards compatibility alias
 mock_product_response = mock_item_response
 
-def mock_get_items_response(items=None):
-    return kumiho_pb2.GetItemsResponse(items=items or [])
+def mock_get_items_response(items=None, next_cursor="", total_count=0):
+    pagination = kumiho_pb2.PaginationResponse(
+        next_cursor=next_cursor,
+        total_count=total_count,
+        has_more=bool(next_cursor)
+    )
+    return kumiho_pb2.GetItemsResponse(items=items or [], pagination=pagination)
 
 # Backwards compatibility alias
 mock_get_products_response = mock_get_items_response

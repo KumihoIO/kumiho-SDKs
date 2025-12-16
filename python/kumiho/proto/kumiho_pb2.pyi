@@ -260,14 +260,16 @@ class GetItemsResponse(_message.Message):
     def __init__(self, items: _Optional[_Iterable[_Union[ItemResponse, _Mapping]]] = ..., pagination: _Optional[_Union[PaginationResponse, _Mapping]] = ...) -> None: ...
 
 class ItemSearchRequest(_message.Message):
-    __slots__ = ("context_filter", "item_name_filter", "kind_filter")
+    __slots__ = ("context_filter", "item_name_filter", "kind_filter", "pagination")
     CONTEXT_FILTER_FIELD_NUMBER: _ClassVar[int]
     ITEM_NAME_FILTER_FIELD_NUMBER: _ClassVar[int]
     KIND_FILTER_FIELD_NUMBER: _ClassVar[int]
+    PAGINATION_FIELD_NUMBER: _ClassVar[int]
     context_filter: str
     item_name_filter: str
     kind_filter: str
-    def __init__(self, context_filter: _Optional[str] = ..., item_name_filter: _Optional[str] = ..., kind_filter: _Optional[str] = ...) -> None: ...
+    pagination: PaginationRequest
+    def __init__(self, context_filter: _Optional[str] = ..., item_name_filter: _Optional[str] = ..., kind_filter: _Optional[str] = ..., pagination: _Optional[_Union[PaginationRequest, _Mapping]] = ...) -> None: ...
 
 class CreateRevisionRequest(_message.Message):
     __slots__ = ("item_kref", "metadata", "number", "exists_error")
@@ -352,16 +354,25 @@ class GetRevisionsResponse(_message.Message):
     def __init__(self, revisions: _Optional[_Iterable[_Union[RevisionResponse, _Mapping]]] = ..., pagination: _Optional[_Union[PaginationResponse, _Mapping]] = ...) -> None: ...
 
 class CreateArtifactRequest(_message.Message):
-    __slots__ = ("revision_kref", "name", "location", "exists_error")
+    __slots__ = ("revision_kref", "name", "location", "exists_error", "metadata")
+    class MetadataEntry(_message.Message):
+        __slots__ = ("key", "value")
+        KEY_FIELD_NUMBER: _ClassVar[int]
+        VALUE_FIELD_NUMBER: _ClassVar[int]
+        key: str
+        value: str
+        def __init__(self, key: _Optional[str] = ..., value: _Optional[str] = ...) -> None: ...
     REVISION_KREF_FIELD_NUMBER: _ClassVar[int]
     NAME_FIELD_NUMBER: _ClassVar[int]
     LOCATION_FIELD_NUMBER: _ClassVar[int]
     EXISTS_ERROR_FIELD_NUMBER: _ClassVar[int]
+    METADATA_FIELD_NUMBER: _ClassVar[int]
     revision_kref: Kref
     name: str
     location: str
     exists_error: bool
-    def __init__(self, revision_kref: _Optional[_Union[Kref, _Mapping]] = ..., name: _Optional[str] = ..., location: _Optional[str] = ..., exists_error: bool = ...) -> None: ...
+    metadata: _containers.ScalarMap[str, str]
+    def __init__(self, revision_kref: _Optional[_Union[Kref, _Mapping]] = ..., name: _Optional[str] = ..., location: _Optional[str] = ..., exists_error: bool = ..., metadata: _Optional[_Mapping[str, str]] = ...) -> None: ...
 
 class ArtifactResponse(_message.Message):
     __slots__ = ("kref", "location", "revision_kref", "item_kref", "created_at", "modified_at", "author", "metadata", "deprecated", "username", "name")

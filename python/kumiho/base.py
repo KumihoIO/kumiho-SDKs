@@ -5,10 +5,25 @@ including :class:`KumihoObject` (the base for all high-level objects) and
 :class:`KumihoError` (the base exception class).
 """
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, TypeVar, List, Optional
 
 if TYPE_CHECKING:
     from .client import _Client
+
+T = TypeVar('T')
+
+
+class PagedList(List[T]):
+    """A list that also contains pagination information.
+
+    Attributes:
+        next_cursor (Optional[str]): The cursor for the next page of results.
+        total_count (Optional[int]): The total number of items available.
+    """
+    def __init__(self, items: List[T], next_cursor: Optional[str] = None, total_count: Optional[int] = None):
+        super().__init__(items)
+        self.next_cursor = next_cursor
+        self.total_count = total_count
 
 
 class KumihoError(Exception):

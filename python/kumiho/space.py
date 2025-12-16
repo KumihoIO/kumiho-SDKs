@@ -223,16 +223,21 @@ class Space(KumihoObject):
     def get_items(
         self,
         item_name_filter: str = "",
-        kind_filter: str = ""
+        kind_filter: str = "",
+        page_size: Optional[int] = None,
+        cursor: Optional[str] = None
     ) -> List[Item]:
         """List items within this space with optional filtering.
 
         Args:
             item_name_filter: Filter by item name. Supports wildcards.
             kind_filter: Filter by item kind.
+            page_size: Optional page size for pagination.
+            cursor: Optional cursor for pagination.
 
         Returns:
             List[Item]: A list of Item objects matching the filters.
+            If pagination is used, returns a PagedList with next_cursor.
 
         Example:
             >>> # All items in space
@@ -243,8 +248,19 @@ class Space(KumihoObject):
 
             >>> # Items starting with "hero"
             >>> heroes = space.get_items(item_name_filter="hero*")
+
+            >>> # Pagination
+            >>> page1 = space.get_items(page_size=10)
+            >>> if page1.next_cursor:
+            ...     page2 = space.get_items(page_size=10, cursor=page1.next_cursor)
         """
-        return self._client.get_items(self.path, item_name_filter, kind_filter)
+        return self._client.get_items(
+            self.path,
+            item_name_filter,
+            kind_filter,
+            page_size=page_size,
+            cursor=cursor
+        )
 
     def get_item(self, item_name: str, kind: str) -> Item:
         """Get a specific item by name and kind.
