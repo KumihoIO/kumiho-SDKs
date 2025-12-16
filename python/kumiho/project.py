@@ -420,3 +420,42 @@ class Project(KumihoObject):
         """
         base_parent = parent_path or f"/{self.name}"
         return self._client.get_child_spaces(base_parent, recursive=recursive)
+
+    def get_items(
+        self,
+        name_filter: str = "",
+        kind_filter: str = "",
+        page_size: Optional[int] = None,
+        cursor: Optional[str] = None
+    ) -> List['Item']:
+        """Search for items within this project.
+
+        Args:
+            name_filter: Filter by item name. Supports wildcards.
+            kind_filter: Filter by item kind.
+            page_size: Optional page size for pagination.
+            cursor: Optional cursor for pagination.
+
+        Returns:
+            List[Item]: A list of Item objects matching the filters.
+            If pagination is used, returns a PagedList with next_cursor.
+
+        Example:
+            >>> # All items in project
+            >>> items = project.get_items()
+
+            >>> # Only models
+            >>> models = project.get_items(kind_filter="model")
+
+            >>> # Pagination
+            >>> page1 = project.get_items(page_size=10)
+            >>> if page1.next_cursor:
+            ...     page2 = project.get_items(page_size=10, cursor=page1.next_cursor)
+        """
+        return self._client.item_search(
+            context_filter=self.name,
+            item_name_filter=name_filter,
+            kind_filter=kind_filter,
+            page_size=page_size,
+            cursor=cursor
+        )

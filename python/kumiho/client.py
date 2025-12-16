@@ -104,6 +104,7 @@ from .proto.kumiho_pb2 import (
     RemoveBundleMemberRequest,
     GetBundleMembersRequest,
     GetBundleHistoryRequest,
+    PaginationRequest,
 )
 from .edge import Edge, TraversalResult, ImpactedRevision, ShortestPathResult
 from .proto.kumiho_pb2 import ProjectResponse, StatusResponse
@@ -111,6 +112,7 @@ from .project import Project
 from .item import Item
 from .artifact import Artifact
 from .revision import Revision
+from .base import PagedList
 
 if TYPE_CHECKING:
     from .bundle import Bundle, BundleMember, BundleRevisionHistory
@@ -636,35 +638,89 @@ class _Client:
         resp = self.stub.GetItem(req)
         return Bundle(resp, self)
 
-    def get_items(self, parent_path: str, item_name_filter: str = "", kind_filter: str = "") -> List[Item]:
+    def get_items(
+        self,
+        parent_path: str,
+        item_name_filter: str = "",
+        kind_filter: str = "",
+        page_size: Optional[int] = None,
+        cursor: Optional[str] = None
+    ) -> List[Item]:
         """Get items within a space with optional filtering.
 
         Args:
             parent_path: The path of the parent space.
             item_name_filter: Optional filter for item names.
             kind_filter: Optional filter for item kinds.
+            page_size: Optional page size for pagination.
+            cursor: Optional cursor for pagination.
 
         Returns:
             A list of Item objects matching the filters.
+            If pagination is used, returns a PagedList.
         """
-        req = GetItemsRequest(parent_path=parent_path, item_name_filter=item_name_filter, kind_filter=kind_filter)
-        resp = self.stub.GetItems(req)
-        return [Item(p, self) for p in resp.items]
+        pagination = None
+        if page_size is not None or cursor is not None:
+            pagination = PaginationRequest(page_size=page_size or 100, cursor=cursor or "")
 
-    def item_search(self, context_filter: str = "", item_name_filter: str = "", kind_filter: str = "") -> List[Item]:
+        req = GetItemsRequest(
+            parent_path=parent_path,
+            item_name_filter=item_name_filter,
+            kind_filter=kind_filter,
+            pagination=pagination
+        )
+        resp = self.stub.GetItems(req)
+        items = [Item(p, self) for p in resp.items]
+
+        if resp.HasField("pagination"):
+            return PagedList(
+                items,
+                next_cursor=resp.pagination.next_cursor,
+                total_count=resp.pagination.total_count
+            )
+        return items
+
+    def item_search(
+        self,
+        context_filter: str = "",
+        item_name_filter: str = "",
+        kind_filter: str = "",
+        page_size: Optional[int] = None,
+        cursor: Optional[str] = None
+    ) -> List[Item]:
         """Search for items across the system.
 
         Args:
             context_filter: Filter by context/path.
             item_name_filter: Filter by item name.
             kind_filter: Filter by item kind.
+            page_size: Optional page size for pagination.
+            cursor: Optional cursor for pagination.
 
         Returns:
             A list of Item objects matching the search criteria.
+            If pagination is used, returns a PagedList.
         """
-        req = ItemSearchRequest(context_filter=context_filter, item_name_filter=item_name_filter, kind_filter=kind_filter)
+        pagination = None
+        if page_size is not None or cursor is not None:
+            pagination = PaginationRequest(page_size=page_size or 100, cursor=cursor or "")
+
+        req = ItemSearchRequest(
+            context_filter=context_filter,
+            item_name_filter=item_name_filter,
+            kind_filter=kind_filter,
+            pagination=pagination
+        )
         resp = self.stub.ItemSearch(req)
-        return [Item(p, self) for p in resp.items]
+        items = [Item(p, self) for p in resp.items]
+
+        if resp.HasField("pagination"):
+            return PagedList(
+                items,
+                next_cursor=resp.pagination.next_cursor,
+                total_count=resp.pagination.total_count
+            )
+        return items
 
     def update_item_metadata(self, kref: Kref, metadata: Dict[str, str]) -> Item:
         """Update metadata for an item.

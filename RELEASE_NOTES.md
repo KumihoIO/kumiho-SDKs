@@ -1,5 +1,32 @@
 # Kumiho Python SDK - Release Notes
 
+## kumiho 0.4.4 (December 2025) - Pagination & Search Improvements 🔍
+
+### ✨ New Features
+
+**Pagination Support**:
+- Added pagination to item listing and search methods.
+- New `PagedList` return type containing `next_cursor` and `total_count`.
+
+```python
+# Pagination in Project
+page1 = project.get_items(page_size=10)
+if page1.next_cursor:
+    page2 = project.get_items(page_size=10, cursor=page1.next_cursor)
+```
+
+**Project Search**:
+- Added `project.get_items()` method for searching items within a project context.
+- Updated `project.get_items()` to support pagination.
+
+### 📦 API Changes
+
+- `Space.get_items()` now accepts `page_size` and `cursor`.
+- `Project.get_items()` now accepts `page_size` and `cursor`.
+- `Client.item_search()` and `Client.get_items()` now return `PagedList` when pagination is active.
+
+---
+
 ## kumiho 0.4.3 (December 2025) - Stability & Performance 🚀
 
 ### ✨ New Features

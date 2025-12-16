@@ -61,6 +61,54 @@ def test_project_crud(mock_client):
     mock_stub.DeleteProject.assert_called_once()
     assert resp.success
 
+def test_pagination(mock_client):
+    client, mock_stub = mock_client
+    
+    # Setup mock items
+    item1 = mock_helpers.mock_item_response(
+        kref_uri="kref://p1/s1/i1", name="i1", item_name="i1", kind="model"
+    )
+    item2 = mock_helpers.mock_item_response(
+        kref_uri="kref://p1/s1/i2", name="i2", item_name="i2", kind="model"
+    )
+    
+    # Mock GetItems response with pagination
+    mock_response = mock_helpers.mock_get_items_response(
+        items=[item1, item2],
+        next_cursor="cursor_123",
+        total_count=10
+    )
+    mock_stub.GetItems.return_value = mock_response
+    mock_stub.ItemSearch.return_value = mock_response
+    
+    # Test Project.get_items
+    pb = mock_helpers.mock_project_response(project_id="p1", name="demo")
+    project = kumiho.Project(pb, client)
+    results = project.get_items(page_size=2)
+    
+    # Verify request
+    args, _ = mock_stub.ItemSearch.call_args
+    request = args[0]
+    assert request.pagination.page_size == 2
+    assert request.pagination.cursor == ""
+    
+    # Verify response
+    assert len(results) == 2
+    assert results.next_cursor == "cursor_123"
+    assert results.total_count == 10
+    assert results[0].name == "i1"
+    
+    # Test Space.get_items with cursor
+    space_pb = mock_helpers.mock_space_response(path="p1/s1")
+    space = kumiho.Space(space_pb, client)
+    results_page2 = space.get_items(page_size=2, cursor="cursor_123")
+    
+    # Verify request
+    args, _ = mock_stub.GetItems.call_args
+    request = args[0]
+    assert request.pagination.page_size == 2
+    assert request.pagination.cursor == "cursor_123"
+
 def test_create_space(mock_client):
     """Test the create_space method via Project."""
     client, mock_stub = mock_client
