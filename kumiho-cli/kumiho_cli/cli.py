@@ -22,7 +22,7 @@ ENV_FILE_ENV = "KUMIHO_ENV_FILE"
 TOKEN_GRACE_ENV = "KUMIHO_AUTH_TOKEN_GRACE_SECONDS"
 CONTROL_PLANE_API_ENV = "KUMIHO_CONTROL_PLANE_API_URL"
 DEFAULT_TOKEN_GRACE_SECONDS = 300
-DEFAULT_CONTROL_PLANE_API_URL = "https://kumiho.io"
+DEFAULT_CONTROL_PLANE_API_URL = "https://control.kumiho.cloud"
 DEFAULT_FIREBASE_API_KEY = "AIzaSyBFAo7Nv48xAvbN18rL-3W41Dqheporh8E"
 
 
@@ -467,6 +467,74 @@ def cmd_search(args: argparse.Namespace) -> None:
         print(f"Search failed: {e}")
 
 
+def cmd_events(args: argparse.Namespace) -> None:
+    try:
+        import kumiho
+    except ImportError:
+        print("Error: 'kumiho' package is required. Please install it.")
+        return
+
+    try:
+        kumiho.auto_configure_from_discovery()
+    except Exception as e:
+        print(f"Warning: Auto-configuration failed: {e}")
+
+    cursor = args.cursor
+    cursor_file = args.cursor_file
+    if not cursor and cursor_file:
+        path = Path(cursor_file)
+        try:
+            cursor = path.read_text(encoding="utf-8").strip() or None
+        except FileNotFoundError:
+            cursor = None
+
+    try:
+        caps = kumiho.get_event_capabilities()
+        print(
+            f"[kumiho-events] Tier={caps.tier} cursor={caps.supports_cursor} "
+            f"replay={caps.supports_replay} retention_hours={caps.max_retention_hours}"
+        )
+    except Exception as e:
+        print(f"Warning: Failed to fetch event capabilities: {e}")
+
+    try:
+        count = 0
+        for event in kumiho.event_stream(
+            routing_key_filter=args.routing_key_filter or "",
+            kref_filter=args.kref_filter or "",
+            cursor=cursor,
+            from_beginning=bool(args.from_beginning),
+        ):
+            if args.json:
+                print(
+                    json.dumps(
+                        {
+                            "timestamp": event.timestamp,
+                            "routing_key": event.routing_key,
+                            "kref": event.kref.uri,
+                            "author": event.author,
+                            "details": event.details,
+                            "cursor": event.cursor,
+                        },
+                        ensure_ascii=False,
+                    )
+                )
+            else:
+                ts = event.timestamp or ""
+                print(f"{ts}\t{event.routing_key}\t{event.kref.uri}\tcursor={event.cursor}")
+
+            if cursor_file and event.cursor:
+                path = Path(cursor_file)
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text(f"{event.cursor}\n", encoding="utf-8")
+
+            count += 1
+            if args.max_events and count >= args.max_events:
+                break
+    except KeyboardInterrupt:
+        return
+
+
 def cmd_tree(args: argparse.Namespace) -> None:
     try:
         import kumiho
@@ -612,6 +680,16 @@ def build_parser() -> argparse.ArgumentParser:
     search.add_argument("--kind", help="Filter by item kind")
     search.add_argument("name", nargs="?", help="Filter by item name (wildcards supported)")
     search.set_defaults(func=cmd_search)
+
+    events = sub.add_parser("events", help="Stream real-time events")
+    events.add_argument("--routing-key-filter", default="", help="Routing key filter (wildcards supported)")
+    events.add_argument("--kref-filter", default="", help="Kref filter (wildcards supported)")
+    events.add_argument("--cursor", help="Resume from a previous event cursor")
+    events.add_argument("--cursor-file", help="Read/write cursor to a file for resume support")
+    events.add_argument("--from-beginning", action="store_true", help="Replay from the beginning (tier permitting)")
+    events.add_argument("--max-events", type=int, default=0, help="Exit after N events (0 = run forever)")
+    events.add_argument("--json", action="store_true", help="Output events as JSON lines")
+    events.set_defaults(func=cmd_events)
 
     tree = sub.add_parser("tree", help="Visualize project or space hierarchy")
     tree.add_argument("target", nargs="?", help="Project name or space path (optional)")

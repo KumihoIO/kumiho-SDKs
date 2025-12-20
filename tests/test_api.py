@@ -430,7 +430,7 @@ def test_revision_by_tag_and_time(live_client, cleanup_test_data):
     "What was the published version of this asset on June 1st?"
     """
     import time
-    from datetime import datetime, timezone
+    from datetime import datetime, timedelta
     
     project_name = unique_name("tag_time_test_project")
     asset_name = unique_name("tag_time_test_asset")
@@ -442,8 +442,6 @@ def test_revision_by_tag_and_time(live_client, cleanup_test_data):
     cleanup_test_data.append(item)
     revision1 = item.create_revision()
     cleanup_test_data.append(revision1)
-    revision2 = item.create_revision()
-    cleanup_test_data.append(revision2)
 
     # Tag revision1 with a custom tag
     revision1.tag("hello")
@@ -451,8 +449,17 @@ def test_revision_by_tag_and_time(live_client, cleanup_test_data):
     # Tag revision1 as published (simulating a milestone)
     revision1.tag("published")
     
-    # Capture the time after tagging revision1 (this is when revision1 has the published tag)
-    time_after_tag1 = datetime.now(timezone.utc)
+    # Avoid brittle client-local timestamps when running against a remote server (Cloud Run):
+    # use a server-derived timestamp as our "after revision1 was published" moment.
+    #
+    # Note: server timestamps for created_at are second precision, while tag_history may include
+    # sub-second precision. Sleeping ensures we cross a second boundary so the derived timestamp
+    # is definitely after the publish tag was applied.
+    time.sleep(1.1)
+    revision2 = item.create_revision()
+    cleanup_test_data.append(revision2)
+    assert revision2.created_at is not None
+    time_after_tag1 = datetime.fromisoformat(revision2.created_at.replace("Z", "+00:00"))
 
     # Test: get revision by tag
     tag_revision = item.get_revision_by_tag("hello")
@@ -473,9 +480,8 @@ def test_revision_by_tag_and_time(live_client, cleanup_test_data):
     assert published_at_time is not None
     assert published_at_time.number == revision1.number
     
-    # Small delay to ensure timestamps are distinguishable
-    # With full ISO timestamp precision, even a small delay is sufficient
-    time.sleep(0.1)
+    # Ensure the "superseding" publish tag is applied after time_after_tag1 (second precision).
+    time.sleep(1.1)
     
     # Now tag revision2 as published (superseding revision1)
     revision2.tag("published")
@@ -490,7 +496,7 @@ def test_revision_by_tag_and_time(live_client, cleanup_test_data):
     assert historical_published.number == revision1.number
     
     # Query for published NOW (after revision2 was tagged) should return revision2
-    time_after_tag2 = datetime.now(timezone.utc)
+    time_after_tag2 = time_after_tag1 + timedelta(seconds=5)
     current_published = item.get_revision_by_time(
         time_after_tag2,
         tag="published"

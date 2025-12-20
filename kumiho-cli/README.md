@@ -68,7 +68,7 @@ Credentials are stored in:
 | `KUMIHO_CONFIG_DIR` | Override config directory | `~/.kumiho` |
 | `KUMIHO_FIREBASE_API_KEY` | Firebase API key | (built-in) |
 | `KUMIHO_FIREBASE_PROJECT_ID` | Firebase project ID | (optional) |
-| `KUMIHO_CONTROL_PLANE_API_URL` | Control plane URL | `https://kumiho.io` |
+| `KUMIHO_CONTROL_PLANE_API_URL` | Control plane URL | `https://control.kumiho.cloud` |
 | `KUMIHO_AUTH_TOKEN_GRACE_SECONDS` | Token refresh grace period | `300` |
 
 ## Usage with SDKs
@@ -180,6 +180,30 @@ kumiho-cli tree
 # List spaces in a project
 kumiho-cli tree my-project
 ```
+
+### `events`
+
+Stream real-time events from `kumiho-server` (gRPC EventStream).
+
+```bash
+# Stream everything (Ctrl+C to stop)
+kumiho-cli events
+
+# Filter by routing key
+kumiho-cli events --routing-key-filter "revision.*"
+
+# Resume using a cursor file
+kumiho-cli events --cursor-file .kumiho_cursor.txt
+```
+
+**Options:**
+- `--routing-key-filter`: Wildcard filter for event routing keys
+- `--kref-filter`: Wildcard filter for kref URIs
+- `--cursor`: Resume from a cursor value
+- `--cursor-file`: Read/write cursor to a file for easy resume
+- `--from-beginning`: Replay from the beginning (tier permitting)
+- `--max-events`: Exit after N events (0 = forever)
+- `--json`: Emit JSON lines for piping into other tools
 
 ### `lineage`
 
