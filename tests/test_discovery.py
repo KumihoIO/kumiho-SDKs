@@ -141,8 +141,8 @@ def test_discovery_swaps_control_plane_token(monkeypatch, tmp_path: Path) -> Non
     cache_path = tmp_path / "cache.json"
     control_plane_token = _fake_jwt(
         {
-            "iss": "https://kumiho.io",
-            "aud": "https://api.kumiho.io",
+            "iss": "https://control.kumiho.cloud",
+            "aud": "kumiho-server",
             "tenant_id": "tenant-xyz",
         }
     )

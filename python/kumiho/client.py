@@ -527,13 +527,14 @@ class _Client:
         return Space(resp, self)
 
     # Item methods
-    def create_item(self, parent_path: str, item_name: str, kind: str) -> Item:
+    def create_item(self, parent_path: str, item_name: str, kind: str, metadata: Optional[Dict[str, str]] = None) -> Item:
         """Create a new item.
 
         Args:
             parent_path: The path of the parent space.
             item_name: The name of the item.
             kind: The kind of the item (e.g., "model", "texture").
+            metadata: Metadata dictionary for the item.
 
         Returns:
             The created Item object.
@@ -551,6 +552,8 @@ class _Client:
         
         req = CreateItemRequest(parent_path=parent_path, item_name=item_name, kind=kind)
         resp = self.stub.CreateItem(req)
+        if metadata and isinstance(metadata, dict):
+            self.update_item_metadata(resp.kref, metadata)
         return Item(resp, self)
 
     def get_item(self, parent_path: str, item_name: str, kind: str) -> Item:

@@ -26,7 +26,7 @@ else:
 
 Client: Optional[Type[Any]] = None
 
-DEFAULT_CONTROL_PLANE_URL = os.getenv("KUMIHO_CONTROL_PLANE_URL") or "https://kumiho.io"
+DEFAULT_CONTROL_PLANE_URL = os.getenv("KUMIHO_CONTROL_PLANE_URL") or "https://control.kumiho.cloud"
 DEFAULT_CACHE_PATH = Path(
     os.getenv("KUMIHO_DISCOVERY_CACHE_FILE")
     or (Path.home() / ".kumiho" / "discovery-cache.json")
@@ -493,10 +493,10 @@ def _is_control_plane_token(token: str) -> bool:
     if isinstance(claims.get("tenant_id"), str):
         return True
     iss = claims.get("iss")
-    if isinstance(iss, str) and iss.startswith("https://kumiho.io"):
+    if isinstance(iss, str) and iss.startswith("https://control.kumiho.cloud"):
         return True
     aud = claims.get("aud")
-    if isinstance(aud, str) and aud.startswith("https://api.kumiho.io"):
+    if isinstance(aud, str) and aud.startswith("kumiho-server"):
         return True
     return False
 

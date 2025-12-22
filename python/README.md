@@ -224,7 +224,7 @@ for event in kumiho.event_stream(cursor=saved_cursor):
 | `KUMIHO_SERVER_ENDPOINT` | No | gRPC endpoint. Defaults to `localhost:8080`. |
 | `KUMIHO_AUTH_TOKEN` | For live calls | Firebase ID token (JWT). |
 | `KUMIHO_AUTH_TOKEN_FILE` | No | Path to file containing the Firebase token. |
-| `KUMIHO_CONTROL_PLANE_URL` | No | Control plane URL. Defaults to `https://kumiho.io`. |
+| `KUMIHO_CONTROL_PLANE_URL` | No | Control plane URL. Defaults to `https://control.kumiho.cloud`. |
 | `KUMIHO_AUTO_CONFIGURE` | No | Set to `true` to auto-bootstrap on import. |
 | `KUMIHO_DISCOVERY_CACHE_FILE` | No | Discovery cache path. Defaults to `~/.kumiho/discovery-cache.json`. |
 

@@ -140,7 +140,7 @@ The SDK supports the following environment variables:
 |----------|-------------|
 | `KUMIHO_AUTH_TOKEN` | Pre-authenticated token (Control Plane JWT or Firebase ID token) |
 | `KUMIHO_AUTH_TOKEN_FILE` | Path to file containing the auth token |
-| `KUMIHO_CONTROL_PLANE_API_URL` | Control Plane URL (default: `https://kumiho.io`) |
+| `KUMIHO_CONTROL_PLANE_API_URL` | Control Plane URL (default: `https://control.kumiho.cloud`) |
 | `KUMIHO_CONFIG_DIR` | Custom config directory (default: `~/.kumiho`) |
 | `KUMIHO_FIREBASE_API_KEY` | Firebase API key (for custom deployments) |
 
