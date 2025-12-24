@@ -647,7 +647,8 @@ class _Client:
         item_name_filter: str = "",
         kind_filter: str = "",
         page_size: Optional[int] = None,
-        cursor: Optional[str] = None
+        cursor: Optional[str] = None,
+        include_deprecated: bool = False
     ) -> List[Item]:
         """Get items within a space with optional filtering.
 
@@ -657,6 +658,7 @@ class _Client:
             kind_filter: Optional filter for item kinds.
             page_size: Optional page size for pagination.
             cursor: Optional cursor for pagination.
+            include_deprecated: Whether to include deprecated items.
 
         Returns:
             A list of Item objects matching the filters.
@@ -670,7 +672,8 @@ class _Client:
             parent_path=parent_path,
             item_name_filter=item_name_filter,
             kind_filter=kind_filter,
-            pagination=pagination
+            pagination=pagination,
+            include_deprecated=include_deprecated
         )
         resp = self.stub.GetItems(req)
         items = [Item(p, self) for p in resp.items]
@@ -689,7 +692,8 @@ class _Client:
         item_name_filter: str = "",
         kind_filter: str = "",
         page_size: Optional[int] = None,
-        cursor: Optional[str] = None
+        cursor: Optional[str] = None,
+        include_deprecated: bool = False
     ) -> List[Item]:
         """Search for items across the system.
 
@@ -699,6 +703,7 @@ class _Client:
             kind_filter: Filter by item kind.
             page_size: Optional page size for pagination.
             cursor: Optional cursor for pagination.
+            include_deprecated: Whether to include deprecated items.
 
         Returns:
             A list of Item objects matching the search criteria.
@@ -712,7 +717,8 @@ class _Client:
             context_filter=context_filter,
             item_name_filter=item_name_filter,
             kind_filter=kind_filter,
-            pagination=pagination
+            pagination=pagination,
+            include_deprecated=include_deprecated
         )
         resp = self.stub.ItemSearch(req)
         items = [Item(p, self) for p in resp.items]
