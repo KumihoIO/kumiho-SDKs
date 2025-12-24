@@ -1,5 +1,31 @@
 # Kumiho Python SDK - Release Notes
 
+## kumiho 0.7.0 (December 2025) - Deprecation Support 🗑️
+
+### ✨ New Features
+
+**Deprecation Filtering**:
+- Added `include_deprecated` parameter to `get_items()` and `item_search()` methods.
+- Allows retrieving items that have been marked as deprecated (soft deleted/hidden).
+- Default behavior remains to exclude deprecated items.
+
+```python
+# Search including deprecated items
+items = client.item_search(
+    context_filter="my-project",
+    include_deprecated=True
+)
+```
+
+### 📦 API Changes
+
+- `Client.get_items()`: Added `include_deprecated` argument (default: `False`).
+- `Client.item_search()`: Added `include_deprecated` argument (default: `False`).
+- `Space.get_items()`: Added `include_deprecated` argument (default: `False`).
+- Updated Protobuf definitions to match server version 0.7.0.
+
+---
+
 ## kumiho 0.4.4 (December 2025) - Pagination & Search Improvements 🔍
 
 ### ✨ New Features

@@ -240,16 +240,18 @@ class DeleteItemRequest(_message.Message):
     def __init__(self, kref: _Optional[_Union[Kref, _Mapping]] = ..., force: bool = ...) -> None: ...
 
 class GetItemsRequest(_message.Message):
-    __slots__ = ("parent_path", "item_name_filter", "kind_filter", "pagination")
+    __slots__ = ("parent_path", "item_name_filter", "kind_filter", "pagination", "include_deprecated")
     PARENT_PATH_FIELD_NUMBER: _ClassVar[int]
     ITEM_NAME_FILTER_FIELD_NUMBER: _ClassVar[int]
     KIND_FILTER_FIELD_NUMBER: _ClassVar[int]
     PAGINATION_FIELD_NUMBER: _ClassVar[int]
+    INCLUDE_DEPRECATED_FIELD_NUMBER: _ClassVar[int]
     parent_path: str
     item_name_filter: str
     kind_filter: str
     pagination: PaginationRequest
-    def __init__(self, parent_path: _Optional[str] = ..., item_name_filter: _Optional[str] = ..., kind_filter: _Optional[str] = ..., pagination: _Optional[_Union[PaginationRequest, _Mapping]] = ...) -> None: ...
+    include_deprecated: bool
+    def __init__(self, parent_path: _Optional[str] = ..., item_name_filter: _Optional[str] = ..., kind_filter: _Optional[str] = ..., pagination: _Optional[_Union[PaginationRequest, _Mapping]] = ..., include_deprecated: bool = ...) -> None: ...
 
 class GetItemsResponse(_message.Message):
     __slots__ = ("items", "pagination")
@@ -260,16 +262,18 @@ class GetItemsResponse(_message.Message):
     def __init__(self, items: _Optional[_Iterable[_Union[ItemResponse, _Mapping]]] = ..., pagination: _Optional[_Union[PaginationResponse, _Mapping]] = ...) -> None: ...
 
 class ItemSearchRequest(_message.Message):
-    __slots__ = ("context_filter", "item_name_filter", "kind_filter", "pagination")
+    __slots__ = ("context_filter", "item_name_filter", "kind_filter", "pagination", "include_deprecated")
     CONTEXT_FILTER_FIELD_NUMBER: _ClassVar[int]
     ITEM_NAME_FILTER_FIELD_NUMBER: _ClassVar[int]
     KIND_FILTER_FIELD_NUMBER: _ClassVar[int]
     PAGINATION_FIELD_NUMBER: _ClassVar[int]
+    INCLUDE_DEPRECATED_FIELD_NUMBER: _ClassVar[int]
     context_filter: str
     item_name_filter: str
     kind_filter: str
     pagination: PaginationRequest
-    def __init__(self, context_filter: _Optional[str] = ..., item_name_filter: _Optional[str] = ..., kind_filter: _Optional[str] = ..., pagination: _Optional[_Union[PaginationRequest, _Mapping]] = ...) -> None: ...
+    include_deprecated: bool
+    def __init__(self, context_filter: _Optional[str] = ..., item_name_filter: _Optional[str] = ..., kind_filter: _Optional[str] = ..., pagination: _Optional[_Union[PaginationRequest, _Mapping]] = ..., include_deprecated: bool = ...) -> None: ...
 
 class CreateRevisionRequest(_message.Message):
     __slots__ = ("item_kref", "metadata", "number", "exists_error")
