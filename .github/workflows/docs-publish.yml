@@ -85,6 +85,7 @@ jobs:
       - name: Generate Doxygen XML (for Sphinx/Breathe)
         run: |
           VERSION="${{ steps.get_version.outputs.VERSION }}"
+          mkdir -p docs/_build/doxygen
           # Patch PROJECT_NUMBER for this run (don’t modify tracked file)
           sed -E "s/^(PROJECT_NUMBER[[:space:]]*=).*/\1 \"$VERSION\"/" docs/Doxyfile.sphinx > docs/Doxyfile.sphinx.ci
           doxygen docs/Doxyfile.sphinx.ci
