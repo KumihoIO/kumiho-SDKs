@@ -65,17 +65,7 @@ jobs:
       - name: Extract version from CMakeLists.txt
         id: get_version
         run: |
-          VERSION=$(python3 - <<'PY'
-import re
-from pathlib import Path
-text = Path('CMakeLists.txt').read_text(encoding='utf-8', errors='replace')
-# Matches: project(KumihoCpp VERSION 1.0.0 LANGUAGES CXX)
-m = re.search(r"project\([^\)]*\bVERSION\s+([0-9]+\.[0-9]+\.[0-9]+(?:[-+._a-zA-Z0-9]*)?)\b", text)
-if not m:
-    raise SystemExit('Could not extract VERSION from CMakeLists.txt')
-print(m.group(1))
-PY
-          )
+          VERSION=$(python -c "import re; from pathlib import Path; text=Path('CMakeLists.txt').read_text(encoding='utf-8', errors='replace'); m=re.search(r'project\\([^\\)]*\\bVERSION\\s+([0-9]+\\.[0-9]+\\.[0-9]+(?:[-+._a-zA-Z0-9]*)?)\\b', text); import sys; sys.exit('Could not extract VERSION from CMakeLists.txt') if not m else None; print(m.group(1))")
           echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
           echo "📦 Building docs for Kumiho C++ SDK v$VERSION"
 
@@ -96,7 +86,7 @@ PY
         run: |
           VERSION="${{ steps.get_version.outputs.VERSION }}"
           # Patch PROJECT_NUMBER for this run (don’t modify tracked file)
-          sed -E "s/^(PROJECT_NUMBER\s*=).*/\1 \"$VERSION\"/" docs/Doxyfile.sphinx > docs/Doxyfile.sphinx.ci
+          sed -E "s/^(PROJECT_NUMBER[[:space:]]*=).*/\1 \"$VERSION\"/" docs/Doxyfile.sphinx > docs/Doxyfile.sphinx.ci
           doxygen docs/Doxyfile.sphinx.ci
 
       - name: Build Sphinx documentation
