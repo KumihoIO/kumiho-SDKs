@@ -206,6 +206,7 @@ public:
      * @param kind_filter Filter by item kind.
      * @param page_size Optional page size for pagination.
      * @param cursor Optional cursor for pagination.
+     * @param include_deprecated Whether to include deprecated items.
      * @return A PagedList of matching Item objects.
      */
     PagedList<std::shared_ptr<Item>> itemSearch(
@@ -213,7 +214,8 @@ public:
         const std::string& name_filter = "",
         const std::string& kind_filter = "",
         std::optional<int32_t> page_size = std::nullopt,
-        std::optional<std::string> cursor = std::nullopt
+        std::optional<std::string> cursor = std::nullopt,
+        bool include_deprecated = false
     );
 
     /**

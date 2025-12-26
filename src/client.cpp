@@ -490,12 +490,14 @@ PagedList<std::shared_ptr<Item>> Client::itemSearch(
     const std::string& name_filter,
     const std::string& kind_filter,
     std::optional<int32_t> page_size,
-    std::optional<std::string> cursor
+    std::optional<std::string> cursor,
+    bool include_deprecated
 ) {
     ::kumiho::ItemSearchRequest req;
     req.set_context_filter(context_filter);
     req.set_item_name_filter(name_filter);
     req.set_kind_filter(kind_filter);
+    req.set_include_deprecated(include_deprecated);
 
     if (page_size.has_value() || cursor.has_value()) {
         auto* pagination = req.mutable_pagination();

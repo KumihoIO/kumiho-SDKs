@@ -73,13 +73,14 @@ PagedList<std::shared_ptr<Item>> Space::getItems(
     const std::string& name_filter,
     const std::string& kind_filter,
     std::optional<int32_t> page_size,
-    std::optional<std::string> cursor
+    std::optional<std::string> cursor,
+    bool include_deprecated
 ) {
     // Note: Space::getItems uses itemSearch internally in Python SDK too, 
     // but here we should probably use getItems on client if it existed, 
     // or itemSearch with context.
     // The original code used client_->itemSearch(response_.path(), ...)
-    return client_->itemSearch(response_.path(), name_filter, kind_filter, page_size, cursor);
+    return client_->itemSearch(response_.path(), name_filter, kind_filter, page_size, cursor, include_deprecated);
 }
 
 std::shared_ptr<Space> Space::setMetadata(const Metadata& metadata) {
