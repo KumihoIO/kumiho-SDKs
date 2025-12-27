@@ -1656,6 +1656,7 @@ class _Client:
         cursor: Optional[str] = None,
         consumer_group: Optional[str] = None,
         from_beginning: bool = False,
+        timeout: Optional[float] = None,
     ) -> Iterator[Event]:
         """Subscribe to the event stream from the Kumiho server.
 
@@ -1672,6 +1673,9 @@ class _Client:
                            same group each receive different events.
             from_beginning: Start from earliest available events instead of
                            live-only (Creator tier+, subject to retention).
+            timeout: Optional timeout in seconds for the gRPC stream.
+                    If reached, the iterator will raise grpc.RpcError with
+                    StatusCode.DEADLINE_EXCEEDED.
 
         Yields:
             Event objects representing changes in the database. Each event
@@ -1683,12 +1687,16 @@ class _Client:
             try:
                 for event in client.event_stream(
                     routing_key_filter="revision.*",
-                    cursor=last_cursor
+                    cursor=last_cursor,
+                    timeout=30
                 ):
                     process_event(event)
                     save_cursor_to_disk(event.cursor)  # Save for next run
-            except grpc.RpcError:
-                pass  # Reconnect with saved cursor
+            except grpc.RpcError as e:
+                if e.code() == grpc.StatusCode.DEADLINE_EXCEEDED:
+                    print("Stream timed out")
+                else:
+                    raise
         """
         req = EventStreamRequest(
             routing_key_filter=routing_key_filter,
@@ -1701,7 +1709,7 @@ class _Client:
         if from_beginning:
             req.from_beginning = True
         
-        for pb_event in self.stub.EventStream(req):
+        for pb_event in self.stub.EventStream(req, timeout=timeout):
             yield Event(pb_event)
 
     def get_event_capabilities(self) -> "EventCapabilities":

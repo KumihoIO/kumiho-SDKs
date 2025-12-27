@@ -787,6 +787,7 @@ def event_stream(
     cursor: Optional[str] = None,
     consumer_group: Optional[str] = None,
     from_beginning: bool = False,
+    timeout: Optional[float] = None,
 ) -> Iterator[Event]:
     """Subscribe to real-time events from the Kumiho server.
 
@@ -836,7 +837,12 @@ def event_stream(
         :func:`get_event_capabilities` to check your tier's capabilities.
     """
     return get_client().event_stream(
-        routing_key_filter, kref_filter, cursor, consumer_group, from_beginning
+        routing_key_filter,
+        kref_filter,
+        cursor,
+        consumer_group,
+        from_beginning,
+        timeout=timeout,
     )
 
 
