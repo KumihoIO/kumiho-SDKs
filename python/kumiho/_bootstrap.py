@@ -15,8 +15,9 @@ def bootstrap_default_client(*, force_refresh: bool = False) -> _Client:
     refresh_flag = True if force_refresh else None
     
     # Ensure we have a valid token before creating the client
+    # We use interactive=False by default to avoid EOFError in non-interactive environments (like Cloud Run)
     try:
-        token, _ = ensure_token(interactive=True)
+        token, _ = ensure_token(interactive=False)
     except TokenAcquisitionError:
         # If we can't get a token, we'll proceed without one and let the client fail later if needed,
         # or rely on environment variables. But typically ensure_token raises if interactive fails.

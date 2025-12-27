@@ -1874,9 +1874,8 @@ def create_mcp_server() -> "Server":
         
         try:
             # Run the tool handler (may be blocking gRPC call)
-            result = await asyncio.get_event_loop().run_in_executor(
-                None, handler, arguments
-            )
+            # Use asyncio.to_thread to propagate contextvars (like kumiho.use_client)
+            result = await asyncio.to_thread(handler, arguments)
             return [TextContent(
                 type="text",
                 text=json.dumps(result, indent=2, default=str),
@@ -1912,9 +1911,8 @@ def create_mcp_server() -> "Server":
         """Read a resource by URI."""
         if uri.startswith("kumiho://project/"):
             project_name = uri[len("kumiho://project/"):]
-            result = await asyncio.get_event_loop().run_in_executor(
-                None, tool_get_project, project_name
-            )
+            # Use asyncio.to_thread to propagate contextvars
+            result = await asyncio.to_thread(tool_get_project, project_name)
             return json.dumps(result, indent=2, default=str)
         
         raise ValueError(f"Unknown resource URI: {uri}")

@@ -1,5 +1,17 @@
 # Kumiho Python SDK - Release Notes
 
+## kumiho 0.8.1 (December 2025) - MCP Multi-tenancy & Stability 🛠️
+
+### 🐛 Bug Fixes
+
+**MCP Context Propagation**:
+- Fixed `EOF when reading a line` error in MCP tool handlers when running in non-interactive environments (like Cloud Run).
+- Switched tool handlers to use `asyncio.to_thread` to ensure `contextvars` (like `kumiho.use_client`) are correctly propagated to the execution thread.
+- This enables multi-tenant MCP support where tools are executed with the user's specific credentials.
+
+**Non-interactive Bootstrapping**:
+- Updated internal bootstrapping to default to `interactive=False`, preventing the SDK from attempting to prompt for credentials in server environments.
+
 ## kumiho 0.8.0 (December 2025) - Event Streaming Enhancements ⚡
 
 ### ✨ New Features
