@@ -1,5 +1,36 @@
 # Kumiho Python SDK - Release Notes
 
+## kumiho 0.8.0 (December 2025) - Event Streaming Enhancements ⚡
+
+### ✨ New Features
+
+**Event Stream Timeouts**:
+- Added `timeout` parameter to `event_stream()` and `Client.event_stream()`.
+- Allows the gRPC stream to close gracefully after a specified duration.
+- Essential for polling-based integrations (like n8n) and serverless environments.
+
+```python
+# Stream events for 30 seconds then stop
+try:
+    for event in kumiho.event_stream(routing_key_filter="revision.*", timeout=30):
+        print(f"New revision: {event.kref}")
+except grpc.RpcError as e:
+    if e.code() == grpc.StatusCode.DEADLINE_EXCEEDED:
+        print("Polling window finished")
+```
+
+### 📦 API Changes
+
+- `kumiho.event_stream()`: Added `timeout: Optional[float]` argument.
+- `Client.event_stream()`: Added `timeout: Optional[float]` argument.
+
+### 🛠️ Bug Fixes
+
+- Fixed an issue where `event_stream` would hang indefinitely in certain network conditions.
+- Improved cleanup of gRPC stream resources when the iterator is exhausted or timed out.
+
+---
+
 ## kumiho 0.7.0 (December 2025) - Deprecation Support 🗑️
 
 ### ✨ New Features
