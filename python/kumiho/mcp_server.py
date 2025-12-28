@@ -308,7 +308,8 @@ def tool_get_bundle(bundle_kref: str) -> Dict[str, Any]:
 def tool_search_items(
     context_filter: str = "",
     name_filter: str = "",
-    kind_filter: str = ""
+    kind_filter: str = "",
+    include_metadata: bool = False
 ) -> Dict[str, Any]:
     """Search for items across projects and spaces."""
     _ensure_configured()
@@ -317,8 +318,16 @@ def tool_search_items(
         name_filter=name_filter,
         kind_filter=kind_filter,
     )
+    
+    serialized = []
+    for i in items:
+        data = _serialize_item(i)
+        if not include_metadata:
+            data.pop("metadata", None)
+        serialized.append(data)
+
     return {
-        "items": [_serialize_item(i) for i in items],
+        "items": serialized,
         "count": len(items),
         "filters": {
             "context": context_filter,
@@ -369,6 +378,56 @@ def tool_get_dependents(
             "dependents": list(result.revision_krefs),
             "count": len(result.revision_krefs),
             "max_depth": max_depth,
+        }
+    except Exception as e:
+        return {"error": str(e)}
+
+
+def tool_get_provenance_summary(
+    revision_kref: str,
+    max_depth: int = 10
+) -> Dict[str, Any]:
+    """Get provenance summary with AI metadata."""
+    _ensure_configured()
+    try:
+        target = kumiho.get_revision(revision_kref)
+        deps_result = target.get_all_dependencies(max_depth=max_depth, limit=50)
+        
+        summary = []
+        
+        # Helper to extract AI params
+        def extract_params(rev):
+            meta = rev.metadata or {}
+            # Common keys in ComfyUI/Stable Diffusion
+            keys = ["model", "seed", "resolution", "width", "height", "cfg", "steps", "sampler", "scheduler", "prompt", "negative_prompt", "denoise"]
+            params = {k: meta[k] for k in keys if k in meta}
+            return params
+
+        # Process target
+        summary.append({
+            "kref": target.kref.uri,
+            "role": "target",
+            "params": extract_params(target)
+        })
+
+        # Process dependencies
+        for kref in deps_result.revision_krefs:
+            try:
+                rev = kumiho.get_revision(kref.uri)
+                params = extract_params(rev)
+                if params: # Only include if it has relevant metadata
+                    summary.append({
+                        "kref": rev.kref.uri,
+                        "role": "dependency",
+                        "params": params
+                    })
+            except:
+                pass # Skip if not found or error
+
+        return {
+            "revision_kref": revision_kref,
+            "provenance_summary": summary,
+            "dependency_count": len(deps_result.revision_krefs)
         }
     except Exception as e:
         return {"error": str(e)}
@@ -504,15 +563,23 @@ def tool_get_artifacts_by_location(location: str) -> Dict[str, Any]:
         return {"error": str(e)}
 
 
-def tool_get_item_revisions(item_kref: str) -> Dict[str, Any]:
+def tool_get_item_revisions(item_kref: str, include_metadata: bool = False) -> Dict[str, Any]:
     """Get all revisions for an item."""
     _ensure_configured()
     try:
         item = kumiho.get_item(item_kref)
         revisions = item.get_revisions()
+        
+        serialized = []
+        for r in revisions:
+            data = _serialize_revision(r)
+            if not include_metadata:
+                data.pop("metadata", None)
+            serialized.append(data)
+            
         return {
             "item_kref": item_kref,
-            "revisions": [_serialize_revision(r) for r in revisions],
+            "revisions": serialized,
             "count": len(revisions),
         }
     except Exception as e:
@@ -1032,19 +1099,29 @@ TOOLS: List[Dict[str, Any]] = [
                     "description": "Filter by item kind (e.g., 'model', 'texture', 'workflow')",
                     "default": "",
                 },
+                "include_metadata": {
+                    "type": "boolean",
+                    "description": "Whether to include full metadata for each item. Default: false",
+                    "default": False,
+                },
             },
             "required": [],
         },
     },
     {
         "name": "kumiho_get_item_revisions",
-        "description": "Get all revisions for a Kumiho item. Shows version history with tags and metadata.",
+        "description": "Get all revisions for a Kumiho item. Shows version history with tags.",
         "inputSchema": {
             "type": "object",
             "properties": {
                 "item_kref": {
                     "type": "string",
                     "description": "The kref URI of the item",
+                },
+                "include_metadata": {
+                    "type": "boolean",
+                    "description": "Whether to include full metadata for each revision. Default: false",
+                    "default": False,
                 },
             },
             "required": ["item_kref"],
@@ -1202,6 +1279,25 @@ TOOLS: List[Dict[str, Any]] = [
                     "type": "array",
                     "items": {"type": "string"},
                     "description": "Filter by edge types. Default: all types",
+                },
+            },
+            "required": ["revision_kref"],
+        },
+    },
+    {
+        "name": "kumiho_get_provenance_summary",
+        "description": "Get a summary of the provenance (lineage) of a revision, including used models, seeds, and parameters from upstream dependencies.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "revision_kref": {
+                    "type": "string",
+                    "description": "The kref URI of the revision to analyze",
+                },
+                "max_depth": {
+                    "type": "integer",
+                    "description": "Maximum traversal depth. Default: 10",
+                    "default": 10,
                 },
             },
             "required": ["revision_kref"],
@@ -1702,8 +1798,12 @@ TOOL_HANDLERS = {
         args.get("context_filter", ""),
         args.get("name_filter", ""),
         args.get("kind_filter", ""),
+        args.get("include_metadata", False),
     ),
-    "kumiho_get_item_revisions": lambda args: tool_get_item_revisions(args["item_kref"]),
+    "kumiho_get_item_revisions": lambda args: tool_get_item_revisions(
+        args["item_kref"],
+        args.get("include_metadata", False),
+    ),
     "kumiho_get_revision": lambda args: tool_get_revision(args["kref"]),
     "kumiho_get_revision_by_tag": lambda args: tool_get_revision_by_tag(
         args["item_kref"],
@@ -1725,6 +1825,10 @@ TOOL_HANDLERS = {
         args["revision_kref"],
         args.get("max_depth", 5),
         args.get("edge_types"),
+    ),
+    "kumiho_get_provenance_summary": lambda args: tool_get_provenance_summary(
+        args["revision_kref"],
+        args.get("max_depth", 10),
     ),
     "kumiho_analyze_impact": lambda args: tool_analyze_impact(
         args["revision_kref"],
