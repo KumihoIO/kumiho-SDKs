@@ -1884,11 +1884,21 @@ class _AutoLoginInterceptor(
             # Force the response to be evaluated
             if hasattr(response, 'code'):
                 code = response.code()
+                should_refresh = False
+                
                 if code in (grpc.StatusCode.UNAUTHENTICATED, grpc.StatusCode.PERMISSION_DENIED):
+                    should_refresh = True
+                elif code == grpc.StatusCode.UNAVAILABLE:
+                    # Handle JWKS errors which often manifest as UNAVAILABLE
+                    details = response.details()
+                    if details and ("jwks" in details.lower() or "kid" in details.lower()):
+                        should_refresh = True
+
+                if should_refresh:
                     _LOGGER.info("Authentication error detected, prompting for login...")
                     try:
                         from . import auth_cli
-                        new_token, _ = auth_cli.ensure_token(interactive=True)
+                        new_token, _ = auth_cli.ensure_token(interactive=True, force_refresh=True)
                         
                         # Update the authorization header with the new token
                         existing_metadata: List[Tuple[str, str]] = []

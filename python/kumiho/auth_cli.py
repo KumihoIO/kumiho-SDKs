@@ -227,6 +227,7 @@ def _interactive_login(api_key: str, project_id: Optional[str]) -> Credentials:
 def ensure_token(
     *,
     interactive: bool = True,
+    force_refresh: bool = False,
 ) -> Tuple[str, str]:
     """Ensure a usable Firebase ID token exists.
 
@@ -234,7 +235,7 @@ def ensure_token(
     """
 
     creds = _load_credentials()
-    if creds and creds.is_valid():
+    if not force_refresh and creds and creds.is_valid():
         _log_token(creds.id_token, "cached")
         
         # Check if we need to refresh CP token

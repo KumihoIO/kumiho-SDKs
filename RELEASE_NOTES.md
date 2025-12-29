@@ -1,5 +1,24 @@
 # Kumiho Python SDK - Release Notes
 
+## kumiho 0.8.3 (December 2025) - Authentication Resilience 🛡️
+
+### 🐛 Bug Fixes
+
+**Auto-refresh on JWKS Errors**:
+- Fixed an issue where the client would fail with `UNAVAILABLE` status and "jwks fetch error" when the server rotated keys.
+- The client now correctly identifies this specific error pattern and forces a token refresh, ensuring seamless connectivity during control plane updates.
+
+## kumiho 0.8.2 (December 2025) - MCP Token Optimization 📉
+
+### 🚀 Performance Improvements
+
+**MCP Token Usage Reduction**:
+- Optimized MCP tools to significantly reduce token consumption in LLM contexts.
+- **New Tool**: `kumiho_get_provenance_summary` provides a lightweight summary of AI provenance (seed, model, prompt) without the full revision overhead.
+- **Metadata Stripping**: `kumiho_search_items` and `kumiho_get_item_revisions` now default to `include_metadata=False`.
+- Added `include_metadata` parameter to these tools for cases where full metadata is explicitly needed.
+- Solves "Quota exceeded" errors when listing large directories or search results containing heavy ComfyUI workflows.
+
 ## kumiho 0.8.1 (December 2025) - MCP Multi-tenancy & Stability 🛠️
 
 ### 🐛 Bug Fixes
