@@ -2,7 +2,7 @@ from setuptools import setup, find_packages
 
 setup(
     name="kumiho",
-    version="0.8.3",
+    version="0.8.4",
     packages=find_packages(),
     install_requires=[
         "grpcio>=1.63.0",
@@ -16,9 +16,8 @@ setup(
         ],
     },
     description="Client library for the Kumiho asset management system.",
-    license="Apache-2.0",
+    license="MIT",
     classifiers=[
-        "License :: OSI Approved :: Apache Software License",
         "Programming Language :: Python :: 3",
         "Programming Language :: Python :: 3 :: Only",
         "Operating System :: OS Independent",

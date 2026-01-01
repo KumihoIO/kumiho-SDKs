@@ -3,7 +3,7 @@
 [![PyPI version](https://img.shields.io/pypi/v/kumiho.svg)](https://pypi.org/project/kumiho/)
 [![Python versions](https://img.shields.io/pypi/pyversions/kumiho.svg)](https://pypi.org/project/kumiho/)
 [![Documentation](https://img.shields.io/badge/docs-kumiho.io-blue)](https://docs.kumiho.io/python/)
-[![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
+[![License](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 
 The official Python SDK for [Kumiho Cloud](https://kumiho.io) — a graph-native creative and AI asset management platform.
 
@@ -56,5 +56,5 @@ revision.tag("approved")
 
 ## License
 
-Apache 2.0 — See [LICENSE](LICENSE) for details
+MIT — See [LICENSE](LICENSE) for details
 

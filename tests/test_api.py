@@ -61,6 +61,28 @@ def test_project_crud(mock_client):
     mock_stub.DeleteProject.assert_called_once()
     assert resp.success
 
+
+def test_project_set_allow_public_updates_server(mock_client):
+    client, mock_stub = mock_client
+
+    # Create a project
+    create_pb = mock_helpers.mock_project_response(project_id="p1", name="demo", allow_public=False)
+    mock_stub.CreateProject.return_value = create_pb
+    project = kumiho.create_project(name="demo")
+
+    # Update allow_public
+    updated_pb = mock_helpers.mock_project_response(project_id="p1", name="demo", allow_public=True)
+    mock_stub.UpdateProject.return_value = updated_pb
+
+    updated = project.set_allow_public(True)
+    assert updated.allow_public is True
+
+    # Verify request carried allow_public
+    args, _ = mock_stub.UpdateProject.call_args
+    req = args[0]
+    assert req.project_id == "p1"
+    assert req.allow_public is True
+
 def test_pagination(mock_client):
     client, mock_stub = mock_client
     
@@ -108,6 +130,45 @@ def test_pagination(mock_client):
     request = args[0]
     assert request.pagination.page_size == 2
     assert request.pagination.cursor == "cursor_123"
+
+
+def test_create_item_with_metadata_updates_metadata(mock_client):
+    client, mock_stub = mock_client
+
+    # CreateItem returns a protobuf ItemResponse with a protobuf Kref field.
+    created_pb = mock_helpers.mock_item_response(
+        kref_uri="kref://projectA/seqA/hero.model",
+        name="hero.model",
+        item_name="hero",
+        kind="model",
+        metadata={},
+    )
+    mock_stub.CreateItem.return_value = created_pb
+
+    updated_pb = mock_helpers.mock_item_response(
+        kref_uri="kref://projectA/seqA/hero.model",
+        name="hero.model",
+        item_name="hero",
+        kind="model",
+        metadata={"test": "create"},
+    )
+    mock_stub.UpdateItemMetadata.return_value = updated_pb
+
+    item = client.create_item(
+        parent_path="/projectA/seqA",
+        item_name="hero",
+        kind="model",
+        metadata={"test": "create"},
+    )
+
+    # This was previously raising AttributeError: to_pb.
+    assert item.kref.uri == "kref://projectA/seqA/hero.model"
+    mock_stub.CreateItem.assert_called_once()
+    mock_stub.UpdateItemMetadata.assert_called_once()
+
+    req_arg = mock_stub.UpdateItemMetadata.call_args[0][0]
+    assert req_arg.kref.uri == "kref://projectA/seqA/hero.model"
+    assert dict(req_arg.metadata) == {"test": "create"}
 
 def test_create_space(mock_client):
     """Test the create_space method via Project."""

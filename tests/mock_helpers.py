@@ -11,7 +11,8 @@ def mock_project_response(
     description="",
     created_at="now",
     updated_at="now",
-    deprecated=False
+    deprecated=False,
+    allow_public=False,
 ):
     return kumiho_pb2.ProjectResponse(
         project_id=project_id,
@@ -19,7 +20,8 @@ def mock_project_response(
         description=description,
         created_at=created_at,
         updated_at=updated_at,
-        deprecated=deprecated
+        deprecated=deprecated,
+        allow_public=allow_public,
     )
 
 def mock_get_projects_response(projects=None):

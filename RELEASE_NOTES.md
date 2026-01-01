@@ -1,5 +1,19 @@
 # Kumiho Python SDK - Release Notes
 
+## kumiho 0.8.4 (January 2026) - Item Metadata Fix & Packaging Cleanup 🧰
+
+### 🐛 Bug Fixes
+
+**Create Item with Metadata**:
+- Fixed `AttributeError: to_pb` when calling `create_item(..., metadata=...)`.
+- The SDK now correctly converts the returned protobuf Kref into a `kumiho.Kref` before calling `UpdateItemMetadata`.
+
+### 📦 Packaging
+
+**License & Distribution Metadata**:
+- Updated README/package metadata to reflect MIT licensing.
+- Ensured the wheel includes a license file.
+
 ## kumiho 0.8.3 (December 2025) - Authentication Resilience 🛡️
 
 ### 🐛 Bug Fixes

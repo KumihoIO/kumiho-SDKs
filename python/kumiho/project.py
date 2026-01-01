@@ -336,6 +336,20 @@ class Project(KumihoObject):
         """
         return self._client.update_project(project_id=self.project_id, allow_public=public)
 
+    def set_allow_public(self, allow_public: bool):
+        """Alias for :meth:`set_public`.
+
+        This exists because users often try to update the ``allow_public`` attribute
+        directly (e.g. ``project.allow_public = True``), which does not persist.
+
+        Args:
+            allow_public: True to enable public access, False to require authentication.
+
+        Returns:
+            Project: The updated Project object.
+        """
+        return self.set_public(allow_public)
+
     def update(
         self,
         description: Optional[str] = None,

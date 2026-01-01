@@ -553,7 +553,9 @@ class _Client:
         req = CreateItemRequest(parent_path=parent_path, item_name=item_name, kind=kind)
         resp = self.stub.CreateItem(req)
         if metadata and isinstance(metadata, dict):
-            self.update_item_metadata(resp.kref, metadata)
+            # resp.kref is a protobuf Kref message; update_item_metadata expects a kumiho.Kref
+            # which provides .to_pb() for UpdateMetadataRequest.
+            self.update_item_metadata(Kref.from_pb(resp.kref), metadata)
         return Item(resp, self)
 
     def get_item(self, parent_path: str, item_name: str, kind: str) -> Item:
