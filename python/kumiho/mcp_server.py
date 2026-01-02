@@ -834,15 +834,16 @@ def tool_delete_item(item_kref: str, force: bool = False) -> Dict[str, Any]:
         return {"error": str(e)}
 
 
-def tool_delete_revision(revision_kref: str) -> Dict[str, Any]:
+def tool_delete_revision(revision_kref: str, force: bool = False) -> Dict[str, Any]:
     """Delete a revision."""
     _ensure_configured()
     try:
         revision = kumiho.get_revision(revision_kref)
-        revision.delete()
+        revision.delete(force=force)
         return {
             "deleted": True,
             "revision_kref": revision_kref,
+            "force": force,
         }
     except Exception as e:
         return {"error": str(e)}
@@ -1624,13 +1625,18 @@ TOOLS: List[Dict[str, Any]] = [
     },
     {
         "name": "kumiho_delete_revision",
-        "description": "Delete a specific revision of an item.",
+        "description": "Delete a specific revision of an item. Use force=true to delete even if it is published or has artifacts.",
         "inputSchema": {
             "type": "object",
             "properties": {
                 "revision_kref": {
                     "type": "string",
                     "description": "The kref URI of the revision to delete",
+                },
+                "force": {
+                    "type": "boolean",
+                    "description": "If true, force delete. Default: false",
+                    "default": False,
                 },
             },
             "required": ["revision_kref"],
@@ -1902,6 +1908,7 @@ TOOL_HANDLERS = {
     ),
     "kumiho_delete_revision": lambda args: tool_delete_revision(
         args["revision_kref"],
+        args.get("force", False),
     ),
     "kumiho_delete_artifact": lambda args: tool_delete_artifact(
         args["artifact_kref"],

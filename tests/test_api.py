@@ -243,6 +243,32 @@ def test_get_item_from_revision_kref(mock_client):
     assert item.item_name == "modelA"
     assert item.kind == "asset"
 
+
+def test_delete_revision_does_not_retag_latest_in_sdk(mock_client):
+    client, mock_stub = mock_client
+
+    item_kref = "kref://projectA/modelA.asset"
+    v2_kref = f"{item_kref}?r=2"
+
+    v2_pb = mock_helpers.mock_revision_response(
+        kref_uri=v2_kref,
+        item_kref_uri=item_kref,
+        number=2,
+        latest=True,
+        tags=["latest"],
+        metadata={},
+        deprecated=False,
+        published=False,
+    )
+
+    mock_stub.DeleteRevision.return_value = mock_helpers.mock_status_response(success=True, message="ok")
+
+    revision = kumiho.Revision(v2_pb, client)
+    revision.delete(force=False)
+
+    assert mock_stub.DeleteRevision.call_count == 1
+    assert mock_stub.TagRevision.call_count == 0
+
 def test_get_item_by_kref(mock_client):
     """Test get_item_by_kref method."""
     client, mock_stub = mock_client

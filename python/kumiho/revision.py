@@ -485,6 +485,7 @@ class Revision(KumihoObject):
             >>> revision.delete()  # Fails if has artifacts
             >>> revision.delete(force=True)  # Force delete
         """
+        # Server is responsible for maintaining system-managed tags like "latest".
         self._client.delete_revision(self.kref, force)
 
     def set_deprecated(self, status: bool) -> None:
