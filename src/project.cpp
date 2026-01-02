@@ -92,6 +92,10 @@ std::shared_ptr<Project> Project::setPublic(bool allow) {
     return client_->updateProject(response_.project_id(), allow, std::nullopt);
 }
 
+std::shared_ptr<Project> Project::setAllowPublic(bool allow_public) {
+    return setPublic(allow_public);
+}
+
 std::shared_ptr<Project> Project::update(const std::string& description) {
     return client_->updateProject(response_.project_id(), std::nullopt, description);
 }

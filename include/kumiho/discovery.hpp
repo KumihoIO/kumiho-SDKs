@@ -174,7 +174,7 @@ class DiscoveryManager {
 public:
     /**
      * @brief Construct a discovery manager.
-     * @param control_plane_url The control plane base URL (default: https://kumiho.io).
+    * @param control_plane_url The control plane base URL (default: https://control.kumiho.cloud).
      * @param cache_path Optional path to the cache file.
      * @param timeout_seconds Request timeout in seconds (default: 10).
      */
@@ -219,7 +219,7 @@ private:
  * @brief Get the default control plane URL.
  *
  * Returns the value of KUMIHO_CONTROL_PLANE_URL environment variable,
- * or "https://kumiho.io" if not set.
+ * or "https://control.kumiho.cloud" if not set.
  *
  * @return The control plane URL.
  */

@@ -265,7 +265,7 @@ TEST_F(DiscoveryFunctionsTest, GetDefaultControlPlaneUrl) {
     
     std::string url = getDefaultControlPlaneUrl();
     
-    EXPECT_EQ(url, "https://kumiho.io");
+    EXPECT_EQ(url, "https://control.kumiho.cloud");
     
     // Restore
     if (!original.empty()) {

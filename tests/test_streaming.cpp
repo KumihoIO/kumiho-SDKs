@@ -1,11 +1,14 @@
 #include <grpcpp/grpcpp.h>
 #include <gtest/gtest.h>
 #include <kumiho/kumiho.hpp>
+#include <kumiho/discovery.hpp>
+#include <kumiho/token_loader.hpp>
 #include <memory>
 #include <thread>
 #include <vector>
 #include <mutex>
 #include <chrono>
+#include <cstdlib>
 
 // --- Helper Functions ---
 std::string unique_name_stream(const std::string& prefix) {
@@ -18,11 +21,15 @@ std::string unique_name_stream(const std::string& prefix) {
 class KumihoStreamingTest : public ::testing::Test {
 protected:
     void SetUp() override {
-        auto channel = grpc::CreateChannel("localhost:50051", grpc::InsecureChannelCredentials());
-        client = std::make_unique<kumiho::api::Client>(channel);
+        const char* env = std::getenv("KUMIHO_INTEGRATION_TEST");
+        if (!(env && std::string(env) == "1")) {
+            GTEST_SKIP() << "Integration tests disabled. Set KUMIHO_INTEGRATION_TEST=1 to enable.";
+        }
+
+        client = kumiho::api::clientFromDiscovery();
     }
 
-    std::unique_ptr<kumiho::api::Client> client;
+    std::shared_ptr<kumiho::api::Client> client;
 };
 
 // --- Integration Test for Event Streaming ---

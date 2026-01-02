@@ -199,7 +199,8 @@ protected:
 };
 
 TEST_F(LoadBearerTokenTest, LoadFromEnv) {
-    std::string test_token = "test-bearer-token-123";
+    // Must look like a JWT (header.payload.signature)
+    std::string test_token = "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ0ZXN0In0.sig";
 #ifdef _WIN32
     _putenv_s(TOKEN_ENV, test_token.c_str());
 #else
@@ -274,7 +275,8 @@ protected:
 };
 
 TEST_F(LoadFirebaseTokenTest, LoadFromEnv) {
-    std::string test_token = "firebase-id-token-456";
+    // Must look like a JWT (header.payload.signature)
+    std::string test_token = "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJmaXJlYmFzZSJ9.sig";
 #ifdef _WIN32
     _putenv_s(FIREBASE_TOKEN_ENV, test_token.c_str());
 #else

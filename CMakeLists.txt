@@ -16,6 +16,7 @@ endif()
 # --- gRPC and Protobuf setup ---
 find_package(gRPC CONFIG REQUIRED)
 find_package(Protobuf CONFIG REQUIRED)
+find_package(CURL REQUIRED)
 
 # --- Manually find the gRPC C++ plugin ---
 if(DEFINED GRPC_CPP_PLUGIN)
@@ -89,6 +90,7 @@ target_link_libraries(kumiho PUBLIC
     protobuf_grpc_lib
     gRPC::grpc++
     protobuf::libprotobuf
+    CURL::libcurl
 )
 
 # --- Event Listener Executable ---
@@ -101,122 +103,163 @@ target_link_libraries(kumiho_listener PRIVATE
 )
 
 # --- Tests ---
-find_package(GTest REQUIRED)
-include(GoogleTest)
+if(KUMIHO_BUILD_TESTS)
+    # Required for CTest/ctest integration
+    include(CTest)
+    enable_testing()
 
-# API Tests
-add_executable(kumiho_tests
-    tests/test_api.cpp
-)
-target_link_libraries(kumiho_tests PRIVATE
-    kumiho
-    GTest::gtest
-    GTest::gmock
-    GTest::gtest_main
-)
-gtest_discover_tests(kumiho_tests)
+    find_package(GTest REQUIRED)
+    include(GoogleTest)
 
-# Streaming Tests
-add_executable(kumiho_streaming_tests
-    tests/test_streaming.cpp
-)
-target_link_libraries(kumiho_streaming_tests PRIVATE
-    kumiho
-    GTest::gtest
-    GTest::gmock
-    GTest::gtest_main
-)
-gtest_discover_tests(kumiho_streaming_tests)
-
-# Kref Tests
-add_executable(kumiho_kref_tests
-    tests/test_kref.cpp
-)
-target_link_libraries(kumiho_kref_tests PRIVATE
-    kumiho
-    GTest::gtest
-    GTest::gtest_main
-)
-gtest_discover_tests(kumiho_kref_tests)
-
-# Types Tests
-add_executable(kumiho_types_tests
-    tests/test_types.cpp
-)
-target_link_libraries(kumiho_types_tests PRIVATE
-    kumiho
-    GTest::gtest
-    GTest::gtest_main
-)
-gtest_discover_tests(kumiho_types_tests)
-
-# Token Loader Tests
-add_executable(kumiho_token_tests
-    tests/test_token_loader.cpp
-)
-target_link_libraries(kumiho_token_tests PRIVATE
-    kumiho
-    GTest::gtest
-    GTest::gtest_main
-)
-gtest_discover_tests(kumiho_token_tests)
-
-# Discovery Tests
-add_executable(kumiho_discovery_tests
-    tests/test_discovery.cpp
-)
-target_link_libraries(kumiho_discovery_tests PRIVATE
-    kumiho
-    GTest::gtest
-    GTest::gtest_main
-)
-gtest_discover_tests(kumiho_discovery_tests)
-
-# --- Integration Tests ---
-if(KUMIHO_BUILD_INTEGRATION_TESTS)
-    # Workflow Integration Tests
-    add_executable(kumiho_workflow_integration_tests
-        tests/integration/test_workflow.cpp
+    # API Tests
+    add_executable(kumiho_tests
+        tests/test_api.cpp
     )
-    target_link_libraries(kumiho_workflow_integration_tests PRIVATE
+    target_link_libraries(kumiho_tests PRIVATE
+        kumiho
+        GTest::gtest
+        GTest::gmock
+        GTest::gtest_main
+    )
+    gtest_discover_tests(kumiho_tests
+        PROPERTIES
+            LABELS "unit"
+    )
+
+    # Live API Integration Tests (requires running server + auth)
+    if(KUMIHO_BUILD_INTEGRATION_TESTS)
+        add_executable(kumiho_api_integration_tests
+            tests/integration/test_api_live.cpp
+        )
+        target_link_libraries(kumiho_api_integration_tests PRIVATE
+            kumiho
+            GTest::gtest
+            GTest::gmock
+            GTest::gtest_main
+        )
+        gtest_discover_tests(kumiho_api_integration_tests
+            PROPERTIES
+                LABELS "integration"
+        )
+    endif()
+
+    # Streaming Tests
+    add_executable(kumiho_streaming_tests
+        tests/test_streaming.cpp
+    )
+    target_link_libraries(kumiho_streaming_tests PRIVATE
+        kumiho
+        GTest::gtest
+        GTest::gmock
+        GTest::gtest_main
+    )
+    gtest_discover_tests(kumiho_streaming_tests
+        PROPERTIES
+            LABELS "integration"
+    )
+
+    # Kref Tests
+    add_executable(kumiho_kref_tests
+        tests/test_kref.cpp
+    )
+    target_link_libraries(kumiho_kref_tests PRIVATE
         kumiho
         GTest::gtest
         GTest::gtest_main
     )
-    gtest_discover_tests(kumiho_workflow_integration_tests
+    gtest_discover_tests(kumiho_kref_tests
         PROPERTIES
-            LABELS "integration"
-            ENVIRONMENT "KUMIHO_INTEGRATION_TEST=0"
+            LABELS "unit"
     )
 
-    # Discovery Integration Tests
-    add_executable(kumiho_discovery_integration_tests
-        tests/integration/test_discovery_integration.cpp
+    # Types Tests
+    add_executable(kumiho_types_tests
+        tests/test_types.cpp
     )
-    target_link_libraries(kumiho_discovery_integration_tests PRIVATE
+    target_link_libraries(kumiho_types_tests PRIVATE
         kumiho
         GTest::gtest
         GTest::gtest_main
     )
-    gtest_discover_tests(kumiho_discovery_integration_tests
+    gtest_discover_tests(kumiho_types_tests
         PROPERTIES
-            LABELS "integration"
-            ENVIRONMENT "KUMIHO_INTEGRATION_TEST=0"
+            LABELS "unit"
+    )
+
+    # Token Loader Tests
+    add_executable(kumiho_token_tests
+        tests/test_token_loader.cpp
+    )
+    target_link_libraries(kumiho_token_tests PRIVATE
+        kumiho
+        GTest::gtest
+        GTest::gtest_main
+    )
+    gtest_discover_tests(kumiho_token_tests
+        PROPERTIES
+            LABELS "unit"
+    )
+
+    # Discovery Tests
+    add_executable(kumiho_discovery_tests
+        tests/test_discovery.cpp
+    )
+    target_link_libraries(kumiho_discovery_tests PRIVATE
+        kumiho
+        GTest::gtest
+        GTest::gtest_main
+    )
+    gtest_discover_tests(kumiho_discovery_tests
+        PROPERTIES
+            LABELS "unit"
+    )
+
+    # --- Integration Tests ---
+    if(KUMIHO_BUILD_INTEGRATION_TESTS)
+        # Workflow Integration Tests
+        add_executable(kumiho_workflow_integration_tests
+            tests/integration/test_workflow.cpp
+        )
+        target_link_libraries(kumiho_workflow_integration_tests PRIVATE
+            kumiho
+            GTest::gtest
+            GTest::gtest_main
+        )
+        gtest_discover_tests(kumiho_workflow_integration_tests
+            PROPERTIES
+                LABELS "integration"
+        )
+
+        # Discovery Integration Tests
+        add_executable(kumiho_discovery_integration_tests
+            tests/integration/test_discovery_integration.cpp
+        )
+        target_link_libraries(kumiho_discovery_integration_tests PRIVATE
+            kumiho
+            GTest::gtest
+            GTest::gtest_main
+        )
+        gtest_discover_tests(kumiho_discovery_integration_tests
+            PROPERTIES
+                LABELS "integration"
+        )
+    endif()
+
+    # --- Custom test targets ---
+    # Note: Some legacy tests in the unit binaries hit a live server (KumihoApiTest.*).
+    # Exclude them by default for the unit target.
+    add_custom_target(run_unit_tests
+        COMMAND ${CMAKE_CTEST_COMMAND} -C $<CONFIG> --output-on-failure -LE integration
+        DEPENDS kumiho_tests kumiho_streaming_tests kumiho_kref_tests kumiho_types_tests kumiho_token_tests kumiho_discovery_tests
+        COMMENT "Running unit tests..."
+    )
+
+    add_custom_target(run_integration_tests
+        COMMAND ${CMAKE_COMMAND} -E env KUMIHO_INTEGRATION_TEST=1 ${CMAKE_CTEST_COMMAND} -C $<CONFIG> --output-on-failure -L integration
+        DEPENDS kumiho_workflow_integration_tests kumiho_discovery_integration_tests kumiho_api_integration_tests
+        COMMENT "Running integration tests..."
     )
 endif()
-
-# --- Custom test target ---
-add_custom_target(run_unit_tests
-    COMMAND ${CMAKE_CTEST_COMMAND} -C $<CONFIG> --output-on-failure -L "!integration"
-    DEPENDS kumiho_tests kumiho_streaming_tests kumiho_kref_tests kumiho_types_tests kumiho_token_tests kumiho_discovery_tests
-    COMMENT "Running unit tests..."
-)
-
-add_custom_target(run_integration_tests
-    COMMAND ${CMAKE_COMMAND} -E env KUMIHO_INTEGRATION_TEST=1 ${CMAKE_CTEST_COMMAND} -C $<CONFIG> --output-on-failure -L integration
-    DEPENDS kumiho_workflow_integration_tests kumiho_discovery_integration_tests
-    COMMENT "Running integration tests..."
-)
 
 # --- Installation ---
 install(TARGETS kumiho_listener

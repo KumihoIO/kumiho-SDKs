@@ -427,16 +427,15 @@ auto bearerToken = loadBearerToken();  // From KUMIHO_AUTH_TOKEN env
 ### Windows (Visual Studio 2022)
 
 ```powershell
-# Configure
+# Recommended (build + run ctest)
+$env:VCPKG_ROOT = "C:\\vcpkg"
+./scripts/build_and_ctest.ps1 -Config Release
+
+# Or manual:
 cmake -B build -G "Visual Studio 17 2022" -A x64 `
-    -DCMAKE_TOOLCHAIN_FILE=C:/vcpkg/scripts/buildsystems/vcpkg.cmake
-
-# Build
+    -DCMAKE_TOOLCHAIN_FILE=$env:VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake
 cmake --build build --config Release
-
-# Run tests
-cd build
-ctest -C Release --output-on-failure
+ctest --test-dir build -C Release --output-on-failure
 ```
 
 ### Linux/macOS
@@ -467,6 +466,14 @@ ctest --output-on-failure
 # Run specific test suite
 ./kumiho_integration_tests
 ```
+
+### Authentication (C++ SDK)
+
+Token resolution order:
+1. `KUMIHO_AUTH_TOKEN` env var
+2. `~/.kumiho/kumiho_authentication.json` (or `%USERPROFILE%\.kumiho\kumiho_authentication.json` on Windows)
+
+You can override the config directory with `KUMIHO_CONFIG_DIR`.
 
 ## Project Structure
 

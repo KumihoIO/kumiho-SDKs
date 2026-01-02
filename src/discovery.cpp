@@ -8,6 +8,9 @@
 #include "kumiho/error.hpp"
 #include "kumiho/client.hpp"
 
+#include <curl/curl.h>
+#include <nlohmann/json.hpp>
+
 #include <fstream>
 #include <sstream>
 #include <cstdlib>
@@ -16,6 +19,8 @@
 #include <random>
 #include <iomanip>
 #include <array>
+#include <algorithm>
+#include <mutex>
 
 #ifdef _WIN32
 #include <windows.h>
@@ -38,8 +43,20 @@ const std::string DEFAULT_CACHE_KEY = "__default__";
 
 // Get environment variable safely
 std::string getEnvVar(const char* name, const std::string& defaultValue = "") {
+ #ifdef _MSC_VER
+    char* value = nullptr;
+    size_t len = 0;
+    _dupenv_s(&value, &len, name);
+    if (value == nullptr) {
+        return defaultValue;
+    }
+    std::string result(value);
+    free(value);
+    return result;
+ #else
     const char* value = std::getenv(name);
     return value ? value : defaultValue;
+ #endif
 }
 
 // Parse ISO8601 timestamp to time_point
@@ -49,11 +66,37 @@ std::chrono::system_clock::time_point parseIso8601(const std::string& timestamp)
     }
     
     std::string text = timestamp;
-    // Replace Z with +00:00
-    if (!text.empty() && text.back() == 'Z') {
-        text = text.substr(0, text.size() - 1);
+    const auto start = text.find_first_not_of(" \t\r\n");
+    const auto end = text.find_last_not_of(" \t\r\n");
+    if (start == std::string::npos) {
+        throw DiscoveryError("Discovery payload missing required timestamp");
     }
-    
+    text = text.substr(start, end - start + 1);
+
+    // Accept common ISO-8601 variants and normalise to "YYYY-MM-DDTHH:MM:SS".
+    if (!text.empty() && (text.back() == 'Z' || text.back() == 'z')) {
+        text.pop_back();
+    }
+
+    // Strip timezone offset (assume control plane timestamps are effectively UTC).
+    const auto tPos = text.find('T');
+    if (tPos != std::string::npos) {
+        const auto plusPos = text.find('+', tPos);
+        const auto minusPos = text.find('-', tPos + 1);
+        const auto tzPos = (plusPos == std::string::npos) ? minusPos
+                        : (minusPos == std::string::npos) ? plusPos
+                        : std::min(plusPos, minusPos);
+        if (tzPos != std::string::npos) {
+            text = text.substr(0, tzPos);
+        }
+    }
+
+    // Strip fractional seconds.
+    const auto dotPos = text.find('.');
+    if (dotPos != std::string::npos) {
+        text = text.substr(0, dotPos);
+    }
+
     // Parse using std::get_time
     std::tm tm = {};
     std::istringstream ss(text);
@@ -86,6 +129,79 @@ std::string toIso8601(const std::chrono::system_clock::time_point& tp) {
     char buf[32];
     std::strftime(buf, sizeof(buf), "%Y-%m-%dT%H:%M:%SZ", &tm);
     return buf;
+}
+
+size_t CurlWriteCallback(char* ptr, size_t size, size_t nmemb, void* userdata) {
+    auto* buffer = static_cast<std::string*>(userdata);
+    buffer->append(ptr, size * nmemb);
+    return size * nmemb;
+}
+
+DiscoveryRecord ParseDiscoveryRecord(const nlohmann::json& body) {
+    if (!body.is_object()) {
+        throw DiscoveryError("Discovery endpoint returned invalid JSON");
+    }
+
+    if (!body.contains("cache_control") || !body.contains("region")) {
+        throw DiscoveryError("Discovery payload is missing required fields");
+    }
+
+    DiscoveryRecord record;
+    record.tenant_id = body.value("tenant_id", "");
+    if (record.tenant_id.empty()) {
+        throw DiscoveryError("Discovery payload missing tenant_id");
+    }
+
+    const auto tenantName = body.value("tenant_name", "");
+    if (!tenantName.empty()) {
+        record.tenant_name = tenantName;
+    }
+
+    if (body.contains("roles") && body["roles"].is_array()) {
+        for (const auto& role : body["roles"]) {
+            if (role.is_string()) {
+                record.roles.push_back(role.get<std::string>());
+            }
+        }
+    }
+
+    if (body.contains("guardrails") && body["guardrails"].is_object()) {
+        std::map<std::string, std::string> guardrails;
+        for (auto it = body["guardrails"].begin(); it != body["guardrails"].end(); ++it) {
+            if (it.value().is_string()) {
+                guardrails[it.key()] = it.value().get<std::string>();
+            } else {
+                guardrails[it.key()] = it.value().dump();
+            }
+        }
+        record.guardrails = std::move(guardrails);
+    }
+
+    const auto& region = body.at("region");
+    record.region.region_code = region.value("region_code", "");
+    record.region.server_url = region.value("server_url", "");
+    if (record.region.server_url.empty()) {
+        // Backwards compatibility: some payloads may be flat.
+        record.region.server_url = body.value("server_url", "");
+    }
+
+    const auto grpcAuthority = region.value("grpc_authority", "");
+    if (!grpcAuthority.empty()) {
+        record.region.grpc_authority = grpcAuthority;
+    }
+
+    if (record.region.server_url.empty()) {
+        throw DiscoveryError("Discovery payload missing region.server_url");
+    }
+
+    const auto& cache = body.at("cache_control");
+    record.cache_control.issued_at = parseIso8601(cache.value("issued_at", ""));
+    record.cache_control.refresh_at = parseIso8601(cache.value("refresh_at", ""));
+    record.cache_control.expires_at = parseIso8601(cache.value("expires_at", ""));
+    record.cache_control.expires_in_seconds = cache.value("expires_in_seconds", 0);
+    record.cache_control.refresh_after_seconds = cache.value("refresh_after_seconds", 0);
+
+    return record;
 }
 
 // Simple JSON string extraction (handles basic cases)
@@ -551,7 +667,7 @@ std::optional<DiscoveryRecord> DiscoveryCache::load(const std::string& cache_key
         
         return record;
         
-    } catch (const std::exception& e) {
+    } catch (const std::exception&) {
         // Cache read failed - return empty
         return std::nullopt;
     }
@@ -688,27 +804,70 @@ DiscoveryRecord DiscoveryManager::fetchRemote(
     const std::string& id_token,
     const std::optional<std::string>& tenant_hint
 ) {
-    // Note: This implementation requires an HTTP client library.
-    // For production use, integrate with libcurl, cpr, or similar.
-    // For now, we throw an error indicating the functionality needs
-    // an HTTP client implementation.
-    
-    // The Python implementation uses requests.post() to call:
-    // POST {base_url}/api/discovery/tenant
-    // Headers: Authorization: Bearer {id_token}, Content-Type: application/json
-    // Body: {"tenant_hint": "..."} (optional)
-    
-    throw DiscoveryError(
-        "Remote discovery not yet implemented in C++ SDK. "
-        "Use direct endpoint connection with Client::createFromEnv() or "
-        "provide explicit endpoint to Client constructor."
-    );
+    const std::string url = buildDiscoveryUrl(base_url_);
+
+    static std::once_flag curlInitFlag;
+    std::call_once(curlInitFlag, []() {
+        curl_global_init(CURL_GLOBAL_DEFAULT);
+    });
+
+    nlohmann::json payload = nlohmann::json::object();
+    if (tenant_hint && !tenant_hint->empty()) {
+        payload["tenant_hint"] = *tenant_hint;
+    }
+    const std::string payloadText = payload.dump();
+
+    CURL* curl = curl_easy_init();
+    if (!curl) {
+        throw DiscoveryError("Failed to initialise HTTP client");
+    }
+
+    std::string responseBody;
+    struct curl_slist* headers = nullptr;
+    const std::string authHeader = "Authorization: Bearer " + id_token;
+    headers = curl_slist_append(headers, authHeader.c_str());
+    headers = curl_slist_append(headers, "Content-Type: application/json");
+
+    curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
+    curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
+    curl_easy_setopt(curl, CURLOPT_POST, 1L);
+    curl_easy_setopt(curl, CURLOPT_POSTFIELDS, payloadText.c_str());
+    curl_easy_setopt(curl, CURLOPT_POSTFIELDSIZE, static_cast<long>(payloadText.size()));
+    curl_easy_setopt(curl, CURLOPT_TIMEOUT_MS, static_cast<long>(timeout_ * 1000.0));
+    curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
+    curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, CurlWriteCallback);
+    curl_easy_setopt(curl, CURLOPT_WRITEDATA, &responseBody);
+
+    CURLcode res = curl_easy_perform(curl);
+    long httpCode = 0;
+    curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &httpCode);
+
+    curl_slist_free_all(headers);
+    curl_easy_cleanup(curl);
+
+    if (res != CURLE_OK) {
+        throw DiscoveryError(std::string("Discovery request failed: ") + curl_easy_strerror(res));
+    }
+
+    if (httpCode >= 400) {
+        const std::string snippet = responseBody.substr(0, 200);
+        throw DiscoveryError(
+            "Discovery endpoint returned " + std::to_string(httpCode) + ": " + snippet
+        );
+    }
+
+    try {
+        const auto body = nlohmann::json::parse(responseBody);
+        return ParseDiscoveryRecord(body);
+    } catch (const nlohmann::json::exception& e) {
+        throw DiscoveryError(std::string("Discovery endpoint returned invalid JSON: ") + e.what());
+    }
 }
 
 // --- Convenience functions ---
 
 std::string getDefaultControlPlaneUrl() {
-    return getEnvVar("KUMIHO_CONTROL_PLANE_URL", "https://kumiho.io");
+    return getEnvVar("KUMIHO_CONTROL_PLANE_URL", "https://control.kumiho.cloud");
 }
 
 std::filesystem::path getDefaultCachePath() {
@@ -767,7 +926,9 @@ std::shared_ptr<Client> clientFromDiscovery(
     // Note: gRPC doesn't support default metadata on channel; would need interceptor
     
     auto channel = grpc::CreateCustomChannel(target, channelCreds, args);
-    return std::make_shared<Client>(channel);
+    auto client = std::make_shared<Client>(channel);
+    client->setAuthToken(token);
+    return client;
 }
 
 } // namespace api

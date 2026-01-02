@@ -213,7 +213,10 @@ public:
      * @brief Add a tag to this revision.
      *
      * Tags are used to categorize revisions and mark their status.
-     * Common tags include "latest", "published", "approved", etc.
+    * Common user tags include "published", "approved", etc.
+    *
+    * Note: "latest" is a reserved system tag managed by the server and cannot
+    * be set or removed manually.
      * 
      * The server records the timestamp when a tag is applied, enabling
      * time-based queries like "what was published on June 1st?"

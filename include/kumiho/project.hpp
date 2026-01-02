@@ -167,6 +167,13 @@ public:
     std::shared_ptr<Project> setPublic(bool allow);
 
     /**
+     * @brief Alias for setPublic() using the allow_public terminology.
+     * @param allow_public True to enable public access, false to restrict.
+     * @return The updated Project.
+     */
+    std::shared_ptr<Project> setAllowPublic(bool allow_public);
+
+    /**
      * @brief Update the project's description.
      * @param description The new description.
      * @return The updated Project.
