@@ -17,6 +17,7 @@ import mock_helpers
 # --- Constants ---
 PUBLISHED_TAG = "published"
 
+
 # --- Mocked Unit Tests ---
 
 @pytest.fixture
@@ -52,6 +53,7 @@ def test_project_crud(mock_client):
     # List
     mock_stub.GetProjects.return_value = mock_helpers.mock_get_projects_response(projects=[create_pb])
     projects = kumiho.get_projects()
+
     mock_stub.GetProjects.assert_called_once()
     assert projects[0].name == "demo"
 
@@ -60,6 +62,61 @@ def test_project_crud(mock_client):
     resp = kumiho.delete_project(project_id="p1", force=True)
     mock_stub.DeleteProject.assert_called_once()
     assert resp.success
+
+
+def test_get_artifact_by_kref_supports_item_kref_via_default_artifact(mock_client):
+    client, mock_stub = mock_client
+
+    item_kref = "kref://demo/outputs/images/comfyui/demo_kumiho.image"
+    revision_kref = f"{item_kref}?r=11"
+    artifact_kref = f"{revision_kref}&a=image"
+
+    mock_stub.GetRevision.return_value = mock_helpers.mock_revision_response(
+        kref_uri=revision_kref,
+        item_kref_uri=item_kref,
+        number=11,
+        latest=True,
+        default_artifact="image",
+    )
+    mock_stub.GetArtifact.return_value = mock_helpers.mock_artifact_response(
+        kref_uri=artifact_kref,
+        revision_kref_uri=revision_kref,
+        item_kref_uri=item_kref,
+        name="image",
+        location="/loc/image.png",
+    )
+
+    artifact = kumiho.get_artifact(item_kref)
+
+    mock_stub.GetRevision.assert_called_once()
+    req = mock_stub.GetRevision.call_args[0][0]
+    assert req.kref.uri == item_kref
+
+    mock_stub.GetArtifact.assert_called_once()
+    req = mock_stub.GetArtifact.call_args[0][0]
+    assert req.revision_kref.uri == revision_kref
+    assert req.name == "image"
+
+    assert artifact.kref == artifact_kref
+    assert artifact.location == "/loc/image.png"
+
+
+def test_get_artifact_by_kref_errors_without_default_artifact(mock_client):
+    client, mock_stub = mock_client
+
+    item_kref = "kref://demo/outputs/images/comfyui/demo_kumiho.image"
+    revision_kref = f"{item_kref}?r=11"
+
+    mock_stub.GetRevision.return_value = mock_helpers.mock_revision_response(
+        kref_uri=revision_kref,
+        item_kref_uri=item_kref,
+        number=11,
+        latest=True,
+        default_artifact=None,
+    )
+
+    with pytest.raises(ValueError):
+        kumiho.get_artifact(item_kref)
 
 
 def test_project_set_allow_public_updates_server(mock_client):

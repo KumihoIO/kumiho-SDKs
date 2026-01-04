@@ -1,5 +1,34 @@
 # Kumiho Python SDK - Release Notes
 
+## kumiho 0.8.6 (January 2026) - Kref Ergonomics for Artifacts 🔗
+
+### ✨ New Behavior
+
+**`get_artifact()` default artifact resolution**:
+- `kumiho.get_artifact("kref://project/space/item.kind")` now resolves the *default artifact* on the latest revision.
+- `kumiho.get_artifact("kref://project/space/item.kind?r=REV")` now resolves the *default artifact* on that specific revision.
+- If no default artifact is set, the SDK raises a `ValueError` prompting the caller to supply an explicit `&a=name`.
+
+### ✅ Compatibility Notes
+
+- This workflow expects a `kumiho-server` that can return a revision when given an item kref (latest revision resolution).
+
+## kumiho 0.8.5 (January 2026) - Revision Delete & System Tag Consistency 🏷️
+
+### 🔧 Behavior Updates
+
+**Server-authoritative `latest` on deletion**:
+- Removed SDK-side logic that attempted to re-tag `latest` after deleting a revision.
+- `Revision.delete(force=...)` now issues `DeleteRevision` and relies on the server to keep the system-managed `latest` tag consistent.
+
+### 🧪 Tests
+
+- Updated unit tests to assert the SDK does not call tag operations as part of revision deletion.
+
+### ✅ Compatibility Notes
+
+- For tag-based latest resolution (e.g. resolving with `tag="latest"`) after hard deletes, use with a `kumiho-server` version that re-points `latest` after deleting the latest-tagged revision.
+
 ## kumiho 0.8.4 (January 2026) - Item Metadata Fix & Packaging Cleanup 🧰
 
 ### 🐛 Bug Fixes

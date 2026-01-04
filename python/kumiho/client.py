@@ -1034,18 +1034,28 @@ class _Client:
             The Artifact object.
 
         Raises:
-            ValueError: If the kref URI does not contain an artifact name.
+            ValueError: If the kref URI does not contain an artifact name and no default artifact
+                can be resolved.
         """
         kref = Kref(kref_uri)
         artifact_name = kref.get_artifact_name()
-        if not artifact_name:
-            raise ValueError(f"Invalid artifact kref format: {kref_uri} (missing &a=artifact_name)")
-        
-        # Build the revision kref by removing the artifact part
-        revision_kref_uri = kref_uri.split("&a=")[0]
-        revision_kref = Kref(revision_kref_uri)
-        
-        return self.get_artifact(revision_kref, artifact_name)
+        if artifact_name:
+            # Build the revision kref by removing the artifact part
+            revision_kref_uri = kref_uri.split("&a=")[0]
+            revision_kref = Kref(revision_kref_uri)
+            return self.get_artifact(revision_kref, artifact_name)
+
+        # If the caller passed an Item kref (or a Revision kref without &a=), interpret it as
+        # "fetch the default artifact".
+        # - Item kref -> latest revision -> default_artifact
+        # - Revision kref -> that revision -> default_artifact
+        revision = self.get_revision(kref_uri)
+        default_name = getattr(revision, "default_artifact", None)
+        if not default_name:
+            raise ValueError(
+                f"Invalid artifact kref format: {kref_uri} (missing &a=artifact_name and no default_artifact set)"
+            )
+        return self.get_artifact(revision.kref, default_name)
 
     def get_artifacts(self, revision_kref: Kref) -> List[Artifact]:
         """Get all artifacts for a revision.

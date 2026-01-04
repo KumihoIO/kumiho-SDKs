@@ -49,9 +49,10 @@ def mock_revision_response(
     author="test_author",
     username="test_user",
     deprecated=False,
-    published=False
+    published=False,
+    default_artifact=None,
 ):
-    return kumiho_pb2.RevisionResponse(
+    resp = kumiho_pb2.RevisionResponse(
         kref=kumiho_pb2.Kref(uri=kref_uri),
         item_kref=kumiho_pb2.Kref(uri=item_kref_uri),
         number=number,
@@ -64,8 +65,41 @@ def mock_revision_response(
         published=published
     )
 
+    # Optional field (protobuf3); only set when provided.
+    if default_artifact is not None:
+        resp.default_artifact = default_artifact
+    return resp
+
 # Backwards compatibility alias
 mock_version_response = mock_revision_response
+
+
+def mock_artifact_response(
+    kref_uri,
+    revision_kref_uri,
+    item_kref_uri,
+    name="main",
+    location="/path/to/file",
+    author="test_author",
+    username="test_user",
+    deprecated=False,
+    metadata=None,
+    created_at="now",
+    modified_at="now",
+):
+    return kumiho_pb2.ArtifactResponse(
+        kref=kumiho_pb2.Kref(uri=kref_uri),
+        revision_kref=kumiho_pb2.Kref(uri=revision_kref_uri),
+        item_kref=kumiho_pb2.Kref(uri=item_kref_uri),
+        name=name,
+        location=location,
+        author=author,
+        username=username,
+        deprecated=deprecated,
+        metadata=metadata or {},
+        created_at=created_at,
+        modified_at=modified_at,
+    )
 
 def mock_item_response(
     kref_uri,
