@@ -275,6 +275,44 @@ class ItemSearchRequest(_message.Message):
     include_deprecated: bool
     def __init__(self, context_filter: _Optional[str] = ..., item_name_filter: _Optional[str] = ..., kind_filter: _Optional[str] = ..., pagination: _Optional[_Union[PaginationRequest, _Mapping]] = ..., include_deprecated: bool = ...) -> None: ...
 
+class SearchRequest(_message.Message):
+    __slots__ = ("query", "context_filter", "kind_filter", "include_deprecated", "pagination", "min_score", "include_revision_metadata", "include_artifact_metadata")
+    QUERY_FIELD_NUMBER: _ClassVar[int]
+    CONTEXT_FILTER_FIELD_NUMBER: _ClassVar[int]
+    KIND_FILTER_FIELD_NUMBER: _ClassVar[int]
+    INCLUDE_DEPRECATED_FIELD_NUMBER: _ClassVar[int]
+    PAGINATION_FIELD_NUMBER: _ClassVar[int]
+    MIN_SCORE_FIELD_NUMBER: _ClassVar[int]
+    INCLUDE_REVISION_METADATA_FIELD_NUMBER: _ClassVar[int]
+    INCLUDE_ARTIFACT_METADATA_FIELD_NUMBER: _ClassVar[int]
+    query: str
+    context_filter: str
+    kind_filter: str
+    include_deprecated: bool
+    pagination: PaginationRequest
+    min_score: float
+    include_revision_metadata: bool
+    include_artifact_metadata: bool
+    def __init__(self, query: _Optional[str] = ..., context_filter: _Optional[str] = ..., kind_filter: _Optional[str] = ..., include_deprecated: bool = ..., pagination: _Optional[_Union[PaginationRequest, _Mapping]] = ..., min_score: _Optional[float] = ..., include_revision_metadata: bool = ..., include_artifact_metadata: bool = ...) -> None: ...
+
+class SearchResult(_message.Message):
+    __slots__ = ("item", "score", "matched_in")
+    ITEM_FIELD_NUMBER: _ClassVar[int]
+    SCORE_FIELD_NUMBER: _ClassVar[int]
+    MATCHED_IN_FIELD_NUMBER: _ClassVar[int]
+    item: ItemResponse
+    score: float
+    matched_in: _containers.RepeatedScalarFieldContainer[str]
+    def __init__(self, item: _Optional[_Union[ItemResponse, _Mapping]] = ..., score: _Optional[float] = ..., matched_in: _Optional[_Iterable[str]] = ...) -> None: ...
+
+class SearchResponse(_message.Message):
+    __slots__ = ("results", "pagination")
+    RESULTS_FIELD_NUMBER: _ClassVar[int]
+    PAGINATION_FIELD_NUMBER: _ClassVar[int]
+    results: _containers.RepeatedCompositeFieldContainer[SearchResult]
+    pagination: PaginationResponse
+    def __init__(self, results: _Optional[_Iterable[_Union[SearchResult, _Mapping]]] = ..., pagination: _Optional[_Union[PaginationResponse, _Mapping]] = ...) -> None: ...
+
 class CreateRevisionRequest(_message.Message):
     __slots__ = ("item_kref", "metadata", "number", "exists_error")
     class MetadataEntry(_message.Message):
