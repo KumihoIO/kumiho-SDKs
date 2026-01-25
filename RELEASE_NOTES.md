@@ -1,5 +1,19 @@
 # Kumiho Python SDK - Release Notes
 
+## kumiho 0.9.0 (January 2026) - Full-Text Search 🔎
+
+### ✨ New Features
+
+**Full-text fuzzy search API**:
+- Added `kumiho.search()` and `Client.search()` for Google-like fuzzy search across item names and kinds.
+- Supports `context_filter`, `kind_filter`, and `min_score` to scope and tune relevance.
+- Optional deep search across revision tags/metadata and artifact names/metadata via `include_revision_metadata` and `include_artifact_metadata`.
+- Results include relevance score and `matched_in` source, with pagination via `page_size` and `cursor`.
+
+### ✅ Compatibility Notes
+
+- Requires a kumiho-server build that exposes the `Search` gRPC endpoint and full-text indexes.
+
 ## kumiho 0.8.6 (January 2026) - Kref Ergonomics for Artifacts 🔗
 
 ### ✨ New Behavior

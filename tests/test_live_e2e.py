@@ -1,5 +1,5 @@
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 
 import pytest
 import grpc
@@ -17,7 +17,7 @@ def test_firebase_supabase_neo4j_roundtrip(live_client, cleanup_test_data):
     location = f"s3://kumiho-ci/{uuid.uuid4().hex}.bin"
     revision_metadata = {
         "suite": "python-live-e2e",
-        "timestamp": datetime.utcnow().isoformat(),
+        "timestamp": datetime.now(timezone.utc).isoformat(),
     }
 
     project = kumiho.create_project(project_name)
@@ -102,7 +102,7 @@ def test_fulltext_search_basic(live_client, cleanup_test_data):
     project = kumiho.create_project(project_name)
     cleanup_test_data.append(project)
 
-    space = project.create_space(name="characters", parent_path="/")
+    space = project.create_space(name="characters")
     cleanup_test_data.append(space)
 
     # Create items with distinctive names for search
@@ -138,7 +138,7 @@ def test_fulltext_search_with_kind_filter(live_client, cleanup_test_data):
     project = kumiho.create_project(project_name)
     cleanup_test_data.append(project)
 
-    space = project.create_space(name="assets", parent_path="/")
+    space = project.create_space(name="assets")
     cleanup_test_data.append(space)
 
     # Create model and texture with similar names
@@ -170,9 +170,9 @@ def test_fulltext_search_with_context_filter(live_client, cleanup_test_data):
     project2 = kumiho.create_project(project2_name)
     cleanup_test_data.append(project2)
 
-    space1 = project1.create_space(name="models", parent_path="/")
+    space1 = project1.create_space(name="models")
     cleanup_test_data.append(space1)
-    space2 = project2.create_space(name="models", parent_path="/")
+    space2 = project2.create_space(name="models")
     cleanup_test_data.append(space2)
 
     # Create items with same name in different projects
@@ -201,7 +201,7 @@ def test_fulltext_search_fuzzy_matching(live_client, cleanup_test_data):
     project = kumiho.create_project(project_name)
     cleanup_test_data.append(project)
 
-    space = project.create_space(name="chars", parent_path="/")
+    space = project.create_space(name="chars")
     cleanup_test_data.append(space)
 
     # Create an item with a specific name
@@ -238,7 +238,7 @@ def test_fulltext_search_with_metadata(live_client, cleanup_test_data):
     project = kumiho.create_project(project_name)
     cleanup_test_data.append(project)
 
-    space = project.create_space(name="assets", parent_path="/")
+    space = project.create_space(name="assets")
     cleanup_test_data.append(space)
 
     # Create item with generic name
