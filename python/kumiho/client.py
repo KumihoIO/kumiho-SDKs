@@ -87,6 +87,7 @@ from .proto.kumiho_pb2 import (
     EdgeDirection,
     PeekNextRevisionRequest,
     ItemSearchRequest,
+    SearchRequest,
     ResolveKrefRequest,
     ResolveLocationRequest,
     SetAttributeRequest,
@@ -112,7 +113,7 @@ from .project import Project
 from .item import Item
 from .artifact import Artifact
 from .revision import Revision
-from .base import PagedList
+from .base import PagedList, SearchResult
 
 if TYPE_CHECKING:
     from .bundle import Bundle, BundleMember, BundleRevisionHistory
@@ -732,6 +733,87 @@ class _Client:
                 total_count=resp.pagination.total_count
             )
         return items
+
+    def search(
+        self,
+        query: str,
+        *,
+        context_filter: str = "",
+        kind_filter: str = "",
+        include_deprecated: bool = False,
+        include_revision_metadata: bool = False,
+        include_artifact_metadata: bool = False,
+        page_size: Optional[int] = None,
+        cursor: Optional[str] = None,
+        min_score: float = 0.0,
+    ) -> List["SearchResult"]:
+        """Full-text fuzzy search across items.
+
+        Provides Google-like search with automatic typo tolerance. Searches
+        across item names, kinds, and optionally revision/artifact metadata.
+
+        Args:
+            query: Search terms (supports fuzzy matching).
+                - Simple: "hero" matches items containing "hero"
+                - Multi-word: "hero model" matches both terms
+                - Automatic fuzzy: typos like "heros" still match "hero"
+            context_filter: Restrict to kref prefix (e.g., "myproject/assets").
+            kind_filter: Exact kind match (e.g., "model", "texture", "rig").
+            include_deprecated: Include soft-deleted items (default: False).
+            include_revision_metadata: Also search revision tags/metadata (slower).
+            include_artifact_metadata: Also search artifact names/metadata (slower).
+            page_size: Results per page, 1-1000 (default: 100).
+            cursor: Pagination cursor from previous response.
+            min_score: Minimum relevance score 0.0-1.0 (default: 0.0).
+
+        Returns:
+            List of SearchResult objects with item and relevance score.
+            If pagination is used, returns a PagedList.
+
+        Example:
+            >>> # Simple search
+            >>> results = client.search("hero")
+            >>> for r in results:
+            ...     print(f"{r.item.name}: {r.score:.2f}")
+
+            >>> # Search for models only
+            >>> results = client.search("character", kind_filter="model")
+
+            >>> # Deep search including revision metadata
+            >>> results = client.search("approved", include_revision_metadata=True)
+        """
+        pagination = None
+        if page_size is not None or cursor is not None:
+            pagination = PaginationRequest(page_size=page_size or 100, cursor=cursor or "")
+
+        req = SearchRequest(
+            query=query,
+            context_filter=context_filter,
+            kind_filter=kind_filter,
+            include_deprecated=include_deprecated,
+            pagination=pagination,
+            min_score=min_score,
+            include_revision_metadata=include_revision_metadata,
+            include_artifact_metadata=include_artifact_metadata,
+        )
+        resp = self.stub.Search(req)
+
+        results = [
+            SearchResult(
+                item=Item(r.item, self),
+                score=r.score,
+                matched_in=list(r.matched_in),
+            )
+            for r in resp.results
+        ]
+
+        if resp.HasField("pagination"):
+            return PagedList(
+                results,
+                next_cursor=resp.pagination.next_cursor,
+                total_count=resp.pagination.total_count
+            )
+        return results
 
     def update_item_metadata(self, kref: Kref, metadata: Dict[str, str]) -> Item:
         """Update metadata for an item.

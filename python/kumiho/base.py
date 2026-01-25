@@ -5,10 +5,12 @@ including :class:`KumihoObject` (the base for all high-level objects) and
 :class:`KumihoError` (the base exception class).
 """
 
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, TypeVar, List, Optional
 
 if TYPE_CHECKING:
     from .client import _Client
+    from .item import Item
 
 T = TypeVar('T')
 
@@ -24,6 +26,29 @@ class PagedList(List[T]):
         super().__init__(items)
         self.next_cursor = next_cursor
         self.total_count = total_count
+
+
+@dataclass
+class SearchResult:
+    """A single search result with relevance score.
+
+    Attributes:
+        item: The matched Item object.
+        score: Relevance score from 0.0 to 1.0+ (higher is better match).
+        matched_in: Where the match was found ("item", "revision", "artifact").
+
+    Example:
+        >>> results = client.search("hero model")
+        >>> for result in results:
+        ...     print(f"{result.item.name}: {result.score:.2f}")
+        ...     print(f"  Matched in: {', '.join(result.matched_in)}")
+    """
+    item: "Item"
+    score: float
+    matched_in: List[str]
+
+    def __repr__(self) -> str:
+        return f"SearchResult(item={self.item.name!r}, score={self.score:.3f}, matched_in={self.matched_in})"
 
 
 class KumihoError(Exception):

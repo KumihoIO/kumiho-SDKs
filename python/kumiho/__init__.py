@@ -110,13 +110,13 @@ Attributes:
     PUBLISHED_TAG (str): Standard tag name for published revisions.
 """
 
-__version__ = "0.8.6"
+__version__ = "0.9.0"
 
 import contextvars
 from typing import Any, Dict, List, Optional, Iterator, Tuple
 
 # Import the main classes to make them available at the package level.
-from .base import KumihoObject, KumihoError
+from .base import KumihoObject, KumihoError, SearchResult
 from .client import _Client
 from .bundle import (
     Bundle,
@@ -592,6 +592,69 @@ def item_search(
     return get_client().item_search(context_filter, name_filter, kind_filter)
 
 
+def search(
+    query: str,
+    *,
+    context: str = "",
+    kind: str = "",
+    include_deprecated: bool = False,
+    include_revision_metadata: bool = False,
+    include_artifact_metadata: bool = False,
+) -> List[SearchResult]:
+    """Full-text fuzzy search across items (Google-like search).
+
+    Provides Google-like search with automatic typo tolerance. Searches
+    across item names, kinds, usernames, and optionally revision/artifact
+    metadata. Results are ranked by relevance.
+
+    Args:
+        query: Search terms (supports fuzzy matching).
+            - Simple: "hero" matches items containing "hero"
+            - Multi-word: "hero model" matches both terms
+            - Automatic fuzzy: typos like "heros" still match "hero"
+        context: Restrict to kref prefix (e.g., "myproject/assets").
+        kind: Exact kind match (e.g., "model", "texture", "rig").
+        include_deprecated: Include soft-deleted items (default: False).
+        include_revision_metadata: Also search revision tags/metadata.
+            Slower but more comprehensive. Use when searching by revision
+            metadata like artist names, approval status, etc.
+        include_artifact_metadata: Also search artifact names/metadata.
+            Slower but finds items by artifact file names or metadata.
+
+    Returns:
+        List[SearchResult]: Search results ordered by relevance score.
+            Each result contains the matched Item and its relevance score.
+
+    Example:
+        >>> # Simple search
+        >>> results = kumiho.search("hero")
+        >>> for r in results:
+        ...     print(f"{r.item.name}: {r.score:.2f}")
+
+        >>> # Search for models only
+        >>> results = kumiho.search("character", kind="model")
+
+        >>> # Deep search including revision metadata
+        >>> results = kumiho.search("approved", include_revision_metadata=True)
+
+        >>> # Search within a specific project
+        >>> results = kumiho.search("texture", context="film-project")
+
+    Note:
+        By default, only the Item index is searched (fastest). Enable
+        `include_revision_metadata` or `include_artifact_metadata` for
+        comprehensive search across all entity metadata.
+    """
+    return get_client().search(
+        query,
+        context_filter=context,
+        kind_filter=kind,
+        include_deprecated=include_deprecated,
+        include_revision_metadata=include_revision_metadata,
+        include_artifact_metadata=include_artifact_metadata,
+    )
+
+
 def get_item(kref: str) -> Item:
     """Get an item by its kref URI.
 
@@ -1030,6 +1093,8 @@ __all__ = [
     "get_project",
     "delete_project",
     "item_search",
+    "search",
+    "SearchResult",
     "get_item",
     "get_bundle",
     "get_revision",

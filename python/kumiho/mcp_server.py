@@ -41,10 +41,13 @@ Example MCP client configuration (VS Code settings.json)::
 """
 
 import asyncio
+import hashlib
 import json
 import logging
 import os
+import re
 import sys
+from datetime import datetime
 from typing import Any, Dict, List, Optional, Sequence
 
 # MCP SDK imports
@@ -73,6 +76,7 @@ except ImportError:
     MCP_AVAILABLE = False
 
 # Kumiho imports
+import grpc
 import kumiho
 from kumiho import (
     Project,
@@ -191,6 +195,106 @@ def _serialize_edge(edge: Edge) -> Dict[str, Any]:
         "metadata": dict(edge.metadata) if edge.metadata else {},
         "created_at": edge.created_at,
     }
+
+
+_SLUG_PATTERN = re.compile(r"[^a-z0-9]+")
+
+
+def _parse_json_object(value: Any) -> Dict[str, Any]:
+    if not value:
+        return {}
+    if isinstance(value, dict):
+        return value
+    if isinstance(value, str):
+        try:
+            parsed = json.loads(value)
+            return parsed if isinstance(parsed, dict) else {}
+        except json.JSONDecodeError:
+            return {}
+    return {}
+
+
+def _stringify_metadata(metadata: Optional[Dict[str, Any]]) -> Dict[str, str]:
+    out: Dict[str, str] = {}
+    if not metadata:
+        return out
+    for key, value in metadata.items():
+        if value is None:
+            continue
+        if isinstance(value, str):
+            out[key] = value
+        else:
+            out[key] = json.dumps(value, ensure_ascii=True)
+    return out
+
+
+def _slugify(value: str, max_len: int = 48) -> str:
+    base = value.lower().strip()
+    base = _SLUG_PATTERN.sub("-", base).strip("-")
+    if not base:
+        return ""
+    return base[:max_len].strip("-")
+
+
+def _short_hash(value: str) -> str:
+    return hashlib.sha1(value.encode("utf-8")).hexdigest()[:8]
+
+
+def _normalize_space_path(project_name: str, space_path: str) -> str:
+    if not space_path:
+        return f"/{project_name}"
+    path = space_path.strip()
+    if not path:
+        return f"/{project_name}"
+    if path.startswith("/"):
+        trimmed = path.strip("/")
+        if trimmed.startswith(f"{project_name}/") or trimmed == project_name:
+            return f"/{trimmed}"
+        return f"/{project_name}/{trimmed}"
+    if path.startswith(f"{project_name}/") or path == project_name:
+        return f"/{path}"
+    return f"/{project_name}/{path}"
+
+
+def _ensure_space_path(project: Project, space_path: str) -> str:
+    normalized = _normalize_space_path(project.name, space_path)
+    parts = normalized.strip("/").split("/")
+    parent = f"/{parts[0]}"
+    for segment in parts[1:]:
+        try:
+            project.create_space(segment, parent_path=parent)
+        except grpc.RpcError as exc:
+            if exc.code() != grpc.StatusCode.ALREADY_EXISTS:
+                raise
+        parent = f"{parent.rstrip('/')}/{segment}"
+    return normalized
+
+
+def _get_or_create_item(project: Project, space_path: str, item_name: str, kind: str) -> Item:
+    try:
+        return project.create_item(item_name, kind, parent_path=space_path)
+    except grpc.RpcError as exc:
+        if exc.code() == grpc.StatusCode.ALREADY_EXISTS:
+            return project.get_item(item_name, kind, parent_path=space_path)
+        raise
+
+
+def _get_or_create_bundle(project: Project, space_path: str, bundle_name: str) -> Item:
+    try:
+        return project.create_bundle(bundle_name, parent_path=space_path)
+    except grpc.RpcError as exc:
+        if exc.code() == grpc.StatusCode.ALREADY_EXISTS:
+            return project.get_bundle(bundle_name, parent_path=space_path)
+        raise
+
+
+def _parse_timestamp(value: Optional[str]) -> Optional[datetime]:
+    if not value:
+        return None
+    try:
+        return datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return None
 
 
 # ============================================================================
@@ -334,6 +438,320 @@ def tool_search_items(
             "name": name_filter,
             "kind": kind_filter,
         },
+    }
+
+
+def tool_memory_store(
+    project: str = "CognitiveMemory",
+    space_path: str = "",
+    space_hint: str = "",
+    policy_kref: Optional[str] = None,
+    memory_item_kind: str = "conversation",
+    bundle_name: str = "",
+    memory_type: str = "summary",
+    title: str = "",
+    summary: str = "",
+    user_text: str = "",
+    assistant_text: str = "",
+    artifact_location: str = "",
+    artifact_name: str = "chat_io",
+    tags: Optional[List[str]] = None,
+    source_revision_krefs: Optional[List[str]] = None,
+    metadata: Optional[Dict[str, Any]] = None,
+    edge_type: str = DERIVED_FROM,
+) -> Dict[str, Any]:
+    """Store a memory bundle with minimal inputs."""
+    _ensure_configured()
+
+    if not user_text and not assistant_text:
+        return {"error": "user_text or assistant_text must be provided"}
+
+    project_name = project or "CognitiveMemory"
+    project_obj = kumiho.get_project(project_name)
+    if not project_obj:
+        project_obj = kumiho.create_project(project_name, description="AI Cognitive Memory")
+
+    policy = {}
+    schema_version = ""
+    if policy_kref:
+        try:
+            if "?r=" in policy_kref:
+                rev = kumiho.get_revision(policy_kref)
+            else:
+                item = kumiho.get_item(policy_kref)
+                rev = item.get_revision_by_tag("published") or item.get_revision_by_tag("latest")
+            if rev and rev.metadata:
+                schema_version = str(rev.metadata.get("schema", ""))
+                policy = _parse_json_object(rev.metadata.get("policy"))
+        except Exception as exc:
+            return {"error": f"Failed to load policy_kref: {exc}"}
+
+    memory_kind = memory_item_kind or policy.get("memory_item_kind", "conversation")
+    space_root = policy.get("space_root", "/")
+
+    if not space_path:
+        hint = space_hint.strip()
+        if hint:
+            segments = [seg for seg in hint.split("/") if seg]
+            slugged = [_slugify(seg) or seg for seg in segments]
+            space_path = "/".join(slugged)
+    if space_root and space_root != "/":
+        base_root = space_root.strip("/")
+        if space_path:
+            space_path = f"{base_root}/{space_path}"
+        else:
+            space_path = base_root
+
+    normalized_space_path = _ensure_space_path(project_obj, space_path)
+
+    base_text = title or summary or user_text or assistant_text or "memory"
+    slug = _slugify(base_text) or "memory"
+    suffix = _short_hash(user_text + assistant_text + base_text)
+    item_name = f"{slug}-{suffix}"
+    if len(item_name) > 64:
+        item_name = item_name[:64].rstrip("-")
+
+    item = _get_or_create_item(project_obj, normalized_space_path, item_name, memory_kind)
+
+    final_summary = summary.strip() if summary else (assistant_text or user_text).strip()
+    if len(final_summary) > 200:
+        final_summary = f"{final_summary[:197]}..."
+
+    final_title = title.strip() if title else final_summary[:80]
+
+    base_metadata = {
+        "schema": schema_version or "kumiho.agent_memory.v1",
+        "type": memory_type,
+        "title": final_title,
+        "summary": final_summary,
+        "space": normalized_space_path,
+    }
+    if metadata:
+        base_metadata.update(metadata)
+
+    revision = item.create_revision(metadata=_stringify_metadata(base_metadata))
+
+    artifact_kref = ""
+    if artifact_location:
+        try:
+            artifact = revision.create_artifact(artifact_name, artifact_location)
+            artifact_kref = artifact.kref.uri
+        except Exception as exc:
+            return {"error": f"Failed to create artifact: {exc}"}
+
+    tag_list = tags or ["published"]
+    for tag in tag_list:
+        if tag == "latest":
+            continue
+        try:
+            kumiho.tag_revision(revision.kref, tag)
+        except Exception:
+            continue
+
+    bundle_kref = ""
+    if bundle_name:
+        bundle_slug = _slugify(bundle_name) or bundle_name
+    else:
+        bundle_slug = _slugify(space_hint) if space_hint else ""
+    if not bundle_slug:
+        bundle_slug = "topic"
+    try:
+        bundle = _get_or_create_bundle(project_obj, normalized_space_path, bundle_slug)
+        bundle.add_member(item)
+        bundle_kref = bundle.kref.uri
+    except Exception:
+        bundle_kref = ""
+
+    edges_created = []
+    for source_kref in (source_revision_krefs or []):
+        try:
+            source_rev = kumiho.get_revision(source_kref)
+            edge = revision.create_edge(source_rev, edge_type)
+            edges_created.append(edge.target_kref.uri)
+        except Exception:
+            continue
+
+    return {
+        "space_path": normalized_space_path,
+        "item_kref": item.kref.uri,
+        "revision_kref": revision.kref.uri,
+        "bundle_kref": bundle_kref,
+        "artifact_kref": artifact_kref,
+        "summary": final_summary,
+        "edges_created": edges_created,
+    }
+
+
+def tool_memory_retrieve(
+    project: str = "CognitiveMemory",
+    query: str = "",
+    keywords: Optional[List[str]] = None,
+    topics: Optional[List[str]] = None,
+    space_paths: Optional[List[str]] = None,
+    bundle_names: Optional[List[str]] = None,
+    memory_item_kind: str = "conversation",
+    limit: int = 5,
+    mode: str = "search",
+) -> Dict[str, Any]:
+    """Retrieve memory krefs with bundle-first search and safe fallbacks."""
+    _ensure_configured()
+
+    project_name = project or "CognitiveMemory"
+    project_obj = kumiho.get_project(project_name)
+    if not project_obj:
+        return {"error": f"Project '{project_name}' not found"}
+
+    def to_list(value: Any) -> List[str]:
+        if not value:
+            return []
+        if isinstance(value, list):
+            return [str(v).strip() for v in value if str(v).strip()]
+        if isinstance(value, str):
+            return [v.strip() for v in value.split(",") if v.strip()]
+        return []
+
+    keyword_list = to_list(keywords)
+    topic_list = to_list(topics)
+    spaces = to_list(space_paths)
+    bundles = to_list(bundle_names)
+
+    query_text = (query or "").strip().lower()
+    mode_text = (mode or "").strip().lower()
+
+    if not mode_text and query_text:
+        if any(token in query_text for token in ["first", "earliest", "oldest", "initial"]):
+            mode_text = "first"
+    if not mode_text:
+        mode_text = "search"
+
+    def normalize_context(value: str) -> str:
+        path = value.strip()
+        if path.startswith("/"):
+            path = path.strip("/")
+        if not path:
+            return project_name
+        if path.startswith(f"{project_name}/") or path == project_name:
+            return path
+        return f"{project_name}/{path}"
+
+    contexts = [normalize_context(p) for p in spaces] if spaces else [project_name]
+    spaces_used: List[str] = []
+
+    if mode_text in ["first", "earliest", "oldest", "initial"]:
+        items = kumiho.item_search(
+            context_filter=project_name,
+            name_filter="",
+            kind_filter=memory_item_kind,
+        )
+        if not items:
+            return {"item_krefs": [], "revision_krefs": [], "spaces_used": []}
+        earliest = min(items, key=lambda item: _parse_timestamp(item.created_at) or datetime.max)
+        rev = earliest.get_revision_by_tag("published") or earliest.get_revision_by_tag("latest")
+        return {
+            "item_krefs": [earliest.kref.uri],
+            "revision_krefs": [rev.kref.uri] if rev else [],
+            "spaces_used": [project_name],
+        }
+
+    name_filter = ""
+    if keyword_list:
+        name_filter = keyword_list[0]
+    elif topic_list:
+        name_filter = topic_list[0]
+    elif query_text:
+        name_filter = query_text[:64]
+
+    candidate_krefs: List[str] = []
+
+    if bundles:
+        for context in contexts:
+            for bundle_name in bundles:
+                bundle_items = kumiho.item_search(
+                    context_filter=context,
+                    name_filter=bundle_name,
+                    kind_filter="bundle",
+                )
+                if bundle_items:
+                    spaces_used.append(context)
+                for bundle_item in bundle_items:
+                    try:
+                        bundle = kumiho.get_bundle(bundle_item.kref.uri)
+                        members = bundle.get_members()
+                        for member in members:
+                            candidate_krefs.append(member.item_kref.uri)
+                    except Exception:
+                        continue
+
+    if not candidate_krefs:
+        for context in contexts:
+            items = kumiho.item_search(
+                context_filter=context,
+                name_filter=name_filter,
+                kind_filter=memory_item_kind,
+            )
+            if items:
+                spaces_used.append(context)
+            for item in items:
+                candidate_krefs.append(item.kref.uri)
+
+    if not candidate_krefs and contexts != [project_name]:
+        items = kumiho.item_search(
+            context_filter=project_name,
+            name_filter="",
+            kind_filter=memory_item_kind,
+        )
+        if items:
+            spaces_used.append(project_name)
+        for item in items:
+            candidate_krefs.append(item.kref.uri)
+
+    seen = set()
+    deduped = []
+    for kref in candidate_krefs:
+        if kref not in seen:
+            seen.add(kref)
+            deduped.append(kref)
+
+    def matches_query(value: str) -> bool:
+        if not query_text:
+            return True
+        return query_text in value.lower()
+
+    results = []
+    for item_kref in deduped:
+        try:
+            item = kumiho.get_item(item_kref)
+            rev = item.get_revision_by_tag("published") or item.get_revision_by_tag("latest")
+            if not rev:
+                continue
+            if query_text:
+                summary = str(rev.metadata.get("summary", ""))
+                title = str(rev.metadata.get("title", ""))
+                if not (matches_query(summary) or matches_query(title)):
+                    continue
+            results.append((item_kref, rev.kref.uri))
+        except Exception:
+            continue
+        if len(results) >= limit:
+            break
+
+    if query_text and not results:
+        for item_kref in deduped:
+            try:
+                item = kumiho.get_item(item_kref)
+                rev = item.get_revision_by_tag("published") or item.get_revision_by_tag("latest")
+                if not rev:
+                    continue
+                results.append((item_kref, rev.kref.uri))
+            except Exception:
+                continue
+            if len(results) >= limit:
+                break
+
+    return {
+        "item_krefs": [item for item, _ in results],
+        "revision_krefs": [rev for _, rev in results],
+        "spaces_used": list(dict.fromkeys(spaces_used)),
     }
 
 
@@ -594,6 +1012,28 @@ def tool_get_revision_by_tag(item_kref: str, tag: str) -> Dict[str, Any]:
         revision = item.get_revision_by_tag(tag)
         if not revision:
             return {"error": f"No revision found with tag '{tag}'"}
+        return _serialize_revision(revision)
+    except Exception as e:
+        return {"error": str(e)}
+
+
+def tool_get_revision_as_of(item_kref: str, tag: str, time: str) -> Dict[str, Any]:
+    """Get the revision that had a specific tag at a given point in time.
+
+    This enables time-travel queries for reproducible builds and historical analysis.
+    For example: "What was the published revision on June 1st, 2025?"
+
+    Args:
+        item_kref: The kref URI of the item
+        tag: The tag to query (e.g., 'published', 'approved', 'latest')
+        time: Timestamp in YYYYMMDDHHMM format (e.g., '202506011430') or ISO 8601 format (e.g., '2025-06-01T14:30:00Z')
+    """
+    _ensure_configured()
+    try:
+        item = kumiho.get_item(item_kref)
+        revision = item.get_revision_by_time(time, tag=tag)
+        if not revision:
+            return {"error": f"No revision with tag '{tag}' found at time '{time}'"}
         return _serialize_revision(revision)
     except Exception as e:
         return {"error": str(e)}
@@ -1109,6 +1549,96 @@ TOOLS: List[Dict[str, Any]] = [
             "required": [],
         },
     },
+    # Memory operations (production)
+    {
+        "name": "kumiho_memory_store",
+        "description": "Store a memory entry with one call (space + item + revision + artifact + bundle + edges).",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "project": {
+                    "type": "string",
+                    "description": "Project name (default: CognitiveMemory)",
+                    "default": "CognitiveMemory",
+                },
+                "space_path": {
+                    "type": "string",
+                    "description": "Taxonomy space path (e.g., 'friend/john-doe' or '/CognitiveMemory/friend')",
+                },
+                "space_hint": {
+                    "type": "string",
+                    "description": "Short taxonomy hint if space_path is not provided",
+                },
+                "policy_kref": {
+                    "type": "string",
+                    "description": "Schema item or revision kref to load defaults",
+                },
+                "memory_item_kind": {
+                    "type": "string",
+                    "description": "Item kind for memory entries (default: conversation)",
+                    "default": "conversation",
+                },
+                "bundle_name": {
+                    "type": "string",
+                    "description": "Bundle name (defaults to topic slug)",
+                },
+                "memory_type": {
+                    "type": "string",
+                    "description": "Memory type (summary | decision | fact | reflection | error)",
+                    "default": "summary",
+                },
+                "title": {"type": "string"},
+                "summary": {"type": "string"},
+                "user_text": {"type": "string"},
+                "assistant_text": {"type": "string"},
+                "artifact_location": {"type": "string"},
+                "artifact_name": {"type": "string", "default": "chat_io"},
+                "tags": {"type": "array", "items": {"type": "string"}},
+                "source_revision_krefs": {"type": "array", "items": {"type": "string"}},
+                "metadata": {
+                    "type": "object",
+                    "description": "Additional metadata (string values only)",
+                },
+                "edge_type": {
+                    "type": "string",
+                    "description": "Edge type for dependencies (default: DERIVED_FROM)",
+                    "default": "DERIVED_FROM",
+                },
+            },
+            "required": ["user_text", "assistant_text"],
+        },
+    },
+    {
+        "name": "kumiho_memory_retrieve",
+        "description": "Retrieve memory krefs with bundle-first search and safe fallbacks.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "project": {
+                    "type": "string",
+                    "description": "Project name (default: CognitiveMemory)",
+                    "default": "CognitiveMemory",
+                },
+                "query": {"type": "string"},
+                "keywords": {"type": "array", "items": {"type": "string"}},
+                "topics": {"type": "array", "items": {"type": "string"}},
+                "space_paths": {"type": "array", "items": {"type": "string"}},
+                "bundle_names": {"type": "array", "items": {"type": "string"}},
+                "memory_item_kind": {
+                    "type": "string",
+                    "description": "Item kind for memory entries (default: conversation)",
+                    "default": "conversation",
+                },
+                "limit": {"type": "integer", "default": 5},
+                "mode": {
+                    "type": "string",
+                    "description": "search | first | latest (default: search)",
+                    "default": "search",
+                },
+            },
+            "required": [],
+        },
+    },
     {
         "name": "kumiho_get_item_revisions",
         "description": "Get all revisions for a Kumiho item. Shows version history with tags.",
@@ -1159,6 +1689,28 @@ TOOLS: List[Dict[str, Any]] = [
                 },
             },
             "required": ["item_kref", "tag"],
+        },
+    },
+    {
+        "name": "kumiho_get_revision_as_of",
+        "description": "Get the revision that had a specific tag at a given point in time. Enables time-travel queries for reproducible builds and historical analysis. Example: 'What was the published revision on June 1st, 2025?'",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "item_kref": {
+                    "type": "string",
+                    "description": "The kref URI of the item",
+                },
+                "tag": {
+                    "type": "string",
+                    "description": "The tag to query (e.g., 'published', 'approved', 'latest')",
+                },
+                "time": {
+                    "type": "string",
+                    "description": "Timestamp in YYYYMMDDHHMM format (e.g., '202506011430') or ISO 8601 format (e.g., '2025-06-01T14:30:00Z')",
+                },
+            },
+            "required": ["item_kref", "tag", "time"],
         },
     },
     # Read operations - Artifacts
@@ -1806,6 +2358,36 @@ TOOL_HANDLERS = {
         args.get("kind_filter", ""),
         args.get("include_metadata", False),
     ),
+    "kumiho_memory_store": lambda args: tool_memory_store(
+        args.get("project", "CognitiveMemory"),
+        args.get("space_path", ""),
+        args.get("space_hint", ""),
+        args.get("policy_kref"),
+        args.get("memory_item_kind", "conversation"),
+        args.get("bundle_name", ""),
+        args.get("memory_type", "summary"),
+        args.get("title", ""),
+        args.get("summary", ""),
+        args.get("user_text", ""),
+        args.get("assistant_text", ""),
+        args.get("artifact_location", ""),
+        args.get("artifact_name", "chat_io"),
+        args.get("tags"),
+        args.get("source_revision_krefs"),
+        args.get("metadata"),
+        args.get("edge_type", DERIVED_FROM),
+    ),
+    "kumiho_memory_retrieve": lambda args: tool_memory_retrieve(
+        args.get("project", "CognitiveMemory"),
+        args.get("query", ""),
+        args.get("keywords"),
+        args.get("topics"),
+        args.get("space_paths"),
+        args.get("bundle_names"),
+        args.get("memory_item_kind", "conversation"),
+        args.get("limit", 5),
+        args.get("mode", "search"),
+    ),
     "kumiho_get_item_revisions": lambda args: tool_get_item_revisions(
         args["item_kref"],
         args.get("include_metadata", False),
@@ -1814,6 +2396,11 @@ TOOL_HANDLERS = {
     "kumiho_get_revision_by_tag": lambda args: tool_get_revision_by_tag(
         args["item_kref"],
         args["tag"],
+    ),
+    "kumiho_get_revision_as_of": lambda args: tool_get_revision_as_of(
+        args["item_kref"],
+        args["tag"],
+        args["time"],
     ),
     "kumiho_get_artifacts": lambda args: tool_get_artifacts(args["revision_kref"]),
     "kumiho_get_artifact": lambda args: tool_get_artifact(args["artifact_kref"]),

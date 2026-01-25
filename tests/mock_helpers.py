@@ -170,3 +170,74 @@ def mock_item_search_request(context_filter, item_name_filter="", kind_filter=""
 
 # Backwards compatibility alias
 mock_product_search_request = mock_item_search_request
+
+
+def mock_search_result(
+    kref_uri,
+    name,
+    item_name,
+    kind,
+    score=1.0,
+    matched_in=None,
+    author="test_author",
+    username="test_user",
+    deprecated=False,
+    metadata=None
+):
+    """Create a mock SearchResult proto message."""
+    item = mock_item_response(
+        kref_uri=kref_uri,
+        name=name,
+        item_name=item_name,
+        kind=kind,
+        author=author,
+        username=username,
+        deprecated=deprecated,
+        metadata=metadata
+    )
+    return kumiho_pb2.SearchResult(
+        item=item,
+        score=score,
+        matched_in=matched_in or ["item"]
+    )
+
+
+def mock_search_response(results=None, next_cursor="", total_count=-1):
+    """Create a mock SearchResponse proto message."""
+    pagination = kumiho_pb2.PaginationResponse(
+        next_cursor=next_cursor,
+        total_count=total_count,
+        has_more=bool(next_cursor)
+    )
+    return kumiho_pb2.SearchResponse(
+        results=results or [],
+        pagination=pagination
+    )
+
+
+def mock_search_request(
+    query,
+    context_filter="",
+    kind_filter="",
+    include_deprecated=False,
+    min_score=0.0,
+    include_revision_metadata=False,
+    include_artifact_metadata=False,
+    page_size=100,
+    cursor=""
+):
+    """Create a mock SearchRequest proto message."""
+    pagination = kumiho_pb2.PaginationRequest(
+        page_size=page_size,
+        cursor=cursor
+    )
+    return kumiho_pb2.SearchRequest(
+        query=query,
+        context_filter=context_filter,
+        kind_filter=kind_filter,
+        include_deprecated=include_deprecated,
+        pagination=pagination,
+        min_score=min_score,
+        include_revision_metadata=include_revision_metadata,
+        include_artifact_metadata=include_artifact_metadata
+    )
