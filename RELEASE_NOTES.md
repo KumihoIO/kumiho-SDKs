@@ -1,5 +1,15 @@
 # Kumiho Python SDK - Release Notes
 
+## kumiho 0.9.1 (January 2026) - MCP Full-Text Search Tool 🔎
+
+### ✨ New Features
+
+**MCP full-text search tool**:
+- Added `kumiho_fulltext_search` MCP tool for fuzzy search across items (Google-like search).
+- Supports `context`, `kind`, and `include_deprecated` filters for scoping results.
+- Optional deep search across revision tags/metadata and artifact names/metadata via `include_revision_metadata` and `include_artifact_metadata`.
+- Results include relevance `score` and `matched_in`, with `limit` and `include_metadata` for output control.
+
 ## kumiho 0.9.0 (January 2026) - Full-Text Search 🔎
 
 ### ✨ New Features

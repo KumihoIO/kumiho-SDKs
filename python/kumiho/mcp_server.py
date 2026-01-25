@@ -422,7 +422,7 @@ def tool_search_items(
         name_filter=name_filter,
         kind_filter=kind_filter,
     )
-    
+
     serialized = []
     for i in items:
         data = _serialize_item(i)
@@ -437,6 +437,50 @@ def tool_search_items(
             "context": context_filter,
             "name": name_filter,
             "kind": kind_filter,
+        },
+    }
+
+
+def tool_fulltext_search(
+    query: str,
+    context: str = "",
+    kind: str = "",
+    include_deprecated: bool = False,
+    include_revision_metadata: bool = False,
+    include_artifact_metadata: bool = False,
+    include_metadata: bool = False,
+    limit: int = 20,
+) -> Dict[str, Any]:
+    """Full-text fuzzy search across items (Google-like search)."""
+    _ensure_configured()
+    results = kumiho.search(
+        query,
+        context=context,
+        kind=kind,
+        include_deprecated=include_deprecated,
+        include_revision_metadata=include_revision_metadata,
+        include_artifact_metadata=include_artifact_metadata,
+    )
+
+    serialized = []
+    for r in results[:limit]:
+        item_data = _serialize_item(r.item)
+        if not include_metadata:
+            item_data.pop("metadata", None)
+        serialized.append({
+            "item": item_data,
+            "score": r.score,
+            "matched_in": r.matched_in,
+        })
+
+    return {
+        "results": serialized,
+        "count": len(serialized),
+        "total": len(results),
+        "query": query,
+        "filters": {
+            "context": context,
+            "kind": kind,
         },
     }
 
@@ -1549,6 +1593,55 @@ TOOLS: List[Dict[str, Any]] = [
             "required": [],
         },
     },
+    {
+        "name": "kumiho_fulltext_search",
+        "description": "Full-text fuzzy search across items (Google-like search). Supports automatic typo tolerance and multi-word queries. Results are ranked by relevance score. Use this for natural language queries instead of kumiho_search_items.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "query": {
+                    "type": "string",
+                    "description": "Search terms (supports fuzzy matching). E.g., 'hero model', 'texture character'. Typos are automatically tolerated.",
+                },
+                "context": {
+                    "type": "string",
+                    "description": "Restrict to kref prefix (e.g., 'myproject' or 'myproject/assets'). Leave empty to search all.",
+                    "default": "",
+                },
+                "kind": {
+                    "type": "string",
+                    "description": "Exact kind match (e.g., 'model', 'texture', 'conversation', 'bundle')",
+                    "default": "",
+                },
+                "include_deprecated": {
+                    "type": "boolean",
+                    "description": "Include soft-deleted items. Default: false",
+                    "default": False,
+                },
+                "include_revision_metadata": {
+                    "type": "boolean",
+                    "description": "Also search revision tags/metadata (slower but more comprehensive). Default: false",
+                    "default": False,
+                },
+                "include_artifact_metadata": {
+                    "type": "boolean",
+                    "description": "Also search artifact names/metadata (slower). Default: false",
+                    "default": False,
+                },
+                "include_metadata": {
+                    "type": "boolean",
+                    "description": "Include full item metadata in results. Default: false",
+                    "default": False,
+                },
+                "limit": {
+                    "type": "integer",
+                    "description": "Maximum number of results to return. Default: 20",
+                    "default": 20,
+                },
+            },
+            "required": ["query"],
+        },
+    },
     # Memory operations (production)
     {
         "name": "kumiho_memory_store",
@@ -2357,6 +2450,16 @@ TOOL_HANDLERS = {
         args.get("name_filter", ""),
         args.get("kind_filter", ""),
         args.get("include_metadata", False),
+    ),
+    "kumiho_fulltext_search": lambda args: tool_fulltext_search(
+        args["query"],
+        args.get("context", ""),
+        args.get("kind", ""),
+        args.get("include_deprecated", False),
+        args.get("include_revision_metadata", False),
+        args.get("include_artifact_metadata", False),
+        args.get("include_metadata", False),
+        args.get("limit", 20),
     ),
     "kumiho_memory_store": lambda args: tool_memory_store(
         args.get("project", "CognitiveMemory"),
