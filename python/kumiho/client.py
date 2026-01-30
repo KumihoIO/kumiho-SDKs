@@ -54,6 +54,7 @@ from .event import Event
 from .space import Space
 from .kref import Kref
 from .proto.kumiho_pb2 import (
+    BatchGetRevisionsRequest,
     CreateSpaceRequest,
     CreateEdgeRequest,
     CreateItemRequest,
@@ -947,6 +948,75 @@ class _Client:
             if e.code() == grpc.StatusCode.NOT_FOUND:
                 return None
             raise
+
+    def batch_get_revisions(
+        self,
+        revision_krefs: Optional[List[str]] = None,
+        item_krefs: Optional[List[str]] = None,
+        tag: str = "latest",
+        allow_partial: bool = True,
+    ) -> Tuple[List[Revision], List[str]]:
+        """Batch fetch multiple revisions in a single call.
+
+        Supports two modes:
+        1. Direct revision krefs - fetch specific revisions by their krefs
+        2. Item krefs with tag - resolve a tag (default: "latest") for each item
+
+        Args:
+            revision_krefs: List of revision kref URIs to fetch directly.
+            item_krefs: List of item kref URIs to resolve with the given tag.
+            tag: Tag to resolve when using item_krefs (default: "latest").
+                 Common tags: "latest", "published".
+            allow_partial: If True, returns partial results when some krefs
+                          are not found. If False, raises an error if any
+                          kref is not found. Default: True.
+
+        Returns:
+            A tuple of (revisions, not_found):
+            - revisions: List of Revision objects that were found
+            - not_found: List of kref URIs that were not found
+
+        Raises:
+            grpc.RpcError: If allow_partial=False and some krefs were not found,
+                          or if there's a server error.
+
+        Example:
+            >>> # Fetch multiple revisions by their krefs
+            >>> revisions, missing = client.batch_get_revisions(
+            ...     revision_krefs=["kref://proj/space/item.kind?r=1",
+            ...                     "kref://proj/space/item2.kind?r=2"]
+            ... )
+
+            >>> # Fetch latest revisions for multiple items
+            >>> revisions, missing = client.batch_get_revisions(
+            ...     item_krefs=["kref://proj/space/item1.kind",
+            ...                 "kref://proj/space/item2.kind"],
+            ...     tag="latest"
+            ... )
+
+            >>> # Fetch published revisions for multiple items
+            >>> revisions, missing = client.batch_get_revisions(
+            ...     item_krefs=["kref://proj/space/item1.kind",
+            ...                 "kref://proj/space/item2.kind"],
+            ...     tag="published"
+            ... )
+        """
+        rev_kref_pbs = [kumiho_pb2.Kref(uri=k) for k in (revision_krefs or [])]
+        item_kref_pbs = [kumiho_pb2.Kref(uri=k) for k in (item_krefs or [])]
+
+        req = BatchGetRevisionsRequest(
+            revision_krefs=rev_kref_pbs,
+            item_krefs=item_kref_pbs,
+            tag=tag,
+            allow_partial=allow_partial,
+        )
+
+        resp = self.stub.BatchGetRevisions(req)
+
+        revisions = [Revision(r, self) for r in resp.revisions]
+        not_found = list(resp.not_found)
+
+        return revisions, not_found
 
     def delete_revision(self, kref: Kref, force: bool) -> None:
         """Delete a revision.
