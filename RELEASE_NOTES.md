@@ -1,5 +1,11 @@
 # Kumiho Python SDK - Release Notes
 
+## kumiho 0.9.2 (February 2026) - Batch Revision Fetch (Proto Sync) 📦
+
+### ✨ New Features
+
+- Added `batch_get_revisions` to fetch multiple revisions by revision krefs or item krefs + tag, with optional partial results.
+
 ## kumiho 0.9.1 (January 2026) - MCP Full-Text Search Tool 🔎
 
 ### ✨ New Features
