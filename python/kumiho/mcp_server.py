@@ -48,7 +48,7 @@ import os
 import re
 import sys
 from datetime import datetime
-from typing import Any, Dict, List, Optional, Sequence
+from typing import Any, Dict, List, Optional, Sequence, Set, Tuple
 
 # MCP SDK imports
 try:
@@ -636,8 +636,14 @@ def tool_memory_retrieve(
     memory_item_kind: str = "conversation",
     limit: int = 5,
     mode: str = "search",
+    include_revision_metadata: bool = True,
 ) -> Dict[str, Any]:
-    """Retrieve memory krefs with bundle-first search and safe fallbacks."""
+    """Retrieve memory krefs using fuzzy search with bundle and fallback support.
+
+    Uses Google-like fuzzy search (kumiho.search) as the primary method for natural
+    language queries. Falls back to pattern matching for specific modes or when
+    fuzzy search returns no results.
+    """
     _ensure_configured()
 
     project_name = project or "CognitiveMemory"
@@ -659,11 +665,13 @@ def tool_memory_retrieve(
     spaces = to_list(space_paths)
     bundles = to_list(bundle_names)
 
-    query_text = (query or "").strip().lower()
+    query_text = (query or "").strip()
+    query_lower = query_text.lower()
     mode_text = (mode or "").strip().lower()
 
-    if not mode_text and query_text:
-        if any(token in query_text for token in ["first", "earliest", "oldest", "initial"]):
+    # Auto-detect "first/earliest" mode from query
+    if not mode_text and query_lower:
+        if any(token in query_lower for token in ["first", "earliest", "oldest", "initial"]):
             mode_text = "first"
     if not mode_text:
         mode_text = "search"
@@ -681,6 +689,7 @@ def tool_memory_retrieve(
     contexts = [normalize_context(p) for p in spaces] if spaces else [project_name]
     spaces_used: List[str] = []
 
+    # Mode: first/earliest - find oldest item by created_at
     if mode_text in ["first", "earliest", "oldest", "initial"]:
         items = kumiho.item_search(
             context_filter=project_name,
@@ -697,17 +706,39 @@ def tool_memory_retrieve(
             "spaces_used": [project_name],
         }
 
-    name_filter = ""
-    if keyword_list:
-        name_filter = keyword_list[0]
-    elif topic_list:
-        name_filter = topic_list[0]
-    elif query_text:
-        name_filter = query_text[:64]
+    # Build search query from query + keywords + topics
+    search_terms = []
+    if query_text:
+        search_terms.append(query_text)
+    search_terms.extend(keyword_list)
+    search_terms.extend(topic_list)
+    combined_query = " ".join(search_terms).strip()
 
-    candidate_krefs: List[str] = []
+    results: List[Tuple[str, str, float]] = []  # (item_kref, revision_kref, score)
 
-    if bundles:
+    # Primary: Use fuzzy search if we have a query
+    if combined_query:
+        try:
+            search_results = kumiho.search(
+                combined_query,
+                context=project_name,
+                kind=memory_item_kind,
+                include_revision_metadata=include_revision_metadata,
+            )
+            for sr in search_results[:limit * 2]:  # Get extra for filtering
+                try:
+                    rev = sr.item.get_revision_by_tag("published") or sr.item.get_revision_by_tag("latest")
+                    if rev:
+                        results.append((sr.item.kref.uri, rev.kref.uri, sr.score))
+                        if sr.item.space:
+                            spaces_used.append(sr.item.space.path)
+                except Exception:
+                    continue
+        except Exception:
+            pass  # Fall through to bundle/pattern search
+
+    # Secondary: Bundle-based search if specified and fuzzy didn't find enough
+    if bundles and len(results) < limit:
         for context in contexts:
             for bundle_name in bundles:
                 bundle_items = kumiho.item_search(
@@ -722,11 +753,22 @@ def tool_memory_retrieve(
                         bundle = kumiho.get_bundle(bundle_item.kref.uri)
                         members = bundle.get_members()
                         for member in members:
-                            candidate_krefs.append(member.item_kref.uri)
+                            if member.item_kref.uri not in [r[0] for r in results]:
+                                item = kumiho.get_item(member.item_kref.uri)
+                                rev = item.get_revision_by_tag("published") or item.get_revision_by_tag("latest")
+                                if rev:
+                                    results.append((member.item_kref.uri, rev.kref.uri, 0.5))
                     except Exception:
                         continue
 
-    if not candidate_krefs:
+    # Fallback: Pattern search if still no results
+    if not results:
+        name_filter = ""
+        if keyword_list:
+            name_filter = keyword_list[0]
+        elif topic_list:
+            name_filter = topic_list[0]
+
         for context in contexts:
             items = kumiho.item_search(
                 context_filter=context,
@@ -736,66 +778,46 @@ def tool_memory_retrieve(
             if items:
                 spaces_used.append(context)
             for item in items:
-                candidate_krefs.append(item.kref.uri)
-
-    if not candidate_krefs and contexts != [project_name]:
-        items = kumiho.item_search(
-            context_filter=project_name,
-            name_filter="",
-            kind_filter=memory_item_kind,
-        )
-        if items:
-            spaces_used.append(project_name)
-        for item in items:
-            candidate_krefs.append(item.kref.uri)
-
-    seen = set()
-    deduped = []
-    for kref in candidate_krefs:
-        if kref not in seen:
-            seen.add(kref)
-            deduped.append(kref)
-
-    def matches_query(value: str) -> bool:
-        if not query_text:
-            return True
-        return query_text in value.lower()
-
-    results = []
-    for item_kref in deduped:
-        try:
-            item = kumiho.get_item(item_kref)
-            rev = item.get_revision_by_tag("published") or item.get_revision_by_tag("latest")
-            if not rev:
-                continue
-            if query_text:
-                summary = str(rev.metadata.get("summary", ""))
-                title = str(rev.metadata.get("title", ""))
-                if not (matches_query(summary) or matches_query(title)):
+                try:
+                    rev = item.get_revision_by_tag("published") or item.get_revision_by_tag("latest")
+                    if rev:
+                        results.append((item.kref.uri, rev.kref.uri, 0.0))
+                except Exception:
                     continue
-            results.append((item_kref, rev.kref.uri))
-        except Exception:
-            continue
-        if len(results) >= limit:
-            break
 
-    if query_text and not results:
-        for item_kref in deduped:
-            try:
-                item = kumiho.get_item(item_kref)
-                rev = item.get_revision_by_tag("published") or item.get_revision_by_tag("latest")
-                if not rev:
+        # Last resort: search entire project
+        if not results and contexts != [project_name]:
+            items = kumiho.item_search(
+                context_filter=project_name,
+                name_filter="",
+                kind_filter=memory_item_kind,
+            )
+            if items:
+                spaces_used.append(project_name)
+            for item in items:
+                try:
+                    rev = item.get_revision_by_tag("published") or item.get_revision_by_tag("latest")
+                    if rev:
+                        results.append((item.kref.uri, rev.kref.uri, 0.0))
+                except Exception:
                     continue
-                results.append((item_kref, rev.kref.uri))
-            except Exception:
-                continue
-            if len(results) >= limit:
-                break
+
+    # Dedupe and sort by score (higher first)
+    seen: Set[str] = set()
+    deduped: List[Tuple[str, str, float]] = []
+    for item_kref, rev_kref, score in results:
+        if item_kref not in seen:
+            seen.add(item_kref)
+            deduped.append((item_kref, rev_kref, score))
+
+    deduped.sort(key=lambda x: x[2], reverse=True)
+    final = deduped[:limit]
 
     return {
-        "item_krefs": [item for item, _ in results],
-        "revision_krefs": [rev for _, rev in results],
+        "item_krefs": [item for item, _, _ in final],
+        "revision_krefs": [rev for _, rev, _ in final],
         "spaces_used": list(dict.fromkeys(spaces_used)),
+        "scores": [score for _, _, score in final],
     }
 
 
@@ -1703,7 +1725,7 @@ TOOLS: List[Dict[str, Any]] = [
     },
     {
         "name": "kumiho_memory_retrieve",
-        "description": "Retrieve memory krefs with bundle-first search and safe fallbacks.",
+        "description": "Retrieve memory using Google-like fuzzy search with relevance ranking. Supports natural language queries with automatic typo tolerance. Falls back to bundle and pattern search when needed.",
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -1712,21 +1734,49 @@ TOOLS: List[Dict[str, Any]] = [
                     "description": "Project name (default: CognitiveMemory)",
                     "default": "CognitiveMemory",
                 },
-                "query": {"type": "string"},
-                "keywords": {"type": "array", "items": {"type": "string"}},
-                "topics": {"type": "array", "items": {"type": "string"}},
-                "space_paths": {"type": "array", "items": {"type": "string"}},
-                "bundle_names": {"type": "array", "items": {"type": "string"}},
+                "query": {
+                    "type": "string",
+                    "description": "Natural language search query. Supports fuzzy matching and multi-word queries (e.g., 'conversation about travel', 'meeting notes')",
+                },
+                "keywords": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Additional keywords to include in search",
+                },
+                "topics": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Topic names to search for",
+                },
+                "space_paths": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Restrict search to specific space paths",
+                },
+                "bundle_names": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Search within specific bundles",
+                },
                 "memory_item_kind": {
                     "type": "string",
                     "description": "Item kind for memory entries (default: conversation)",
                     "default": "conversation",
                 },
-                "limit": {"type": "integer", "default": 5},
+                "limit": {
+                    "type": "integer",
+                    "description": "Maximum results to return (default: 5)",
+                    "default": 5,
+                },
                 "mode": {
                     "type": "string",
-                    "description": "search | first | latest (default: search)",
+                    "description": "search (fuzzy) | first (oldest by date) | latest (default: search)",
                     "default": "search",
+                },
+                "include_revision_metadata": {
+                    "type": "boolean",
+                    "description": "Also search revision metadata for deeper matching (default: true)",
+                    "default": True,
                 },
             },
             "required": [],
@@ -2490,6 +2540,7 @@ TOOL_HANDLERS = {
         args.get("memory_item_kind", "conversation"),
         args.get("limit", 5),
         args.get("mode", "search"),
+        args.get("include_revision_metadata", True),
     ),
     "kumiho_get_item_revisions": lambda args: tool_get_item_revisions(
         args["item_kref"],

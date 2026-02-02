@@ -726,6 +726,61 @@ def get_revision(kref: str) -> Revision:
     return get_client().get_revision(kref)
 
 
+def batch_get_revisions(
+    revision_krefs: Optional[List[str]] = None,
+    item_krefs: Optional[List[str]] = None,
+    tag: str = "latest",
+    allow_partial: bool = True,
+) -> Tuple[List[Revision], List[str]]:
+    """Batch fetch multiple revisions in a single gRPC call.
+
+    This is significantly faster than calling get_revision() multiple times,
+    especially for large batches. Use this when you need to fetch revisions
+    for multiple items at once.
+
+    Supports two modes:
+    1. Direct revision krefs - fetch specific revisions by their krefs
+    2. Item krefs with tag - resolve a tag (default: "latest") for each item
+
+    Args:
+        revision_krefs: List of revision kref URIs to fetch directly.
+        item_krefs: List of item kref URIs to resolve with the given tag.
+        tag: Tag to resolve when using item_krefs (default: "latest").
+             Common tags: "latest", "published".
+        allow_partial: If True (default), returns partial results when some
+                      krefs are not found. If False, raises an error.
+
+    Returns:
+        Tuple[List[Revision], List[str]]: A tuple of:
+        - revisions: List of Revision objects that were found
+        - not_found: List of kref URIs that were not found
+
+    Example:
+        >>> # Fetch latest revisions for multiple items efficiently
+        >>> items = kumiho.item_search(context_filter="myproject")
+        >>> item_krefs = [item.kref.uri for item in items[:10]]
+        >>> revisions, missing = kumiho.batch_get_revisions(
+        ...     item_krefs=item_krefs,
+        ...     tag="published"
+        ... )
+        >>> print(f"Found {len(revisions)} revisions, {len(missing)} missing")
+
+        >>> # Fetch specific revisions directly
+        >>> revisions, _ = kumiho.batch_get_revisions(
+        ...     revision_krefs=[
+        ...         "kref://proj/space/item1.kind?r=1",
+        ...         "kref://proj/space/item2.kind?r=2",
+        ...     ]
+        ... )
+    """
+    return get_client().batch_get_revisions(
+        revision_krefs=revision_krefs,
+        item_krefs=item_krefs,
+        tag=tag,
+        allow_partial=allow_partial,
+    )
+
+
 def get_artifact(kref: str) -> Artifact:
     """Get an artifact by its kref URI.
 
