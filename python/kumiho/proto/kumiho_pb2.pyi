@@ -395,6 +395,30 @@ class GetRevisionsResponse(_message.Message):
     pagination: PaginationResponse
     def __init__(self, revisions: _Optional[_Iterable[_Union[RevisionResponse, _Mapping]]] = ..., pagination: _Optional[_Union[PaginationResponse, _Mapping]] = ...) -> None: ...
 
+class BatchGetRevisionsRequest(_message.Message):
+    __slots__ = ("revision_krefs", "item_krefs", "tag", "allow_partial")
+    REVISION_KREFS_FIELD_NUMBER: _ClassVar[int]
+    ITEM_KREFS_FIELD_NUMBER: _ClassVar[int]
+    TAG_FIELD_NUMBER: _ClassVar[int]
+    ALLOW_PARTIAL_FIELD_NUMBER: _ClassVar[int]
+    revision_krefs: _containers.RepeatedCompositeFieldContainer[Kref]
+    item_krefs: _containers.RepeatedCompositeFieldContainer[Kref]
+    tag: str
+    allow_partial: bool
+    def __init__(self, revision_krefs: _Optional[_Iterable[_Union[Kref, _Mapping]]] = ..., item_krefs: _Optional[_Iterable[_Union[Kref, _Mapping]]] = ..., tag: _Optional[str] = ..., allow_partial: bool = ...) -> None: ...
+
+class BatchGetRevisionsResponse(_message.Message):
+    __slots__ = ("revisions", "not_found", "requested_count", "found_count")
+    REVISIONS_FIELD_NUMBER: _ClassVar[int]
+    NOT_FOUND_FIELD_NUMBER: _ClassVar[int]
+    REQUESTED_COUNT_FIELD_NUMBER: _ClassVar[int]
+    FOUND_COUNT_FIELD_NUMBER: _ClassVar[int]
+    revisions: _containers.RepeatedCompositeFieldContainer[RevisionResponse]
+    not_found: _containers.RepeatedScalarFieldContainer[str]
+    requested_count: int
+    found_count: int
+    def __init__(self, revisions: _Optional[_Iterable[_Union[RevisionResponse, _Mapping]]] = ..., not_found: _Optional[_Iterable[str]] = ..., requested_count: _Optional[int] = ..., found_count: _Optional[int] = ...) -> None: ...
+
 class CreateArtifactRequest(_message.Message):
     __slots__ = ("revision_kref", "name", "location", "exists_error", "metadata")
     class MetadataEntry(_message.Message):
