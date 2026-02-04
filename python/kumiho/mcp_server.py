@@ -2686,6 +2686,14 @@ TOOL_HANDLERS = {
     ),
 }
 
+# Auto-discover kumiho-memory tools if installed
+try:
+    from kumiho_memory.mcp_tools import MEMORY_TOOLS, MEMORY_TOOL_HANDLERS  # type: ignore
+    TOOLS.extend(MEMORY_TOOLS)
+    TOOL_HANDLERS.update(MEMORY_TOOL_HANDLERS)
+except ImportError:
+    pass
+
 
 # ============================================================================
 # MCP Server Implementation
