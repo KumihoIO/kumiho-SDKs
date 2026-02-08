@@ -1,61 +1,45 @@
-# Release Notes — kumiho-memory v0.1.0
+# Release Notes — kumiho-memory v0.1.1
 
-**Release Date:** 2026-02-04
+**Release Date:** 2026-02-08
 
-This is the initial public release of `kumiho-memory`, a universal memory
-provider for AI agents built on Kumiho Cloud.
+`v0.1.1` is a patch release focused on MCP integration, Redis proxy/auth
+hardening, and test expansion.
 
 ---
 
 ## Highlights
 
-### Dream State — Scheduled Memory Consolidation
+### MCP Tool Integration (New)
 
-The headline feature of this release is **Dream State**, an automated memory
-maintenance system inspired by how the human brain consolidates memories during
-sleep. When run on a schedule (e.g. nightly at 3 AM), Dream State:
+Added `kumiho_memory.mcp_tools` with **9 MCP tool wrappers** that are
+auto-discovered by the core `kumiho` MCP server when `kumiho-memory` is
+installed.
 
-- Replays all new memory events since the last run
-- Fetches full revision data and inspects bundle groupings
-- Sends memories to an LLM for assessment in configurable batches
-- Applies recommendations: deprecation, tag enrichment, metadata updates, and
-  relationship linking
-- Persists a cursor for incremental processing and generates a detailed
-  Markdown report
+Available tools:
 
-Safety guards ensure responsible automated consolidation:
+- `kumiho_chat_add`
+- `kumiho_chat_get`
+- `kumiho_chat_clear`
+- `kumiho_memory_ingest`
+- `kumiho_memory_add_response`
+- `kumiho_memory_consolidate`
+- `kumiho_memory_recall`
+- `kumiho_memory_store_execution`
+- `kumiho_memory_dream_state`
 
-- **Published protection** — memories tagged `published` are never deprecated,
-  preserving thought processes and execution decisions as immutable records
-- **Deprecation circuit breaker** — at most 50% of assessed memories can be
-  deprecated in a single run
-- **Dry run mode** — preview assessments without applying any mutations
-- **Error isolation** — individual action failures do not halt the run
+### Redis Proxy + Auth Resilience
 
-### Universal Memory Manager
+Improved memory proxy reliability in `RedisMemoryBuffer`:
 
-Full lifecycle orchestration for AI agent memory:
+- Better handling of Firebase token vs control-plane token flows
+- Automatic token refresh and retry on proxy auth failures (401/403)
+- Cleaner fallback path between discovery, direct URL, and proxy mode
 
-- **Ingest** — buffer user/assistant messages in Redis with automatic session
-  tracking
-- **Consolidate** — summarize conversations with LLM, redact PII, write local
-  artifacts, and store to Kumiho's graph
-- **Recall** — retrieve relevant long-term memories by semantic query with
-  optional space path and memory type filters
-- **Tool execution storage** — structured capture of tool/command results as
-  `action` or `error` memory types with execution logs
+### Documentation Updates
 
-### Resilient Storage
-
-- Exponential backoff retry with configurable max attempts
-- File-backed retry queue for offline persistence when the server is
-  unreachable
-- Queue flush replays failed payloads on next available connection
-
-### Privacy
-
-- `PIIRedactor` detects and anonymizes personally identifiable information
-  before summaries are stored
+- Expanded README with onboarding/initialization guidance
+- Added MCP integration setup and tool reference
+- Refreshed usage examples for working memory and Dream State
 
 ---
 
@@ -69,36 +53,21 @@ Full lifecycle orchestration for AI agent memory:
 | `privacy` | `PIIRedactor` |
 | `retry` | `RetryQueue` |
 | `dream_state` | `DreamState`, `MemoryAssessment`, `DreamStateStats` |
-
----
-
-## LLM Provider Support
-
-Summarization and Dream State assessment work with any OpenAI-compatible API
-out of the box:
-
-- **OpenAI** — GPT-4o, GPT-4, etc.
-- **Anthropic** — Claude Sonnet, Opus, Haiku
-- **Self-hosted** — Ollama, vLLM, or any OpenAI-compatible endpoint
-
-Auto-detection from environment variables (`OPENAI_API_KEY`,
-`ANTHROPIC_API_KEY`) or explicit adapter injection.
+| `mcp_tools` | `MEMORY_TOOLS`, `MEMORY_TOOL_HANDLERS` |
 
 ---
 
 ## Test Coverage
 
-59 tests covering the full package:
+82 tests total:
 
-- 15 Dream State tests (empty stream, full pipeline, cursor round-trip,
-  deprecation, tagging, relationships, dry run, published protection,
-  circuit breaker, report generation, bundle context, JSON parsing)
-- 28 memory manager tests (consolidation, recall, attachments, tool execution,
-  space paths, memory types, retry, queue)
-- 6 retry tests (backoff, queue drain, flush, partial failure)
-- 5 Redis buffer tests
+- 16 MCP tool tests
+- 15 Dream State tests
+- 28 memory manager tests
+- 10 retry tests
+- 9 Redis buffer tests
 - 3 summarization tests
-- 2 privacy tests
+- 1 privacy test
 
 ---
 
@@ -109,32 +78,18 @@ Auto-detection from environment variables (`OPENAI_API_KEY`,
 - `redis[hiredis]` >= 5.0.0
 - `requests` >= 2.31.0
 
-Optional extras: `kumiho-memory[openai]`, `kumiho-memory[anthropic]`,
-`kumiho-memory[all]`.
+Optional extras:
+
+- `kumiho-memory[openai]`
+- `kumiho-memory[anthropic]`
+- `kumiho-memory[all]`
 
 ---
 
-## Getting Started
+## Upgrade
 
 ```bash
-pip install kumiho-memory[all]
+pip install -U kumiho-memory[all]
 ```
 
-```python
-from kumiho_memory import (
-    RedisMemoryBuffer,
-    UniversalMemoryManager,
-    DreamState,
-)
-
-# Working memory + consolidation
-buffer = RedisMemoryBuffer()
-manager = UniversalMemoryManager(redis_buffer=buffer)
-
-# Scheduled memory maintenance
-ds = DreamState(project="CognitiveMemory")
-report = await ds.run()
-```
-
-See the [README](README.md) for full usage examples and environment
-configuration.
+No breaking API changes from `v0.1.0` are introduced in this release.
