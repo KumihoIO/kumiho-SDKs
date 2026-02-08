@@ -137,7 +137,7 @@ def _fake_jwt(payload: Dict[str, Any]) -> str:
     return f"{header}.{body}.sig"
 
 
-def test_discovery_swaps_control_plane_token(monkeypatch, tmp_path: Path) -> None:
+def test_discovery_prefers_control_plane_token(monkeypatch, tmp_path: Path) -> None:
     cache_path = tmp_path / "cache.json"
     control_plane_token = _fake_jwt(
         {
@@ -160,7 +160,7 @@ def test_discovery_swaps_control_plane_token(monkeypatch, tmp_path: Path) -> Non
 
     monkeypatch.setattr("kumiho.discovery.Client", FakeClient)
 
-    captured: Dict[str, Any] = {}
+    captured: Dict[str, Any] = {"authorizations": []}
 
     payload = {
         "tenant_id": "tenant-xyz",
@@ -183,19 +183,98 @@ def test_discovery_swaps_control_plane_token(monkeypatch, tmp_path: Path) -> Non
 
     class FakeResponse:
         status_code = 200
+        text = ""
 
         def json(self):
             return payload
 
     def fake_post(url, json=None, headers=None, timeout=None):
-        captured["authorization"] = headers.get("Authorization") if headers else None
+        captured["authorizations"].append(headers.get("Authorization") if headers else None)
         return FakeResponse()
 
     monkeypatch.setattr("kumiho.discovery.requests.post", fake_post)
 
     client_from_discovery(cache_path=str(cache_path), force_refresh=True)
 
-    assert captured["authorization"] == f"Bearer {firebase_token}"
+    assert captured["authorizations"] == [f"Bearer {control_plane_token}"]
+    assert created["auth_token"] == control_plane_token
+
+
+def test_discovery_falls_back_to_firebase_token(monkeypatch, tmp_path: Path) -> None:
+    cache_path = tmp_path / "cache.json"
+    control_plane_token = _fake_jwt(
+        {
+            "iss": "https://control.kumiho.cloud",
+            "aud": "kumiho-server",
+            "tenant_id": "tenant-xyz",
+        }
+    )
+    firebase_token = "firebase-id-token"
+    monkeypatch.setattr("kumiho.discovery.load_bearer_token", lambda: control_plane_token)
+    monkeypatch.setattr("kumiho.discovery.load_firebase_token", lambda: firebase_token)
+
+    created: Dict[str, Any] = {}
+
+    class FakeClient:
+        def __init__(self, *, target: str, auth_token: str | None = None, default_metadata=None, **_kwargs):
+            created["target"] = target
+            created["auth_token"] = auth_token
+            created["metadata"] = list(default_metadata or [])
+
+    monkeypatch.setattr("kumiho.discovery.Client", FakeClient)
+
+    captured: Dict[str, Any] = {"authorizations": []}
+
+    payload = {
+        "tenant_id": "tenant-xyz",
+        "tenant_name": "CP",
+        "roles": ["owner"],
+        "guardrails": None,
+        "region": {
+            "region_code": "us",
+            "server_url": "https://us",
+            "grpc_authority": "us:443",
+        },
+        "cache_control": {
+            "issued_at": "2025-01-01T00:00:00+00:00",
+            "refresh_at": "2025-01-01T00:05:00+00:00",
+            "expires_at": "2025-01-01T00:10:00+00:00",
+            "expires_in_seconds": 600,
+            "refresh_after_seconds": 300,
+        },
+    }
+
+    class RejectResponse:
+        status_code = 401
+        text = '{"error":"invalid_id_token"}'
+
+        def json(self):
+            return {"error": "invalid_id_token"}
+
+    class SuccessResponse:
+        status_code = 200
+        text = ""
+
+        def json(self):
+            return payload
+
+    call_count = {"value": 0}
+
+    def fake_post(url, json=None, headers=None, timeout=None):
+        call_count["value"] += 1
+        captured["authorizations"].append(headers.get("Authorization") if headers else None)
+        if call_count["value"] == 1:
+            return RejectResponse()
+        return SuccessResponse()
+
+    monkeypatch.setattr("kumiho.discovery.requests.post", fake_post)
+
+    client_from_discovery(cache_path=str(cache_path), force_refresh=True)
+
+    assert captured["authorizations"] == [
+        f"Bearer {control_plane_token}",
+        f"Bearer {firebase_token}",
+    ]
     assert created["auth_token"] == control_plane_token
 
 
@@ -240,6 +319,44 @@ def test_auto_configure_from_discovery(monkeypatch) -> None:
         "id_token": "firebase-from-cache",
         "tenant_hint": "tenant-xyz",
         "force_refresh": True,
+        "cache_path": None,
+    }
+
+
+def test_auto_configure_from_discovery_uses_env_token(monkeypatch) -> None:
+    kumiho = importlib.import_module("kumiho")
+
+    recorded: Dict[str, Any] = {}
+
+    def fail_ensure_token(*, token_file=None, interactive=True):
+        raise AssertionError("ensure_token should not be called when KUMIHO_AUTH_TOKEN is set")
+
+    def fake_client_from_discovery(*, id_token, tenant_hint=None, force_refresh=False, cache_path=None):
+        recorded["discovery"] = {
+            "id_token": id_token,
+            "tenant_hint": tenant_hint,
+            "force_refresh": force_refresh,
+            "cache_path": cache_path,
+        }
+        return {"client": id_token}
+
+    def fake_configure_default_client(client):
+        recorded["configured"] = client
+        return client
+
+    monkeypatch.setenv("KUMIHO_AUTH_TOKEN", "env.header.signature")
+    monkeypatch.setattr("kumiho.auth_cli.ensure_token", fail_ensure_token)
+    monkeypatch.setattr(kumiho, "client_from_discovery", fake_client_from_discovery)
+    monkeypatch.setattr(kumiho, "configure_default_client", fake_configure_default_client)
+
+    result = kumiho.auto_configure_from_discovery(tenant_hint="tenant-env", force_refresh=False)
+
+    assert result == {"client": "env.header.signature"}
+    assert recorded["configured"] == result
+    assert recorded["discovery"] == {
+        "id_token": "env.header.signature",
+        "tenant_hint": "tenant-env",
+        "force_refresh": False,
         "cache_path": None,
     }
 

@@ -330,18 +330,25 @@ def auto_configure_from_discovery(
         :class:`use_client`: For temporary client switching.
     """
 
+    import os
+
     from .auth_cli import ensure_token, TokenAcquisitionError  # Lazy import to avoid polluting module attrs
     from ._token_loader import load_bearer_token
 
-    try:
-        ensure_token(interactive=interactive)
-    except TokenAcquisitionError as exc:
-        raise RuntimeError(
-            "No cached credentials found. Run 'kumiho-auth login' to "
-            "populate ~/.kumiho before calling auto_configure_from_discovery()."
-        ) from exc
-
+    env_token_present = bool((os.getenv("KUMIHO_AUTH_TOKEN") or "").strip())
     token = load_bearer_token()
+
+    if not env_token_present:
+        try:
+            ensure_token(interactive=interactive)
+        except TokenAcquisitionError as exc:
+            raise RuntimeError(
+                "No cached credentials found. Run 'kumiho-auth login' to "
+                "populate ~/.kumiho before calling auto_configure_from_discovery(). "
+                "Or set KUMIHO_AUTH_TOKEN explicitly."
+            ) from exc
+        token = load_bearer_token()
+
     if not token:
         raise RuntimeError(
             "Cached credentials missing valid token. Re-run 'kumiho-auth login' "

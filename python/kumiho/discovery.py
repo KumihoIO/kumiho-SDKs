@@ -357,10 +357,19 @@ class DiscoveryManager:
         cache_key = tenant_hint or _DEFAULT_CACHE_KEY
 
         def fetch_fresh() -> DiscoveryRecord:
-            firebase_token = _ensure_firebase_token(id_token)
-            fresh = self._fetch_remote(id_token=firebase_token, tenant_hint=tenant_hint)
-            self.cache.store(cache_key, fresh)
-            return fresh
+            last_error: Optional[DiscoveryError] = None
+            for token in _discovery_token_candidates(id_token):
+                try:
+                    fresh = self._fetch_remote(id_token=token, tenant_hint=tenant_hint)
+                    self.cache.store(cache_key, fresh)
+                    return fresh
+                except DiscoveryError as exc:
+                    last_error = exc
+                    continue
+
+            if last_error:
+                raise last_error
+            raise DiscoveryError("Discovery failed without a usable bearer token")
 
         if not force_refresh:
             cached = self.cache.load(cache_key)
@@ -455,18 +464,15 @@ def _build_discovery_url(base_url: str) -> str:
     return f"{base}/api/discovery/tenant"
 
 
-def _ensure_firebase_token(candidate: str) -> str:
+def _discovery_token_candidates(candidate: str) -> list[str]:
+    candidates = [candidate]
     if not _is_control_plane_token(candidate):
-        return candidate
+        return candidates
 
     firebase = load_firebase_token()
-    if firebase:
-        return firebase
-
-    raise DiscoveryError(
-        "Control Plane JWT detected but no Firebase ID token is available. "
-        "Run 'kumiho-auth login' to refresh credentials."
-    )
+    if firebase and firebase not in candidates:
+        candidates.append(firebase)
+    return candidates
 
 
 def _decode_claims(token: str) -> Dict[str, Any]:
