@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
+import logging
 import redis.asyncio as redis
 import requests
 
@@ -20,6 +21,8 @@ from kumiho.discovery import (
     DiscoveryManager,
     _DEFAULT_CACHE_KEY,
 )
+
+logger = logging.getLogger(__name__)
 
 
 class RedisDiscoveryError(RuntimeError):
@@ -284,27 +287,77 @@ class RedisMemoryBuffer:
     async def __aexit__(self, *args: Any) -> None:
         await self.close()
 
+    @staticmethod
+    def _get_fresh_token(*, force_refresh: bool = False) -> str:
+        """Load a bearer token, refreshing from Firebase if expired.
+
+        Mirrors the retry strategy of the gRPC ``_AutoLoginInterceptor``:
+        first try the cached token, then call ``ensure_token`` to silently
+        refresh through the Firebase refresh-token flow.
+        """
+        if not force_refresh:
+            token = load_firebase_token() or load_bearer_token()
+            if token:
+                return token
+
+        # Attempt a silent (non-interactive) refresh via the SDK auth module.
+        # ensure_token() may return a Control Plane JWT, but the memory
+        # proxy validates Firebase ID tokens directly.  We call
+        # ensure_token() for its *side-effect* (refreshing + saving creds)
+        # and then re-read the Firebase token from disk.
+        try:
+            from kumiho.auth_cli import ensure_token
+
+            ensure_token(
+                interactive=False,
+                force_refresh=force_refresh,
+            )
+            # Re-read the Firebase ID token that ensure_token just saved.
+            firebase_token = load_firebase_token()
+            if firebase_token:
+                return firebase_token
+        except Exception as exc:
+            logger.debug("Token refresh attempt failed: %s", exc)
+
+        # Last resort: re-read the cache in case another process refreshed it.
+        token = load_firebase_token() or load_bearer_token()
+        if token:
+            return token
+
+        raise RedisDiscoveryError(
+            "No credentials available for memory proxy. Run 'kumiho-auth login' first."
+        )
+
     async def _proxy_request(self, *, action: str, payload: Dict[str, Any]) -> Dict[str, Any]:
         if not self.proxy_url:
             raise RedisDiscoveryError("Redis client is not configured and no proxy URL is set.")
-
-        token = load_firebase_token() or load_bearer_token()
-        if not token:
-            raise RedisDiscoveryError(
-                "No credentials available for memory proxy. Run 'kumiho-auth login' first."
-            )
 
         body = {"action": action, **payload}
         if self.tenant_hint:
             body["tenant_hint"] = self.tenant_hint
 
-        def _do_request() -> Dict[str, Any]:
-            response = requests.post(
+        def _do_request(bearer: str) -> requests.Response:
+            return requests.post(
                 self.proxy_url,
                 json=body,
-                headers={"Authorization": f"Bearer {token}"},
+                headers={"Authorization": f"Bearer {bearer}"},
                 timeout=self.discovery_timeout,
             )
+
+        def _execute() -> Dict[str, Any]:
+            token = self._get_fresh_token()
+            response = _do_request(token)
+
+            # On auth failure, force-refresh the token and retry once
+            # (same pattern as the gRPC _AutoLoginInterceptor).
+            if response.status_code in (401, 403):
+                logger.debug(
+                    "Memory proxy returned %s — refreshing token and retrying",
+                    response.status_code,
+                )
+                token = self._get_fresh_token(force_refresh=True)
+                response = _do_request(token)
+
             if response.status_code >= 400:
                 raise RedisDiscoveryError(
                     f"Memory proxy error {response.status_code}: {response.text[:200]}"
@@ -314,7 +367,7 @@ class RedisMemoryBuffer:
             except ValueError as exc:
                 raise RedisDiscoveryError("Memory proxy returned invalid JSON") from exc
 
-        return await asyncio.to_thread(_do_request)
+        return await asyncio.to_thread(_execute)
 
     def _discover_upstash_url(self) -> Optional[RedisDiscoveryResult]:
         """Attempt to discover a direct Redis URL via the control plane.
@@ -323,8 +376,9 @@ class RedisMemoryBuffer:
         (e.g. in guardrails or service catalogue).  When it fails the
         caller falls back to env vars and then to the proxy.
         """
-        token = load_bearer_token()
-        if not token:
+        try:
+            token = self._get_fresh_token()
+        except RedisDiscoveryError:
             return None
 
         try:

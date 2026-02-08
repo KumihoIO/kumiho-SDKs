@@ -114,7 +114,7 @@ def test_handle_user_message_flags_consolidation():
 
 def test_recall_memories_with_revision_krefs():
     """When memory_retrieve returns a dict with revision_krefs, recall_memories
-    should map them into [{kref: ...}, ...] format."""
+    should enrich them with scores and revision metadata."""
     fake = FakeRedis()
     buffer = RedisMemoryBuffer(client=fake, redis_url="redis://test")
 
@@ -142,8 +142,11 @@ def test_recall_memories_with_revision_krefs():
     async def run():
         results = await manager.recall_memories("tea preferences", limit=3)
         assert len(results) == 2
-        assert results[0] == {"kref": "kref://memory/item/1/rev/1"}
-        assert results[1] == {"kref": "kref://memory/item/1/rev/2"}
+        # Results now include scores and any metadata fetched from revisions.
+        assert results[0]["kref"] == "kref://memory/item/1/rev/1"
+        assert results[0]["score"] == 0.95
+        assert results[1]["kref"] == "kref://memory/item/1/rev/2"
+        assert results[1]["score"] == 0.82
 
     asyncio.run(run())
 

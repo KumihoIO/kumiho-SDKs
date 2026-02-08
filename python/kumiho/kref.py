@@ -65,11 +65,11 @@ class KrefValidationError(ValueError):
 # Each path segment must be alphanumeric with dots, underscores, or hyphens.
 _KREF_PATTERN = re.compile(
     r'^kref://'                                    # scheme
-    r'(/[a-zA-Z0-9][a-zA-Z0-9._-]*'               # space path starting with / (root-level)
-    r'(/[a-zA-Z0-9][a-zA-Z0-9._-]*)*'             # optional nested path segments
+    r'(/[a-zA-Z0-9_][a-zA-Z0-9._-]*'              # space path starting with / (root-level)
+    r'(/[a-zA-Z0-9_][a-zA-Z0-9._-]*)*'            # optional nested path segments
     r'|'                                           # OR
-    r'[a-zA-Z0-9][a-zA-Z0-9._-]*'                 # project/item path segment
-    r'(/[a-zA-Z0-9][a-zA-Z0-9._-]*)*)'            # optional nested path segments
+    r'[a-zA-Z0-9_][a-zA-Z0-9._-]*'                # project/item path segment
+    r'(/[a-zA-Z0-9_][a-zA-Z0-9._-]*)*)'           # optional nested path segments
     r'(\?r=\d+(&a=[a-zA-Z0-9._-]+)?)?$'           # optional revision and artifact
 )
 

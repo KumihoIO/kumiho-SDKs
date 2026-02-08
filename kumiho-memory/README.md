@@ -14,6 +14,7 @@ consolidation, privacy-aware summarization, and scheduled memory maintenance.
 | `privacy` | `PIIRedactor` | PII detection and anonymization before storage |
 | `retry` | `RetryQueue` | File-backed retry queue for resilient store operations |
 | `dream_state` | `DreamState` | Scheduled memory consolidation ("Dream State") — deprecates, tags, and links memories |
+| `mcp_tools` | `MEMORY_TOOLS` | 9 MCP tool wrappers auto-discovered by the kumiho MCP server |
 
 ## Install
 
@@ -29,6 +30,58 @@ pip install kumiho-memory[all]         # Both
 Requires Python 3.10+.
 
 ## Quick Start
+
+### Initialization (First Interaction)
+
+When you first onboard a user, seed a small, consented profile and name the agent. This makes recall useful immediately and keeps memory scoped to stable preferences.
+
+Recommended profile fields to store (only with explicit consent):
+- Preferred name and pronunciation
+- Pronouns
+- Timezone and working hours
+- Role, team, and organization
+- Communication preferences (concise vs detailed, tone)
+- Primary goals for the assistant
+- Security or privacy constraints (what not to store)
+- Key projects, products, or domains
+- Important people/entities and how to reference them
+
+Suggested agent names: Kumo, Sora, Nari, Mira, or "Kumiho".
+
+Example onboarding seed:
+
+```python
+from kumiho_memory import RedisMemoryBuffer, UniversalMemoryManager
+
+buffer = RedisMemoryBuffer()
+manager = UniversalMemoryManager(redis_buffer=buffer)
+
+profile = """\
+Agent name: Kumo
+Preferred name: Alex
+Pronouns: they/them
+Timezone: America/Los_Angeles
+Working hours: 9am-5pm PT
+Role: Product engineer at Kumiho
+Communication: concise, bullet points
+Goals: help with roadmap, code reviews, release notes
+Do-not-store: medical details, personal finances
+Key projects: OpenClaw, Kumiho Memory
+"""
+
+seed = await manager.ingest_message(
+    user_id="user-1",
+    message=profile,
+    context="onboarding",
+)
+
+await manager.add_assistant_response(
+    session_id=seed["session_id"],
+    response="Thanks! I'll remember these preferences going forward.",
+)
+
+await manager.consolidate_session(session_id=seed["session_id"])
+```
 
 ### Working Memory + Consolidation
 
@@ -106,6 +159,30 @@ Key safety guards:
 - Memories tagged `published` are never deprecated (immutable)
 - Max 50% of assessed memories can be deprecated per run
 - `dry_run=True` mode for previewing changes without mutations
+
+### MCP Integration
+
+When `kumiho-memory` is installed alongside the core `kumiho` SDK, nine memory
+tools are automatically discovered by the MCP server. No configuration needed.
+
+```bash
+pip install kumiho[mcp] kumiho-memory
+kumiho-mcp  # Memory tools appear alongside core tools
+```
+
+Available MCP tools:
+
+| Tool | Description |
+| ------ | ------------- |
+| `kumiho_chat_add` | Add a message to the session buffer |
+| `kumiho_chat_get` | Retrieve messages in a session |
+| `kumiho_chat_clear` | Clear a session's working memory |
+| `kumiho_memory_ingest` | Buffer a user message and recall long-term context |
+| `kumiho_memory_add_response` | Add an assistant response to the session |
+| `kumiho_memory_consolidate` | Summarize, redact PII, and store to the graph |
+| `kumiho_memory_recall` | Search long-term memories by query |
+| `kumiho_memory_store_execution` | Store a tool/command execution result |
+| `kumiho_memory_dream_state` | Trigger a Dream State consolidation run |
 
 ## Environment
 

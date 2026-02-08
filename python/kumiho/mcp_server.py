@@ -451,7 +451,12 @@ def tool_fulltext_search(
     include_metadata: bool = False,
     limit: int = 20,
 ) -> Dict[str, Any]:
-    """Full-text fuzzy search across items (Google-like search)."""
+    """Full-text fuzzy search across items (Google-like search).
+
+    For STUDIO+ tiers with vector embeddings enabled, uses hybrid search
+    (fulltext + vector similarity) for improved accuracy when searching
+    revision metadata.
+    """
     _ensure_configured()
     results = kumiho.search(
         query,
@@ -473,11 +478,16 @@ def tool_fulltext_search(
             "matched_in": r.matched_in,
         })
 
+    # Get search_mode from results if available (hybrid vs fulltext)
+    # This is populated for STUDIO+ tiers with vector embeddings enabled
+    search_mode = getattr(results, "search_mode", None) or "fulltext"
+
     return {
         "results": serialized,
         "count": len(serialized),
         "total": len(results),
         "query": query,
+        "search_mode": search_mode,  # "fulltext" or "hybrid"
         "filters": {
             "context": context,
             "kind": kind,
@@ -1617,7 +1627,7 @@ TOOLS: List[Dict[str, Any]] = [
     },
     {
         "name": "kumiho_fulltext_search",
-        "description": "Full-text fuzzy search across items (Google-like search). Supports automatic typo tolerance and multi-word queries. Results are ranked by relevance score. Use this for natural language queries instead of kumiho_search_items.",
+        "description": "Full-text fuzzy search across items (Google-like search). Supports automatic typo tolerance and multi-word queries. Results are ranked by relevance score. For STUDIO+ tiers, uses hybrid search (fulltext + vector similarity) when searching revision metadata for improved semantic accuracy. Use this for natural language queries instead of kumiho_search_items.",
         "inputSchema": {
             "type": "object",
             "properties": {

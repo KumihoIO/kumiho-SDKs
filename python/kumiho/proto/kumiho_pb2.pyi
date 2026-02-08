@@ -306,12 +306,14 @@ class SearchResult(_message.Message):
     def __init__(self, item: _Optional[_Union[ItemResponse, _Mapping]] = ..., score: _Optional[float] = ..., matched_in: _Optional[_Iterable[str]] = ...) -> None: ...
 
 class SearchResponse(_message.Message):
-    __slots__ = ("results", "pagination")
+    __slots__ = ("results", "pagination", "search_mode")
     RESULTS_FIELD_NUMBER: _ClassVar[int]
     PAGINATION_FIELD_NUMBER: _ClassVar[int]
+    SEARCH_MODE_FIELD_NUMBER: _ClassVar[int]
     results: _containers.RepeatedCompositeFieldContainer[SearchResult]
     pagination: PaginationResponse
-    def __init__(self, results: _Optional[_Iterable[_Union[SearchResult, _Mapping]]] = ..., pagination: _Optional[_Union[PaginationResponse, _Mapping]] = ...) -> None: ...
+    search_mode: str
+    def __init__(self, results: _Optional[_Iterable[_Union[SearchResult, _Mapping]]] = ..., pagination: _Optional[_Union[PaginationResponse, _Mapping]] = ..., search_mode: _Optional[str] = ...) -> None: ...
 
 class CreateRevisionRequest(_message.Message):
     __slots__ = ("item_kref", "metadata", "number", "exists_error")

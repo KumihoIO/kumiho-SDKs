@@ -589,10 +589,83 @@ class UniversalMemoryManager:
         result = await _maybe_await(self.memory_retrieve, **kwargs)
 
         if isinstance(result, dict) and "revision_krefs" in result:
-            return [{"kref": kref} for kref in result.get("revision_krefs", [])]
+            revision_krefs = result.get("revision_krefs", [])
+            scores = result.get("scores", [])
+
+            # Fetch revision metadata concurrently so the LLM gets
+            # usable content (title, summary, type) instead of bare krefs.
+            meta_tasks = [
+                self._fetch_revision_metadata(kref) for kref in revision_krefs
+            ]
+            meta_results = await asyncio.gather(*meta_tasks)
+
+            enriched: List[Dict[str, Any]] = []
+            for i, (kref, meta) in enumerate(zip(revision_krefs, meta_results)):
+                entry: Dict[str, Any] = {"kref": kref}
+                if i < len(scores):
+                    entry["score"] = scores[i]
+                entry.update(meta)
+                enriched.append(entry)
+            return enriched
         if isinstance(result, list):
             return result
         return []
+
+    async def _fetch_revision_metadata(self, kref: str) -> Dict[str, Any]:
+        """Fetch revision metadata and raw artifact content.
+
+        The revision metadata contains redacted/sanitized fields (title,
+        summary, type).  The source of truth for the full conversation is
+        the raw Markdown artifact stored locally.  This method reads both
+        so the LLM gets usable context for recall.
+        """
+        try:
+            import kumiho
+
+            revision = await asyncio.to_thread(kumiho.get_revision, kref)
+            meta = revision.metadata or {}
+            entry: Dict[str, Any] = {
+                "title": meta.get("title", ""),
+                "summary": meta.get("summary", ""),
+                "type": meta.get("type", ""),
+                "space": meta.get("space", ""),
+                "created_at": getattr(revision, "created_at", ""),
+                "tags": getattr(revision, "tags", []),
+            }
+
+            # Read the raw conversation from the local artifact file.
+            try:
+                artifacts = await asyncio.to_thread(revision.get_artifacts)
+                for artifact in artifacts:
+                    location = getattr(artifact, "location", "")
+                    if not location:
+                        continue
+                    content = await self._read_artifact_content(location)
+                    if content:
+                        entry["artifact_name"] = getattr(artifact, "name", "")
+                        entry["artifact_location"] = location
+                        entry["content"] = content
+                        break  # use the first readable artifact
+            except Exception as exc:
+                logger.debug("Failed to fetch artifacts for %s: %s", kref, exc)
+
+            return entry
+        except Exception as exc:
+            logger.debug("Failed to fetch revision %s: %s", kref, exc)
+            return {}
+
+    @staticmethod
+    async def _read_artifact_content(location: str) -> str:
+        """Read a local artifact file and return its text content."""
+        path = Path(location)
+        if not path.is_file():
+            return ""
+        try:
+            return await asyncio.to_thread(
+                path.read_text, "utf-8",
+            )
+        except Exception:
+            return ""
 
     async def close(self) -> None:
         await self.redis_buffer.close()
