@@ -1,5 +1,27 @@
 # Kumiho Python SDK - Release Notes
 
+## kumiho 0.9.4 (February 2026) - Hybrid Search Mode + Kref Validation 🔍
+
+### ✨ New Behavior
+
+**MCP full-text search now reports search mode**:
+- `kumiho_fulltext_search` responses now include `search_mode`.
+- Reported values are `"fulltext"` or `"hybrid"` (when STUDIO+ vector-backed hybrid search is available).
+
+### 🐛 Bug Fixes
+
+**Kref validation accepts underscore-prefixed segments**:
+- Updated Kref URI validation regex to allow `_` at the start of project/space path segments.
+- Fixes false-negative validation for valid krefs containing underscore-prefixed segments.
+
+### 📦 Proto Sync
+
+- Synced generated protobufs to include `SearchResponse.search_mode`.
+
+### ✅ Compatibility Notes
+
+- `search_mode` in MCP search output depends on server support; it falls back to `"fulltext"` when unavailable.
+
 ## kumiho 0.9.2 (February 2026) - Batch Revision Fetch (Proto Sync) 📦
 
 ### ✨ New Features
