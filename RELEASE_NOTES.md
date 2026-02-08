@@ -1,5 +1,19 @@
 # Kumiho Python SDK - Release Notes
 
+## kumiho 0.9.5 (February 2026) - API Token Bootstrap for Discovery 🔑
+
+### ✨ New Behavior
+
+**`auto_configure_from_discovery()` now supports API-token-first flows**:
+- When `KUMIHO_AUTH_TOKEN` is explicitly set, the SDK now bootstraps discovery directly from that token.
+- No cached `kumiho-auth login` credentials are required for this path.
+
+### 🔧 Reliability Improvements
+
+**Bootstrap and discovery token handling hardened**:
+- Default-client bootstrap now prefers an explicit env token before attempting cached credential refresh.
+- Discovery routing now supports control-plane JWT-first behavior with Firebase fallback when needed.
+
 ## kumiho 0.9.4 (February 2026) - Hybrid Search Mode + Kref Validation 🔍
 
 ### ✨ New Behavior

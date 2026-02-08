@@ -2,7 +2,7 @@ from setuptools import setup, find_packages
 
 setup(
     name="kumiho",
-    version="0.9.2",
+    version="0.9.5",
     packages=find_packages(),
     install_requires=[
         "grpcio>=1.63.0",
