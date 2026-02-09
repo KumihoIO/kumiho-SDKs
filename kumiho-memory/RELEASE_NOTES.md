@@ -1,4 +1,23 @@
-# Release Notes — kumiho-memory v0.1.1
+# Release Notes — kumiho-memory
+
+## v0.1.2
+
+**Release Date:** 2026-02-09
+
+`v0.1.2` is a documentation-focused patch release.
+
+### Highlights
+
+- Updated `README.md` status block with latest patch metadata
+- Corrected README heading formatting
+- Synced package version metadata across `pyproject.toml` and `kumiho_memory.__version__`
+- Corrected project changelog URL to point to `RELEASE_NOTES.md`
+
+No breaking API changes are introduced in this release.
+
+---
+
+## v0.1.1
 
 **Release Date:** 2026-02-08
 
