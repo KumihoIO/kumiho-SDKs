@@ -386,8 +386,14 @@ class DiscoveryManager:
         return fetch_fresh()
 
     def _fetch_remote(self, *, id_token: str, tenant_hint: Optional[str]) -> DiscoveryRecord:
+        from kumiho import __version__ as _sdk_version
+
         url = _build_discovery_url(self.base_url)
-        headers = {"Authorization": f"Bearer {id_token}", "Content-Type": "application/json"}
+        headers = {
+            "Authorization": f"Bearer {id_token}",
+            "Content-Type": "application/json",
+            "User-Agent": f"kumiho-python/{_sdk_version}",
+        }
         payload: Dict[str, Any] = {}
         if tenant_hint:
             payload["tenant_hint"] = tenant_hint

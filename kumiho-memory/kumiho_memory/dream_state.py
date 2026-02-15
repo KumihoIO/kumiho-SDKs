@@ -89,7 +89,7 @@ the following fields:
    enrichments.  Return ``{}`` if none.
 7. related_indices (List[int]): Indices of related memories in THIS batch.
 8. relationship_type (str): Edge type for related memories — one of
-   DERIVED_FROM, REFERENCED, DEPENDS_ON.  Empty string if none.
+   DERIVED_FROM, REFERENCED, DEPENDS_ON, SUPERSEDES.  Empty string if none.
 
 Return ONLY a JSON array of objects (one per memory).
 
@@ -166,6 +166,12 @@ class DreamState:
         Seconds to wait for the event stream before stopping collection.
     dry_run:
         If *True*, assess but do **not** mutate anything in Kumiho.
+    max_deprecation_ratio:
+        Maximum fraction of memories that may be deprecated per run.
+        Must be between 0.1 and 0.9 (default 0.5).
+    allow_published_deprecation:
+        If *True*, published items may be deprecated. Use with caution.
+        When relaxed, a warning is logged and recorded in the audit report.
     """
 
     def __init__(
@@ -180,6 +186,8 @@ class DreamState:
         routing_key_filter: str = "revision.*",
         event_timeout: float = 5.0,
         dry_run: bool = False,
+        max_deprecation_ratio: float = 0.5,
+        allow_published_deprecation: bool = False,
     ) -> None:
         self.project = project
         self.cursor_item_name = cursor_item_name
@@ -187,6 +195,14 @@ class DreamState:
         self.routing_key_filter = routing_key_filter
         self.event_timeout = event_timeout
         self.dry_run = dry_run
+
+        if not (0.1 <= max_deprecation_ratio <= 0.9):
+            raise ValueError(
+                f"max_deprecation_ratio must be between 0.1 and 0.9, "
+                f"got {max_deprecation_ratio}"
+            )
+        self.max_deprecation_ratio = max_deprecation_ratio
+        self.allow_published_deprecation = allow_published_deprecation
 
         import os
 
@@ -557,8 +573,8 @@ class DreamState:
 
         client = sdk.get_client()
 
-        # Safety: cap deprecation at 50 % of batch.
-        deprecation_limit = max(1, len(assessments) // 2)
+        # Safety: cap deprecation per run (spec §9.4.4).
+        deprecation_limit = max(1, int(len(assessments) * self.max_deprecation_ratio))
         deprecations_done = 0
 
         for assessment in assessments:
@@ -571,9 +587,9 @@ class DreamState:
 
             # --- Deprecate ---
             if assessment.should_deprecate:
-                # Safety: never deprecate published items.
                 try:
-                    if client.has_tag(kref, "published"):
+                    is_published = client.has_tag(kref, "published")
+                    if is_published and not self.allow_published_deprecation:
                         logger.info(
                             "Skipping deprecation of published revision %s",
                             kref_str,
@@ -586,6 +602,11 @@ class DreamState:
                             kref_str,
                         )
                     else:
+                        if is_published:
+                            logger.warning(
+                                "Published protection RELAXED — deprecating published revision %s",
+                                kref_str,
+                            )
                         client.set_deprecated(kref, True)
                         stats.deprecated += 1
                         deprecations_done += 1
@@ -640,7 +661,10 @@ class DreamState:
     ) -> Optional[str]:
         """Create a report revision + artifact on the cursor item."""
         now_iso = datetime.now(timezone.utc).isoformat()
-        markdown = self._build_report_markdown(stats, assessments, now_iso)
+        markdown = self._build_report_markdown(
+            stats, assessments, now_iso,
+            allow_published_deprecation=self.allow_published_deprecation,
+        )
 
         # Write artifact to local storage.
         safe_ts = now_iso.replace(":", "").replace("-", "").split(".")[0]
@@ -686,6 +710,8 @@ class DreamState:
         stats: DreamStateStats,
         assessments: List[MemoryAssessment],
         timestamp: str,
+        *,
+        allow_published_deprecation: bool = False,
     ) -> str:
         """Build a Markdown report of the Dream State run."""
         parts: List[str] = [
@@ -695,11 +721,21 @@ class DreamState:
             f"**Memories assessed:** {stats.revisions_assessed}  ",
             f"**Duration:** {stats.duration_ms}ms",
             "",
+        ]
+
+        if allow_published_deprecation:
+            parts.extend([
+                "**WARNING:** Published protection was relaxed for this run "
+                "(`allow_published_deprecation=true`).  ",
+                "",
+            ])
+
+        parts.extend([
             "---",
             "",
             "## Actions Taken",
             "",
-        ]
+        ])
 
         # Deprecated
         deprecated = [a for a in assessments if a.should_deprecate]

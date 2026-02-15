@@ -194,6 +194,9 @@ class UniversalMemoryManager:
         summary_result = await self.summarizer.summarize_conversation(messages)
         redacted_summary = self.pii_redactor.anonymize_summary(summary_result.get("summary", ""))
 
+        # Reject credentials before sending to cloud graph (spec §10.4.5)
+        self.pii_redactor.reject_credentials(redacted_summary)
+
         store_result: Dict[str, Any] = {}
         if self.memory_store:
             topics = summary_result.get("classification", {}).get("topics", [])
@@ -321,6 +324,9 @@ class UniversalMemoryManager:
             summary = f"Executed '{task}' successfully"
 
         summary = self.pii_redactor.anonymize_summary(summary)
+
+        # Reject credentials before sending to cloud graph (spec §10.4.5)
+        self.pii_redactor.reject_credentials(summary)
 
         # Write execution log as local artifact
         log_content = (

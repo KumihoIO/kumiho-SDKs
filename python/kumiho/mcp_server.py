@@ -104,6 +104,13 @@ logging.basicConfig(
 )
 logger = logging.getLogger("kumiho.mcp")
 
+# Optional privacy utilities (from kumiho-memory package)
+try:
+    from kumiho_memory.privacy import PIIRedactor, CredentialDetectedError
+    _PRIVACY_AVAILABLE = True
+except ImportError:
+    _PRIVACY_AVAILABLE = False
+
 
 def _ensure_configured() -> bool:
     """Ensure Kumiho client is configured."""
@@ -519,6 +526,16 @@ def tool_memory_store(
 
     if not user_text and not assistant_text:
         return {"error": "user_text or assistant_text must be provided"}
+
+    # Reject credentials before sending to cloud graph (spec §10.4.5)
+    if _PRIVACY_AVAILABLE:
+        _redactor = PIIRedactor()
+        for _field_value in (user_text, assistant_text, summary, title):
+            if _field_value:
+                try:
+                    _redactor.reject_credentials(_field_value)
+                except CredentialDetectedError as exc:
+                    return {"error": str(exc)}
 
     project_name = project or "CognitiveMemory"
     project_obj = kumiho.get_project(project_name)

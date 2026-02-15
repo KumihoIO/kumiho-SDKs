@@ -10,7 +10,7 @@ from kumiho_memory.summarization import (
     MemorySummarizer,
     OpenAICompatAdapter,
 )
-from kumiho_memory.privacy import PIIRedactor
+from kumiho_memory.privacy import PIIRedactor, CredentialDetectedError
 from kumiho_memory.retry import RetryQueue
 from kumiho_memory.dream_state import DreamState, MemoryAssessment, DreamStateStats
 
@@ -24,6 +24,7 @@ __all__ = [
     "get_memory_space",
     "MemorySummarizer",
     "PIIRedactor",
+    "CredentialDetectedError",
     "RetryQueue",
     "DreamState",
     "MemoryAssessment",

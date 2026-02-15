@@ -24,6 +24,9 @@ class StubRedactor:
     def anonymize_summary(self, summary):
         return summary.replace("tea", "[topic]")
 
+    def reject_credentials(self, text):
+        pass
+
 
 def test_memory_manager_consolidation_calls_store():
     fake = FakeRedis()

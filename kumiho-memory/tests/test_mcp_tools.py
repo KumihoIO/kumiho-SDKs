@@ -48,6 +48,9 @@ class StubRedactor:
     def anonymize_summary(self, summary):
         return summary
 
+    def reject_credentials(self, text):
+        pass
+
 
 # ---------------------------------------------------------------------------
 # Fixture helpers

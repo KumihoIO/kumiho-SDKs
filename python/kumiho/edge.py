@@ -11,6 +11,7 @@ Edge Types:
     - ``CONTAINS``: Source contains target (composition).
     - ``CREATED_FROM``: Source was generated from target.
     - ``BELONGS_TO``: Source belongs to target (grouping).
+    - ``SUPERSEDES``: Source replaces/supersedes target (belief revision).
 
 Example::
 
@@ -117,6 +118,7 @@ class EdgeType:
         DEPENDS_ON (str): Indicates the source requires the target.
         DERIVED_FROM (str): Indicates the source was derived/modified from target.
         CONTAINS (str): Indicates the source contains or includes the target.
+        SUPERSEDES (str): Indicates the source replaces/supersedes the target (belief revision).
 
     Example::
 
@@ -146,6 +148,9 @@ class EdgeType:
 
     CONTAINS = "CONTAINS"
     """Source contains or includes target."""
+
+    SUPERSEDES = "SUPERSEDES"
+    """Source replaces or supersedes target (belief revision)."""
 
 class EdgeDirection:
     """Direction constants for edge traversal queries.

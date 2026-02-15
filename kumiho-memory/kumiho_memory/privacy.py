@@ -6,6 +6,11 @@ import re
 from typing import Dict, List, Tuple
 
 
+class CredentialDetectedError(ValueError):
+    """Raised when credential-like patterns are detected in text meant for cloud storage."""
+    pass
+
+
 class PIIRedactor:
     """Detect and redact common PII patterns."""
 
@@ -15,6 +20,15 @@ class PIIRedactor:
         "ssn": r"\b\d{3}-\d{2}-\d{4}\b",
         "credit_card": r"\b(?:\d{4}[-\s]?\d{4}[-\s]?\d{4}[-\s]?\d{4}|\d{4}[-\s]?\d{6}[-\s]?\d{5})\b",
         "ip_address": r"\b(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\b",
+    }
+
+    CREDENTIAL_PATTERNS = {
+        "aws_access_key": r"\b(?:AKIA|ABIA|ACCA|ASIA)[0-9A-Z]{16}\b",
+        "bearer_token": r"\bBearer\s+[A-Za-z0-9\-._~+/]+=*\b",
+        "api_key_generic": r"\b(?:sk|pk|rk|ak)-[A-Za-z0-9]{20,}\b",
+        "private_key_header": r"-----BEGIN (?:RSA |EC |DSA |OPENSSH )?PRIVATE KEY-----",
+        "github_token": r"\bgh[pousr]_[A-Za-z0-9_]{36,}\b",
+        "generic_secret_assignment": r"""(?:api[_-]?key|secret|token|password|passwd|credential)\s*[:=]\s*['"][^'"]{8,}['"]""",
     }
 
     def __init__(self) -> None:
@@ -49,3 +63,20 @@ class PIIRedactor:
             descriptor = f"[{entity['type']}]"
             redacted = redacted.replace(placeholder, descriptor)
         return redacted
+
+    def reject_credentials(self, text: str) -> None:
+        """Reject text containing credential patterns.
+
+        Should be called before storing to the cloud graph to prevent
+        secrets from crossing the privacy boundary (spec section 10.4.5).
+
+        Raises:
+            CredentialDetectedError: If a credential pattern is detected.
+        """
+        for cred_type, pattern in self.CREDENTIAL_PATTERNS.items():
+            if re.search(pattern, text):
+                raise CredentialDetectedError(
+                    f"Credential pattern detected ({cred_type}). "
+                    "Text containing secrets must not be stored in the "
+                    "cloud graph. Remove the credential and retry."
+                )

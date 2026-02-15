@@ -171,6 +171,8 @@ def tool_memory_dream_state(args: Dict[str, Any]) -> Dict[str, Any]:
         project=args.get("project", "CognitiveMemory"),
         batch_size=args.get("batch_size", 20),
         dry_run=args.get("dry_run", False),
+        max_deprecation_ratio=args.get("max_deprecation_ratio", 0.5),
+        allow_published_deprecation=args.get("allow_published_deprecation", False),
     )
     return asyncio.run(ds.run())
 
@@ -454,6 +456,18 @@ MEMORY_TOOLS: List[Dict[str, Any]] = [
                     "type": "integer",
                     "default": 20,
                     "description": "Memories per LLM assessment batch.",
+                },
+                "max_deprecation_ratio": {
+                    "type": "number",
+                    "default": 0.5,
+                    "minimum": 0.1,
+                    "maximum": 0.9,
+                    "description": "Max fraction of memories to deprecate per run (0.1-0.9).",
+                },
+                "allow_published_deprecation": {
+                    "type": "boolean",
+                    "default": False,
+                    "description": "Allow deprecation of published items (use with caution).",
                 },
             },
         },
