@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
@@ -46,11 +47,24 @@ def _get_manager():
         PIIRedactor,
     )
 
+    graph_config = None
+    if os.environ.get("KUMIHO_GRAPH_AUGMENTED_RECALL", "").strip() in ("1", "true"):
+        try:
+            from kumiho_memory.graph_augmentation import GraphAugmentationConfig
+            graph_config = GraphAugmentationConfig()
+        except Exception as exc:
+            logger.warning(
+                "Graph-augmented recall requested but configuration failed: %s. "
+                "Falling back to standard recall.",
+                exc,
+            )
+
     buffer = RedisMemoryBuffer()
     _manager = UniversalMemoryManager(
         redis_buffer=buffer,
         summarizer=MemorySummarizer(),
         pii_redactor=PIIRedactor(),
+        graph_augmentation=graph_config,
     )
     return _manager
 
@@ -140,6 +154,7 @@ def tool_memory_recall(args: Dict[str, Any]) -> Dict[str, Any]:
             limit=args.get("limit", 5),
             space_paths=args.get("space_paths"),
             memory_types=args.get("memory_types"),
+            graph_augmented=args.get("graph_augmented", False),
         )
     )
     return {"results": results, "count": len(results)}
@@ -175,6 +190,23 @@ def tool_memory_dream_state(args: Dict[str, Any]) -> Dict[str, Any]:
         allow_published_deprecation=args.get("allow_published_deprecation", False),
     )
     return asyncio.run(ds.run())
+
+
+def tool_memory_discover_edges(args: Dict[str, Any]) -> Dict[str, Any]:
+    """Discover and create edges from a memory to related existing memories."""
+    manager = _get_manager()
+    edges = asyncio.run(
+        manager.discover_edges_post_consolidation(
+            revision_kref=args["revision_kref"],
+            summary=args["summary"],
+            max_queries=args.get("max_queries", 5),
+            max_edges=args.get("max_edges", 3),
+            min_score=args.get("min_score", 0.3),
+            edge_type=args.get("edge_type", "REFERENCED"),
+            space_paths=args.get("space_paths"),
+        )
+    )
+    return {"edges": edges, "count": len(edges)}
 
 
 # ---------------------------------------------------------------------------
@@ -368,8 +400,80 @@ MEMORY_TOOLS: List[Dict[str, Any]] = [
                         "(e.g. ['error'], ['action', 'summary'])."
                     ),
                 },
+                "graph_augmented": {
+                    "type": "boolean",
+                    "default": False,
+                    "description": (
+                        "Enable graph-augmented recall: multi-query "
+                        "reformulation + edge traversal to discover "
+                        "connected memories that vector search alone misses. "
+                        "Requires KUMIHO_GRAPH_AUGMENTED_RECALL=1 env var."
+                    ),
+                },
             },
             "required": ["query"],
+        },
+    },
+    # ── Edge discovery ─────────────────────────────────────────
+    {
+        "name": "kumiho_memory_discover_edges",
+        "description": (
+            "Discover and create edges from a newly stored memory to "
+            "related existing memories. Uses the LLM to generate "
+            "'implication queries' (future scenarios where the memory "
+            "would be relevant) and links to matching memories. "
+            "Best used after kumiho_memory_consolidate or "
+            "kumiho_memory_store."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "revision_kref": {
+                    "type": "string",
+                    "description": (
+                        "The kref URI of the revision to discover "
+                        "edges for."
+                    ),
+                },
+                "summary": {
+                    "type": "string",
+                    "description": (
+                        "Summary text of the memory (used to generate "
+                        "implication queries)."
+                    ),
+                },
+                "max_queries": {
+                    "type": "integer",
+                    "default": 5,
+                    "description": "Max implication queries to generate.",
+                },
+                "max_edges": {
+                    "type": "integer",
+                    "default": 3,
+                    "description": "Max edges to create.",
+                },
+                "min_score": {
+                    "type": "number",
+                    "default": 0.3,
+                    "description": (
+                        "Minimum similarity score for edge candidates."
+                    ),
+                },
+                "edge_type": {
+                    "type": "string",
+                    "default": "REFERENCED",
+                    "description": "Edge type to create (default: REFERENCED).",
+                },
+                "space_paths": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": (
+                        "Restrict search to these space paths. "
+                        "Auto-derived from revision_kref if omitted."
+                    ),
+                },
+            },
+            "required": ["revision_kref", "summary"],
         },
     },
     # ── Tool execution ────────────────────────────────────────
@@ -487,6 +591,7 @@ MEMORY_TOOL_HANDLERS: Dict[str, Any] = {
     "kumiho_memory_add_response": tool_memory_add_response,
     "kumiho_memory_consolidate": tool_memory_consolidate,
     "kumiho_memory_recall": tool_memory_recall,
+    "kumiho_memory_discover_edges": tool_memory_discover_edges,
     "kumiho_memory_store_execution": tool_memory_store_execution,
     "kumiho_memory_dream_state": tool_memory_dream_state,
 }

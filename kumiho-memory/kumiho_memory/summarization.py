@@ -230,14 +230,15 @@ class MemorySummarizer:
     ) -> None:
         # --- Fast path: caller provides a ready adapter ---
         if adapter is not None:
-            self.adapter: LLMAdapter = adapter
+            self._adapter: Optional[LLMAdapter] = adapter
             self.provider = provider or "custom"
             self.model = model or "default"
             self.light_model = light_model or model or "default"
             self.api_key = api_key
+            self._client = None
             return
 
-        # --- Resolve configuration ---
+        # --- Resolve configuration (lightweight, no SDK init) ---
         resolved_key = api_key or os.getenv("KUMIHO_LLM_API_KEY")
 
         resolved_base_url = (
@@ -268,17 +269,27 @@ class MemorySummarizer:
             or defaults.get("light_model", self.model)
         )
 
-        # --- Build adapter ---
-        if client is not None:
-            # Backward compat: wrap a raw SDK client object
-            if resolved_provider == "anthropic":
-                self.adapter = AnthropicAdapter(client)
+        # --- Defer adapter construction until first use ---
+        self._adapter = None
+        self._client = client
+        self._base_url = resolved_base_url
+
+    @property
+    def adapter(self) -> LLMAdapter:
+        """Lazily build the LLM adapter on first use."""
+        if self._adapter is not None:
+            return self._adapter
+
+        if self._client is not None:
+            if self.provider == "anthropic":
+                self._adapter = AnthropicAdapter(self._client)
             else:
-                self.adapter = OpenAICompatAdapter(client)
+                self._adapter = OpenAICompatAdapter(self._client)
         else:
-            self.adapter = self._build_adapter(
-                resolved_provider, resolved_key, resolved_base_url,
+            self._adapter = self._build_adapter(
+                self.provider, self.api_key, self._base_url,
             )
+        return self._adapter
 
     # ------------------------------------------------------------------
     # Public API
@@ -302,7 +313,7 @@ class MemorySummarizer:
                 messages=[{"role": "user", "content": user_prompt}],
                 model=self.model,
                 system=system_prompt,
-                max_tokens=1024,
+                max_tokens=1536,
                 json_mode=True,
             )
             result = self._parse_json(raw)
@@ -326,6 +337,54 @@ class MemorySummarizer:
         )
         topics = [item.strip().lower() for item in response.split(",") if item.strip()]
         return topics
+
+    async def generate_implications(
+        self,
+        messages: List[Dict[str, Any]],
+        *,
+        context: Optional[str] = None,
+    ) -> List[str]:
+        """Generate prospective implications using the light model.
+
+        Runs independently of summarization so it can be called in parallel.
+        Returns 3-5 hypothetical future situations where this conversation
+        would be the missing context, using *different* vocabulary than the
+        original text to bridge semantic gaps in vector search.
+        """
+        conversation_text = self._format_messages(messages)
+        prompt = (
+            "Read this conversation and imagine someone months later says or "
+            "does something that ONLY makes sense because of what happened here.\n"
+            "Generate 3-5 short descriptions of those future situations.\n"
+            "Rules:\n"
+            "- Use DIFFERENT vocabulary than the original conversation\n"
+            "- Focus on downstream behavioral changes, anxieties, preferences, "
+            "or habits that would result from these events\n"
+            "- Each description should be 1 sentence, max 20 words\n"
+            "- Return a JSON array of strings, nothing else\n\n"
+            f"Conversation:\n{conversation_text}\n\n"
+            "JSON array:"
+        )
+
+        try:
+            raw = await self.adapter.chat(
+                messages=[{"role": "user", "content": prompt}],
+                model=self.light_model,
+                max_tokens=512,
+                json_mode=True,
+            )
+            parsed = self._parse_json(raw)
+            if isinstance(parsed, list):
+                return [str(item).strip() for item in parsed if item][:5]
+            # Some models wrap in {"implications": [...]}
+            if isinstance(parsed, dict):
+                for val in parsed.values():
+                    if isinstance(val, list):
+                        return [str(item).strip() for item in val if item][:5]
+        except Exception:
+            pass  # Non-critical — summary still works without implications
+
+        return []
 
     # ------------------------------------------------------------------
     # Adapter construction
@@ -365,8 +424,15 @@ class MemorySummarizer:
             "Output JSON in this exact schema:\n"
             "{\n"
             '  "type": "summary | fact | decision | action | reflection | error",\n'
-            '  "title": "One-line summary (max 10 words)",\n'
-            '  "summary": "1-2 sentence distilled understanding",\n'
+            '  "title": "One-line summary (max 12 words)",\n'
+            '  "summary": "3-5 sentence comprehensive summary covering key context, decisions, and outcomes",\n'
+            '  "events": [\n'
+            "    {\n"
+            '      "event": "Specific incident or action that happened",\n'
+            '      "participants": ["person1"],\n'
+            '      "consequence": "What changed as a result (behavioral change, decision, outcome)"\n'
+            "    }\n"
+            "  ],\n"
             '  "knowledge": {\n'
             '    "facts": [{"claim": "...", "certainty": "low | medium | high"}],\n'
             '    "decisions": [{"decision": "...", "reason": "..."}],\n'
@@ -379,8 +445,11 @@ class MemorySummarizer:
             "  }\n"
             "}\n"
             "Rules:\n"
-            "- Be concise\n"
-            "- Extract only significant facts/decisions\n"
+            "- The summary should capture enough context that a future reader can understand what happened without reading the full conversation\n"
+            "- Extract ALL specific events, incidents, and behavioral changes mentioned — even seemingly minor ones (accidents, purchases, lifestyle changes, health events, equipment failures)\n"
+            "- Each event must be a concrete thing that happened, not a general topic or theme\n"
+            "- Always include the consequence: what changed, what was decided, or what behavior resulted\n"
+            "- Extract significant facts/decisions\n"
             "- Redact PII using placeholders like [EMAIL], [PHONE]\n"
             "- Focus on knowledge, not verbatim quotes"
         )
@@ -427,6 +496,8 @@ class MemorySummarizer:
         summary.setdefault("summary", MemorySummarizer._fallback_summary_text(fallback_messages))
         summary.setdefault("knowledge", {})
         summary.setdefault("classification", {})
+        summary.setdefault("events", [])
+        summary.setdefault("implications", [])
         summary["knowledge"].setdefault("facts", [])
         summary["knowledge"].setdefault("decisions", [])
         summary["knowledge"].setdefault("actions", [])
@@ -442,6 +513,8 @@ class MemorySummarizer:
             "type": "summary",
             "title": "Conversation summary",
             "summary": text,
+            "events": [],
+            "implications": [],
             "knowledge": {"facts": [], "decisions": [], "actions": [], "open_questions": []},
             "classification": {"topics": [], "entities": []},
             "error": error,
@@ -453,6 +526,6 @@ class MemorySummarizer:
             return "No conversation content available."
         last = messages[-1].get("content") or ""
         snippet = str(last).strip()
-        if len(snippet) > 180:
-            snippet = f"{snippet[:177]}..."
+        if len(snippet) > 500:
+            snippet = f"{snippet[:497]}..."
         return snippet or "Conversation summary unavailable."

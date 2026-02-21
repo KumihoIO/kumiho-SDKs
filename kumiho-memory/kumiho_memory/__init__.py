@@ -1,6 +1,6 @@
 """Kumiho Memory - Universal memory provider for AI agents."""
 
-__version__ = "0.2.0"
+__version__ = "0.3.0"
 
 from kumiho_memory.redis_memory import RedisMemoryBuffer
 from kumiho_memory.memory_manager import UniversalMemoryManager, get_memory_space
@@ -13,6 +13,7 @@ from kumiho_memory.summarization import (
 from kumiho_memory.privacy import PIIRedactor, CredentialDetectedError
 from kumiho_memory.retry import RetryQueue
 from kumiho_memory.dream_state import DreamState, MemoryAssessment, DreamStateStats
+from kumiho_memory.graph_augmentation import GraphAugmentedRecall, GraphAugmentationConfig
 
 __all__ = [
     "__version__",
@@ -29,4 +30,6 @@ __all__ = [
     "DreamState",
     "MemoryAssessment",
     "DreamStateStats",
+    "GraphAugmentedRecall",
+    "GraphAugmentationConfig",
 ]

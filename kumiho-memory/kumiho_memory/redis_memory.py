@@ -207,6 +207,48 @@ class RedisMemoryBuffer:
             "ttl_remaining": ttl if ttl > 0 else 0,
         }
 
+    async def set_session_metadata(
+        self,
+        project: str,
+        session_id: str,
+        metadata: Dict[str, str],
+    ) -> None:
+        """Store session-level metadata (e.g. user_id, context)."""
+        if self.client is None:
+            await self._proxy_request(
+                action="set_session_metadata",
+                payload={
+                    "project": project,
+                    "session_id": session_id,
+                    "metadata": metadata,
+                },
+            )
+            return
+
+        key = self._session_metadata_key(project, session_id)
+        await self.client.hset(key, mapping=metadata)
+        await self.client.expire(key, self.default_ttl)
+
+    async def get_session_metadata(
+        self,
+        project: str,
+        session_id: str,
+    ) -> Dict[str, str]:
+        """Retrieve session-level metadata."""
+        if self.client is None:
+            result = await self._proxy_request(
+                action="get_session_metadata",
+                payload={
+                    "project": project,
+                    "session_id": session_id,
+                },
+            )
+            return result.get("metadata", {})
+
+        key = self._session_metadata_key(project, session_id)
+        data = await self.client.hgetall(key)
+        return data or {}
+
     async def clear_session(self, project: str, session_id: str) -> Dict[str, Any]:
         """Clear working memory for a session."""
         if self.client is None:

@@ -6,9 +6,12 @@ import asyncio
 import inspect
 import hashlib
 import logging
+import math
 import mimetypes
 import os
+import re
 import shutil
+from collections import Counter
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
@@ -23,6 +26,59 @@ logger = logging.getLogger(__name__)
 
 StoreCallable = Callable[..., Any]
 RetrieveCallable = Callable[..., Any]
+
+# Stopwords to ignore when computing token-overlap relevance scores.
+_STOPWORDS = frozenset(
+    "a an the is are was were be been being have has had do does did "
+    "will would shall should may might can could of in to for on with "
+    "at by from as into about between through after before above below "
+    "and or but not no nor so yet both either neither each every all "
+    "some any few more most other such than too very also just only "
+    "that this these those it its i me my we our you your he him his "
+    "she her they them their what which who whom how when where why "
+    "if then else while during until again further once here there "
+    "up down out off over under re same own".split()
+)
+
+# Max total characters of sibling summary text per item (fallback mode).
+# ~20K chars ≈ 5K tokens.
+_SIBLING_CHAR_BUDGET = 20_000
+
+# If the best keyword-overlap score among siblings exceeds this threshold,
+# use keyword-filtered mode (only return strong matches).  Below this,
+# fall back to char-budget mode which keeps all siblings that fit.
+_SIBLING_STRONG_SCORE = 0.40
+
+
+def _tokenize(text: str) -> List[str]:
+    """Lowercase split + strip punctuation, filtering stopwords."""
+    return [
+        tok for tok in re.findall(r"[a-z0-9]+", text.lower())
+        if tok not in _STOPWORDS and len(tok) > 1
+    ]
+
+
+def _token_overlap_score(query_tokens: List[str], text: str) -> float:
+    """BM25-light relevance score between query tokens and a text string.
+
+    Uses TF-IDF-inspired weighting: tokens that appear in the text get a
+    score proportional to their frequency, dampened by log to avoid
+    over-counting repeated terms.  Returns 0-1 range.
+    """
+    if not query_tokens or not text:
+        return 0.0
+    text_tokens = _tokenize(text)
+    if not text_tokens:
+        return 0.0
+    text_counts = Counter(text_tokens)
+    score = 0.0
+    for qt in query_tokens:
+        tf = text_counts.get(qt, 0)
+        if tf > 0:
+            # Dampened term frequency (log(1+tf)) normalized
+            score += math.log(1 + tf)
+    # Normalize by query length to get 0-1ish range
+    return score / (len(query_tokens) + 1)
 
 
 class UniversalMemoryManager:
@@ -52,6 +108,7 @@ class UniversalMemoryManager:
         tenant_hint: Optional[str] = None,
         retry_queue: Optional[RetryQueue] = None,
         store_max_retries: int = 3,
+        graph_augmentation: Optional[Any] = None,
     ) -> None:
         self.project = project
         self.consolidation_threshold = consolidation_threshold
@@ -78,6 +135,8 @@ class UniversalMemoryManager:
         )
         self.retry_queue = retry_queue
         self.store_max_retries = store_max_retries
+        self.graph_augmentation_config = graph_augmentation
+        self._graph_recall: Optional[Any] = None  # lazy GraphAugmentedRecall
 
     async def ingest_message(
         self,
@@ -111,6 +170,19 @@ class UniversalMemoryManager:
             content=message,
             metadata=metadata,
         )
+
+        # Persist user_id and context as session metadata so that
+        # consolidate_session can derive the storage space automatically.
+        if result.get("message_count", 0) == 1:
+            try:
+                await self.redis_buffer.set_session_metadata(
+                    self.project,
+                    resolved_session_id,
+                    {"user_id": user_id, "context": context},
+                )
+            except Exception:
+                pass  # Best-effort; space derivation falls back to topic hint
+
         return {
             "success": True,
             "session_id": resolved_session_id,
@@ -180,7 +252,14 @@ class UniversalMemoryManager:
             "should_consolidate": should_consolidate,
         }
 
-    async def consolidate_session(self, *, session_id: str) -> Dict[str, Any]:
+    async def consolidate_session(
+        self,
+        *,
+        session_id: str,
+        space_path: Optional[str] = None,
+        user_id: Optional[str] = None,
+        context: Optional[str] = None,
+    ) -> Dict[str, Any]:
         messages_result = await self.redis_buffer.get_messages(
             project=self.project,
             session_id=session_id,
@@ -191,8 +270,76 @@ class UniversalMemoryManager:
         if not messages:
             return {"success": False, "error": "No messages to consolidate"}
 
-        summary_result = await self.summarizer.summarize_conversation(messages)
+        # Resolve storage space.  Priority:
+        # 1. Explicit space_path (caller override)
+        # 2. user_id + context (caller-provided identity scoping)
+        # 3. Session metadata in Redis (auto-stored during ingest)
+        # 4. Topic-derived hint (backwards-compatible default)
+        resolved_space: Optional[str] = space_path
+        session_user_id: Optional[str] = user_id
+        if not resolved_space and session_user_id:
+            resolved_space = (
+                f"{context}/{session_user_id}" if context else session_user_id
+            )
+        if not resolved_space:
+            try:
+                session_meta = await self.redis_buffer.get_session_metadata(
+                    self.project, session_id,
+                )
+                session_user_id = session_meta.get("user_id")
+                session_context = session_meta.get("context", "")
+                if session_user_id:
+                    resolved_space = (
+                        f"{session_context}/{session_user_id}"
+                        if session_context
+                        else session_user_id
+                    )
+            except Exception:
+                pass  # Fall back to topic-based hint
+
+        # Run summarization (full model) and implications (light model)
+        # in parallel — implications don't depend on the summary result.
+        summary_result, implications = await asyncio.gather(
+            self.summarizer.summarize_conversation(messages),
+            self.summarizer.generate_implications(messages),
+        )
         redacted_summary = self.pii_redactor.anonymize_summary(summary_result.get("summary", ""))
+
+        # Append extracted events to the summary text so they are
+        # vector-indexed and visible during recall.  The narrative summary
+        # captures the high-level arc; events preserve granular incidents
+        # (e.g. "phone battery died mid-call → replaced battery") that
+        # narrative compression would otherwise drop.
+        events = summary_result.get("events", [])
+        if events:
+            event_lines: List[str] = []
+            for ev in events:
+                desc = ev.get("event", "")
+                consequence = ev.get("consequence", "")
+                if desc:
+                    if consequence:
+                        event_lines.append(f"- {desc} \u2192 {consequence}")
+                    else:
+                        event_lines.append(f"- {desc}")
+            if event_lines:
+                redacted_summary += "\n\nKey events:\n" + "\n".join(event_lines)
+                redacted_summary = self.pii_redactor.anonymize_summary(
+                    redacted_summary
+                )
+
+        # Append implications — hypothetical future situations that would
+        # only make sense because of what happened in this conversation.
+        # Uses *different* vocabulary than the original text, bridging the
+        # semantic gap so vector search can match indirect future queries.
+        if implications:
+            impl_lines = [f"- {imp}" for imp in implications if imp]
+            if impl_lines:
+                redacted_summary += (
+                    "\n\nFuture relevance:\n" + "\n".join(impl_lines)
+                )
+                redacted_summary = self.pii_redactor.anonymize_summary(
+                    redacted_summary
+                )
 
         # Reject credentials before sending to cloud graph (spec §10.4.5)
         self.pii_redactor.reject_credentials(redacted_summary)
@@ -214,11 +361,11 @@ class UniversalMemoryManager:
                 assistant_lines_out=assistant_lines,
             )
 
-            space_hint = "/".join(topics[:2]) if topics else ""
+            topic_hint = "/".join(topics[:2]) if topics else ""
             artifact_path = self._write_artifact(
                 session_id=session_id,
                 content=conversation_markdown,
-                space_hint=space_hint,
+                space_hint=resolved_space or topic_hint,
             )
 
             # Collect attachment pointers from all messages in the session
@@ -237,7 +384,6 @@ class UniversalMemoryManager:
                 "artifact_location": artifact_path,
                 "artifact_name": "conversation",
                 "bundle_name": topics[0] if topics else "",
-                "space_hint": space_hint,
                 "tags": ["summarized", "published"],
                 "metadata": {
                     "session_id": session_id,
@@ -245,6 +391,15 @@ class UniversalMemoryManager:
                     "topics": ",".join(topics),
                 },
             }
+            # Explicit space_path or user_id-derived space takes precedence;
+            # fall back to topic hint for backwards compatibility.
+            if resolved_space:
+                payload["space_path"] = resolved_space
+            else:
+                payload["space_hint"] = topic_hint
+            if session_user_id:
+                payload["metadata"]["user_id"] = session_user_id
+
             if all_attachments:
                 payload["metadata"]["attachments"] = all_attachments
 
@@ -561,6 +716,7 @@ class UniversalMemoryManager:
         limit: int = 5,
         space_paths: Optional[List[str]] = None,
         memory_types: Optional[List[str]] = None,
+        graph_augmented: bool = False,
     ) -> List[Dict[str, Any]]:
         """Retrieve long-term memories by semantic query.
 
@@ -578,7 +734,35 @@ class UniversalMemoryManager:
             Filter by memory type (e.g. ``["error"]`` to find past
             mistakes, ``["action", "error"]`` for all tool executions).
             When ``None``, returns all types.
+        graph_augmented:
+            When ``True`` and a ``GraphAugmentationConfig`` was provided,
+            uses multi-query reformulation + graph edge traversal to
+            discover connected memories that vector search alone misses.
         """
+        if graph_augmented and self.graph_augmentation_config is not None:
+            gr = self._get_graph_recall()
+            if gr is not None:
+                return await gr.recall(
+                    query,
+                    limit=limit,
+                    space_paths=space_paths,
+                    memory_types=memory_types,
+                )
+
+        return await self._base_recall(
+            query, limit=limit, space_paths=space_paths,
+            memory_types=memory_types,
+        )
+
+    async def _base_recall(
+        self,
+        query: str,
+        *,
+        limit: int = 5,
+        space_paths: Optional[List[str]] = None,
+        memory_types: Optional[List[str]] = None,
+    ) -> List[Dict[str, Any]]:
+        """Core vector/fulltext recall without graph augmentation."""
         if not self.memory_retrieve:
             return []
 
@@ -596,6 +780,7 @@ class UniversalMemoryManager:
 
         if isinstance(result, dict) and "revision_krefs" in result:
             revision_krefs = result.get("revision_krefs", [])
+            item_krefs = result.get("item_krefs", [])
             scores = result.get("scores", [])
 
             # Fetch revision metadata concurrently so the LLM gets
@@ -611,11 +796,74 @@ class UniversalMemoryManager:
                 if i < len(scores):
                     entry["score"] = scores[i]
                 entry.update(meta)
+
+                # Unfold sibling revisions for stacked items, filtered
+                # by relevance to the original query so only the most
+                # pertinent conversation segments reach the LLM.
+                if i < len(item_krefs):
+                    siblings = await self._fetch_sibling_revision_summaries(
+                        item_krefs[i], kref, query=query,
+                    )
+                    if siblings:
+                        entry["sibling_revisions"] = siblings
+
                 enriched.append(entry)
             return enriched
         if isinstance(result, list):
             return result
         return []
+
+    def _get_graph_recall(self) -> Optional[Any]:
+        """Lazily create the GraphAugmentedRecall instance."""
+        if self._graph_recall is not None:
+            return self._graph_recall
+        if self.graph_augmentation_config is None:
+            return None
+        try:
+            from kumiho_memory.graph_augmentation import GraphAugmentedRecall
+
+            # Try to get the LLM adapter for query reformulation.
+            # If unavailable (no API key configured), graph-augmented recall
+            # still works for edge traversal and semantic fallback — only
+            # multi-query reformulation is skipped.
+            adapter = None
+            model = ""
+            try:
+                adapter = self.summarizer.adapter
+                model = self.summarizer.light_model
+            except Exception:
+                logger.info(
+                    "No LLM adapter available — graph-augmented recall will "
+                    "use edge traversal and semantic fallback without "
+                    "multi-query reformulation."
+                )
+
+            self._graph_recall = GraphAugmentedRecall(
+                adapter=adapter,
+                model=model,
+                recall_fn=self._base_recall,
+                config=self.graph_augmentation_config,
+            )
+            return self._graph_recall
+        except Exception as e:
+            logger.warning("Failed to initialize GraphAugmentedRecall: %s", e)
+            return None
+
+    async def discover_edges_post_consolidation(
+        self,
+        revision_kref: str,
+        summary: str,
+        **kwargs: Any,
+    ) -> List[Dict[str, Any]]:
+        """Discover and create edges from a newly stored memory to related ones.
+
+        Delegates to ``GraphAugmentedRecall.discover_edges()``.  Returns an
+        empty list when graph augmentation is not configured.
+        """
+        gr = self._get_graph_recall()
+        if gr is None:
+            return []
+        return await gr.discover_edges(revision_kref, summary, **kwargs)
 
     async def _fetch_revision_metadata(self, kref: str) -> Dict[str, Any]:
         """Fetch revision metadata and raw artifact content.
@@ -659,6 +907,160 @@ class UniversalMemoryManager:
         except Exception as exc:
             logger.debug("Failed to fetch revision %s: %s", kref, exc)
             return {}
+
+    async def _fetch_sibling_revision_summaries(
+        self,
+        item_kref: str,
+        current_rev_kref: str,
+        query: str = "",
+    ) -> List[Dict[str, str]]:
+        """Fetch title+summary from sibling revisions of a stacked item.
+
+        For items with multiple revisions (conversation progression), this
+        returns the summary of every revision *except* the one already
+        fetched as the primary result.
+
+        Two-phase selection strategy:
+
+        1. **Keyword mode** — when the query has strong keyword overlap with
+           some siblings (best score ≥ ``_SIBLING_STRONG_SCORE``), return
+           only the strong matches.  This focuses the LLM on the most
+           pertinent revisions.
+        2. **Budget mode** (fallback) — when keyword overlap is weak or
+           absent (typical for cognitive/causal queries with large semantic
+           gaps), keep all siblings that fit within ``_SIBLING_CHAR_BUDGET``
+           in chronological order.  This preserves the full conversation
+           timeline so the LLM can reason over any revision, including
+           old cues with no keyword overlap to the trigger.
+        """
+        try:
+            import kumiho
+
+            item = await asyncio.to_thread(kumiho.get_item, item_kref)
+            revisions = await asyncio.to_thread(item.get_revisions)
+            if not revisions or len(revisions) <= 1:
+                return []
+
+            siblings: List[Dict[str, Any]] = []
+            for rev in revisions:
+                rev_uri = rev.kref.uri if hasattr(rev.kref, "uri") else str(rev.kref)
+                if rev_uri == current_rev_kref:
+                    continue
+                meta = rev.metadata or {}
+                title = meta.get("title", "")
+                summary = meta.get("summary", "")
+                created_at = getattr(rev, "created_at", "") or ""
+                if title or summary:
+                    sib_text = f"{title} {summary}".strip()
+                    siblings.append({
+                        "kref": rev_uri,
+                        "title": title,
+                        "summary": summary,
+                        "created_at": created_at,
+                        "_chars": len(sib_text),
+                    })
+
+            if not siblings:
+                return []
+
+            total_siblings = len(siblings)
+
+            # Score by keyword overlap with query
+            query_tokens = _tokenize(query) if query else []
+            for sib in siblings:
+                if query_tokens:
+                    text = f"{sib.get('title', '')} {sib.get('summary', '')}"
+                    sib["_score"] = _token_overlap_score(query_tokens, text)
+                else:
+                    sib["_score"] = 0.0
+
+            best_score = max(s["_score"] for s in siblings)
+
+            if best_score >= _SIBLING_STRONG_SCORE:
+                # --- Keyword mode: strong signal found ---
+                # Return only siblings with meaningful overlap, sorted by
+                # score.  This trims noise when there IS a lexical signal.
+                strong = sorted(
+                    [s for s in siblings if s["_score"] >= _SIBLING_STRONG_SCORE],
+                    key=lambda s: s["_score"], reverse=True,
+                )
+                siblings = strong
+
+                logger.debug(
+                    "Sibling keyword mode for %s: %d/%d kept "
+                    "(best_score=%.3f, query: %.60s)",
+                    item_kref, len(siblings), total_siblings,
+                    best_score, query or "<none>",
+                )
+            else:
+                # --- Budget mode: weak/no keyword signal ---
+                # Keep all siblings that fit within the char budget,
+                # in chronological order for full timeline coverage.
+                siblings.sort(key=lambda s: s.get("created_at") or "")
+                total_chars = sum(s["_chars"] for s in siblings)
+
+                if total_chars > _SIBLING_CHAR_BUDGET:
+                    selected: List[Dict[str, Any]] = []
+                    budget_used = 0
+                    for sib in siblings:
+                        if budget_used + sib["_chars"] > _SIBLING_CHAR_BUDGET:
+                            continue
+                        selected.append(sib)
+                        budget_used += sib["_chars"]
+                    siblings = selected
+
+                    logger.debug(
+                        "Sibling budget mode for %s: %d/%d kept "
+                        "(%d chars of %d budget, query: %.60s)",
+                        item_kref, len(siblings), total_siblings,
+                        budget_used, _SIBLING_CHAR_BUDGET,
+                        query or "<none>",
+                    )
+                else:
+                    logger.debug(
+                        "Sibling pass-through for %s: all %d kept "
+                        "(%d chars within %d budget)",
+                        item_kref, total_siblings, total_chars,
+                        _SIBLING_CHAR_BUDGET,
+                    )
+
+            # Clean up internal keys and load artifact content for
+            # surviving siblings so consumers can access full text.
+            for sib in siblings:
+                sib.pop("_score", None)
+                sib.pop("_chars", None)
+
+            # Load artifact content in parallel for the filtered siblings.
+            # This gives consumers (e.g. benchmark full-text mode) access to
+            # the raw conversation Markdown stored on each revision.
+            async def _load_sibling_artifact(sib_dict: Dict[str, Any]) -> None:
+                try:
+                    sib_rev = await asyncio.to_thread(
+                        kumiho.get_revision, sib_dict["kref"],
+                    )
+                    artifacts = await asyncio.to_thread(sib_rev.get_artifacts)
+                    for art in artifacts:
+                        loc = getattr(art, "location", "")
+                        if loc:
+                            text = await self._read_artifact_content(loc)
+                            if text:
+                                sib_dict["content"] = text
+                                sib_dict["artifact_location"] = loc
+                                break
+                except Exception:
+                    pass  # Content stays absent; consumer falls back to summary
+
+            await asyncio.gather(
+                *[_load_sibling_artifact(s) for s in siblings]
+            )
+
+            return siblings
+        except Exception as exc:
+            logger.debug(
+                "Failed to fetch sibling revisions for %s: %s",
+                item_kref, exc,
+            )
+            return []
 
     @staticmethod
     async def _read_artifact_content(location: str) -> str:

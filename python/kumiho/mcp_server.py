@@ -47,7 +47,8 @@ import logging
 import os
 import re
 import sys
-from datetime import datetime
+from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence, Set, Tuple
 
 # MCP SDK imports
@@ -247,6 +248,86 @@ def _short_hash(value: str) -> str:
     return hashlib.sha1(value.encode("utf-8")).hexdigest()[:8]
 
 
+def _artifact_root() -> Path:
+    """Resolve the local artifact root directory."""
+    return Path(
+        os.environ.get(
+            "KUMIHO_MEMORY_ARTIFACT_ROOT",
+            os.path.join(os.path.expanduser("~"), ".kumiho", "artifacts"),
+        )
+    )
+
+
+def _write_memory_artifact(
+    *,
+    project: str,
+    space_path: str,
+    item_name: str,
+    title: str,
+    summary: str,
+    user_text: str,
+    assistant_text: str,
+    memory_type: str,
+) -> str:
+    """Write a Markdown artifact for a memory entry and return the file path.
+
+    Layout: {artifact_root}/{project}/{space_segments}/{item_name}.md
+    """
+    root = _artifact_root()
+    target_dir = root / project
+    stripped = space_path.strip("/")
+    # Remove project prefix from space_path to avoid duplication
+    if stripped.startswith(f"{project}/"):
+        stripped = stripped[len(project) + 1:]
+    elif stripped == project:
+        stripped = ""
+    if stripped:
+        segments = [seg for seg in stripped.split("/") if seg.strip()]
+        target_dir = target_dir.joinpath(*segments)
+    target_dir.mkdir(parents=True, exist_ok=True)
+
+    safe_name = re.sub(r"[^\w\-]", "_", item_name)
+    artifact_path = target_dir / f"{safe_name}.md"
+
+    now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    lines = [
+        "---",
+        f'title: "{title}"',
+        f'type: "{memory_type}"',
+        f'date: "{now}"',
+        f'summary: "{summary}"',
+        "---",
+        "",
+    ]
+    if user_text:
+        lines.extend([f"**User:** {user_text}", ""])
+    if assistant_text:
+        lines.extend([f"**Assistant:** {assistant_text}", ""])
+
+    artifact_path.write_text("\n".join(lines), encoding="utf-8")
+    return str(artifact_path)
+
+
+# ---------------------------------------------------------------------------
+# In-process caches – avoid redundant gRPC round-trips within a session.
+# ---------------------------------------------------------------------------
+
+_project_cache: Dict[str, Project] = {}
+_known_spaces: set = set()          # normalized space paths already ensured
+_bundle_cache: Dict[str, Item] = {} # space_path/bundle_slug -> bundle Item
+
+
+def _get_project_cached(project_name: str) -> Project:
+    """Return a cached Project, fetching (or creating) only on first call."""
+    if project_name in _project_cache:
+        return _project_cache[project_name]
+    project_obj = kumiho.get_project(project_name)
+    if not project_obj:
+        project_obj = kumiho.create_project(project_name, description="AI Cognitive Memory")
+    _project_cache[project_name] = project_obj
+    return project_obj
+
+
 def _normalize_space_path(project_name: str, space_path: str) -> str:
     if not space_path:
         return f"/{project_name}"
@@ -265,6 +346,8 @@ def _normalize_space_path(project_name: str, space_path: str) -> str:
 
 def _ensure_space_path(project: Project, space_path: str) -> str:
     normalized = _normalize_space_path(project.name, space_path)
+    if normalized in _known_spaces:
+        return normalized
     parts = normalized.strip("/").split("/")
     parent = f"/{parts[0]}"
     for segment in parts[1:]:
@@ -274,6 +357,7 @@ def _ensure_space_path(project: Project, space_path: str) -> str:
             if exc.code() != grpc.StatusCode.ALREADY_EXISTS:
                 raise
         parent = f"{parent.rstrip('/')}/{segment}"
+    _known_spaces.add(normalized)
     return normalized
 
 
@@ -286,13 +370,71 @@ def _get_or_create_item(project: Project, space_path: str, item_name: str, kind:
         raise
 
 
-def _get_or_create_bundle(project: Project, space_path: str, bundle_name: str) -> Item:
+# ---------------------------------------------------------------------------
+# Revision stacking
+# ---------------------------------------------------------------------------
+
+# Minimum fuzzy-search score to consider two memories "similar enough" to
+# stack revisions on the same item instead of creating a new one.
+_STACK_SIMILARITY_THRESHOLD = 0.85
+
+
+def _find_similar_item(
+    project_name: str,
+    space_path: str,
+    query_text: str,
+    kind: str,
+    threshold: float = _STACK_SIMILARITY_THRESHOLD,
+) -> Optional[Item]:
+    """Search for an existing memory item similar to the incoming content.
+
+    Uses fuzzy search with revision metadata (title/summary) to find items
+    in the same space that cover a similar topic.  Returns the best match
+    above *threshold*, or ``None`` to fall back to new-item creation.
+    """
+    if not query_text or not query_text.strip():
+        return None
+
+    # Convert space_path "/CognitiveMemory/work" -> "CognitiveMemory/work"
+    context = space_path.lstrip("/")
+
     try:
-        return project.create_bundle(bundle_name, parent_path=space_path)
+        results = kumiho.search(
+            query_text[:150],
+            context=context,
+            kind=kind,
+            include_revision_metadata=True,
+        )
+    except Exception:
+        logger.debug("Revision stacking search failed, falling back to new item")
+        return None
+
+    if not results or results[0].score < threshold:
+        return None
+
+    best = results[0]
+    logger.debug(
+        "Revision stacking: matched item %s (score=%.3f) for query '%.60s...'",
+        best.item.kref.uri,
+        best.score,
+        query_text,
+    )
+    return best.item
+
+
+def _get_or_create_bundle(project: Project, space_path: str, bundle_name: str) -> Item:
+    cache_key = f"{space_path}/{bundle_name}"
+    if cache_key in _bundle_cache:
+        return _bundle_cache[cache_key]
+    try:
+        bundle = project.create_bundle(bundle_name, parent_path=space_path)
     except grpc.RpcError as exc:
         if exc.code() == grpc.StatusCode.ALREADY_EXISTS:
-            return project.get_bundle(bundle_name, parent_path=space_path)
-        raise
+            bundle = project.get_bundle(bundle_name, parent_path=space_path)
+        else:
+            raise
+    _bundle_cache[cache_key] = bundle
+    return bundle
 
 
 def _parse_timestamp(value: Optional[str]) -> Optional[datetime]:
@@ -367,6 +509,10 @@ def tool_get_item(kref: str) -> Dict[str, Any]:
     try:
         item = kumiho.get_item(kref)
         return _serialize_item(item)
+    except grpc.RpcError as e:
+        if e.code() == grpc.StatusCode.NOT_FOUND:
+            return {"error": "Item not found", "not_found": True}
+        return {"error": str(e)}
     except Exception as e:
         return {"error": str(e)}
 
@@ -377,6 +523,10 @@ def tool_get_revision(kref: str) -> Dict[str, Any]:
     try:
         revision = kumiho.get_revision(kref)
         return _serialize_revision(revision)
+    except grpc.RpcError as e:
+        if e.code() == grpc.StatusCode.NOT_FOUND:
+            return {"error": "Revision not found", "not_found": True}
+        return {"error": str(e)}
     except Exception as e:
         return {"error": str(e)}
 
@@ -520,8 +670,15 @@ def tool_memory_store(
     source_revision_krefs: Optional[List[str]] = None,
     metadata: Optional[Dict[str, Any]] = None,
     edge_type: str = DERIVED_FROM,
+    stack_revisions: bool = True,
 ) -> Dict[str, Any]:
-    """Store a memory bundle with minimal inputs."""
+    """Store a memory bundle with minimal inputs.
+
+    When *stack_revisions* is True (the default), searches for an existing
+    item in the same space with similar content and stacks a new revision
+    on it instead of creating a duplicate item.  Falls back to creating a
+    new item when no similar item is found or the search fails.
+    """
     _ensure_configured()
 
     if not user_text and not assistant_text:
@@ -538,9 +695,7 @@ def tool_memory_store(
                     return {"error": str(exc)}
 
     project_name = project or "CognitiveMemory"
-    project_obj = kumiho.get_project(project_name)
-    if not project_obj:
-        project_obj = kumiho.create_project(project_name, description="AI Cognitive Memory")
+    project_obj = _get_project_cached(project_name)
 
     policy = {}
     schema_version = ""
@@ -576,19 +731,42 @@ def tool_memory_store(
     normalized_space_path = _ensure_space_path(project_obj, space_path)
 
     base_text = title or summary or user_text or assistant_text or "memory"
-    slug = _slugify(base_text) or "memory"
-    suffix = _short_hash(user_text + assistant_text + base_text)
-    item_name = f"{slug}-{suffix}"
-    if len(item_name) > 64:
-        item_name = item_name[:64].rstrip("-")
+    stacked = False
+    previous_revision_kref = ""
+    item = None
 
-    item = _get_or_create_item(project_obj, normalized_space_path, item_name, memory_kind)
+    # --- Revision stacking: search for a similar existing item ---
+    if stack_revisions:
+        search_query = title or summary or (user_text or "")[:150]
+        if search_query.strip():
+            item = _find_similar_item(
+                project_name, normalized_space_path, search_query, memory_kind,
+            )
+            if item is not None:
+                stacked = True
+                try:
+                    prev_rev = item.get_revision_by_tag("published")
+                    if prev_rev:
+                        previous_revision_kref = prev_rev.kref.uri
+                except Exception:
+                    pass  # Non-critical; proceed with stacking
+
+    # --- Fallback: create a new item with hash-based naming ---
+    if item is None:
+        slug = _slugify(base_text) or "memory"
+        suffix = _short_hash(user_text + assistant_text + base_text)
+        item_name = f"{slug}-{suffix}"
+        if len(item_name) > 64:
+            item_name = item_name[:64].rstrip("-")
+        item = _get_or_create_item(
+            project_obj, normalized_space_path, item_name, memory_kind
+        )
 
     final_summary = summary.strip() if summary else (assistant_text or user_text).strip()
-    if len(final_summary) > 200:
-        final_summary = f"{final_summary[:197]}..."
+    if len(final_summary) > 2000:
+        final_summary = f"{final_summary[:1997]}..."
 
-    final_title = title.strip() if title else final_summary[:80]
+    final_title = title.strip() if title else final_summary[:120]
 
     base_metadata = {
         "schema": schema_version or "kumiho.agent_memory.v1",
@@ -603,9 +781,24 @@ def tool_memory_store(
     revision = item.create_revision(metadata=_stringify_metadata(base_metadata))
 
     artifact_kref = ""
-    if artifact_location:
+    resolved_artifact_location = artifact_location
+    if not resolved_artifact_location:
         try:
-            artifact = revision.create_artifact(artifact_name, artifact_location)
+            resolved_artifact_location = _write_memory_artifact(
+                project=project_name,
+                space_path=normalized_space_path,
+                item_name=item.item_name,
+                title=final_title,
+                summary=final_summary,
+                user_text=user_text,
+                assistant_text=assistant_text,
+                memory_type=memory_type,
+            )
+        except Exception as exc:
+            logger.warning(f"Auto-artifact write failed: {exc}")
+    if resolved_artifact_location:
+        try:
+            artifact = revision.create_artifact(artifact_name, resolved_artifact_location)
             artifact_kref = artifact.kref.uri
         except Exception as exc:
             return {"error": f"Failed to create artifact: {exc}"}
@@ -642,7 +835,7 @@ def tool_memory_store(
         except Exception:
             continue
 
-    return {
+    result = {
         "space_path": normalized_space_path,
         "item_kref": item.kref.uri,
         "revision_kref": revision.kref.uri,
@@ -650,7 +843,11 @@ def tool_memory_store(
         "artifact_kref": artifact_kref,
         "summary": final_summary,
         "edges_created": edges_created,
+        "stacked": stacked,
     }
+    if previous_revision_kref:
+        result["previous_revision_kref"] = previous_revision_kref
+    return result
 
 
 def tool_memory_retrieve(
@@ -664,12 +861,18 @@ def tool_memory_retrieve(
     limit: int = 5,
     mode: str = "search",
     include_revision_metadata: bool = True,
+    unroll_revisions: bool = False,
 ) -> Dict[str, Any]:
     """Retrieve memory krefs using fuzzy search with bundle and fallback support.
 
     Uses Google-like fuzzy search (kumiho.search) as the primary method for natural
     language queries. Falls back to pattern matching for specific modes or when
     fuzzy search returns no results.
+
+    Args:
+        unroll_revisions: If True, return ALL revisions of stacked items
+            (useful for dream-state or history browsing). If False (default),
+            return only the published/latest revision per item.
     """
     _ensure_configured()
 
@@ -746,15 +949,42 @@ def tool_memory_retrieve(
     # Primary: Use fuzzy search if we have a query
     if combined_query:
         try:
-            search_results = kumiho.search(
-                combined_query,
-                context=project_name,
-                kind=memory_item_kind,
-                include_revision_metadata=include_revision_metadata,
-            )
+            # Search each space context separately so space_paths filtering
+            # is honoured.  When no space_paths are specified, contexts
+            # defaults to [project_name] which searches everything.
+            search_results = []
+            for ctx in contexts:
+                search_results.extend(kumiho.search(
+                    combined_query,
+                    context=ctx,
+                    kind=memory_item_kind,
+                    include_revision_metadata=include_revision_metadata,
+                ))
+            # Sort by score descending after merging contexts
+            search_results.sort(key=lambda sr: sr.score, reverse=True)
             for sr in search_results[:limit * 2]:  # Get extra for filtering
                 try:
-                    rev = sr.item.get_revision_by_tag("published") or sr.item.get_revision_by_tag("latest")
+                    if unroll_revisions:
+                        # Unroll ALL revisions for stacked items (dream-state,
+                        # history browsing). Each revision gets a separate slot.
+                        revisions = sr.item.get_revisions()
+                        if revisions and len(revisions) > 1:
+                            for rev in revisions:
+                                results.append((
+                                    sr.item.kref.uri, rev.kref.uri,
+                                    sr.score,
+                                ))
+                            if sr.item.space:
+                                spaces_used.append(sr.item.space.path)
+                            continue
+
+                    # Default: return only published/latest per item.
+                    # For stacked items this avoids flooding recall slots
+                    # with older revisions that share the same search score.
+                    rev = (
+                        sr.item.get_revision_by_tag("published")
+                        or sr.item.get_revision_by_tag("latest")
+                    )
                     if rev:
                         results.append((sr.item.kref.uri, rev.kref.uri, sr.score))
                         if sr.item.space:
@@ -829,12 +1059,14 @@ def tool_memory_retrieve(
                 except Exception:
                     continue
 
-    # Dedupe and sort by score (higher first)
+    # Dedupe: when unrolling, dedup by revision_kref so stacked revisions
+    # survive.  Otherwise dedup by item_kref — one slot per memory item.
     seen: Set[str] = set()
     deduped: List[Tuple[str, str, float]] = []
     for item_kref, rev_kref, score in results:
-        if item_kref not in seen:
-            seen.add(item_kref)
+        dedup_key = rev_kref if unroll_revisions else item_kref
+        if dedup_key not in seen:
+            seen.add(dedup_key)
             deduped.append((item_kref, rev_kref, score))
 
     deduped.sort(key=lambda x: x[2], reverse=True)
@@ -1080,19 +1312,23 @@ def tool_get_item_revisions(item_kref: str, include_metadata: bool = False) -> D
     try:
         item = kumiho.get_item(item_kref)
         revisions = item.get_revisions()
-        
+
         serialized = []
         for r in revisions:
             data = _serialize_revision(r)
             if not include_metadata:
                 data.pop("metadata", None)
             serialized.append(data)
-            
+
         return {
             "item_kref": item_kref,
             "revisions": serialized,
             "count": len(revisions),
         }
+    except grpc.RpcError as e:
+        if e.code() == grpc.StatusCode.NOT_FOUND:
+            return {"error": "Item not found", "not_found": True}
+        return {"error": str(e)}
     except Exception as e:
         return {"error": str(e)}
 
@@ -1104,8 +1340,12 @@ def tool_get_revision_by_tag(item_kref: str, tag: str) -> Dict[str, Any]:
         item = kumiho.get_item(item_kref)
         revision = item.get_revision_by_tag(tag)
         if not revision:
-            return {"error": f"No revision found with tag '{tag}'"}
+            return {"error": f"No revision found with tag '{tag}'", "not_found": True}
         return _serialize_revision(revision)
+    except grpc.RpcError as e:
+        if e.code() == grpc.StatusCode.NOT_FOUND:
+            return {"error": "Item not found", "not_found": True}
+        return {"error": str(e)}
     except Exception as e:
         return {"error": str(e)}
 
@@ -1126,8 +1366,12 @@ def tool_get_revision_as_of(item_kref: str, tag: str, time: str) -> Dict[str, An
         item = kumiho.get_item(item_kref)
         revision = item.get_revision_by_time(time, tag=tag)
         if not revision:
-            return {"error": f"No revision with tag '{tag}' found at time '{time}'"}
+            return {"error": f"No revision with tag '{tag}' found at time '{time}'", "not_found": True}
         return _serialize_revision(revision)
+    except grpc.RpcError as e:
+        if e.code() == grpc.StatusCode.NOT_FOUND:
+            return {"error": "Item not found", "not_found": True}
+        return {"error": str(e)}
     except Exception as e:
         return {"error": str(e)}
 
@@ -1149,6 +1393,10 @@ def tool_create_revision(
             "created": True,
             "revision": _serialize_revision(revision),
         }
+    except grpc.RpcError as e:
+        if e.code() == grpc.StatusCode.NOT_FOUND:
+            return {"error": "Item not found", "not_found": True}
+        return {"error": str(e)}
     except Exception as e:
         return {"error": str(e)}
 
@@ -1694,7 +1942,7 @@ TOOLS: List[Dict[str, Any]] = [
     # Memory operations (production)
     {
         "name": "kumiho_memory_store",
-        "description": "Store a memory entry with one call (space + item + revision + artifact + bundle + edges).",
+        "description": "Store a memory entry with one call (space + item + revision + artifact + bundle + edges). By default, searches for an existing similar item and stacks a new revision instead of creating a duplicate.",
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -1745,6 +1993,15 @@ TOOLS: List[Dict[str, Any]] = [
                     "type": "string",
                     "description": "Edge type for dependencies (default: DERIVED_FROM)",
                     "default": "DERIVED_FROM",
+                },
+                "stack_revisions": {
+                    "type": "boolean",
+                    "default": True,
+                    "description": (
+                        "When true (default), search for existing item with "
+                        "similar content and stack revision. False = always "
+                        "create new item."
+                    ),
                 },
             },
             "required": ["user_text", "assistant_text"],
@@ -2556,6 +2813,7 @@ TOOL_HANDLERS = {
         args.get("source_revision_krefs"),
         args.get("metadata"),
         args.get("edge_type", DERIVED_FROM),
+        args.get("stack_revisions", True),
     ),
     "kumiho_memory_retrieve": lambda args: tool_memory_retrieve(
         args.get("project", "CognitiveMemory"),

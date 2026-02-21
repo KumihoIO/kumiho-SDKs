@@ -1,5 +1,82 @@
 # Kumiho Python SDK - Release Notes
 
+## kumiho 0.9.6 (February 2026) - Belief Revision & Privacy Boundary 🛡️
+
+This release closes the gap between the paper's formal model and the SDK's runtime behavior. Every change maps to a specific claim in *Graph-Native Cognitive Memory for AI Agents* (v16).
+
+### ✨ New Features
+
+**`SUPERSEDES` edge type** *(Paper §7.4, Definition 7.4)*:
+
+- Exposed `kumiho.SUPERSEDES` as a first-class edge type constant.
+- Completes the belief revision vocabulary: when a revision replaces another, the SDK can now express `(r_new, SUPERSEDES, r_old)` as required by Definition 7.4.
+- Available in both the Python SDK (`kumiho.SUPERSEDES`) and Dream State's LLM relationship analysis.
+
+```python
+import kumiho
+
+# Express that a new decision supersedes the prior one
+new_rev.create_edge(old_rev, kumiho.SUPERSEDES)
+```
+
+### 🔒 Privacy & Security
+
+**Credential rejection boundary** *(Paper §10.4.5)*:
+
+- New `PIIRedactor.reject_credentials()` method blocks secrets from crossing the local→cloud boundary.
+- The MCP `memory_store` tool now scans `user_text`, `assistant_text`, `summary`, and `title` fields before any cloud graph write.
+- Detected patterns raise `CredentialDetectedError` with a clear message — the write is rejected, not silently redacted.
+- Six credential pattern categories are detected:
+
+| Pattern | Examples |
+| --- | --- |
+| AWS access keys | `AKIA...`, `ASIA...` |
+| Bearer tokens | `Bearer eyJ...` |
+| API keys | `sk-...`, `pk-...`, `rk-...` (20+ chars) |
+| PEM private keys | `-----BEGIN RSA PRIVATE KEY-----` |
+| GitHub tokens | `ghp_...`, `gho_...`, `ghs_...` |
+| Generic secrets | `api_key="..."`, `password="..."` |
+
+- The same gate is enforced in `MemoryManager.consolidate_session()` and `store_tool_execution()` — all write paths to the cloud graph are covered.
+
+### 🧠 Dream State Consolidation *(Paper §9)*
+
+**Configurable safety parameters**:
+
+- `max_deprecation_ratio` (float, 0.1–0.9, default 0.5) — controls the circuit-breaker threshold per run. Previously hardcoded at 50%.
+- `allow_published_deprecation` (bool, default `False`) — when enabled, the Dream State *can* deprecate published items, with a WARNING-level audit entry. Previously these were unconditionally protected.
+- Both parameters are exposed via the `kumiho_memory_dream_state` MCP tool for agent-accessible tuning.
+
+**`SUPERSEDES` in relationship analysis**:
+
+- The Dream State LLM prompt now includes `SUPERSEDES` as a candidate relationship type alongside `DERIVED_FROM`, `REFERENCED`, and `DEPENDS_ON`.
+- This enables automatic detection of supersession chains during offline consolidation.
+
+### 🔧 Improvements
+
+**Discovery User-Agent tracking**:
+
+- Discovery HTTP requests now include `User-Agent: kumiho-python/{version}` for control-plane observability and debugging.
+
+### 📦 Companion Release: kumiho-memory 0.2.0
+
+This SDK release ships alongside `kumiho-memory` 0.2.0, which contains the runtime implementations referenced above:
+
+- `kumiho_memory.privacy` module (`PIIRedactor`, `CredentialDetectedError`)
+- Credential rejection gates in `MemoryManager`
+- Configurable Dream State safety parameters
+- Updated MCP tool schemas
+
+### ✅ Paper Compliance Summary
+
+| Paper Claim | Section | SDK Implementation | Status |
+| --- | --- | --- | --- |
+| Revision creates SUPERSEDES edge | §7.4, Def 7.4 | `kumiho.SUPERSEDES` edge type | ✅ |
+| Secrets must not cross privacy boundary | §10.4.5 | `PIIRedactor.reject_credentials()` | ✅ |
+| Dream State circuit breaker configurable | §9.3 | `max_deprecation_ratio` param | ✅ |
+| Published protection override with audit | §9.3 | `allow_published_deprecation` param | ✅ |
+| Dream State detects supersession | §9, §7.4 | SUPERSEDES in LLM assessment prompt | ✅ |
+
 ## kumiho 0.9.5 (February 2026) - API Token Bootstrap for Discovery 🔑
 
 ### ✨ New Behavior
