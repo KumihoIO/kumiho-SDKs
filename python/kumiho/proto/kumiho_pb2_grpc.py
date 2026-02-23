@@ -115,6 +115,11 @@ class KumihoServiceStub(object):
                 request_serializer=kumiho__pb2.SearchRequest.SerializeToString,
                 response_deserializer=kumiho__pb2.SearchResponse.FromString,
                 _registered_method=True)
+        self.ScoreRevisions = channel.unary_unary(
+                '/kumiho.KumihoService/ScoreRevisions',
+                request_serializer=kumiho__pb2.ScoreRevisionsRequest.SerializeToString,
+                response_deserializer=kumiho__pb2.ScoreRevisionsResponse.FromString,
+                _registered_method=True)
         self.ResolveKref = channel.unary_unary(
                 '/kumiho.KumihoService/ResolveKref',
                 request_serializer=kumiho__pb2.ResolveKrefRequest.SerializeToString,
@@ -406,6 +411,13 @@ class KumihoServiceServicer(object):
 
     def Search(self, request, context):
         """Full-text search (Google-like fuzzy search across items)
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def ScoreRevisions(self, request, context):
+        """Score specific revisions against a query (server-side embeddings + fulltext)
         """
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
@@ -732,6 +744,11 @@ def add_KumihoServiceServicer_to_server(servicer, server):
                     servicer.Search,
                     request_deserializer=kumiho__pb2.SearchRequest.FromString,
                     response_serializer=kumiho__pb2.SearchResponse.SerializeToString,
+            ),
+            'ScoreRevisions': grpc.unary_unary_rpc_method_handler(
+                    servicer.ScoreRevisions,
+                    request_deserializer=kumiho__pb2.ScoreRevisionsRequest.FromString,
+                    response_serializer=kumiho__pb2.ScoreRevisionsResponse.SerializeToString,
             ),
             'ResolveKref': grpc.unary_unary_rpc_method_handler(
                     servicer.ResolveKref,
@@ -1357,6 +1374,33 @@ class KumihoService(object):
             '/kumiho.KumihoService/Search',
             kumiho__pb2.SearchRequest.SerializeToString,
             kumiho__pb2.SearchResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def ScoreRevisions(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/kumiho.KumihoService/ScoreRevisions',
+            kumiho__pb2.ScoreRevisionsRequest.SerializeToString,
+            kumiho__pb2.ScoreRevisionsResponse.FromString,
             options,
             channel_credentials,
             insecure,

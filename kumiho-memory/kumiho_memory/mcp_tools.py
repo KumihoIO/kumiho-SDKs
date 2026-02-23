@@ -59,12 +59,39 @@ def _get_manager():
                 exc,
             )
 
+    # Embedding-based sibling filtering (opt-in via env var).
+    sibling_threshold = 0.0
+    embedding_adapter = None
+    raw_threshold = os.environ.get("KUMIHO_SIBLING_SIMILARITY_THRESHOLD", "").strip()
+    if raw_threshold:
+        try:
+            sibling_threshold = float(raw_threshold)
+        except ValueError:
+            pass
+    if sibling_threshold > 0:
+        try:
+            from kumiho_memory.summarization import OpenAICompatEmbeddingAdapter
+            embedding_adapter = OpenAICompatEmbeddingAdapter.create()
+            logger.info(
+                "Embedding-based sibling filtering enabled (threshold=%.2f)",
+                sibling_threshold,
+            )
+        except Exception as exc:
+            logger.warning(
+                "Sibling embedding filtering requested but adapter creation failed: %s. "
+                "Falling back to BM25-light keyword filtering.",
+                exc,
+            )
+            sibling_threshold = 0.0
+
     buffer = RedisMemoryBuffer()
     _manager = UniversalMemoryManager(
         redis_buffer=buffer,
         summarizer=MemorySummarizer(),
         pii_redactor=PIIRedactor(),
         graph_augmentation=graph_config,
+        sibling_similarity_threshold=sibling_threshold,
+        embedding_adapter=embedding_adapter,
     )
     return _manager
 
@@ -148,6 +175,7 @@ def tool_memory_consolidate(args: Dict[str, Any]) -> Dict[str, Any]:
 def tool_memory_recall(args: Dict[str, Any]) -> Dict[str, Any]:
     """Search long-term memories by semantic query."""
     manager = _get_manager()
+    recall_mode = args.get("recall_mode", manager.recall_mode)
     results = asyncio.run(
         manager.recall_memories(
             args["query"],
@@ -157,7 +185,7 @@ def tool_memory_recall(args: Dict[str, Any]) -> Dict[str, Any]:
             graph_augmented=args.get("graph_augmented", False),
         )
     )
-    return {"results": results, "count": len(results)}
+    return {"results": results, "count": len(results), "recall_mode": recall_mode}
 
 
 def tool_memory_store_execution(args: Dict[str, Any]) -> Dict[str, Any]:
@@ -408,6 +436,16 @@ MEMORY_TOOLS: List[Dict[str, Any]] = [
                         "reformulation + edge traversal to discover "
                         "connected memories that vector search alone misses. "
                         "Requires KUMIHO_GRAPH_AUGMENTED_RECALL=1 env var."
+                    ),
+                },
+                "recall_mode": {
+                    "type": "string",
+                    "enum": ["full", "summarized"],
+                    "default": "full",
+                    "description": (
+                        "Context mode: 'full' includes artifact content "
+                        "(raw conversation text), 'summarized' returns only "
+                        "title + summary. Affects build_recalled_context()."
                     ),
                 },
             },

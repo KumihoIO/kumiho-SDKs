@@ -43,6 +43,9 @@ class StubSummarizer:
             "classification": {"topics": ["stub"]},
         }
 
+    async def generate_implications(self, messages, context=None):
+        return []
+
 
 class StubRedactor:
     def anonymize_summary(self, summary):
@@ -94,13 +97,13 @@ def _cleanup_manager():
 
 
 def test_memory_tools_count():
-    """Should have 9 tools registered."""
-    assert len(MEMORY_TOOLS) == 9
+    """Should have 10 tools registered."""
+    assert len(MEMORY_TOOLS) == 10
 
 
 def test_memory_tool_handlers_count():
-    """Should have 9 handlers registered."""
-    assert len(MEMORY_TOOL_HANDLERS) == 9
+    """Should have 10 handlers registered."""
+    assert len(MEMORY_TOOL_HANDLERS) == 10
 
 
 def test_all_tools_have_handlers():

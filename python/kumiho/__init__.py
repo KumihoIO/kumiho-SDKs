@@ -663,6 +663,40 @@ def search(
     )
 
 
+def score_revisions(
+    query: str,
+    revision_krefs: List[str],
+    score_fields: Optional[List[str]] = None,
+) -> List[Dict[str, Any]]:
+    """Score specific revisions against a query using server-side embeddings + fulltext.
+
+    The server uses its own vector embeddings and/or fulltext index to
+    compute per-revision relevance scores.  No external embedding API is
+    needed on the client side.
+
+    Args:
+        query: The query string to score against.
+        revision_krefs: List of revision kref URIs to score (max 100).
+        score_fields: When non-empty, re-embed revisions from only these
+            metadata fields instead of using stored (broad) embeddings.
+            E.g. ``["title", "summary"]`` for focused scoring.
+
+    Returns:
+        List of dicts with keys ``kref``, ``score``, ``score_method``,
+        sorted by score descending.
+
+    Example:
+        >>> scored = kumiho.score_revisions(
+        ...     "travel plans for summer",
+        ...     ["kref://proj/space/item.conv?r=1", "kref://proj/space/item.conv?r=2"],
+        ...     score_fields=["title", "summary"],
+        ... )
+        >>> for s in scored:
+        ...     print(f"{s['kref']}: {s['score']:.3f} ({s['score_method']})")
+    """
+    return get_client().score_revisions(query, revision_krefs, score_fields=score_fields)
+
+
 def get_item(kref: str) -> Item:
     """Get an item by its kref URI.
 

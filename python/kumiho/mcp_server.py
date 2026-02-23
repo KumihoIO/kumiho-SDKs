@@ -1042,8 +1042,12 @@ def tool_memory_retrieve(
                 except Exception:
                     continue
 
-        # Last resort: search entire project
-        if not results and contexts != [project_name]:
+        # Last resort: search entire project — but ONLY when the caller
+        # did NOT explicitly scope to specific spaces.  When space_paths
+        # are provided the caller expects isolation; falling back to the
+        # whole project would leak cross-space data (e.g. memories from
+        # one benchmark entry appearing in another's recall).
+        if not results and contexts != [project_name] and not spaces:
             items = kumiho.item_search(
                 context_filter=project_name,
                 name_filter="",

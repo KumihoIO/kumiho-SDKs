@@ -163,6 +163,75 @@ class AnthropicAdapter:
 
 
 # ---------------------------------------------------------------------------
+# Embedding adapter protocol — opt-in for embedding-based sibling filtering
+# ---------------------------------------------------------------------------
+
+
+@runtime_checkable
+class EmbeddingAdapter(Protocol):
+    """Interface for text embedding providers.
+
+    Implement this protocol to plug in any embedding provider.  Used by
+    the memory manager for embedding-based sibling relevance filtering.
+    """
+
+    def embed(
+        self,
+        texts: List[str],
+        *,
+        model: str = "",
+    ) -> List[List[float]]:
+        """Embed a batch of texts and return a list of float vectors."""
+        ...
+
+
+class OpenAICompatEmbeddingAdapter:
+    """Embedding adapter for OpenAI and compatible APIs.
+
+    Usage::
+
+        adapter = OpenAICompatEmbeddingAdapter.create(api_key="sk-...")
+        vectors = adapter.embed(["hello world", "test"])
+    """
+
+    def __init__(self, client: Any, default_model: str = "text-embedding-3-small") -> None:
+        self._client = client
+        self._default_model = default_model
+
+    @classmethod
+    def create(
+        cls,
+        *,
+        api_key: Optional[str] = None,
+        base_url: Optional[str] = None,
+        model: str = "text-embedding-3-small",
+    ) -> "OpenAICompatEmbeddingAdapter":
+        try:
+            from openai import OpenAI  # type: ignore
+        except ImportError as exc:
+            raise ImportError(
+                "openai package is required: pip install kumiho-memory[openai]"
+            ) from exc
+
+        kwargs: Dict[str, Any] = {}
+        if api_key:
+            kwargs["api_key"] = api_key
+        if base_url:
+            kwargs["base_url"] = base_url
+        return cls(OpenAI(**kwargs), default_model=model)
+
+    def embed(
+        self,
+        texts: List[str],
+        *,
+        model: str = "",
+    ) -> List[List[float]]:
+        resolved_model = model or self._default_model
+        resp = self._client.embeddings.create(input=texts, model=resolved_model)
+        return [item.embedding for item in resp.data]
+
+
+# ---------------------------------------------------------------------------
 # Provider / model defaults
 # ---------------------------------------------------------------------------
 
@@ -313,7 +382,7 @@ class MemorySummarizer:
                 messages=[{"role": "user", "content": user_prompt}],
                 model=self.model,
                 system=system_prompt,
-                max_tokens=1536,
+                max_tokens=2560,
                 json_mode=True,
             )
             result = self._parse_json(raw)
@@ -425,16 +494,17 @@ class MemorySummarizer:
             "{\n"
             '  "type": "summary | fact | decision | action | reflection | error",\n'
             '  "title": "One-line summary (max 12 words)",\n'
-            '  "summary": "3-5 sentence comprehensive summary covering key context, decisions, and outcomes",\n'
+            '  "summary": "Comprehensive summary (5-10 sentences) preserving ALL concrete details: dates, times, names, places, numbers, amounts, brands, model names, titles, roles, preferences, and outcomes",\n'
             '  "events": [\n'
             "    {\n"
             '      "event": "Specific incident or action that happened",\n'
+            '      "when": "Date or time when it occurred (e.g. \'7 May 2023\', \'June 2023\', \'2022\', \'last week\') — use exact dates from the conversation when available",\n'
             '      "participants": ["person1"],\n'
             '      "consequence": "What changed as a result (behavioral change, decision, outcome)"\n'
             "    }\n"
             "  ],\n"
             '  "knowledge": {\n'
-            '    "facts": [{"claim": "...", "certainty": "low | medium | high"}],\n'
+            '    "facts": [{"claim": "Specific factual claim with concrete detail", "certainty": "low | medium | high"}],\n'
             '    "decisions": [{"decision": "...", "reason": "..."}],\n'
             '    "actions": [{"task": "...", "status": "open | done | blocked"}],\n'
             '    "open_questions": ["..."]\n'
@@ -445,11 +515,14 @@ class MemorySummarizer:
             "  }\n"
             "}\n"
             "Rules:\n"
-            "- The summary should capture enough context that a future reader can understand what happened without reading the full conversation\n"
+            "- The summary should capture enough context that a future reader can answer specific factual questions without reading the full conversation\n"
+            "- PRESERVE ALL DATES, TIMESTAMPS, AND TEMPORAL MARKERS mentioned in the conversation. Include them in the summary text and in each event's 'when' field. If a message is prefixed with a date like '[7 May 2023]', that is the date of the event.\n"
             "- Extract ALL specific events, incidents, and behavioral changes mentioned — even seemingly minor ones (accidents, purchases, lifestyle changes, health events, equipment failures)\n"
             "- Each event must be a concrete thing that happened, not a general topic or theme\n"
             "- Always include the consequence: what changed, what was decided, or what behavior resulted\n"
-            "- Extract significant facts/decisions\n"
+            "- Always include the 'when' field for each event — use exact dates from the conversation when available, otherwise use relative dates or 'unknown'\n"
+            "- Extract ALL factual claims into knowledge.facts — include every piece of concrete information: names, places, brands, model numbers, job titles, relationships, hobbies, preferences, possessions, plans, amounts, measurements. If someone mentions owning a specific car, phone, or tool, that's a fact. If they mention where they work, live, or travel, that's a fact.\n"
+            "- Extract decisions with their rationale into knowledge.decisions\n"
             "- Redact PII using placeholders like [EMAIL], [PHONE]\n"
             "- Focus on knowledge, not verbatim quotes"
         )

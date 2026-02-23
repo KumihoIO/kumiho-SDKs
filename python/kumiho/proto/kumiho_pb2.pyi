@@ -315,8 +315,36 @@ class SearchResponse(_message.Message):
     search_mode: str
     def __init__(self, results: _Optional[_Iterable[_Union[SearchResult, _Mapping]]] = ..., pagination: _Optional[_Union[PaginationResponse, _Mapping]] = ..., search_mode: _Optional[str] = ...) -> None: ...
 
+class ScoreRevisionsRequest(_message.Message):
+    __slots__ = ("query", "revision_krefs", "score_fields")
+    QUERY_FIELD_NUMBER: _ClassVar[int]
+    REVISION_KREFS_FIELD_NUMBER: _ClassVar[int]
+    SCORE_FIELDS_FIELD_NUMBER: _ClassVar[int]
+    query: str
+    revision_krefs: _containers.RepeatedCompositeFieldContainer[Kref]
+    score_fields: _containers.RepeatedScalarFieldContainer[str]
+    def __init__(self, query: _Optional[str] = ..., revision_krefs: _Optional[_Iterable[_Union[Kref, _Mapping]]] = ..., score_fields: _Optional[_Iterable[str]] = ...) -> None: ...
+
+class ScoredRevision(_message.Message):
+    __slots__ = ("kref", "score", "score_method")
+    KREF_FIELD_NUMBER: _ClassVar[int]
+    SCORE_FIELD_NUMBER: _ClassVar[int]
+    SCORE_METHOD_FIELD_NUMBER: _ClassVar[int]
+    kref: Kref
+    score: float
+    score_method: str
+    def __init__(self, kref: _Optional[_Union[Kref, _Mapping]] = ..., score: _Optional[float] = ..., score_method: _Optional[str] = ...) -> None: ...
+
+class ScoreRevisionsResponse(_message.Message):
+    __slots__ = ("scored_revisions", "search_mode")
+    SCORED_REVISIONS_FIELD_NUMBER: _ClassVar[int]
+    SEARCH_MODE_FIELD_NUMBER: _ClassVar[int]
+    scored_revisions: _containers.RepeatedCompositeFieldContainer[ScoredRevision]
+    search_mode: str
+    def __init__(self, scored_revisions: _Optional[_Iterable[_Union[ScoredRevision, _Mapping]]] = ..., search_mode: _Optional[str] = ...) -> None: ...
+
 class CreateRevisionRequest(_message.Message):
-    __slots__ = ("item_kref", "metadata", "number", "exists_error")
+    __slots__ = ("item_kref", "metadata", "number", "exists_error", "embedding_text")
     class MetadataEntry(_message.Message):
         __slots__ = ("key", "value")
         KEY_FIELD_NUMBER: _ClassVar[int]
@@ -328,11 +356,13 @@ class CreateRevisionRequest(_message.Message):
     METADATA_FIELD_NUMBER: _ClassVar[int]
     NUMBER_FIELD_NUMBER: _ClassVar[int]
     EXISTS_ERROR_FIELD_NUMBER: _ClassVar[int]
+    EMBEDDING_TEXT_FIELD_NUMBER: _ClassVar[int]
     item_kref: Kref
     metadata: _containers.ScalarMap[str, str]
     number: int
     exists_error: bool
-    def __init__(self, item_kref: _Optional[_Union[Kref, _Mapping]] = ..., metadata: _Optional[_Mapping[str, str]] = ..., number: _Optional[int] = ..., exists_error: bool = ...) -> None: ...
+    embedding_text: str
+    def __init__(self, item_kref: _Optional[_Union[Kref, _Mapping]] = ..., metadata: _Optional[_Mapping[str, str]] = ..., number: _Optional[int] = ..., exists_error: bool = ..., embedding_text: _Optional[str] = ...) -> None: ...
 
 class RevisionResponse(_message.Message):
     __slots__ = ("kref", "item_kref", "number", "tags", "metadata", "created_at", "modified_at", "author", "deprecated", "published", "latest", "username", "default_artifact", "name")

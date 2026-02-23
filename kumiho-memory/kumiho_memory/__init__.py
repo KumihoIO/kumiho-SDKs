@@ -6,9 +6,11 @@ from kumiho_memory.redis_memory import RedisMemoryBuffer
 from kumiho_memory.memory_manager import UniversalMemoryManager, get_memory_space
 from kumiho_memory.summarization import (
     AnthropicAdapter,
+    EmbeddingAdapter,
     LLMAdapter,
     MemorySummarizer,
     OpenAICompatAdapter,
+    OpenAICompatEmbeddingAdapter,
 )
 from kumiho_memory.privacy import PIIRedactor, CredentialDetectedError
 from kumiho_memory.retry import RetryQueue
@@ -18,7 +20,9 @@ from kumiho_memory.graph_augmentation import GraphAugmentedRecall, GraphAugmenta
 __all__ = [
     "__version__",
     "LLMAdapter",
+    "EmbeddingAdapter",
     "OpenAICompatAdapter",
+    "OpenAICompatEmbeddingAdapter",
     "AnthropicAdapter",
     "RedisMemoryBuffer",
     "UniversalMemoryManager",

@@ -22,6 +22,8 @@ import asyncio
 import json
 import logging
 import re
+import threading
+import time
 from dataclasses import dataclass, field
 from typing import Any, Callable, Coroutine, Dict, List, Optional, Union
 
@@ -52,6 +54,8 @@ class GraphAugmentationConfig:
     top_k_for_traversal: int = 5
     max_total: Optional[int] = None  # Defaults to base_limit * 3
     reformulate_queries: bool = True
+    traversal_timeout: int = 30  # seconds; daemon thread timeout for gRPC edge traversal
+    edge_creation_timeout: int = 60  # seconds; daemon thread timeout for edge creation
 
 
 # ---------------------------------------------------------------------------
@@ -305,42 +309,73 @@ class GraphAugmentedRecall:
         if source_rev is None:
             return []
 
+        # Edge creation uses synchronous gRPC calls that can hang on Windows.
+        # Run in a daemon thread with OS-level timeout.
+        timeout = self.config.edge_creation_timeout
         created_edges: List[Dict[str, Any]] = []
-        for cand in sorted_candidates:
-            target_kref = cand["memory"].get("kref", "")
-            for attempt in range(1, 4):
-                try:
-                    target_rev = kumiho.get_revision(target_kref)
-                    source_rev.create_edge(
-                        target_rev,
-                        edge_type,
-                        metadata={
-                            "reason": f"LLM implication: {cand['query'][:100]}",
-                            "score": str(round(cand["score"], 3)),
-                        },
-                    )
-                    created_edges.append({
-                        "source": revision_kref,
-                        "target": target_kref,
-                        "edge_type": edge_type,
-                        "query": cand["query"],
-                        "score": cand["score"],
-                    })
-                    logger.debug(
-                        "Created edge %s -> %s (type=%s, query=%r, score=%.3f)",
-                        revision_kref, target_kref, edge_type,
-                        cand["query"][:60], cand["score"],
-                    )
-                    break
-                except Exception as e:
-                    if "RESOURCE_EXHAUSTED" in str(e) and attempt < 3:
-                        await asyncio.sleep(0.05 * attempt)
-                    else:
-                        logger.warning(
-                            "Failed to create edge %s -> %s: %s",
-                            revision_kref, target_kref, e,
+
+        def _sync_create_edges() -> None:
+            for cand in sorted_candidates:
+                target_kref = cand["memory"].get("kref", "")
+                for attempt in range(1, 4):
+                    try:
+                        target_rev = kumiho.get_revision(target_kref)
+                        source_rev.create_edge(
+                            target_rev,
+                            edge_type,
+                            metadata={
+                                "reason": f"LLM implication: {cand['query'][:100]}",
+                                "score": str(round(cand["score"], 3)),
+                            },
+                        )
+                        created_edges.append({
+                            "source": revision_kref,
+                            "target": target_kref,
+                            "edge_type": edge_type,
+                            "query": cand["query"],
+                            "score": cand["score"],
+                        })
+                        logger.debug(
+                            "Created edge %s -> %s (type=%s, query=%r, score=%.3f)",
+                            revision_kref, target_kref, edge_type,
+                            cand["query"][:60], cand["score"],
                         )
                         break
+                    except Exception as e:
+                        if "RESOURCE_EXHAUSTED" in str(e) and attempt < 3:
+                            import time as _time
+                            _time.sleep(0.05 * attempt)
+                        else:
+                            logger.warning(
+                                "Failed to create edge %s -> %s: %s",
+                                revision_kref, target_kref, e,
+                            )
+                            break
+
+        done_event = threading.Event()
+
+        def _worker() -> None:
+            try:
+                _sync_create_edges()
+            except Exception as e:
+                logger.debug("Edge creation thread error: %s", e)
+            finally:
+                done_event.set()
+
+        t = threading.Thread(target=_worker, daemon=True)
+        t.start()
+
+        deadline = time.monotonic() + timeout
+        while not done_event.is_set():
+            if time.monotonic() >= deadline:
+                break
+            await asyncio.sleep(0.5)
+
+        if not done_event.is_set():
+            logger.warning(
+                "Edge creation timed out after %ds for %s — returning %d edges created so far",
+                timeout, revision_kref, len(created_edges),
+            )
 
         return created_edges
 
@@ -437,7 +472,12 @@ class GraphAugmentedRecall:
         seen_krefs: set,
         augmented: List[Dict[str, Any]],
     ) -> int:
-        """Follow graph edges from top-K memories and append connected nodes."""
+        """Follow graph edges from top-K memories and append connected nodes.
+
+        Uses a daemon thread with OS-level timeout to prevent gRPC calls from
+        hanging indefinitely on Windows (ProactorEventLoop doesn't process
+        timer callbacks while ``to_thread`` futures are pending).
+        """
         try:
             import kumiho
         except ImportError:
@@ -445,48 +485,85 @@ class GraphAugmentedRecall:
             return 0
 
         edge_filter = set(self.config.edge_types)
-        graph_found = 0
+        top_k = self.config.top_k_for_traversal
+        timeout = self.config.traversal_timeout
 
-        for mem in memories[: self.config.top_k_for_traversal]:
-            kref_str = mem.get("kref", "")
-            if not kref_str:
-                continue
-            try:
-                rev = kumiho.get_revision(kref_str)
-                edges = rev.get_edges(direction=kumiho.BOTH)
-                for edge in edges:
-                    if edge.edge_type not in edge_filter:
-                        continue
-                    connected_uri = (
-                        edge.target_kref.uri
-                        if edge.source_kref.uri == kref_str
-                        else edge.source_kref.uri
-                    )
-                    if not connected_uri or connected_uri in seen_krefs:
-                        continue
-                    seen_krefs.add(connected_uri)
-                    try:
-                        connected_rev = kumiho.get_revision(connected_uri)
-                        augmented.append({
-                            "kref": connected_uri,
-                            "title": connected_rev.metadata.get("title", ""),
-                            "summary": connected_rev.metadata.get("summary", ""),
-                            "content": connected_rev.metadata.get("content", ""),
-                            "score": 0.0,
-                            "graph_augmented": True,
-                            "edge_type": edge.edge_type,
-                            "from_kref": kref_str,
-                        })
-                        graph_found += 1
-                    except Exception as e:
-                        logger.debug(
-                            "Failed to fetch connected revision %s: %s",
-                            connected_uri, e,
+        # Mutable containers shared with the daemon thread.
+        graph_augmented_results: List[Dict[str, Any]] = []
+        traverse_result: List[int] = []
+
+        def _sync_graph_traverse() -> int:
+            """Run all synchronous gRPC calls in a plain thread."""
+            found = 0
+            for mem in memories[:top_k]:
+                kref_str = mem.get("kref", "")
+                if not kref_str:
+                    continue
+                try:
+                    rev = kumiho.get_revision(kref_str)
+                    edges = rev.get_edges(direction=kumiho.BOTH)
+                    for edge in edges:
+                        if edge.edge_type not in edge_filter:
+                            continue
+                        connected_uri = (
+                            edge.target_kref.uri
+                            if edge.source_kref.uri == kref_str
+                            else edge.source_kref.uri
                         )
-            except Exception as e:
-                logger.debug("Failed to get edges for %s: %s", kref_str, e)
+                        if not connected_uri or connected_uri in seen_krefs:
+                            continue
+                        seen_krefs.add(connected_uri)
+                        try:
+                            connected_rev = kumiho.get_revision(connected_uri)
+                            graph_augmented_results.append({
+                                "kref": connected_uri,
+                                "title": connected_rev.metadata.get("title", ""),
+                                "summary": connected_rev.metadata.get("summary", ""),
+                                "content": connected_rev.metadata.get("content", ""),
+                                "score": 0.0,
+                                "graph_augmented": True,
+                                "edge_type": edge.edge_type,
+                                "from_kref": kref_str,
+                            })
+                            found += 1
+                        except Exception as e:
+                            logger.debug(
+                                "Failed to fetch connected revision %s: %s",
+                                connected_uri, e,
+                            )
+                except Exception as e:
+                    logger.debug("Failed to get edges for %s: %s", kref_str, e)
+            return found
 
-        return graph_found
+        done_event = threading.Event()
+
+        def _worker() -> None:
+            try:
+                traverse_result.append(_sync_graph_traverse())
+            except Exception as e:
+                logger.debug("Graph traversal thread error: %s", e)
+            finally:
+                done_event.set()
+
+        t = threading.Thread(target=_worker, daemon=True)
+        t.start()
+
+        # Poll from the event loop — doesn't consume thread pool threads.
+        deadline = time.monotonic() + timeout
+        while not done_event.is_set():
+            if time.monotonic() >= deadline:
+                break
+            await asyncio.sleep(0.5)
+
+        if done_event.is_set() and traverse_result:
+            augmented.extend(graph_augmented_results)
+            return traverse_result[0]
+
+        logger.warning(
+            "Graph traversal timed out after %ds — falling back to semantic recall",
+            timeout,
+        )
+        return 0
 
 
 # ---------------------------------------------------------------------------

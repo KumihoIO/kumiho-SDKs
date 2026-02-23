@@ -88,6 +88,7 @@ from .proto.kumiho_pb2 import (
     EdgeDirection,
     PeekNextRevisionRequest,
     ItemSearchRequest,
+    ScoreRevisionsRequest,
     SearchRequest,
     ResolveKrefRequest,
     ResolveLocationRequest,
@@ -816,6 +817,49 @@ class _Client:
             )
         return results
 
+    def score_revisions(
+        self,
+        query: str,
+        revision_krefs: List[str],
+        score_fields: Optional[List[str]] = None,
+    ) -> List[Dict[str, Any]]:
+        """Score specific revisions against a query using server-side embeddings + fulltext.
+
+        The server uses its own vector embeddings and/or fulltext index to
+        compute per-revision relevance scores — no external embedding API
+        is needed on the client side.
+
+        Args:
+            query: The query string to score against.
+            revision_krefs: List of revision kref URIs to score (max 100).
+            score_fields: When non-empty, re-embed revisions from only these
+                metadata fields instead of using stored (broad) embeddings.
+                E.g. ``["title", "summary"]`` for focused scoring that strips
+                implications/events.  ``None`` or empty uses stored embeddings.
+
+        Returns:
+            List of dicts with keys ``kref``, ``score``, ``score_method``,
+            sorted by score descending.  ``score_method`` is one of
+            ``"vector"``, ``"fulltext"``, or ``"hybrid"``.
+        """
+        from .proto.kumiho_pb2 import Kref as PbKref
+
+        req = ScoreRevisionsRequest(
+            query=query,
+            revision_krefs=[PbKref(uri=k) for k in revision_krefs],
+        )
+        if score_fields:
+            req.score_fields.extend(score_fields)
+        resp = self.stub.ScoreRevisions(req)
+        return [
+            {
+                "kref": sr.kref.uri,
+                "score": sr.score,
+                "score_method": sr.score_method,
+            }
+            for sr in resp.scored_revisions
+        ]
+
     def update_item_metadata(self, kref: Kref, metadata: Dict[str, str]) -> Item:
         """Update metadata for an item.
 
@@ -830,18 +874,22 @@ class _Client:
         resp = self.stub.UpdateItemMetadata(req)
         return Item(resp, self)
 
-    def create_revision(self, item_kref: Kref, metadata: Optional[Dict[str, str]] = None, number: int = 0) -> Revision:
+    def create_revision(self, item_kref: Kref, metadata: Optional[Dict[str, str]] = None, number: int = 0, embedding_text: str = "") -> Revision:
         """Create a new revision for an item.
 
         Args:
             item_kref: The kref of the item.
             metadata: Optional metadata for the revision.
             number: Specific revision number to use (0 for auto-increment).
+            embedding_text: Optional override for the text used to generate
+                the server-side embedding. When empty the server auto-generates
+                from concatenated metadata. Pass a focused string (e.g. title +
+                summary) to produce more semantically distinctive embeddings.
 
         Returns:
             The created Revision object.
         """
-        req = CreateRevisionRequest(item_kref=item_kref.to_pb(), metadata=metadata or {}, number=number)
+        req = CreateRevisionRequest(item_kref=item_kref.to_pb(), metadata=metadata or {}, number=number, embedding_text=embedding_text)
         resp = self.stub.CreateRevision(req)
         return Revision(resp, self)
 

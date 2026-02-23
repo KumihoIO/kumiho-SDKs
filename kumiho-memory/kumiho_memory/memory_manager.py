@@ -81,6 +81,16 @@ def _token_overlap_score(query_tokens: List[str], text: str) -> float:
     return score / (len(query_tokens) + 1)
 
 
+def _cosine_similarity(vec_a: List[float], vec_b: List[float]) -> float:
+    """Cosine similarity between two float vectors (pure-python fallback)."""
+    dot = sum(a * b for a, b in zip(vec_a, vec_b))
+    norm_a = math.sqrt(sum(a * a for a in vec_a))
+    norm_b = math.sqrt(sum(b * b for b in vec_b))
+    if norm_a == 0 or norm_b == 0:
+        return 0.0
+    return dot / (norm_a * norm_b)
+
+
 class UniversalMemoryManager:
     """Orchestrates working memory, summarization, and long-term storage.
 
@@ -109,6 +119,13 @@ class UniversalMemoryManager:
         retry_queue: Optional[RetryQueue] = None,
         store_max_retries: int = 3,
         graph_augmentation: Optional[Any] = None,
+        recall_mode: str = "full",
+        sibling_strong_score: float = _SIBLING_STRONG_SCORE,
+        sibling_char_budget: int = _SIBLING_CHAR_BUDGET,
+        sibling_similarity_threshold: float = 0.0,
+        sibling_top_k: int = 0,
+        embedding_adapter: Optional[Any] = None,
+        sibling_score_fields: Optional[List[str]] = None,
     ) -> None:
         self.project = project
         self.consolidation_threshold = consolidation_threshold
@@ -137,6 +154,13 @@ class UniversalMemoryManager:
         self.store_max_retries = store_max_retries
         self.graph_augmentation_config = graph_augmentation
         self._graph_recall: Optional[Any] = None  # lazy GraphAugmentedRecall
+        self.recall_mode = recall_mode
+        self.sibling_strong_score = sibling_strong_score
+        self.sibling_char_budget = sibling_char_budget
+        self.sibling_similarity_threshold = sibling_similarity_threshold
+        self.sibling_top_k = sibling_top_k
+        self.embedding_adapter = embedding_adapter
+        self.sibling_score_fields = sibling_score_fields
 
     async def ingest_message(
         self,
@@ -259,6 +283,7 @@ class UniversalMemoryManager:
         space_path: Optional[str] = None,
         user_id: Optional[str] = None,
         context: Optional[str] = None,
+        stack_revisions: Optional[bool] = None,
     ) -> Dict[str, Any]:
         messages_result = await self.redis_buffer.get_messages(
             project=self.project,
@@ -315,14 +340,52 @@ class UniversalMemoryManager:
             event_lines: List[str] = []
             for ev in events:
                 desc = ev.get("event", "")
+                when = ev.get("when", "")
                 consequence = ev.get("consequence", "")
                 if desc:
+                    prefix = f"- [{when}] " if when and when.lower() != "unknown" else "- "
                     if consequence:
-                        event_lines.append(f"- {desc} \u2192 {consequence}")
+                        event_lines.append(f"{prefix}{desc} \u2192 {consequence}")
                     else:
-                        event_lines.append(f"- {desc}")
+                        event_lines.append(f"{prefix}{desc}")
             if event_lines:
                 redacted_summary += "\n\nKey events:\n" + "\n".join(event_lines)
+                redacted_summary = self.pii_redactor.anonymize_summary(
+                    redacted_summary
+                )
+
+        # Append knowledge.facts — concrete factual claims extracted from
+        # the conversation.  Without this, the stored summary text lacks
+        # specific details (names, possessions, places, roles) that are
+        # critical for single-hop and multi-hop factual QA.
+        knowledge = summary_result.get("knowledge", {})
+        facts = knowledge.get("facts", [])
+        if facts:
+            fact_lines: List[str] = []
+            for fact in facts:
+                claim = fact.get("claim", "")
+                if claim:
+                    fact_lines.append(f"- {claim}")
+            if fact_lines:
+                redacted_summary += "\n\nKey facts:\n" + "\n".join(fact_lines)
+                redacted_summary = self.pii_redactor.anonymize_summary(
+                    redacted_summary
+                )
+
+        # Append knowledge.decisions — decisions with their rationale.
+        decisions = knowledge.get("decisions", [])
+        if decisions:
+            decision_lines: List[str] = []
+            for dec in decisions:
+                decision_text = dec.get("decision", "")
+                reason = dec.get("reason", "")
+                if decision_text:
+                    if reason:
+                        decision_lines.append(f"- {decision_text} (reason: {reason})")
+                    else:
+                        decision_lines.append(f"- {decision_text}")
+            if decision_lines:
+                redacted_summary += "\n\nDecisions:\n" + "\n".join(decision_lines)
                 redacted_summary = self.pii_redactor.anonymize_summary(
                     redacted_summary
                 )
@@ -340,6 +403,40 @@ class UniversalMemoryManager:
                 redacted_summary = self.pii_redactor.anonymize_summary(
                     redacted_summary
                 )
+
+        # --- Extract structured metadata for separate storage ---
+        # These become individual Revision node properties in Neo4j,
+        # included in SEMANTIC_KEYS for embedding and available for
+        # score_fields-based focused scoring.
+        structured_metadata: Dict[str, str] = {}
+
+        entities_list = summary_result.get("classification", {}).get("entities", [])
+        if entities_list:
+            structured_metadata["entities"] = ", ".join(str(e) for e in entities_list)
+
+        if facts:
+            fact_claims = [f.get("claim", "") for f in facts if f.get("claim")]
+            if fact_claims:
+                structured_metadata["facts"] = "; ".join(fact_claims)
+
+        if events:
+            event_summaries: List[str] = []
+            for ev in events:
+                desc = ev.get("event", "")
+                when = ev.get("when", "")
+                if desc:
+                    prefix = f"[{when}] " if when and when.lower() != "unknown" else ""
+                    event_summaries.append(f"{prefix}{desc}")
+            if event_summaries:
+                structured_metadata["events"] = "; ".join(event_summaries)
+
+        if decisions:
+            dec_texts = [d.get("decision", "") for d in decisions if d.get("decision")]
+            if dec_texts:
+                structured_metadata["decisions"] = "; ".join(dec_texts)
+
+        if implications:
+            structured_metadata["implications"] = "\n".join(implications)
 
         # Reject credentials before sending to cloud graph (spec §10.4.5)
         self.pii_redactor.reject_credentials(redacted_summary)
@@ -389,6 +486,7 @@ class UniversalMemoryManager:
                     "session_id": session_id,
                     "message_count": str(len(messages)),
                     "topics": ",".join(topics),
+                    **structured_metadata,
                 },
             }
             # Explicit space_path or user_id-derived space takes precedence;
@@ -402,6 +500,9 @@ class UniversalMemoryManager:
 
             if all_attachments:
                 payload["metadata"]["attachments"] = all_attachments
+
+            if stack_revisions is not None:
+                payload["stack_revisions"] = stack_revisions
 
             store_result = await self._store_with_retry(**payload)
 
@@ -865,6 +966,67 @@ class UniversalMemoryManager:
             return []
         return await gr.discover_edges(revision_kref, summary, **kwargs)
 
+    def build_recalled_context(
+        self,
+        memories: List[Dict[str, Any]],
+        query: str = "",
+        recall_mode: Optional[str] = None,
+    ) -> str:
+        """Build text context from recalled memories for an answering LLM.
+
+        Parameters
+        ----------
+        memories:
+            List of memory dicts as returned by ``recall_memories()``.
+        query:
+            The original trigger query.  When provided and an
+            ``embedding_adapter`` is configured, sibling revisions are
+            filtered by embedding cosine similarity as a second pass.
+            Note: server-scored sibling filtering (when
+            ``sibling_similarity_threshold > 0`` but no embedding adapter)
+            already runs during ``recall_memories()`` — this method
+            receives pre-filtered siblings in that case.
+        recall_mode:
+            ``"full"`` (default) includes artifact content (raw conversation
+            text, truncated to 4000 chars).  ``"summarized"`` uses only
+            title + summary — lossy but cheaper.  Falls back to the
+            instance's ``self.recall_mode`` when ``None``.
+        """
+        mode = recall_mode or self.recall_mode
+        threshold = self.sibling_similarity_threshold
+
+        texts: List[str] = []
+        for mem in memories:
+            title = mem.get("title", "")
+            summary = mem.get("summary", "")
+            content = mem.get("content", "")
+
+            if mode == "full" and content:
+                texts.append(content[:4000])
+            elif summary:
+                texts.append(f"{title}: {summary}" if title else summary)
+
+            # Unfold sibling revisions — optionally filtered by relevance.
+            siblings = mem.get("sibling_revisions", [])
+            if siblings and query and threshold > 0 and self.embedding_adapter is not None:
+                siblings = self._filter_siblings_by_embedding(
+                    siblings, query, threshold,
+                )
+
+            for sib in siblings:
+                sib_title = sib.get("title", "")
+                sib_summary = sib.get("summary", "")
+                sib_content = sib.get("content", "")
+
+                if mode == "full" and sib_content:
+                    texts.append(sib_content[:4000])
+                elif sib_summary:
+                    texts.append(
+                        f"{sib_title}: {sib_summary}" if sib_title else sib_summary
+                    )
+
+        return "\n\n".join(texts) if texts else ""
+
     async def _fetch_revision_metadata(self, kref: str) -> Dict[str, Any]:
         """Fetch revision metadata and raw artifact content.
 
@@ -908,6 +1070,262 @@ class UniversalMemoryManager:
             logger.debug("Failed to fetch revision %s: %s", kref, exc)
             return {}
 
+    def _filter_siblings_by_embedding(
+        self,
+        siblings: List[Dict[str, Any]],
+        query: str,
+        threshold: float,
+    ) -> List[Dict[str, Any]]:
+        """Keep only siblings whose embedding similarity to *query* exceeds *threshold*.
+
+        Uses the configured ``embedding_adapter`` to compute cosine similarity.
+        Falls back to returning all siblings if embedding fails.
+        """
+        if not siblings or not query or threshold <= 0 or self.embedding_adapter is None:
+            return siblings
+
+        sib_texts = []
+        for sib in siblings:
+            t = sib.get("title", "")
+            s = sib.get("summary", "")
+            sib_texts.append(f"{t}: {s}" if t else s)
+
+        try:
+            all_texts = [query] + sib_texts
+            embeddings = self.embedding_adapter.embed(all_texts)
+            query_vec = embeddings[0]
+
+            scored_sibs = []
+            for i, sib in enumerate(siblings):
+                score = _cosine_similarity(query_vec, embeddings[i + 1])
+                scored_sibs.append((score, sib))
+
+            # Sort by score descending, apply threshold.
+            # Preserve _score on each sibling for downstream global ranking.
+            scored_sibs.sort(key=lambda x: x[0], reverse=True)
+            kept = [
+                {**sib, "_score": score}
+                for score, sib in scored_sibs
+                if score >= threshold
+            ]
+
+            # Apply top-K cap if configured (0 = unlimited)
+            if self.sibling_top_k > 0 and len(kept) > self.sibling_top_k:
+                kept = kept[: self.sibling_top_k]
+
+            logger.debug(
+                "Sibling embedding filter: %d/%d kept (threshold=%.2f, top_k=%d, scores=%s)",
+                len(kept), len(siblings), threshold, self.sibling_top_k,
+                [f"{s:.3f}" for s, _ in scored_sibs],
+            )
+            return kept
+        except Exception as e:
+            logger.warning("Sibling embedding filter failed, keeping all: %s", e)
+            return siblings
+
+    async def _rerank_siblings_with_llm(
+        self,
+        siblings: List[Dict[str, Any]],
+        query: str,
+    ) -> Optional[List[Dict[str, Any]]]:
+        """Use the LLM to select the most relevant siblings.
+
+        Cosine similarity cannot bridge semantic inversion (e.g.
+        "dining out a lot" ↔ "meal prepping for healthy lifestyle").
+        The LLM CAN reason about these relationships — it understands
+        that a broken goal implies the original goal existed.
+
+        Returns selected siblings with ``_score`` set, or ``None`` if
+        the LLM is unavailable so the caller can fall back.
+        """
+        try:
+            adapter = self.summarizer.adapter
+        except Exception:
+            return None
+
+        # Build numbered list of sibling summaries + structured metadata for the LLM.
+        lines: List[str] = []
+        for i, sib in enumerate(siblings, 1):
+            title = sib.get("title", "Untitled")
+            summary = sib.get("summary", "")
+            # Truncate long summaries — keep enough context for the LLM.
+            if len(summary) > 600:
+                summary = summary[:600] + "..."
+            entry = f"{i}. {title}: {summary}"
+            # Append structured metadata — implications are forward-looking
+            # statements that directly bridge semantic inversion (e.g.
+            # "Evan might discuss guitar practice progress" matches
+            # "barely followed through on something huge").
+            for field, label in [
+                ("implications", "Future scenarios"),
+                ("facts", "Key facts"),
+                ("entities", "People/things"),
+                ("events", "Events"),
+            ]:
+                val = sib.get(field, "")
+                if val:
+                    if len(val) > 250:
+                        val = val[:250] + "..."
+                    entry += f"\n   {label}: {val}"
+            lines.append(entry)
+
+        summaries_text = "\n".join(lines)
+
+        system = (
+            "You are a memory retrieval specialist. Given a user's message "
+            "and a numbered list of stored conversation summaries, identify "
+            "which summaries are most relevant to what the user is referring to.\n\n"
+            "IMPORTANT: The user may refer to a past conversation INDIRECTLY:\n"
+            "- They might describe the OPPOSITE outcome (e.g. 'I've been "
+            "dining out a lot' when the stored memory is about 'meal prepping "
+            "for a healthier lifestyle')\n"
+            "- They might reference a goal they DIDN'T achieve, where the "
+            "stored memory is about SETTING that goal\n"
+            "- They might use completely different vocabulary for the same "
+            "underlying topic\n"
+            "- They might describe a consequence instead of the cause\n\n"
+            "Think about the underlying topic, goal, habit, or life event "
+            "the user is referring to — not just surface-level word matching.\n\n"
+            "Return ONLY the numbers of the 1-3 most relevant summaries, "
+            "separated by commas. If none are clearly relevant, return 'none'."
+        )
+
+        user_msg = (
+            f"User's message:\n{query}\n\n"
+            f"Stored conversation summaries:\n{summaries_text}"
+        )
+
+        # Diagnostic: how many siblings have structured metadata?
+        has_impl = sum(1 for s in siblings if s.get("implications"))
+        has_facts = sum(1 for s in siblings if s.get("facts"))
+        has_ent = sum(1 for s in siblings if s.get("entities"))
+        logger.info(
+            "Reranker metadata coverage: %d siblings — "
+            "%d with implications, %d with facts, %d with entities",
+            len(siblings), has_impl, has_facts, has_ent,
+        )
+
+        try:
+            raw = await adapter.chat(
+                messages=[{"role": "user", "content": user_msg}],
+                model=self.summarizer.light_model,
+                system=system,
+                max_tokens=30,
+            )
+            text = raw.strip().lower()
+            logger.info(
+                "LLM sibling reranker response: %r (query: %.60s, %d siblings)",
+                text, query, len(siblings),
+            )
+
+            if "none" in text:
+                return None
+
+            # Parse comma-separated numbers.
+            selected_indices: List[int] = []
+            for token in text.replace(",", " ").split():
+                token = token.strip().rstrip(".")
+                if token.isdigit():
+                    idx = int(token) - 1  # 1-indexed → 0-indexed
+                    if 0 <= idx < len(siblings):
+                        selected_indices.append(idx)
+
+            if not selected_indices:
+                return None
+
+            # Assign descending scores so first-picked ranks highest.
+            result: List[Dict[str, Any]] = []
+            for rank, idx in enumerate(selected_indices):
+                score = 1.0 - rank * 0.1  # 1.0, 0.9, 0.8, ...
+                result.append({**siblings[idx], "_score": score})
+
+            return result
+
+        except Exception as e:
+            logger.warning("LLM sibling reranker failed: %s", e)
+            return None
+
+    async def _filter_siblings_by_server_search(
+        self,
+        siblings: List[Dict[str, Any]],
+        query: str,
+        item_kref: str,
+    ) -> List[Dict[str, Any]]:
+        """Filter siblings using LLM reranking with cosine similarity fallback.
+
+        Primary: LLM-based reranking — the LLM reads all sibling
+        summaries and picks the most relevant ones.  This handles
+        semantic inversion (cognitive/goal questions) that cosine
+        similarity fundamentally cannot bridge.
+
+        Fallback: Server-scored cosine similarity via ``ScoreRevisions``
+        RPC, used when the LLM is unavailable.
+        """
+        if not siblings or not query:
+            return siblings
+
+        # --- Primary: LLM reranking ---
+        llm_result = await self._rerank_siblings_with_llm(siblings, query)
+        if llm_result:
+            logger.info(
+                "LLM sibling reranker: %d/%d selected (query: %.60s)",
+                len(llm_result), len(siblings), query,
+            )
+            return llm_result
+
+        # --- Fallback: cosine similarity via server ---
+        try:
+            import kumiho
+
+            sib_krefs = [s["kref"] for s in siblings if s.get("kref")]
+            if not sib_krefs:
+                return siblings
+
+            _MAX_RETRIES = 3
+            score_map: Dict[str, float] = {}
+            for _attempt in range(1, _MAX_RETRIES + 1):
+                try:
+                    scored = await asyncio.to_thread(
+                        kumiho.score_revisions, query, sib_krefs,
+                        score_fields=self.sibling_score_fields,
+                    )
+                    score_map = {s["kref"]: s["score"] for s in scored}
+                    break
+                except Exception as rpc_err:
+                    if "RESOURCE_EXHAUSTED" in str(rpc_err) and _attempt < _MAX_RETRIES:
+                        await asyncio.sleep(0.05 * _attempt)
+                        continue
+                    raise
+
+            threshold = self.sibling_similarity_threshold
+
+            ranked = sorted(
+                siblings,
+                key=lambda s: score_map.get(s.get("kref", ""), 0.0),
+                reverse=True,
+            )
+            kept = [
+                {**s, "_score": score_map.get(s.get("kref", ""), 0.0)}
+                for s in ranked
+                if score_map.get(s.get("kref", ""), 0.0) >= threshold
+            ]
+
+            if self.sibling_top_k > 0 and len(kept) > self.sibling_top_k:
+                kept = kept[: self.sibling_top_k]
+
+            logger.info(
+                "Cosine sibling filter (fallback): %d/%d kept "
+                "(threshold=%.2f, scores=%s, query: %.60s)",
+                len(kept), len(siblings), threshold,
+                {k: f"{v:.3f}" for k, v in score_map.items()},
+                query,
+            )
+            return kept if kept else siblings
+
+        except Exception as e:
+            logger.warning("Server-scored sibling filter failed, keeping all: %s", e)
+            return siblings
+
     async def _fetch_sibling_revision_summaries(
         self,
         item_kref: str,
@@ -920,18 +1338,17 @@ class UniversalMemoryManager:
         returns the summary of every revision *except* the one already
         fetched as the primary result.
 
-        Two-phase selection strategy:
+        Three-phase selection strategy:
 
-        1. **Keyword mode** — when the query has strong keyword overlap with
-           some siblings (best score ≥ ``_SIBLING_STRONG_SCORE``), return
-           only the strong matches.  This focuses the LLM on the most
-           pertinent revisions.
-        2. **Budget mode** (fallback) — when keyword overlap is weak or
-           absent (typical for cognitive/causal queries with large semantic
-           gaps), keep all siblings that fit within ``_SIBLING_CHAR_BUDGET``
-           in chronological order.  This preserves the full conversation
-           timeline so the LLM can reason over any revision, including
-           old cues with no keyword overlap to the trigger.
+        1. **Embedding mode** — when an ``embedding_adapter`` is configured
+           and ``sibling_similarity_threshold > 0``, filter by embedding
+           cosine similarity.
+        2. **Server-scored mode** — when ``sibling_similarity_threshold > 0``
+           but no embedding adapter is available, use the Kumiho server's
+           hybrid search (vector + BM25) to score siblings.
+        3. **Keyword mode** (default) — BM25-light keyword overlap.  When
+           the query has strong overlap (best score ≥ threshold), return only
+           strong matches; otherwise keep all that fit within char budget.
         """
         try:
             import kumiho
@@ -944,28 +1361,75 @@ class UniversalMemoryManager:
             siblings: List[Dict[str, Any]] = []
             for rev in revisions:
                 rev_uri = rev.kref.uri if hasattr(rev.kref, "uri") else str(rev.kref)
-                if rev_uri == current_rev_kref:
-                    continue
+                # Do NOT exclude the primary (published) revision — the LLM
+                # reranker must see ALL revisions to select the correct one.
+                # Previously the primary was excluded here and also skipped
+                # in build_recalled_context, which meant the latest/published
+                # revision was *never* in the recalled context.
                 meta = rev.metadata or {}
                 title = meta.get("title", "")
                 summary = meta.get("summary", "")
                 created_at = getattr(rev, "created_at", "") or ""
                 if title or summary:
                     sib_text = f"{title} {summary}".strip()
-                    siblings.append({
+                    sib_entry: Dict[str, Any] = {
                         "kref": rev_uri,
                         "title": title,
                         "summary": summary,
                         "created_at": created_at,
                         "_chars": len(sib_text),
-                    })
+                    }
+                    # Carry structured metadata for LLM reranking.
+                    for field in ("facts", "entities", "events", "decisions", "implications"):
+                        val = meta.get(field, "")
+                        if val:
+                            sib_entry[field] = val
+                    siblings.append(sib_entry)
 
             if not siblings:
                 return []
 
             total_siblings = len(siblings)
 
-            # Score by keyword overlap with query
+            # --- Semantic filtering modes (opt-in via sibling_similarity_threshold > 0) ---
+            if self.sibling_similarity_threshold > 0 and query:
+                if self.embedding_adapter is not None:
+                    # Mode 1: Embedding-based cosine similarity (external API)
+                    siblings = self._filter_siblings_by_embedding(
+                        siblings, query, self.sibling_similarity_threshold,
+                    )
+                else:
+                    # Mode 2: Server-scored hybrid search (no external API)
+                    siblings = await self._filter_siblings_by_server_search(
+                        siblings, query, item_kref,
+                    )
+
+                # Clean up internal keys before loading artifacts.
+                for sib in siblings:
+                    sib.pop("_chars", None)
+
+                # Load artifact content in parallel for filtered siblings.
+                async def _load_sib_art(sib_dict: Dict[str, Any]) -> None:
+                    try:
+                        sib_rev = await asyncio.to_thread(
+                            kumiho.get_revision, sib_dict["kref"],
+                        )
+                        artifacts = await asyncio.to_thread(sib_rev.get_artifacts)
+                        for art in artifacts:
+                            loc = getattr(art, "location", "")
+                            if loc:
+                                text = await self._read_artifact_content(loc)
+                                if text:
+                                    sib_dict["content"] = text
+                                    sib_dict["artifact_location"] = loc
+                                    break
+                    except Exception:
+                        pass
+
+                await asyncio.gather(*[_load_sib_art(s) for s in siblings])
+                return siblings
+
+            # --- Mode 3: BM25-light keyword overlap (default, free) ---
             query_tokens = _tokenize(query) if query else []
             for sib in siblings:
                 if query_tokens:
@@ -976,12 +1440,12 @@ class UniversalMemoryManager:
 
             best_score = max(s["_score"] for s in siblings)
 
-            if best_score >= _SIBLING_STRONG_SCORE:
+            if best_score >= self.sibling_strong_score:
                 # --- Keyword mode: strong signal found ---
                 # Return only siblings with meaningful overlap, sorted by
                 # score.  This trims noise when there IS a lexical signal.
                 strong = sorted(
-                    [s for s in siblings if s["_score"] >= _SIBLING_STRONG_SCORE],
+                    [s for s in siblings if s["_score"] >= self.sibling_strong_score],
                     key=lambda s: s["_score"], reverse=True,
                 )
                 siblings = strong
@@ -999,11 +1463,11 @@ class UniversalMemoryManager:
                 siblings.sort(key=lambda s: s.get("created_at") or "")
                 total_chars = sum(s["_chars"] for s in siblings)
 
-                if total_chars > _SIBLING_CHAR_BUDGET:
+                if total_chars > self.sibling_char_budget:
                     selected: List[Dict[str, Any]] = []
                     budget_used = 0
                     for sib in siblings:
-                        if budget_used + sib["_chars"] > _SIBLING_CHAR_BUDGET:
+                        if budget_used + sib["_chars"] > self.sibling_char_budget:
                             continue
                         selected.append(sib)
                         budget_used += sib["_chars"]
@@ -1013,7 +1477,7 @@ class UniversalMemoryManager:
                         "Sibling budget mode for %s: %d/%d kept "
                         "(%d chars of %d budget, query: %.60s)",
                         item_kref, len(siblings), total_siblings,
-                        budget_used, _SIBLING_CHAR_BUDGET,
+                        budget_used, self.sibling_char_budget,
                         query or "<none>",
                     )
                 else:
@@ -1021,13 +1485,13 @@ class UniversalMemoryManager:
                         "Sibling pass-through for %s: all %d kept "
                         "(%d chars within %d budget)",
                         item_kref, total_siblings, total_chars,
-                        _SIBLING_CHAR_BUDGET,
+                        self.sibling_char_budget,
                     )
 
             # Clean up internal keys and load artifact content for
             # surviving siblings so consumers can access full text.
+            # Keep _score for downstream global ranking in context builders.
             for sib in siblings:
-                sib.pop("_score", None)
                 sib.pop("_chars", None)
 
             # Load artifact content in parallel for the filtered siblings.

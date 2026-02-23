@@ -19,6 +19,9 @@ class StubSummarizer:
             "classification": {"topics": ["tea"]},
         }
 
+    async def generate_implications(self, messages, context=None):
+        return []
+
 
 class StubRedactor:
     def anonymize_summary(self, summary):
