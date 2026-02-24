@@ -879,6 +879,10 @@ class UniversalMemoryManager:
 
         result = await _maybe_await(self.memory_retrieve, **kwargs)
 
+        if isinstance(result, dict) and "error" in result:
+            logger.warning("_base_recall: retrieve returned error: %s", result["error"])
+            return []
+
         if isinstance(result, dict) and "revision_krefs" in result:
             revision_krefs = result.get("revision_krefs", [])
             item_krefs = result.get("item_krefs", [])

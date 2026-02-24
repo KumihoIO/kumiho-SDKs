@@ -991,8 +991,12 @@ def tool_memory_retrieve(
                             spaces_used.append(sr.item.space.path)
                 except Exception:
                     continue
-        except Exception:
-            pass  # Fall through to bundle/pattern search
+        except Exception as exc:
+            logger.warning(
+                "tool_memory_retrieve: fulltext search failed: %s: %s",
+                type(exc).__name__, exc,
+            )
+            # Fall through to bundle/pattern search
 
     # Secondary: Bundle-based search if specified and fuzzy didn't find enough
     if bundles and len(results) < limit:
@@ -2982,6 +2986,11 @@ try:
     TOOL_HANDLERS.update(MEMORY_TOOL_HANDLERS)
 except ImportError:
     pass
+except Exception as _exc:
+    import logging as _logging
+    _logging.getLogger("kumiho.mcp_server").warning(
+        "kumiho-memory auto-discovery failed (non-ImportError): %s", _exc
+    )
 
 
 # ============================================================================
