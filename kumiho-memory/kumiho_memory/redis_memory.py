@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextvars
 import json
 import os
 from dataclasses import dataclass
@@ -23,6 +24,13 @@ from kumiho.discovery import (
 )
 
 logger = logging.getLogger(__name__)
+
+# Context variable for per-request token override.
+# When set (e.g. by kumiho-FastAPI), _get_fresh_token() uses this
+# instead of the local filesystem cache.
+_token_override_var: contextvars.ContextVar[Optional[str]] = contextvars.ContextVar(
+    "redis_token_override", default=None,
+)
 
 
 class RedisDiscoveryError(RuntimeError):
@@ -336,7 +344,16 @@ class RedisMemoryBuffer:
         Mirrors the retry strategy of the gRPC ``_AutoLoginInterceptor``:
         first try the cached token, then call ``ensure_token`` to silently
         refresh through the Firebase refresh-token flow.
+
+        When running inside kumiho-FastAPI (or any server that sets the
+        ``_token_override_var`` context variable), the override token is
+        returned immediately — no filesystem lookup is needed.
         """
+        # Server-injected token takes priority (e.g. kumiho-FastAPI Playground).
+        override = _token_override_var.get()
+        if override:
+            return override
+
         if not force_refresh:
             token = load_firebase_token() or load_bearer_token()
             if token:

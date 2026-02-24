@@ -1,8 +1,8 @@
 """Kumiho Memory - Universal memory provider for AI agents."""
 
-__version__ = "0.3.2"
+__version__ = "0.3.3"
 
-from kumiho_memory.redis_memory import RedisMemoryBuffer
+from kumiho_memory.redis_memory import RedisMemoryBuffer, _token_override_var as redis_token_override_var
 from kumiho_memory.memory_manager import UniversalMemoryManager, get_memory_space
 from kumiho_memory.summarization import (
     AnthropicAdapter,

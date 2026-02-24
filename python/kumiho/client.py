@@ -236,6 +236,7 @@ class _Client:
         """
         metadata: List[Tuple[str, str]] = list(default_metadata or [])
         resolved_token = auth_token or load_bearer_token()
+        self._auth_token: Optional[str] = resolved_token
 
         discovery = self._maybe_resolve_via_discovery(
             explicit_target=target,
