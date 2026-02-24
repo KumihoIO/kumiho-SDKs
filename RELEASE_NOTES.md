@@ -1,5 +1,188 @@
 # Kumiho Python SDK - Release Notes
 
+## kumiho 0.9.7 (February 2026) - Graph-Augmented Recall & Revision Stacking 🧠
+
+This release introduces graph-augmented memory retrieval, server-side revision scoring, and intelligent revision stacking — closing the gap between isolated vector search and true graph-native reasoning. Ships alongside `kumiho-memory` 0.3.0.
+
+### ✨ New Features
+
+**`ScoreRevisions` gRPC RPC** *(Server-side embedding + fulltext scoring)*:
+
+- New `kumiho.score_revisions()` and `Client.score_revisions()` methods.
+- Scores specific revisions against a query using server-side embeddings and/or fulltext — no external embedding API needed on the client.
+- Returns `score`, `score_method` (`"vector"`, `"fulltext"`, or `"hybrid"`), and the matched kref.
+
+```python
+import kumiho
+
+results = kumiho.score_revisions(
+    query="deployment architecture",
+    revision_krefs=["kref://project/space/item.kind?r=1", ...],
+    score_fields=["title", "summary"],
+)
+# [{"kref": "...", "score": 0.85, "score_method": "hybrid"}, ...]
+```
+
+**`embedding_text` parameter on `create_revision`**:
+
+- `client.create_revision()` now accepts optional `embedding_text`.
+- Overrides the server's default auto-generated embedding (which concatenates all metadata) with a focused string for more semantically distinctive vectors.
+
+```python
+item.create_revision(
+    metadata={"title": "Auth migration plan", "summary": "..."},
+    embedding_text="Auth migration plan: move from JWT to session-based auth",
+)
+```
+
+### 🧩 MCP Server Improvements
+
+**Revision stacking in `kumiho_memory_store`**:
+
+- When `stack_revisions=True` (default), the tool now searches for an existing item with similar content before creating a new one.
+- Uses fuzzy search with a 0.85 similarity threshold. If a match is found, stacks a new revision on the existing item instead of proliferating duplicates.
+- Response includes `"stacked": true/false` and `"previous_revision_kref"` when stacking occurs.
+- Title max length increased to 120 characters; summary max length increased to 2000 characters.
+
+**Auto-artifact generation**:
+
+- When no explicit `artifact_location` is provided, `kumiho_memory_store` now writes a Markdown artifact to `{KUMIHO_MEMORY_ARTIFACT_ROOT}/{project}/{space}/{item_name}.md`.
+- Artifact root defaults to `~/.kumiho/artifacts/` and is configurable via `KUMIHO_MEMORY_ARTIFACT_ROOT` env var.
+- Includes YAML frontmatter with title, type, date, and summary.
+
+**In-process caching**:
+
+- Added caches for projects, spaces, and bundles to avoid redundant gRPC round-trips within a session.
+- `_get_project_cached()` replaces direct `kumiho.get_project()` calls in hot paths.
+
+**Improved `kumiho_memory_retrieve`**:
+
+- New `unroll_revisions` parameter — when True, returns ALL revisions of stacked items (useful for history browsing or Dream State). Defaults to False (latest/published only).
+- Per-space context searching — `space_paths` filtering is now properly honored.
+- Fixed cross-space data leak — the whole-project fallback search is disabled when the caller explicitly scoped to specific spaces.
+
+**Better error handling**:
+
+- `tool_get_item`, `tool_get_revision`, `tool_get_revision_by_tag`, and `tool_create_revision` now return `{"error": "...", "not_found": true}` for `NOT_FOUND` gRPC errors, enabling agents to distinguish "not found" from other failures.
+
+### 📦 Proto Sync
+
+- New messages: `ScoreRevisionsRequest`, `ScoredRevision`, `ScoreRevisionsResponse`.
+- New RPC: `KumihoService.ScoreRevisions`.
+- `CreateRevisionRequest` gains `embedding_text` field.
+
+---
+
+## kumiho-memory 0.3.0 (February 2026) - Graph-Augmented Recall & Enriched Summarization 🔮
+
+Major release introducing graph-augmented memory retrieval, LLM-based sibling reranking, enriched summarization with structured event extraction, and post-consolidation edge discovery.
+
+### ✨ New Features
+
+**Graph-Augmented Recall** *(new module: `graph_augmentation.py`)*:
+
+A multi-stage retrieval strategy that goes beyond vector similarity:
+
+1. **Multi-query reformulation** — LLM generates 2-3 alternative queries capturing different semantic angles (emotions, causal events, consequences).
+2. **Parallel recall + merge** — all queries run in parallel, results merged by best score per kref.
+3. **Edge traversal** — follows graph edges from top-K results to discover connected memories that vector search alone would miss.
+4. **Semantic fallback** — when no graph edges exist, falls back to multi-hop semantic recall using titles/summaries of initial results.
+
+```python
+# Enable via environment variable
+# KUMIHO_GRAPH_AUGMENTED_RECALL=1
+
+# Or via kumiho_memory_recall MCP tool
+result = kumiho_memory_recall(
+    query="should I use gRPC here?",
+    graph_augmented=True,
+)
+```
+
+Configuration via `GraphAugmentationConfig`:
+
+- `max_hops` (default 1), `edge_types` (6 types), `top_k_for_traversal` (default 5)
+- `max_total` (caps augmented results), `reformulate_queries` (bool)
+- `traversal_timeout` (30s), `edge_creation_timeout` (60s)
+
+**Post-consolidation edge discovery** (`kumiho_memory_discover_edges` MCP tool):
+
+- After storing a memory, generates LLM "implication queries" — future scenarios where the memory would be relevant.
+- Searches for matching existing memories and creates graph edges to top candidates.
+- Parameters: `revision_kref`, `summary`, `max_queries`, `max_edges`, `min_score`, `edge_type`, `space_paths`.
+
+**LLM-based sibling reranking**:
+
+- When a stacked item has many revisions, the LLM selects the 1-3 most relevant siblings.
+- Handles **semantic inversion** — where the user refers to the opposite of what's stored (e.g., "I've been dining out a lot" matching a memory about "meal prepping").
+- Three-phase sibling selection: embedding mode → server-scored mode → BM25-light keyword fallback.
+
+**`build_recalled_context()` method**:
+
+- Builds ready-to-use text context from recalled memories for an answering LLM.
+- `"full"` mode includes artifact content (truncated to 4000 chars); `"summarized"` mode uses title + summary only.
+- Controlled via `recall_mode` parameter on `kumiho_memory_recall`.
+
+### 🧠 Enhanced Summarization
+
+**Enriched conversation summaries**:
+
+- Summary expanded from "1-2 sentences" to "5-10 sentences preserving ALL concrete details".
+- New structured extraction fields in summarization output:
+  - `events` — array with `event`, `when`, `participants`, `consequence`
+  - `implications` — 3-5 forward-looking statements for bridging semantic gaps in future recall
+- Explicit instructions to preserve ALL dates, timestamps, temporal markers, names, places, brands, measurements.
+- `max_tokens` increased from 1024 to 2560; fallback snippet from 180 to 500 chars.
+
+**`generate_implications()` method**:
+
+- Generates prospective statements using the light model — hypothetical future situations that only make sense because of the conversation.
+- Uses different vocabulary than the original text to bridge semantic gaps in vector search.
+- Runs independently from summarization and can be parallelized with it.
+
+### 🔧 Improvements
+
+**Session identity propagation**:
+
+- `user_id` and `context` are now persisted as Redis session metadata on first message via `set_session_metadata()`.
+- `consolidate_session()` auto-derives the storage space from session metadata when called without explicit parameters.
+- Priority chain: explicit `space_path` > `user_id` + `context` > Redis metadata > topic-derived hint.
+
+**Embedding adapter protocol**:
+
+- New `EmbeddingAdapter` runtime-checkable protocol for text embedding providers.
+- `OpenAICompatEmbeddingAdapter` concrete implementation for OpenAI and compatible APIs (default: `text-embedding-3-small`).
+- Lazy initialization — LLM SDK import and API key validation deferred until first use.
+
+**Parallel consolidation**:
+
+- `consolidate_session()` now runs `summarize_conversation()` and `generate_implications()` concurrently via `asyncio.gather()`.
+
+### 📦 New Exports
+
+```python
+from kumiho_memory import (
+    GraphAugmentedRecall,
+    GraphAugmentationConfig,
+    EmbeddingAdapter,
+    OpenAICompatEmbeddingAdapter,
+)
+```
+
+### ✅ Paper Compliance Summary
+
+| Paper Claim | Section | Implementation | Status |
+| --- | --- | --- | --- |
+| Graph-augmented retrieval beyond vector similarity | §7.3 | `GraphAugmentedRecall` with edge traversal | ✅ |
+| Multi-query reformulation | §7.3.2 | LLM generates alternative search queries | ✅ |
+| Immutable revisions, mutable pointers | §5, Principle 5 | Revision stacking in `kumiho_memory_store` | ✅ |
+| Metadata over content (BYO-storage) | §5.4.2, Principle 11 | Auto-artifact generation for local files | ✅ |
+| Structured event extraction | §9.2 | Events, implications in summarization output | ✅ |
+| Post-consolidation edge enrichment | §9.4 | `kumiho_memory_discover_edges` tool | ✅ |
+| Server-side scoring without external API | §7.5 | `ScoreRevisions` gRPC RPC | ✅ |
+
+---
+
 ## kumiho 0.9.6 (February 2026) - Belief Revision & Privacy Boundary 🛡️
 
 This release closes the gap between the paper's formal model and the SDK's runtime behavior. Every change maps to a specific claim in *Graph-Native Cognitive Memory for AI Agents* (v16).

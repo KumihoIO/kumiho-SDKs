@@ -1,6 +1,6 @@
 """Kumiho Memory - Universal memory provider for AI agents."""
 
-__version__ = "0.3.0"
+__version__ = "0.3.1"
 
 from kumiho_memory.redis_memory import RedisMemoryBuffer
 from kumiho_memory.memory_manager import UniversalMemoryManager, get_memory_space

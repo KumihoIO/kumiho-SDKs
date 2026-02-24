@@ -23,6 +23,8 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import threading
+import time
 from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
@@ -172,20 +174,64 @@ def tool_memory_consolidate(args: Dict[str, Any]) -> Dict[str, Any]:
     )
 
 
+# ---------------------------------------------------------------------------
+# Recall deduplication
+# ---------------------------------------------------------------------------
+# Models sometimes generate parallel kumiho_memory_recall calls within a
+# single response despite instructions not to.  This lock serializes recall
+# calls so the first one executes and any duplicate within the dedup window
+# returns an empty result with a warning — giving the model nothing to
+# summarize, which eliminates the duplicate "Retrieved..." output lines.
+
+_recall_lock = threading.Lock()
+_recall_cache_time: float = 0.0
+_RECALL_DEDUP_WINDOW_SECS = 5.0
+
+
 def tool_memory_recall(args: Dict[str, Any]) -> Dict[str, Any]:
-    """Search long-term memories by semantic query."""
-    manager = _get_manager()
-    recall_mode = args.get("recall_mode", manager.recall_mode)
-    results = asyncio.run(
-        manager.recall_memories(
-            args["query"],
-            limit=args.get("limit", 5),
-            space_paths=args.get("space_paths"),
-            memory_types=args.get("memory_types"),
-            graph_augmented=args.get("graph_augmented", False),
+    """Search long-term memories by semantic query.
+
+    Includes a deduplication guard: if called more than once within a short
+    time window (e.g. parallel tool calls from the model), subsequent calls
+    return an empty result with a note instead of hitting the backend again.
+    """
+    global _recall_cache_time
+
+    with _recall_lock:
+        now = time.monotonic()
+        if now - _recall_cache_time < _RECALL_DEDUP_WINDOW_SECS:
+            logger.warning(
+                "kumiho_memory_recall called again within %.1fs dedup window "
+                "— returning empty (new_query=%r)",
+                now - _recall_cache_time,
+                args.get("query", ""),
+            )
+            return {
+                "results": [],
+                "count": 0,
+                "deduplicated": True,
+                "note": (
+                    "Duplicate recall — results already returned in this "
+                    "response. Do not call kumiho_memory_recall more than "
+                    "once per response."
+                ),
+            }
+
+        manager = _get_manager()
+        recall_mode = args.get("recall_mode", manager.recall_mode)
+        results = asyncio.run(
+            manager.recall_memories(
+                args["query"],
+                limit=args.get("limit", 5),
+                space_paths=args.get("space_paths"),
+                memory_types=args.get("memory_types"),
+                graph_augmented=args.get("graph_augmented", False),
+            )
         )
-    )
-    return {"results": results, "count": len(results), "recall_mode": recall_mode}
+        result = {"results": results, "count": len(results), "recall_mode": recall_mode}
+
+        _recall_cache_time = time.monotonic()
+        return result
 
 
 def tool_memory_store_execution(args: Dict[str, Any]) -> Dict[str, Any]:

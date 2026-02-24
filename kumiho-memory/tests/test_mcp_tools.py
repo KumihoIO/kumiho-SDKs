@@ -89,6 +89,8 @@ def _install_test_manager(tmpdir=None):
 
 def _cleanup_manager():
     mcp_tools_module._manager = None
+    # Reset the recall deduplication timer so tests don't interfere
+    mcp_tools_module._recall_cache_time = 0.0
 
 
 # ---------------------------------------------------------------------------
@@ -273,6 +275,42 @@ def test_memory_recall_with_filters():
             "memory_types": ["error"],
         })
         assert result["count"] >= 0
+    finally:
+        _cleanup_manager()
+
+
+def test_memory_recall_deduplication():
+    """Duplicate recall calls within the dedup window should return empty."""
+    try:
+        _install_test_manager()
+        # First call — executes normally
+        result1 = tool_memory_recall({"query": "first query"})
+        assert result1["count"] == 1
+
+        # Second call within dedup window — should return empty with note
+        result2 = tool_memory_recall({"query": "different query"})
+        assert result2["count"] == 0
+        assert result2["deduplicated"] is True
+        assert "Duplicate recall" in result2["note"]
+    finally:
+        _cleanup_manager()
+
+
+def test_memory_recall_dedup_expires():
+    """After the dedup window expires, a fresh recall should execute."""
+    import time as _time
+
+    try:
+        _install_test_manager()
+        result1 = tool_memory_recall({"query": "query A"})
+
+        # Artificially expire the cache by backdating the timestamp
+        mcp_tools_module._recall_cache_time = _time.monotonic() - 10.0
+
+        result2 = tool_memory_recall({"query": "query B"})
+        # Should be a fresh call, not the cached object
+        assert result2 is not result1
+        assert result2["count"] == 1
     finally:
         _cleanup_manager()
 
