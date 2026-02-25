@@ -86,14 +86,45 @@ def _get_manager():
             )
             sibling_threshold = 0.0
 
+    # Background auto-assessor (opt-in via KUMIHO_AUTO_ASSESS=1).
+    # Uses the same LLM adapter as the summarizer — model-agnostic.
+    # The assessor runs a fast heuristic pre-filter first, then a graph
+    # novelty check, and only calls the LLM when both pass.
+    auto_assess_fn = None
+    if os.environ.get("KUMIHO_AUTO_ASSESS", "").strip() in ("1", "true"):
+        try:
+            from kumiho_memory.assessors import create_llm_assessor
+
+            _tmp_summarizer = MemorySummarizer()
+            _adapter = getattr(_tmp_summarizer, "adapter", None)
+            _model = getattr(_tmp_summarizer, "light_model", "")
+            if _adapter is not None:
+                policy = os.environ.get("KUMIHO_AUTO_ASSESS_POLICY", "").strip() or None
+                kwargs = {"model": _model}
+                if policy:
+                    kwargs["storage_policy"] = policy
+                auto_assess_fn = create_llm_assessor(_adapter, **kwargs)
+                logger.info(
+                    "Background auto-assessor enabled (model=%s)", _model or "<default>"
+                )
+            else:
+                logger.warning(
+                    "KUMIHO_AUTO_ASSESS=1 but no LLM adapter detected — "
+                    "set ANTHROPIC_API_KEY or OPENAI_API_KEY to enable."
+                )
+        except Exception as exc:
+            logger.warning("Auto-assess setup failed: %s", exc)
+
+    summarizer = MemorySummarizer()
     buffer = RedisMemoryBuffer()
     _manager = UniversalMemoryManager(
         redis_buffer=buffer,
-        summarizer=MemorySummarizer(),
+        summarizer=summarizer,
         pii_redactor=PIIRedactor(),
         graph_augmentation=graph_config,
         sibling_similarity_threshold=sibling_threshold,
         embedding_adapter=embedding_adapter,
+        auto_assess_fn=auto_assess_fn,
     )
     return _manager
 
