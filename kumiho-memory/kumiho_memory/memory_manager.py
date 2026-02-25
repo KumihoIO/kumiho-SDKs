@@ -12,9 +12,10 @@ import os
 import re
 import shutil
 from collections import Counter
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Awaitable, Callable, Dict, List, Optional
 
 from kumiho_memory.privacy import PIIRedactor
 from kumiho_memory.redis_memory import RedisMemoryBuffer
@@ -26,6 +27,41 @@ logger = logging.getLogger(__name__)
 
 StoreCallable = Callable[..., Any]
 RetrieveCallable = Callable[..., Any]
+
+
+@dataclass
+class MemoryAssessResult:
+    """Result returned by an ``auto_assess_fn`` implementation.
+
+    The callable receives the recent working-memory messages and a list of
+    recalled long-term memories, then returns this object so ``MemoryManager``
+    can decide whether to persist anything — without depending on a specific
+    LLM provider.
+    """
+
+    should_store: bool
+    """Whether the excerpt contains something new worth persisting."""
+
+    content: str = ""
+    """Extracted fact/decision/preference text to store (used as summary)."""
+
+    memory_type: str = "fact"
+    """Memory type: ``"fact"``, ``"decision"``, ``"preference"``, or ``"summary"``."""
+
+    reason: str = ""
+    """Short explanation (logged for debugging, stored as assistant_text)."""
+
+    tags: List[str] = field(default_factory=list)
+    """Extra tags to attach (``"auto-memorized"`` is always appended)."""
+
+
+# Callable protocol: async (messages, recalled_memories) → MemoryAssessResult.
+# ``messages`` = recent working-memory dicts (role/content/timestamp).
+# ``recalled_memories`` = top-K long-term memory dicts from the graph.
+AutoAssessFn = Callable[
+    [List[Dict[str, Any]], List[Dict[str, Any]]],
+    Awaitable[MemoryAssessResult],
+]
 
 # Stopwords to ignore when computing token-overlap relevance scores.
 _STOPWORDS = frozenset(
@@ -126,6 +162,9 @@ class UniversalMemoryManager:
         sibling_top_k: int = 0,
         embedding_adapter: Optional[Any] = None,
         sibling_score_fields: Optional[List[str]] = None,
+        auto_assess_fn: Optional[AutoAssessFn] = None,
+        auto_assess_min_messages: int = 3,
+        auto_assess_window: int = 6,
     ) -> None:
         self.project = project
         self.consolidation_threshold = consolidation_threshold
@@ -161,6 +200,13 @@ class UniversalMemoryManager:
         self.sibling_top_k = sibling_top_k
         self.embedding_adapter = embedding_adapter
         self.sibling_score_fields = sibling_score_fields
+        # Background memory assessor (model-agnostic, optional)
+        self.auto_assess_fn: Optional[AutoAssessFn] = auto_assess_fn
+        self.auto_assess_min_messages = auto_assess_min_messages
+        self.auto_assess_window = auto_assess_window
+        # In-process cursor: message count at last auto-store per session.
+        # Resets on process restart (safe — worst case one extra LLM call).
+        self._auto_store_cursors: Dict[str, int] = {}
 
     async def ingest_message(
         self,
@@ -231,10 +277,87 @@ class UniversalMemoryManager:
                 "timestamp": datetime.now(timezone.utc).isoformat(),
             },
         )
+        # Fire background memory assessment — non-blocking, only if configured.
+        if self.auto_assess_fn is not None:
+            asyncio.create_task(self._background_assess(session_id))
         return {
             "success": True,
             "message_count": result["message_count"],
         }
+
+    async def _background_assess(self, session_id: str) -> None:
+        """Background task: decide if recent buffer content is worth storing.
+
+        Fires after each assistant turn via ``asyncio.create_task``.  The
+        registered ``auto_assess_fn`` receives the recent working-memory
+        window and the top-K recalled long-term memories, then returns a
+        :class:`MemoryAssessResult` with a novelty judgment.  When
+        ``should_store`` is ``True`` the extracted content is persisted and
+        linked to the recalled graph context automatically.
+
+        The cooldown (``auto_assess_min_messages``) prevents redundant LLM
+        calls when several responses arrive in quick succession.
+        """
+        if self.auto_assess_fn is None:
+            return
+        try:
+            # 1. Fetch recent working-memory window.
+            result = await self.redis_buffer.get_messages(
+                project=self.project,
+                session_id=session_id,
+                limit=self.auto_assess_window,
+            )
+            messages: List[Dict[str, Any]] = result.get("messages", [])
+            total: int = int(result.get("message_count", 0))
+
+            # 2. Cooldown: skip if fewer than min_messages since last assess.
+            last_cursor = self._auto_store_cursors.get(session_id, 0)
+            if total - last_cursor < self.auto_assess_min_messages:
+                return
+
+            # 3. Build query from last 3 messages and recall graph context.
+            query_parts = [m.get("content", "")[-300:] for m in messages[-3:] if m.get("content")]
+            recalled: List[Dict[str, Any]] = []
+            if query_parts and self.memory_retrieve:
+                query_text = " ".join(query_parts)
+                recalled = await self.recall_memories(query_text, limit=5)
+
+            # 4. Invoke the model-agnostic assess function.
+            assess_result: MemoryAssessResult = await self.auto_assess_fn(messages, recalled)
+
+            # Always advance cursor so we don't re-examine the same window.
+            self._auto_store_cursors[session_id] = total
+
+            if not assess_result.should_store or not assess_result.content.strip():
+                return
+
+            # 5. Store the extracted memory, linked to recalled graph context.
+            source_krefs = [r["kref"] for r in recalled if "kref" in r]
+            store_payload: Dict[str, Any] = {
+                "project": self.project,
+                "memory_type": assess_result.memory_type,
+                "title": assess_result.content[:80],
+                "summary": assess_result.content,
+                "user_text": assess_result.content,
+                "assistant_text": assess_result.reason,
+                "tags": ["auto-memorized"] + assess_result.tags,
+                "metadata": {
+                    "memory_type": assess_result.memory_type,
+                    "auto_memorized": "true",
+                    "session_id": session_id,
+                },
+            }
+            if source_krefs:
+                store_payload["source_revision_krefs"] = source_krefs
+
+            await self._store_with_retry(**store_payload)
+            logger.debug(
+                "auto_assess stored memory for session %s: %s",
+                session_id,
+                assess_result.content[:80],
+            )
+        except Exception as exc:  # pragma: no cover
+            logger.debug("_background_assess error for session %s: %s", session_id, exc)
 
     async def handle_user_message(
         self,
