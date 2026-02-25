@@ -301,14 +301,29 @@ class UniversalMemoryManager:
         if self.auto_assess_fn is None:
             return
         try:
-            # 1. Fetch recent working-memory window.
-            result = await self.redis_buffer.get_messages(
-                project=self.project,
-                session_id=session_id,
-                limit=self.auto_assess_window,
+            # 1. Fetch messages + session metadata in parallel.
+            messages_result, session_meta = await asyncio.gather(
+                self.redis_buffer.get_messages(
+                    project=self.project,
+                    session_id=session_id,
+                    limit=self.auto_assess_window,
+                ),
+                self.redis_buffer.get_session_metadata(self.project, session_id),
             )
-            messages: List[Dict[str, Any]] = result.get("messages", [])
-            total: int = int(result.get("message_count", 0))
+            messages: List[Dict[str, Any]] = messages_result.get("messages", [])
+            total: int = int(messages_result.get("message_count", 0))
+
+            # Derive user space so auto-memorized items land beside the session's
+            # other memories — Dream State finds them via graph neighbourhood.
+            session_user_id: Optional[str] = session_meta.get("user_id") if session_meta else None
+            session_context: Optional[str] = session_meta.get("context") if session_meta else None
+            space_path: Optional[str] = None
+            if session_user_id:
+                space_path = (
+                    f"{session_context}/{session_user_id}"
+                    if session_context
+                    else session_user_id
+                )
 
             # 2. Cooldown: skip if fewer than min_messages since last assess.
             last_cursor = self._auto_store_cursors.get(session_id, 0)
@@ -331,7 +346,7 @@ class UniversalMemoryManager:
             if not assess_result.should_store or not assess_result.content.strip():
                 return
 
-            # 5. Store the extracted memory, linked to recalled graph context.
+            # 5. Store in the user's space so Dream State can find and enrich it.
             source_krefs = [r["kref"] for r in recalled if "kref" in r]
             store_payload: Dict[str, Any] = {
                 "project": self.project,
@@ -347,6 +362,10 @@ class UniversalMemoryManager:
                     "session_id": session_id,
                 },
             }
+            if space_path:
+                store_payload["space_path"] = space_path
+            if session_user_id:
+                store_payload["metadata"]["user_id"] = session_user_id
             if source_krefs:
                 store_payload["source_revision_krefs"] = source_krefs
 
