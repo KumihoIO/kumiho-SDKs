@@ -326,6 +326,70 @@ class RedisMemoryBuffer:
         await self.client.expire(key, ttl_seconds)
         return int(value)
 
+    def _active_session_key(self, context: str, user_canonical_id: str) -> str:
+        tenant_prefix = self.tenant_id or self.tenant_hint
+        if tenant_prefix:
+            return f"{self.MEMORY_PREFIX}:{tenant_prefix}:active_session:{context}:{user_canonical_id}"
+        return f"{self.MEMORY_PREFIX}:active_session:{context}:{user_canonical_id}"
+
+    async def get_active_session(
+        self,
+        *,
+        context: str,
+        user_canonical_id: str,
+    ) -> Optional[str]:
+        """Return the active session_id for a user/context, or None."""
+        if self.client is None:
+            response = await self._proxy_request(
+                action="get_active_session",
+                payload={"context": context, "user_canonical_id": user_canonical_id},
+            )
+            return response.get("session_id")
+
+        key = self._active_session_key(context, user_canonical_id)
+        return await self.client.get(key)
+
+    async def set_active_session(
+        self,
+        *,
+        context: str,
+        user_canonical_id: str,
+        session_id: str,
+        ttl_seconds: int = 86400,
+    ) -> None:
+        """Persist the active session_id for a user/context (default TTL 24 h)."""
+        if self.client is None:
+            await self._proxy_request(
+                action="set_active_session",
+                payload={
+                    "context": context,
+                    "user_canonical_id": user_canonical_id,
+                    "session_id": session_id,
+                    "ttl_seconds": ttl_seconds,
+                },
+            )
+            return
+
+        key = self._active_session_key(context, user_canonical_id)
+        await self.client.set(key, session_id, ex=ttl_seconds)
+
+    async def clear_active_session(
+        self,
+        *,
+        context: str,
+        user_canonical_id: str,
+    ) -> None:
+        """Delete the active session pointer (called after consolidation)."""
+        if self.client is None:
+            await self._proxy_request(
+                action="clear_active_session",
+                payload={"context": context, "user_canonical_id": user_canonical_id},
+            )
+            return
+
+        key = self._active_session_key(context, user_canonical_id)
+        await self.client.delete(key)
+
     async def close(self) -> None:
         """Close Redis connection."""
         if hasattr(self.client, "close"):

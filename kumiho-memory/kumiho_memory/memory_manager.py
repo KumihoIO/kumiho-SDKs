@@ -302,6 +302,7 @@ class UniversalMemoryManager:
         # 4. Topic-derived hint (backwards-compatible default)
         resolved_space: Optional[str] = space_path
         session_user_id: Optional[str] = user_id
+        session_context: Optional[str] = context  # may be overridden from metadata below
         if not resolved_space and session_user_id:
             resolved_space = (
                 f"{context}/{session_user_id}" if context else session_user_id
@@ -312,7 +313,7 @@ class UniversalMemoryManager:
                     self.project, session_id,
                 )
                 session_user_id = session_meta.get("user_id")
-                session_context = session_meta.get("context", "")
+                session_context = session_meta.get("context", "") or session_context
                 if session_user_id:
                     resolved_space = (
                         f"{session_context}/{session_user_id}"
@@ -507,6 +508,16 @@ class UniversalMemoryManager:
             store_result = await self._store_with_retry(**payload)
 
         await self.redis_buffer.clear_session(self.project, session_id)
+
+        # Clear the active session pointer so the next conversation starts fresh.
+        if session_user_id and session_context and hasattr(self.redis_buffer, "clear_active_session"):
+            try:
+                await self.redis_buffer.clear_active_session(
+                    context=session_context,
+                    user_canonical_id=session_user_id,
+                )
+            except Exception:
+                pass
 
         return {
             "success": True,
@@ -1547,6 +1558,18 @@ class UniversalMemoryManager:
         await self.redis_buffer.close()
 
     async def _generate_session_id(self, user_canonical_id: str, context: str) -> str:
+        # Reuse the active session when one exists (persists across restarts within a day).
+        if hasattr(self.redis_buffer, "get_active_session"):
+            try:
+                active = await self.redis_buffer.get_active_session(
+                    context=context,
+                    user_canonical_id=user_canonical_id,
+                )
+                if active:
+                    return active
+            except Exception:
+                pass
+
         user_hash = hashlib.sha256(user_canonical_id.encode()).hexdigest()[:10]
         date = datetime.now(timezone.utc).strftime("%Y%m%d")
 
@@ -1560,7 +1583,20 @@ class UniversalMemoryManager:
             except Exception:
                 sequence = 1
 
-        return f"{context}:user-{user_hash}:{date}:{sequence:03d}"
+        new_session_id = f"{context}:user-{user_hash}:{date}:{sequence:03d}"
+
+        # Persist as the active session so follow-up restarts reuse it until consolidated.
+        if hasattr(self.redis_buffer, "set_active_session"):
+            try:
+                await self.redis_buffer.set_active_session(
+                    context=context,
+                    user_canonical_id=user_canonical_id,
+                    session_id=new_session_id,
+                )
+            except Exception:
+                pass
+
+        return new_session_id
 
 
 def get_memory_space(
