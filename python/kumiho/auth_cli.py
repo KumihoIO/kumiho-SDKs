@@ -317,6 +317,12 @@ def cmd_refresh(args: argparse.Namespace) -> None:
         expires_at=int(time.time()) + expires_in,
         project_id=creds.project_id,
     )
+
+    # Re-exchange for CP token so control_plane_token stays current.
+    cp_token, cp_exp = _exchange_for_control_plane_token(id_token)
+    updated.control_plane_token = cp_token
+    updated.cp_expires_at = cp_exp
+
     _save_credentials(updated)
     _log_token(updated.id_token, "refresh")
     print("[kumiho-auth] Token refreshed.")
