@@ -1408,15 +1408,19 @@ class UniversalMemoryManager:
         query: str,
         item_kref: str,
     ) -> List[Dict[str, Any]]:
-        """Filter siblings using LLM reranking with cosine similarity fallback.
+        """Filter siblings using LLM reranking.
 
-        Primary: LLM-based reranking — the LLM reads all sibling
-        summaries and picks the most relevant ones.  This handles
-        semantic inversion (cognitive/goal questions) that cosine
-        similarity fundamentally cannot bridge.
+        The LLM reads all sibling summaries and picks the most relevant
+        ones.  This handles semantic inversion (cognitive/goal questions)
+        that cosine similarity fundamentally cannot bridge.
 
-        Fallback: Server-scored cosine similarity via ``ScoreRevisions``
-        RPC, used when the LLM is unavailable.
+        When the LLM reranker returns ``None`` (no relevant siblings or
+        adapter unavailable), return all siblings unscored and let
+        ``build_recalled_context`` handle them via budget mode.  The
+        previous cosine-similarity fallback was removed because it adds
+        significant latency (~8s via ``ScoreRevisions`` RPC) without
+        meaningfully improving on the LLM's judgment — if the LLM can't
+        find a match, cosine similarity won't either.
         """
         if not siblings or not query:
             return siblings
@@ -1430,58 +1434,13 @@ class UniversalMemoryManager:
             )
             return llm_result
 
-        # --- Fallback: cosine similarity via server ---
-        try:
-            import kumiho
-
-            sib_krefs = [s["kref"] for s in siblings if s.get("kref")]
-            if not sib_krefs:
-                return siblings
-
-            _MAX_RETRIES = 3
-            score_map: Dict[str, float] = {}
-            for _attempt in range(1, _MAX_RETRIES + 1):
-                try:
-                    scored = await asyncio.to_thread(
-                        kumiho.score_revisions, query, sib_krefs,
-                        score_fields=self.sibling_score_fields,
-                    )
-                    score_map = {s["kref"]: s["score"] for s in scored}
-                    break
-                except Exception as rpc_err:
-                    if "RESOURCE_EXHAUSTED" in str(rpc_err) and _attempt < _MAX_RETRIES:
-                        await asyncio.sleep(0.05 * _attempt)
-                        continue
-                    raise
-
-            threshold = self.sibling_similarity_threshold
-
-            ranked = sorted(
-                siblings,
-                key=lambda s: score_map.get(s.get("kref", ""), 0.0),
-                reverse=True,
-            )
-            kept = [
-                {**s, "_score": score_map.get(s.get("kref", ""), 0.0)}
-                for s in ranked
-                if score_map.get(s.get("kref", ""), 0.0) >= threshold
-            ]
-
-            if self.sibling_top_k > 0 and len(kept) > self.sibling_top_k:
-                kept = kept[: self.sibling_top_k]
-
-            logger.info(
-                "Cosine sibling filter (fallback): %d/%d kept "
-                "(threshold=%.2f, scores=%s, query: %.60s)",
-                len(kept), len(siblings), threshold,
-                {k: f"{v:.3f}" for k, v in score_map.items()},
-                query,
-            )
-            return kept if kept else siblings
-
-        except Exception as e:
-            logger.warning("Server-scored sibling filter failed, keeping all: %s", e)
-            return siblings
+        # LLM returned None — pass all siblings through unscored.
+        logger.info(
+            "LLM sibling reranker returned None, passing all %d siblings "
+            "through (query: %.60s)",
+            len(siblings), query,
+        )
+        return siblings
 
     async def _fetch_sibling_revision_summaries(
         self,
