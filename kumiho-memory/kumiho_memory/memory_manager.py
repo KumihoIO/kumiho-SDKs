@@ -1043,8 +1043,10 @@ class UniversalMemoryManager:
 
             # Fetch revision metadata concurrently so the LLM gets
             # usable content (title, summary, type) instead of bare krefs.
+            _load_arts = self.recall_mode == "full"
             meta_tasks = [
-                self._fetch_revision_metadata(kref) for kref in revision_krefs
+                self._fetch_revision_metadata(kref, load_artifacts=_load_arts)
+                for kref in revision_krefs
             ]
             meta_results = await asyncio.gather(*meta_tasks)
 
@@ -1061,6 +1063,7 @@ class UniversalMemoryManager:
                 if i < len(item_krefs):
                     siblings = await self._fetch_sibling_revision_summaries(
                         item_krefs[i], kref, query=query,
+                        load_artifacts=(self.recall_mode == "full"),
                     )
                     if siblings:
                         entry["sibling_revisions"] = siblings
@@ -1184,13 +1187,17 @@ class UniversalMemoryManager:
 
         return "\n\n".join(texts) if texts else ""
 
-    async def _fetch_revision_metadata(self, kref: str) -> Dict[str, Any]:
-        """Fetch revision metadata and raw artifact content.
+    async def _fetch_revision_metadata(
+        self, kref: str, load_artifacts: bool = True,
+    ) -> Dict[str, Any]:
+        """Fetch revision metadata and optionally raw artifact content.
 
         The revision metadata contains redacted/sanitized fields (title,
         summary, type).  The source of truth for the full conversation is
-        the raw Markdown artifact stored locally.  This method reads both
-        so the LLM gets usable context for recall.
+        the raw Markdown artifact stored locally.
+
+        When *load_artifacts* is False (e.g. summarized recall mode),
+        the expensive file reads are skipped — title + summary is enough.
         """
         try:
             import kumiho
@@ -1207,20 +1214,21 @@ class UniversalMemoryManager:
             }
 
             # Read the raw conversation from the local artifact file.
-            try:
-                artifacts = await asyncio.to_thread(revision.get_artifacts)
-                for artifact in artifacts:
-                    location = getattr(artifact, "location", "")
-                    if not location:
-                        continue
-                    content = await self._read_artifact_content(location)
-                    if content:
-                        entry["artifact_name"] = getattr(artifact, "name", "")
-                        entry["artifact_location"] = location
-                        entry["content"] = content
-                        break  # use the first readable artifact
-            except Exception as exc:
-                logger.debug("Failed to fetch artifacts for %s: %s", kref, exc)
+            if load_artifacts:
+                try:
+                    artifacts = await asyncio.to_thread(revision.get_artifacts)
+                    for artifact in artifacts:
+                        location = getattr(artifact, "location", "")
+                        if not location:
+                            continue
+                        content = await self._read_artifact_content(location)
+                        if content:
+                            entry["artifact_name"] = getattr(artifact, "name", "")
+                            entry["artifact_location"] = location
+                            entry["content"] = content
+                            break  # use the first readable artifact
+                except Exception as exc:
+                    logger.debug("Failed to fetch artifacts for %s: %s", kref, exc)
 
             return entry
         except Exception as exc:
@@ -1415,12 +1423,12 @@ class UniversalMemoryManager:
         that cosine similarity fundamentally cannot bridge.
 
         When the LLM reranker returns ``None`` (no relevant siblings or
-        adapter unavailable), return all siblings unscored and let
-        ``build_recalled_context`` handle them via budget mode.  The
-        previous cosine-similarity fallback was removed because it adds
-        significant latency (~8s via ``ScoreRevisions`` RPC) without
-        meaningfully improving on the LLM's judgment — if the LLM can't
-        find a match, cosine similarity won't either.
+        adapter unavailable), return an empty list so only the primary
+        revision is used.  Dumping all siblings unfiltered into context
+        is noisy and wasteful.  The previous cosine-similarity fallback
+        was removed because it adds significant latency (~8s via
+        ``ScoreRevisions`` RPC) without meaningfully improving on the
+        LLM's judgment.
         """
         if not siblings or not query:
             return siblings
@@ -1434,19 +1442,22 @@ class UniversalMemoryManager:
             )
             return llm_result
 
-        # LLM returned None — pass all siblings through unscored.
+        # LLM returned None — no relevant siblings identified.  Return
+        # empty so only the primary revision is used.  Dumping all siblings
+        # unfiltered would be noisy and defeat the purpose of reranking.
         logger.info(
-            "LLM sibling reranker returned None, passing all %d siblings "
-            "through (query: %.60s)",
+            "LLM sibling reranker returned None, skipping all %d siblings "
+            "(query: %.60s)",
             len(siblings), query,
         )
-        return siblings
+        return []
 
     async def _fetch_sibling_revision_summaries(
         self,
         item_kref: str,
         current_rev_kref: str,
         query: str = "",
+        load_artifacts: bool = True,
     ) -> List[Dict[str, str]]:
         """Fetch title+summary from sibling revisions of a stacked item.
 
@@ -1524,25 +1535,28 @@ class UniversalMemoryManager:
                 for sib in siblings:
                     sib.pop("_chars", None)
 
-                # Load artifact content in parallel for filtered siblings.
-                async def _load_sib_art(sib_dict: Dict[str, Any]) -> None:
-                    try:
-                        sib_rev = await asyncio.to_thread(
-                            kumiho.get_revision, sib_dict["kref"],
-                        )
-                        artifacts = await asyncio.to_thread(sib_rev.get_artifacts)
-                        for art in artifacts:
-                            loc = getattr(art, "location", "")
-                            if loc:
-                                text = await self._read_artifact_content(loc)
-                                if text:
-                                    sib_dict["content"] = text
-                                    sib_dict["artifact_location"] = loc
-                                    break
-                    except Exception:
-                        pass
+                # Load artifact content only when recall_mode is "full".
+                # In "summarized" mode, title+summary is sufficient and
+                # skipping file reads saves significant I/O.
+                if load_artifacts:
+                    async def _load_sib_art(sib_dict: Dict[str, Any]) -> None:
+                        try:
+                            sib_rev = await asyncio.to_thread(
+                                kumiho.get_revision, sib_dict["kref"],
+                            )
+                            artifacts = await asyncio.to_thread(sib_rev.get_artifacts)
+                            for art in artifacts:
+                                loc = getattr(art, "location", "")
+                                if loc:
+                                    text = await self._read_artifact_content(loc)
+                                    if text:
+                                        sib_dict["content"] = text
+                                        sib_dict["artifact_location"] = loc
+                                        break
+                        except Exception:
+                            pass
 
-                await asyncio.gather(*[_load_sib_art(s) for s in siblings])
+                    await asyncio.gather(*[_load_sib_art(s) for s in siblings])
                 return siblings
 
             # --- Mode 3: BM25-light keyword overlap (default, free) ---
@@ -1610,29 +1624,29 @@ class UniversalMemoryManager:
             for sib in siblings:
                 sib.pop("_chars", None)
 
-            # Load artifact content in parallel for the filtered siblings.
-            # This gives consumers (e.g. benchmark full-text mode) access to
-            # the raw conversation Markdown stored on each revision.
-            async def _load_sibling_artifact(sib_dict: Dict[str, Any]) -> None:
-                try:
-                    sib_rev = await asyncio.to_thread(
-                        kumiho.get_revision, sib_dict["kref"],
-                    )
-                    artifacts = await asyncio.to_thread(sib_rev.get_artifacts)
-                    for art in artifacts:
-                        loc = getattr(art, "location", "")
-                        if loc:
-                            text = await self._read_artifact_content(loc)
-                            if text:
-                                sib_dict["content"] = text
-                                sib_dict["artifact_location"] = loc
-                                break
-                except Exception:
-                    pass  # Content stays absent; consumer falls back to summary
+            # Load artifact content only when recall_mode is "full".
+            # In "summarized" mode, title+summary is sufficient.
+            if load_artifacts:
+                async def _load_sibling_artifact(sib_dict: Dict[str, Any]) -> None:
+                    try:
+                        sib_rev = await asyncio.to_thread(
+                            kumiho.get_revision, sib_dict["kref"],
+                        )
+                        artifacts = await asyncio.to_thread(sib_rev.get_artifacts)
+                        for art in artifacts:
+                            loc = getattr(art, "location", "")
+                            if loc:
+                                text = await self._read_artifact_content(loc)
+                                if text:
+                                    sib_dict["content"] = text
+                                    sib_dict["artifact_location"] = loc
+                                    break
+                    except Exception:
+                        pass  # Content stays absent; consumer falls back to summary
 
-            await asyncio.gather(
-                *[_load_sibling_artifact(s) for s in siblings]
-            )
+                await asyncio.gather(
+                    *[_load_sibling_artifact(s) for s in siblings]
+                )
 
             return siblings
         except Exception as exc:

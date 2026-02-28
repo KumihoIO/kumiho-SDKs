@@ -376,7 +376,7 @@ def _get_or_create_item(project: Project, space_path: str, item_name: str, kind:
 
 # Minimum fuzzy-search score to consider two memories "similar enough" to
 # stack revisions on the same item instead of creating a new one.
-_STACK_SIMILARITY_THRESHOLD = 0.85
+_STACK_SIMILARITY_THRESHOLD = 0.92
 
 
 def _find_similar_item(
