@@ -996,19 +996,24 @@ class UniversalMemoryManager:
         if graph_augmented and self.graph_augmentation_config is not None:
             gr = self._get_graph_recall()
             if gr is not None:
-                return await gr.recall(
+                # Graph augmentation uses lightweight recall (no siblings/
+                # artifacts) internally so reformulated queries don't
+                # duplicate expensive work.  Sibling enrichment runs once
+                # on the final merged set.
+                memories = await gr.recall(
                     query,
                     limit=limit,
                     space_paths=space_paths,
                     memory_types=memory_types,
                 )
+                return await self._enrich_with_siblings(memories, query)
 
         return await self._base_recall(
             query, limit=limit, space_paths=space_paths,
             memory_types=memory_types,
         )
 
-    async def _base_recall(
+    async def _lightweight_recall(
         self,
         query: str,
         *,
@@ -1016,7 +1021,12 @@ class UniversalMemoryManager:
         space_paths: Optional[List[str]] = None,
         memory_types: Optional[List[str]] = None,
     ) -> List[Dict[str, Any]]:
-        """Core vector/fulltext recall without graph augmentation."""
+        """Fast recall: server search + basic metadata only.
+
+        Skips sibling enrichment and artifact loading so it can be used
+        as the inner ``recall_fn`` for graph-augmented recall without
+        duplicating expensive work across reformulated queries.
+        """
         if not self.memory_retrieve:
             return []
 
@@ -1033,7 +1043,7 @@ class UniversalMemoryManager:
         result = await _maybe_await(self.memory_retrieve, **kwargs)
 
         if isinstance(result, dict) and "error" in result:
-            logger.warning("_base_recall: retrieve returned error: %s", result["error"])
+            logger.warning("_lightweight_recall: retrieve returned error: %s", result["error"])
             return []
 
         if isinstance(result, dict) and "revision_krefs" in result:
@@ -1041,11 +1051,10 @@ class UniversalMemoryManager:
             item_krefs = result.get("item_krefs", [])
             scores = result.get("scores", [])
 
-            # Fetch revision metadata concurrently so the LLM gets
-            # usable content (title, summary, type) instead of bare krefs.
-            _load_arts = self.recall_mode == "full"
+            # Fetch basic revision metadata (title, summary, type) —
+            # no artifacts, no siblings.
             meta_tasks = [
-                self._fetch_revision_metadata(kref, load_artifacts=_load_arts)
+                self._fetch_revision_metadata(kref, load_artifacts=False)
                 for kref in revision_krefs
             ]
             meta_results = await asyncio.gather(*meta_tasks)
@@ -1055,24 +1064,77 @@ class UniversalMemoryManager:
                 entry: Dict[str, Any] = {"kref": kref}
                 if i < len(scores):
                     entry["score"] = scores[i]
-                entry.update(meta)
-
-                # Unfold sibling revisions for stacked items, filtered
-                # by relevance to the original query so only the most
-                # pertinent conversation segments reach the LLM.
                 if i < len(item_krefs):
-                    siblings = await self._fetch_sibling_revision_summaries(
-                        item_krefs[i], kref, query=query,
-                        load_artifacts=(self.recall_mode == "full"),
-                    )
-                    if siblings:
-                        entry["sibling_revisions"] = siblings
-
+                    entry["_item_kref"] = item_krefs[i]
+                entry.update(meta)
                 enriched.append(entry)
             return enriched
         if isinstance(result, list):
             return result
         return []
+
+    async def _enrich_with_siblings(
+        self,
+        memories: List[Dict[str, Any]],
+        query: str,
+    ) -> List[Dict[str, Any]]:
+        """Add sibling revisions and artifact content to pre-recalled memories.
+
+        Runs once on the final merged set after graph augmentation has
+        deduplicated results, so sibling enrichment and LLM reranking
+        happen exactly once per unique item.
+        """
+        _load_arts = self.recall_mode == "full"
+
+        for mem in memories:
+            item_kref = mem.pop("_item_kref", "")
+            if not item_kref:
+                # Graph-augmented results from edge traversal don't
+                # have _item_kref — skip sibling enrichment for them.
+                continue
+
+            # Load artifact for the primary revision if in full mode.
+            if _load_arts and "content" not in mem:
+                kref = mem.get("kref", "")
+                if kref:
+                    try:
+                        enriched_meta = await self._fetch_revision_metadata(
+                            kref, load_artifacts=True,
+                        )
+                        if "content" in enriched_meta:
+                            mem["content"] = enriched_meta["content"]
+                            mem["artifact_name"] = enriched_meta.get("artifact_name", "")
+                            mem["artifact_location"] = enriched_meta.get("artifact_location", "")
+                    except Exception:
+                        pass
+
+            siblings = await self._fetch_sibling_revision_summaries(
+                item_kref, mem.get("kref", ""), query=query,
+                load_artifacts=_load_arts,
+            )
+            if siblings:
+                mem["sibling_revisions"] = siblings
+
+        return memories
+
+    async def _base_recall(
+        self,
+        query: str,
+        *,
+        limit: int = 5,
+        space_paths: Optional[List[str]] = None,
+        memory_types: Optional[List[str]] = None,
+    ) -> List[Dict[str, Any]]:
+        """Core vector/fulltext recall without graph augmentation.
+
+        Performs lightweight recall then enriches with siblings in one
+        pass.  Used for non-graph-augmented path.
+        """
+        memories = await self._lightweight_recall(
+            query, limit=limit, space_paths=space_paths,
+            memory_types=memory_types,
+        )
+        return await self._enrich_with_siblings(memories, query)
 
     def _get_graph_recall(self) -> Optional[Any]:
         """Lazily create the GraphAugmentedRecall instance."""
@@ -1102,7 +1164,7 @@ class UniversalMemoryManager:
             self._graph_recall = GraphAugmentedRecall(
                 adapter=adapter,
                 model=model,
-                recall_fn=self._base_recall,
+                recall_fn=self._lightweight_recall,
                 config=self.graph_augmentation_config,
             )
             return self._graph_recall
