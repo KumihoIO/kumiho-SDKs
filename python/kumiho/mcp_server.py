@@ -1172,8 +1172,8 @@ def tool_get_provenance_summary(
                         "role": "dependency",
                         "params": params
                     })
-            except:
-                pass # Skip if not found or error
+            except Exception as exc:
+                logger.debug("Skipping dependency %s: %s", kref.uri, exc)
 
         return {
             "revision_kref": revision_kref,

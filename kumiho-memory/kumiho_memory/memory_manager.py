@@ -250,8 +250,12 @@ class UniversalMemoryManager:
                     resolved_session_id,
                     {"user_id": user_id, "context": context},
                 )
-            except Exception:
-                pass  # Best-effort; space derivation falls back to topic hint
+            except Exception as exc:
+                logger.warning(
+                    "Failed to set session metadata for %s: %s — "
+                    "consolidation space derivation may fall back to topic hint",
+                    resolved_session_id, exc,
+                )
 
         return {
             "success": True,
@@ -462,15 +466,32 @@ class UniversalMemoryManager:
                         if session_context
                         else session_user_id
                     )
-            except Exception:
-                pass  # Fall back to topic-based hint
+            except Exception as exc:
+                logger.warning(
+                    "Failed to load session metadata for %s: %s — "
+                    "falling back to topic-based hint",
+                    session_id, exc,
+                )
 
         # Run summarization (full model) and implications (light model)
         # in parallel — implications don't depend on the summary result.
-        summary_result, implications = await asyncio.gather(
+        # Use return_exceptions so an implication failure doesn't crash
+        # the summarizer (implications are non-critical).
+        _summary_or_exc, _impl_or_exc = await asyncio.gather(
             self.summarizer.summarize_conversation(messages),
             self.summarizer.generate_implications(messages),
+            return_exceptions=True,
         )
+        # Summary is critical — propagate its exception.
+        if isinstance(_summary_or_exc, BaseException):
+            raise _summary_or_exc
+        summary_result = _summary_or_exc
+        # Implications are best-effort — fall back to empty list.
+        if isinstance(_impl_or_exc, BaseException):
+            logger.warning("generate_implications failed: %s", _impl_or_exc)
+            implications: list = []
+        else:
+            implications = _impl_or_exc
         redacted_summary = self.pii_redactor.anonymize_summary(summary_result.get("summary", ""))
 
         # Append extracted events to the summary text so they are
@@ -658,8 +679,8 @@ class UniversalMemoryManager:
                     context=session_context,
                     user_canonical_id=session_user_id,
                 )
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.debug("clear_active_session failed: %s", exc)
 
         return {
             "success": True,
@@ -1057,10 +1078,17 @@ class UniversalMemoryManager:
                 self._fetch_revision_metadata(kref, load_artifacts=False)
                 for kref in revision_krefs
             ]
-            meta_results = await asyncio.gather(*meta_tasks)
+            meta_results = await asyncio.gather(
+                *meta_tasks, return_exceptions=True,
+            )
 
             enriched: List[Dict[str, Any]] = []
             for i, (kref, meta) in enumerate(zip(revision_krefs, meta_results)):
+                if isinstance(meta, BaseException):
+                    logger.warning(
+                        "Failed to fetch metadata for %s: %s", kref, meta,
+                    )
+                    meta = {}
                 entry: Dict[str, Any] = {"kref": kref}
                 if i < len(scores):
                     entry["score"] = scores[i]

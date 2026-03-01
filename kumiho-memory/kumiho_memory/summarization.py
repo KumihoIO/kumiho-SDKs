@@ -3,9 +3,12 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import re
 from typing import Any, Dict, List, Optional, Protocol, runtime_checkable
+
+logger = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
@@ -450,8 +453,8 @@ class MemorySummarizer:
                 for val in parsed.values():
                     if isinstance(val, list):
                         return [str(item).strip() for item in val if item][:5]
-        except Exception:
-            pass  # Non-critical — summary still works without implications
+        except Exception as exc:
+            logger.warning("generate_implications failed: %s", exc)
 
         return []
 
