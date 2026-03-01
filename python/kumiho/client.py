@@ -276,14 +276,26 @@ class _Client:
         if authority_override:
             authority = authority_override
 
+        # HTTP/2 keepalive: prevent idle connections from being silently
+        # closed by intermediate proxies (Cloudflare, Cloud Run, firewalls).
+        keepalive_options = [
+            ("grpc.keepalive_time_ms", 30_000),             # ping every 30s
+            ("grpc.keepalive_timeout_ms", 10_000),          # 10s to respond
+            ("grpc.keepalive_permit_without_calls", True),  # ping even when idle
+            ("grpc.http2.min_time_between_pings_ms", 10_000),
+        ]
+
         if use_tls:
             credentials = self._build_ssl_credentials(ca_bundle)
-            options = [("grpc.default_authority", authority)]
+            options = [
+                ("grpc.default_authority", authority),
+                *keepalive_options,
+            ]
             if ssl_override:
                 options.append(("grpc.ssl_target_name_override", ssl_override))
             channel = grpc.secure_channel(address, credentials, options=options)
         else:
-            channel = grpc.insecure_channel(address)
+            channel = grpc.insecure_channel(address, options=keepalive_options)
 
         if resolved_token:
             metadata.append(("authorization", f"Bearer {resolved_token}"))
