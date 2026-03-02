@@ -193,7 +193,12 @@ def _get_machine_id() -> str:
 def _derive_cache_key() -> bytes:
     """Derive an encryption key from machine ID + user context."""
     machine_id = _get_machine_id()
-    user_context = f"{os.getlogin() if hasattr(os, 'getlogin') else ''}{os.getuid() if hasattr(os, 'getuid') else ''}"
+    try:
+        login = os.getlogin()
+    except OSError:
+        login = ""
+    uid = str(os.getuid()) if hasattr(os, "getuid") else ""
+    user_context = f"{login}{uid}"
     key_material = f"kumiho-discovery-cache-v1:{machine_id}:{user_context}"
     return hashlib.sha256(key_material.encode()).digest()
 
