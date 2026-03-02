@@ -286,6 +286,20 @@ def tool_memory_store_execution(args: Dict[str, Any]) -> Dict[str, Any]:
 def tool_memory_dream_state(args: Dict[str, Any]) -> Dict[str, Any]:
     """Run a Dream State memory consolidation cycle."""
     from kumiho_memory import DreamState
+    from kumiho_memory.summarization import MemorySummarizer
+
+    # Build a summarizer with explicit model config if provided,
+    # otherwise let DreamState use its default (env-var based).
+    summarizer = None
+    provider = args.get("provider")
+    model = args.get("model")
+    api_key = args.get("api_key")
+    if provider or model or api_key:
+        summarizer = MemorySummarizer(
+            provider=provider,
+            model=model,
+            api_key=api_key,
+        )
 
     ds = DreamState(
         project=args.get("project", "CognitiveMemory"),
@@ -293,6 +307,7 @@ def tool_memory_dream_state(args: Dict[str, Any]) -> Dict[str, Any]:
         dry_run=args.get("dry_run", False),
         max_deprecation_ratio=args.get("max_deprecation_ratio", 0.5),
         allow_published_deprecation=args.get("allow_published_deprecation", False),
+        summarizer=summarizer,
     )
     return asyncio.run(ds.run())
 
@@ -687,6 +702,19 @@ MEMORY_TOOLS: List[Dict[str, Any]] = [
                     "type": "boolean",
                     "default": False,
                     "description": "Allow deprecation of published items (use with caution).",
+                },
+                "provider": {
+                    "type": "string",
+                    "enum": ["openai", "anthropic"],
+                    "description": "LLM provider for assessment. Falls back to KUMIHO_LLM_PROVIDER env var if not set.",
+                },
+                "model": {
+                    "type": "string",
+                    "description": "LLM model name for assessment. Falls back to KUMIHO_LLM_MODEL env var if not set.",
+                },
+                "api_key": {
+                    "type": "string",
+                    "description": "LLM API key. Falls back to KUMIHO_LLM_API_KEY env var if not set.",
                 },
             },
         },
