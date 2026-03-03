@@ -1,0 +1,32 @@
+# kumiho-config.cmake
+# Config file for the Kumiho C++ SDK
+#
+# This file is used by CMake's find_package() to locate the Kumiho library.
+#
+# Usage:
+#   find_package(kumiho REQUIRED)
+#   target_link_libraries(my_app PRIVATE kumiho::kumiho)
+#
+# Variables defined by this module:
+#   kumiho_FOUND          - TRUE if the library was found
+#   kumiho_INCLUDE_DIRS   - Include directories for the library
+#   kumiho_LIBRARIES      - Libraries to link against
+#   kumiho_VERSION        - Version of the library
+
+@PACKAGE_INIT@
+
+include(CMakeFindDependencyMacro)
+
+# Find required dependencies
+find_dependency(gRPC CONFIG REQUIRED)
+find_dependency(Protobuf CONFIG REQUIRED)
+
+# Include the targets file
+include("${CMAKE_CURRENT_LIST_DIR}/kumiho-targets.cmake")
+
+# Set convenience variables
+set(kumiho_INCLUDE_DIRS "@PACKAGE_INCLUDE_INSTALL_DIR@")
+set(kumiho_LIBRARIES kumiho::kumiho)
+
+# Check that all required components are found
+check_required_components(kumiho)

@@ -1,0 +1,37 @@
+{
+  "$schema": "https://raw.githubusercontent.com/microsoft/vcpkg-tool/main/docs/vcpkg.schema.json",
+  "name": "kumiho-cpp",
+  "version": "1.0.0",
+  "description": "C++ client library for the Kumiho asset management and versioning platform",
+  "homepage": "https://github.com/kumihoclouds/kumiho-cpp",
+  "license": "Apache-2.0",
+  "supports": "!uwp",
+  "dependencies": [
+    {
+      "name": "grpc",
+      "version>=": "1.50.1"
+    },
+    {
+      "name": "protobuf",
+      "version>=": "3.21.12"
+    },
+    {
+      "name": "gtest",
+      "version>=": "1.12.0"
+    },
+    "curl",
+    "nlohmann-json"
+  ],
+  "features": {
+    "tests": {
+      "description": "Build unit and integration tests",
+      "dependencies": [
+        "gtest"
+      ]
+    },
+    "docs": {
+      "description": "Build API documentation (requires Doxygen)"
+    }
+  },
+  "builtin-baseline": "50c0cb48a0cf2f6fc5c7b2c0d2bafbe26d0a7ca2"
+}
