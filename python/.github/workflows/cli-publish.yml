@@ -1,0 +1,108 @@
+# Kumiho CLI - PyPI Publishing Workflow
+#
+# This workflow:
+# 1. Runs tests for kumiho-cli
+# 2. Publishes package to PyPI (on release tags)
+
+name: Publish kumiho-cli
+
+on:
+  push:
+    tags:
+      - 'cli-v*'  # Trigger on tags like cli-v1.0.0
+  workflow_dispatch:  # Allow manual trigger
+
+permissions:
+  contents: read
+
+env:
+  PYTHON_VERSION: "3.11"
+
+jobs:
+  # ===========================================================================
+  # Test kumiho-cli
+  # ===========================================================================
+  test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: kumiho-cli
+
+    strategy:
+      matrix:
+        python-version: ["3.8", "3.9", "3.10", "3.11", "3.12"]
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      - name: Run tests
+        run: pytest tests/ -v
+
+      - name: Type check with mypy
+        run: mypy kumiho_cli/
+        continue-on-error: true
+
+  # ===========================================================================
+  # Build & Publish to PyPI
+  # ===========================================================================
+  publish-pypi:
+    needs: test
+    # Only publish on version tags
+    if: startsWith(github.ref, 'refs/tags/cli-v')
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: kumiho-cli
+
+    environment:
+      name: pypi-cli
+      url: https://pypi.org/project/kumiho-cli/
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install build dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install build twine toml
+
+      - name: Verify version matches tag
+        run: |
+          TAG_VERSION="${GITHUB_REF#refs/tags/cli-v}"
+          PKG_VERSION=$(python -c "import toml; print(toml.load('pyproject.toml')['project']['version'])")
+          echo "Tag version: $TAG_VERSION"
+          echo "Package version: $PKG_VERSION"
+          if [ "$TAG_VERSION" != "$PKG_VERSION" ]; then
+            echo "❌ Version mismatch! Tag: $TAG_VERSION, Package: $PKG_VERSION"
+            exit 1
+          fi
+          echo "✅ Version verified: $PKG_VERSION"
+
+      - name: Build package
+        run: python -m build
+
+      - name: Check package
+        run: twine check dist/*
+
+      - name: Publish to PyPI
+        env:
+          TWINE_USERNAME: __token__
+          TWINE_PASSWORD: ${{ secrets.PYPI_CLI_TOKEN }}
+        run: twine upload dist/*

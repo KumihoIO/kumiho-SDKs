@@ -1,0 +1,130 @@
+# Kumiho Python SDK - Documentation Workflow
+#
+# This workflow:
+# 1. Builds Sphinx documentation with version from kumiho.__version__
+# 2. Deploys documentation to docs.kumiho.io/python
+#
+# For PyPI publishing, see sdk-publish.yml (triggered by sdk-v* tags)
+
+name: Publish docs
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'python/**'
+      - 'docs/**'
+      - '.github/workflows/docs-publish.yml'
+  workflow_dispatch:  # Allow manual trigger
+
+permissions:
+  contents: read
+
+# Allow only one concurrent deployment
+concurrency:
+  group: "docs-python"
+  cancel-in-progress: false
+
+env:
+  PYTHON_VERSION: "3.11"
+
+jobs:
+  # ===========================================================================
+  # Build Documentation
+  # ===========================================================================
+  build-docs:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: python
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+          cache-dependency-path: python/requirements.txt
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install -r docs/requirements.txt
+
+      - name: Extract version from kumiho package
+        id: get_version
+        run: |
+          VERSION=$(python -c "import kumiho; print(kumiho.__version__)")
+          echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
+          echo "Building docs for Kumiho Python SDK v$VERSION"
+
+      - name: Update conf.py with version
+        run: |
+          # Ensure conf.py uses the package version dynamically
+          cd docs
+          python -c "
+          import sys
+          sys.path.insert(0, '..')
+          import kumiho
+          print(f'Documentation version: {kumiho.__version__}')
+          "
+
+      - name: Build Sphinx documentation
+        run: |
+          cd docs
+          # Note: Not using -W (warnings as errors) because duplicate object
+          # warnings are expected for re-exported symbols in __init__.py
+          make html
+        env:
+          SPHINXBUILD: sphinx-build
+
+      - name: Add version badge to index
+        run: |
+          VERSION=${{ steps.get_version.outputs.VERSION }}
+          # Add a version indicator to the built docs
+          echo "Kumiho Python SDK v$VERSION" > docs/_build/html/VERSION.txt
+
+      - name: Upload docs artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: sphinx-docs
+          path: python/docs/_build/html
+          retention-days: 7
+
+    outputs:
+      version: ${{ steps.get_version.outputs.VERSION }}
+
+  # ===========================================================================
+  # Deploy Documentation to docs.kumiho.io/python
+  # ===========================================================================
+  deploy-docs:
+    needs: build-docs
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    environment:
+      name: docs
+      url: https://docs.kumiho.io/python
+
+    steps:
+      - name: Download documentation artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: sphinx-docs
+          path: docs-html
+
+      - name: Deploy to docs.kumiho.io repository
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          # Deploy to kumihoclouds/docs.kumiho.io repo
+          deploy_key: ${{ secrets.DOCS_DEPLOY_KEY }}
+          external_repository: kumihoclouds/docs.kumiho.io
+          publish_branch: main
+          publish_dir: docs-html
+          destination_dir: python
+          keep_files: true  # Don't delete other SDK docs (cpp, dart, etc.)
+          commit_message: "docs(python): update to v${{ needs.build-docs.outputs.version }}"
