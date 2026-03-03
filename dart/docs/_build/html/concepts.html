@@ -1,0 +1,439 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="./">
+<head>
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Core Concepts &mdash; Kumiho Dart SDK v0.2.0</title>
+      <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=80d5e7a1" />
+      <link rel="stylesheet" type="text/css" href="_static/css/theme.css?v=e59714d7" />
+
+  
+      <script src="_static/jquery.js?v=5d32c60e"></script>
+      <script src="_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="_static/documentation_options.js?v=938c9ccc"></script>
+      <script src="_static/doctools.js?v=9bcbadda"></script>
+      <script src="_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script src="_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="genindex.html" />
+    <link rel="search" title="Search" href="search.html" />
+    <link rel="next" title="Authentication" href="authentication.html" />
+    <link rel="prev" title="Getting Started" href="getting-started.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="index.html" class="icon icon-home">
+            Kumiho Dart SDK
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">User Guide</span></p>
+<ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="getting-started.html">Getting Started</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="getting-started.html#installation">Installation</a></li>
+<li class="toctree-l2"><a class="reference internal" href="getting-started.html#authentication">Authentication</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="getting-started.html#using-the-cli">Using the CLI</a></li>
+<li class="toctree-l3"><a class="reference internal" href="getting-started.html#programmatic-authentication">Programmatic Authentication</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="getting-started.html#basic-concepts">Basic Concepts</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="getting-started.html#projects">Projects</a></li>
+<li class="toctree-l3"><a class="reference internal" href="getting-started.html#spaces">Spaces</a></li>
+<li class="toctree-l3"><a class="reference internal" href="getting-started.html#items">Items</a></li>
+<li class="toctree-l3"><a class="reference internal" href="getting-started.html#revisions">Revisions</a></li>
+<li class="toctree-l3"><a class="reference internal" href="getting-started.html#artifacts">Artifacts</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="getting-started.html#why-kumiho">Why Kumiho?</a></li>
+<li class="toctree-l2"><a class="reference internal" href="getting-started.html#next-steps">Next Steps</a></li>
+</ul>
+</li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">Core Concepts</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="#graph-native-architecture">Graph-Native Architecture</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#entity-hierarchy">Entity Hierarchy</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#project">Project</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#space">Space</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#item">Item</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#revision">Revision</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#artifact">Artifact</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#bundle">Bundle</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="#kref-uris">Kref URIs</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#edges-relationships">Edges (Relationships)</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#byo-storage-philosophy">BYO Storage Philosophy</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#multi-tenant-architecture">Multi-Tenant Architecture</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="authentication.html">Authentication</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="authentication.html#overview">Overview</a></li>
+<li class="toctree-l2"><a class="reference internal" href="authentication.html#token-sources">Token Sources</a></li>
+<li class="toctree-l2"><a class="reference internal" href="authentication.html#cli-authentication">CLI Authentication</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="authentication.html#cached-credentials">Cached Credentials</a></li>
+<li class="toctree-l3"><a class="reference internal" href="authentication.html#refreshing-tokens">Refreshing Tokens</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="authentication.html#programmatic-authentication">Programmatic Authentication</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="authentication.html#with-explicit-token">With Explicit Token</a></li>
+<li class="toctree-l3"><a class="reference internal" href="authentication.html#with-environment-variables">With Environment Variables</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="authentication.html#environment-variables">Environment Variables</a></li>
+<li class="toctree-l2"><a class="reference internal" href="authentication.html#token-refresh">Token Refresh</a></li>
+<li class="toctree-l2"><a class="reference internal" href="authentication.html#manual-token-updates">Manual Token Updates</a></li>
+<li class="toctree-l2"><a class="reference internal" href="authentication.html#flutter-authentication">Flutter Authentication</a></li>
+<li class="toctree-l2"><a class="reference internal" href="authentication.html#error-handling">Error Handling</a></li>
+<li class="toctree-l2"><a class="reference internal" href="authentication.html#security-best-practices">Security Best Practices</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="usage_guide.html">Usage Guide</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="usage_guide.html#two-layers-of-api">Two Layers of API</a></li>
+<li class="toctree-l2"><a class="reference internal" href="usage_guide.html#krefs">Krefs</a></li>
+<li class="toctree-l2"><a class="reference internal" href="usage_guide.html#working-with-projects">Working with Projects</a></li>
+<li class="toctree-l2"><a class="reference internal" href="usage_guide.html#spaces-organizing-assets">Spaces: Organizing Assets</a></li>
+<li class="toctree-l2"><a class="reference internal" href="usage_guide.html#items-and-revisions">Items and Revisions</a></li>
+<li class="toctree-l2"><a class="reference internal" href="usage_guide.html#bundles">Bundles</a></li>
+<li class="toctree-l2"><a class="reference internal" href="usage_guide.html#events-and-tenants">Events and Tenants</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="configuration.html">Configuration and Operations</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="configuration.html#connection-settings">Connection Settings</a></li>
+<li class="toctree-l2"><a class="reference internal" href="configuration.html#call-options-and-metadata">Call Options and Metadata</a></li>
+<li class="toctree-l2"><a class="reference internal" href="configuration.html#lifecycle">Lifecycle</a></li>
+<li class="toctree-l2"><a class="reference internal" href="configuration.html#error-handling">Error Handling</a></li>
+</ul>
+</li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="index.html">Kumiho Dart SDK</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content style-external-links">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="index.html" class="icon icon-home" aria-label="Home"></a></li>
+      <li class="breadcrumb-item active">Core Concepts</li>
+      <li class="wy-breadcrumbs-aside">
+            <a href="_sources/concepts.md.txt" rel="nofollow"> View page source</a>
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <section id="core-concepts">
+<h1>Core Concepts<a class="headerlink" href="#core-concepts" title="Link to this heading"></a></h1>
+<p>This guide explains the core concepts of Kumiho Cloud and how they relate to the Dart SDK.</p>
+<section id="graph-native-architecture">
+<h2>Graph-Native Architecture<a class="headerlink" href="#graph-native-architecture" title="Link to this heading"></a></h2>
+<p>Kumiho Cloud is built on a <strong>graph database (Neo4j)</strong>, which means relationships between assets are first-class citizens. Unlike traditional file-based systems, Kumiho tracks:</p>
+<ul class="simple">
+<li><p><strong>Dependencies</strong>: What assets does this asset depend on?</p></li>
+<li><p><strong>Lineage</strong>: What was this asset created from?</p></li>
+<li><p><strong>Usage</strong>: Where is this asset used?</p></li>
+</ul>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span>┌───────────────────────────────────────────────────────┐
+│                         PROJECT                       │
+│  ┌─────────────────────────────────────────────────┐  │
+│  │                        SPACE                    │  │
+│  │  ┌─────────┐      ┌─────────┐     ┌─────────┐   │  │
+│  │  │  ITEM   │────▶│  ITEM   │────▶│  ITEM   │   │  │
+│  │  └────┬────┘      └────┬────┘     └────┬────┘   │  │
+│  │       │                │               │        │  │
+│  │  ┌────▼────┐      ┌────▼────┐     ┌────▼────┐   │  │
+│  │  │REVISION │      │REVISION │     │REVISION │   │  │
+│  │  │   v1    │      │   v1    │     │   v1    │   │  │
+│  │  └────┬────┘      └────┬────┘     └────┬────┘   │  │
+│  │       │                │               │        │  │
+│  │  ┌────▼────┐      ┌────▼────┐     ┌────▼────┐   │  │
+│  │  │ARTIFACT │      │ARTIFACT │     │ARTIFACT │   │  │
+│  │  └─────────┘      └─────────┘     └─────────┘   │  │
+│  └─────────────────────────────────────────────────┘  │
+└───────────────────────────────────────────────────────┘
+</pre></div>
+</div>
+</section>
+<section id="entity-hierarchy">
+<h2>Entity Hierarchy<a class="headerlink" href="#entity-hierarchy" title="Link to this heading"></a></h2>
+<section id="project">
+<h3>Project<a class="headerlink" href="#project" title="Link to this heading"></a></h3>
+<p>A <strong>Project</strong> is the top-level container representing a production, show, or workspace. Each project is isolated within a tenant’s graph database.</p>
+<div class="highlight-dart notranslate"><div class="highlight"><pre><span></span><span class="kd">final</span><span class="w"> </span><span class="n">project</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="kd">await</span><span class="w"> </span><span class="n">client</span><span class="p">.</span><span class="n">createProject</span><span class="p">(</span>
+<span class="w">  </span><span class="s1">&#39;sci-fi-short&#39;</span><span class="p">,</span>
+<span class="w">  </span><span class="nl">description:</span><span class="w"> </span><span class="s1">&#39;Sci-fi short film VFX assets&#39;</span><span class="p">,</span>
+<span class="p">);</span>
+</pre></div>
+</div>
+<p><strong>Key attributes:</strong></p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">name</span></code>: URL-safe identifier (used in Kref URIs)</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">description</span></code>: Human-readable description</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">kref</span></code>: Reference URI (<code class="docutils literal notranslate"><span class="pre">kref://sci-fi-short</span></code>)</p></li>
+</ul>
+</section>
+<section id="space">
+<h3>Space<a class="headerlink" href="#space" title="Link to this heading"></a></h3>
+<p>A <strong>Space</strong> organizes assets within a project. Common groupings include:</p>
+<ul class="simple">
+<li><p>By type: <code class="docutils literal notranslate"><span class="pre">characters</span></code>, <code class="docutils literal notranslate"><span class="pre">environments</span></code>, <code class="docutils literal notranslate"><span class="pre">props</span></code></p></li>
+<li><p>By episode: <code class="docutils literal notranslate"><span class="pre">ep01</span></code>, <code class="docutils literal notranslate"><span class="pre">ep02</span></code></p></li>
+<li><p>By department: <code class="docutils literal notranslate"><span class="pre">modeling</span></code>, <code class="docutils literal notranslate"><span class="pre">animation</span></code>, <code class="docutils literal notranslate"><span class="pre">lighting</span></code></p></li>
+</ul>
+<div class="highlight-dart notranslate"><div class="highlight"><pre><span></span><span class="kd">final</span><span class="w"> </span><span class="n">space</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="kd">await</span><span class="w"> </span><span class="n">client</span><span class="p">.</span><span class="n">createSpace</span><span class="p">(</span><span class="s1">&#39;/sci-fi-short&#39;</span><span class="p">,</span><span class="w"> </span><span class="s1">&#39;characters&#39;</span><span class="p">);</span>
+</pre></div>
+</div>
+<p><strong>Key attributes:</strong></p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">name</span></code>: URL-safe identifier</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">path</span></code>: Full path in the hierarchy (e.g., <code class="docutils literal notranslate"><span class="pre">/sci-fi-short/characters</span></code>)</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">metadata</span></code>: Custom key-value metadata</p></li>
+</ul>
+</section>
+<section id="item">
+<h3>Item<a class="headerlink" href="#item" title="Link to this heading"></a></h3>
+<p>An <strong>Item</strong> represents a single creative asset or AI artifact. Items have a kind that indicates what type of asset they are.</p>
+<div class="highlight-dart notranslate"><div class="highlight"><pre><span></span><span class="kd">final</span><span class="w"> </span><span class="n">item</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="kd">await</span><span class="w"> </span><span class="n">client</span><span class="p">.</span><span class="n">createItem</span><span class="p">(</span>
+<span class="w">  </span><span class="s1">&#39;/sci-fi-short/characters&#39;</span><span class="p">,</span>
+<span class="w">  </span><span class="s1">&#39;hero-robot&#39;</span><span class="p">,</span>
+<span class="w">  </span><span class="s1">&#39;model&#39;</span><span class="p">,</span>
+<span class="p">);</span>
+</pre></div>
+</div>
+<p><strong>Common item kinds:</strong></p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">model</span></code>: 3D models</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">texture</span></code>: Textures and materials</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">animation</span></code>: Animation data</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">rig</span></code>: Character rigs</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">composite</span></code>: Compositing setups</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">ai_model</span></code>: Trained AI models</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">dataset</span></code>: Training datasets</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">prompt</span></code>: AI prompts</p></li>
+</ul>
+<p><strong>Key attributes:</strong></p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">name</span></code>: URL-safe identifier</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">kind</span></code>: Category of the asset</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">kref</span></code>: Reference URI (<code class="docutils literal notranslate"><span class="pre">kref://sci-fi-short/characters/hero-robot.model</span></code>)</p></li>
+</ul>
+</section>
+<section id="revision">
+<h3>Revision<a class="headerlink" href="#revision" title="Link to this heading"></a></h3>
+<p>A <strong>Revision</strong> represents a specific iteration of an item. Revisions are immutable once published.</p>
+<div class="highlight-dart notranslate"><div class="highlight"><pre><span></span><span class="c1">// Create a revision</span>
+<span class="kd">final</span><span class="w"> </span><span class="n">revision</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="kd">await</span><span class="w"> </span><span class="n">client</span><span class="p">.</span><span class="n">createRevision</span><span class="p">(</span><span class="n">item</span><span class="p">.</span><span class="n">kref</span><span class="p">);</span>
+
+<span class="c1">// Create a revision with metadata</span>
+<span class="kd">final</span><span class="w"> </span><span class="n">revision</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="kd">await</span><span class="w"> </span><span class="n">client</span><span class="p">.</span><span class="n">createRevision</span><span class="p">(</span>
+<span class="w">  </span><span class="n">item</span><span class="p">.</span><span class="n">kref</span><span class="p">,</span>
+<span class="w">  </span><span class="nl">metadata:</span><span class="w"> </span><span class="p">{</span><span class="s1">&#39;artist&#39;</span><span class="o">:</span><span class="w"> </span><span class="s1">&#39;john&#39;</span><span class="p">,</span><span class="w"> </span><span class="s1">&#39;status&#39;</span><span class="o">:</span><span class="w"> </span><span class="s1">&#39;wip&#39;</span><span class="p">},</span>
+<span class="p">);</span>
+</pre></div>
+</div>
+<p><strong>Key attributes:</strong></p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">revisionNumber</span></code>: Sequential version number</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">metadata</span></code>: Custom key-value metadata</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">tags</span></code>: Applied tags (e.g., <code class="docutils literal notranslate"><span class="pre">latest</span></code>, <code class="docutils literal notranslate"><span class="pre">published</span></code>, <code class="docutils literal notranslate"><span class="pre">approved</span></code>)</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">kref</span></code>: Reference URI (<code class="docutils literal notranslate"><span class="pre">kref://sci-fi-short/characters/hero-robot.model?r=1</span></code>)</p></li>
+</ul>
+</section>
+<section id="artifact">
+<h3>Artifact<a class="headerlink" href="#artifact" title="Link to this heading"></a></h3>
+<p>An <strong>Artifact</strong> is a file reference attached to a revision. Kumiho follows a BYO-storage philosophy — files stay on your storage, only paths are tracked.</p>
+<div class="highlight-dart notranslate"><div class="highlight"><pre><span></span><span class="kd">await</span><span class="w"> </span><span class="n">client</span><span class="p">.</span><span class="n">createArtifact</span><span class="p">(</span>
+<span class="w">  </span><span class="n">revision</span><span class="p">.</span><span class="n">kref</span><span class="p">,</span>
+<span class="w">  </span><span class="s1">&#39;mesh&#39;</span><span class="p">,</span>
+<span class="w">  </span><span class="s1">&#39;/mnt/assets/hero-robot.fbx&#39;</span><span class="p">,</span>
+<span class="p">);</span>
+
+<span class="kd">await</span><span class="w"> </span><span class="n">client</span><span class="p">.</span><span class="n">createArtifact</span><span class="p">(</span>
+<span class="w">  </span><span class="n">revision</span><span class="p">.</span><span class="n">kref</span><span class="p">,</span>
+<span class="w">  </span><span class="s1">&#39;textures&#39;</span><span class="p">,</span>
+<span class="w">  </span><span class="s1">&#39;s3://bucket/hero-robot/textures.tar&#39;</span><span class="p">,</span>
+<span class="p">);</span>
+</pre></div>
+</div>
+<p><strong>Key attributes:</strong></p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">name</span></code>: Artifact identifier</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">location</span></code>: File path or URI (file://, s3://, smb://, etc.)</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">kref</span></code>: Reference URI</p></li>
+</ul>
+</section>
+<section id="bundle">
+<h3>Bundle<a class="headerlink" href="#bundle" title="Link to this heading"></a></h3>
+<p>A <strong>Bundle</strong> groups related items or revisions together, useful for releases or delivery packages.</p>
+<div class="highlight-dart notranslate"><div class="highlight"><pre><span></span><span class="kd">final</span><span class="w"> </span><span class="n">bundle</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="kd">await</span><span class="w"> </span><span class="n">client</span><span class="p">.</span><span class="n">createBundle</span><span class="p">(</span>
+<span class="w">  </span><span class="s1">&#39;/sci-fi-short&#39;</span><span class="p">,</span>
+<span class="w">  </span><span class="s1">&#39;release-v1&#39;</span><span class="p">,</span>
+<span class="w">  </span><span class="nl">metadata:</span><span class="w"> </span><span class="p">{</span><span class="s1">&#39;channel&#39;</span><span class="o">:</span><span class="w"> </span><span class="s1">&#39;beta&#39;</span><span class="p">},</span>
+<span class="p">);</span>
+
+<span class="kd">await</span><span class="w"> </span><span class="n">client</span><span class="p">.</span><span class="n">addBundleMember</span><span class="p">(</span><span class="n">bundle</span><span class="p">.</span><span class="n">kref</span><span class="p">,</span><span class="w"> </span><span class="n">item</span><span class="p">.</span><span class="n">kref</span><span class="p">);</span>
+<span class="kd">await</span><span class="w"> </span><span class="n">client</span><span class="p">.</span><span class="n">addBundleMember</span><span class="p">(</span><span class="n">bundle</span><span class="p">.</span><span class="n">kref</span><span class="p">,</span><span class="w"> </span><span class="n">rigRevision</span><span class="p">.</span><span class="n">kref</span><span class="p">);</span>
+</pre></div>
+</div>
+</section>
+</section>
+<section id="kref-uris">
+<h2>Kref URIs<a class="headerlink" href="#kref-uris" title="Link to this heading"></a></h2>
+<p>Every object in Kumiho is addressable by a URI-style <strong>Kref</strong> (Kumiho Reference):</p>
+<table class="docutils align-default">
+<thead>
+<tr class="row-odd"><th class="head"><p>Entity</p></th>
+<th class="head"><p>Format</p></th>
+<th class="head"><p>Example</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p>Project</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">kref://project</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">kref://sci-fi-short</span></code></p></td>
+</tr>
+<tr class="row-odd"><td><p>Space</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">kref://project/space</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">kref://sci-fi-short/characters</span></code></p></td>
+</tr>
+<tr class="row-even"><td><p>Item</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">kref://project/space/item.kind</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">kref://sci-fi-short/characters/hero.model</span></code></p></td>
+</tr>
+<tr class="row-odd"><td><p>Revision</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">kref://project/space/item.kind?r=N</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">kref://sci-fi-short/characters/hero.model?r=1</span></code></p></td>
+</tr>
+<tr class="row-even"><td><p>Artifact</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">kref://project/space/item.kind?r=N&amp;a=name</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">kref://sci-fi-short/characters/hero.model?r=1&amp;a=mesh</span></code></p></td>
+</tr>
+</tbody>
+</table>
+</section>
+<section id="edges-relationships">
+<h2>Edges (Relationships)<a class="headerlink" href="#edges-relationships" title="Link to this heading"></a></h2>
+<p>Edges represent relationships between revisions. Common edge types include:</p>
+<table class="docutils align-default">
+<thead>
+<tr class="row-odd"><th class="head"><p>Edge Type</p></th>
+<th class="head"><p>Description</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">DEPENDS_ON</span></code></p></td>
+<td><p>Asset requires another asset to function</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">DERIVED_FROM</span></code></p></td>
+<td><p>Asset was created from another asset</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">REFERENCED</span></code></p></td>
+<td><p>Asset references another asset</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">CONTAINS</span></code></p></td>
+<td><p>Asset contains another asset</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">CREATED_FROM</span></code></p></td>
+<td><p>Asset was created using another asset</p></td>
+</tr>
+</tbody>
+</table>
+<div class="highlight-dart notranslate"><div class="highlight"><pre><span></span><span class="c1">// Create a dependency relationship</span>
+<span class="kd">await</span><span class="w"> </span><span class="n">client</span><span class="p">.</span><span class="n">createEdge</span><span class="p">(</span>
+<span class="w">  </span><span class="n">modelRevision</span><span class="p">.</span><span class="n">kref</span><span class="p">,</span>
+<span class="w">  </span><span class="n">textureRevision</span><span class="p">.</span><span class="n">kref</span><span class="p">,</span>
+<span class="w">  </span><span class="n">EdgeType</span><span class="p">.</span><span class="n">dependsOn</span><span class="p">,</span>
+<span class="p">);</span>
+
+<span class="c1">// Analyze impact of changes</span>
+<span class="kd">final</span><span class="w"> </span><span class="n">impact</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="kd">await</span><span class="w"> </span><span class="n">client</span><span class="p">.</span><span class="n">analyzeImpact</span><span class="p">(</span><span class="n">textureRevision</span><span class="p">.</span><span class="n">kref</span><span class="p">);</span>
+</pre></div>
+</div>
+</section>
+<section id="byo-storage-philosophy">
+<h2>BYO Storage Philosophy<a class="headerlink" href="#byo-storage-philosophy" title="Link to this heading"></a></h2>
+<p>Kumiho does <strong>not</strong> store your files. Instead, it tracks references (artifacts) to files that remain on your storage:</p>
+<ul class="simple">
+<li><p>Local filesystems: <code class="docutils literal notranslate"><span class="pre">file:///path/to/file.fbx</span></code></p></li>
+<li><p>Network shares: <code class="docutils literal notranslate"><span class="pre">smb://server/share/file.fbx</span></code></p></li>
+<li><p>Cloud storage: <code class="docutils literal notranslate"><span class="pre">s3://bucket/path/file.fbx</span></code></p></li>
+</ul>
+<p>This approach provides:</p>
+<ul class="simple">
+<li><p><strong>No egress costs</strong>: Files never leave your infrastructure</p></li>
+<li><p><strong>Flexibility</strong>: Use any storage that works for your pipeline</p></li>
+<li><p><strong>Control</strong>: Keep your data on your own storage solutions</p></li>
+</ul>
+</section>
+<section id="multi-tenant-architecture">
+<h2>Multi-Tenant Architecture<a class="headerlink" href="#multi-tenant-architecture" title="Link to this heading"></a></h2>
+<p>Kumiho Cloud is a multi-tenant SaaS platform:</p>
+<ul class="simple">
+<li><p>Each organization is a <strong>tenant</strong></p></li>
+<li><p>Tenants are isolated in separate Neo4j databases</p></li>
+<li><p>Regional deployment ensures data locality</p></li>
+<li><p>The SDK automatically discovers your tenant’s region</p></li>
+</ul>
+<div class="highlight-dart notranslate"><div class="highlight"><pre><span></span><span class="c1">// SDK handles tenant discovery automatically</span>
+<span class="kd">final</span><span class="w"> </span><span class="n">client</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">KumihoClient</span><span class="p">(</span><span class="nl">host:</span><span class="w"> </span><span class="s1">&#39;api.kumiho.io&#39;</span><span class="p">,</span><span class="w"> </span><span class="nl">port:</span><span class="w"> </span><span class="m">443</span><span class="p">);</span>
+<span class="kd">final</span><span class="w"> </span><span class="n">tenantInfo</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="kd">await</span><span class="w"> </span><span class="n">client</span><span class="p">.</span><span class="n">getTenant</span><span class="p">();</span>
+<span class="n">print</span><span class="p">(</span><span class="s1">&#39;Connected to tenant: </span><span class="si">${</span><span class="n">tenantInfo</span><span class="p">.</span><span class="n">name</span><span class="si">}</span><span class="s1">&#39;</span><span class="p">);</span>
+</pre></div>
+</div>
+</section>
+</section>
+
+
+           </div>
+          </div>
+          <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
+        <a href="getting-started.html" class="btn btn-neutral float-left" title="Getting Started" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+        <a href="authentication.html" class="btn btn-neutral float-right" title="Authentication" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2025, Kumiho Clouds.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

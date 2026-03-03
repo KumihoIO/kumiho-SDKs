@@ -1,0 +1,369 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="./">
+<head>
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Authentication &mdash; Kumiho Dart SDK v0.2.0</title>
+      <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=80d5e7a1" />
+      <link rel="stylesheet" type="text/css" href="_static/css/theme.css?v=e59714d7" />
+
+  
+      <script src="_static/jquery.js?v=5d32c60e"></script>
+      <script src="_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="_static/documentation_options.js?v=938c9ccc"></script>
+      <script src="_static/doctools.js?v=9bcbadda"></script>
+      <script src="_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script src="_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="genindex.html" />
+    <link rel="search" title="Search" href="search.html" />
+    <link rel="next" title="Usage Guide" href="usage_guide.html" />
+    <link rel="prev" title="Core Concepts" href="concepts.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="index.html" class="icon icon-home">
+            Kumiho Dart SDK
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">User Guide</span></p>
+<ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="getting-started.html">Getting Started</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="getting-started.html#installation">Installation</a></li>
+<li class="toctree-l2"><a class="reference internal" href="getting-started.html#authentication">Authentication</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="getting-started.html#using-the-cli">Using the CLI</a></li>
+<li class="toctree-l3"><a class="reference internal" href="getting-started.html#programmatic-authentication">Programmatic Authentication</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="getting-started.html#basic-concepts">Basic Concepts</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="getting-started.html#projects">Projects</a></li>
+<li class="toctree-l3"><a class="reference internal" href="getting-started.html#spaces">Spaces</a></li>
+<li class="toctree-l3"><a class="reference internal" href="getting-started.html#items">Items</a></li>
+<li class="toctree-l3"><a class="reference internal" href="getting-started.html#revisions">Revisions</a></li>
+<li class="toctree-l3"><a class="reference internal" href="getting-started.html#artifacts">Artifacts</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="getting-started.html#why-kumiho">Why Kumiho?</a></li>
+<li class="toctree-l2"><a class="reference internal" href="getting-started.html#next-steps">Next Steps</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="concepts.html">Core Concepts</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="concepts.html#graph-native-architecture">Graph-Native Architecture</a></li>
+<li class="toctree-l2"><a class="reference internal" href="concepts.html#entity-hierarchy">Entity Hierarchy</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="concepts.html#project">Project</a></li>
+<li class="toctree-l3"><a class="reference internal" href="concepts.html#space">Space</a></li>
+<li class="toctree-l3"><a class="reference internal" href="concepts.html#item">Item</a></li>
+<li class="toctree-l3"><a class="reference internal" href="concepts.html#revision">Revision</a></li>
+<li class="toctree-l3"><a class="reference internal" href="concepts.html#artifact">Artifact</a></li>
+<li class="toctree-l3"><a class="reference internal" href="concepts.html#bundle">Bundle</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="concepts.html#kref-uris">Kref URIs</a></li>
+<li class="toctree-l2"><a class="reference internal" href="concepts.html#edges-relationships">Edges (Relationships)</a></li>
+<li class="toctree-l2"><a class="reference internal" href="concepts.html#byo-storage-philosophy">BYO Storage Philosophy</a></li>
+<li class="toctree-l2"><a class="reference internal" href="concepts.html#multi-tenant-architecture">Multi-Tenant Architecture</a></li>
+</ul>
+</li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">Authentication</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="#overview">Overview</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#token-sources">Token Sources</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#cli-authentication">CLI Authentication</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#cached-credentials">Cached Credentials</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#refreshing-tokens">Refreshing Tokens</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="#programmatic-authentication">Programmatic Authentication</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#with-explicit-token">With Explicit Token</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#with-environment-variables">With Environment Variables</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="#environment-variables">Environment Variables</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#token-refresh">Token Refresh</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#manual-token-updates">Manual Token Updates</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#flutter-authentication">Flutter Authentication</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#error-handling">Error Handling</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#security-best-practices">Security Best Practices</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="usage_guide.html">Usage Guide</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="usage_guide.html#two-layers-of-api">Two Layers of API</a></li>
+<li class="toctree-l2"><a class="reference internal" href="usage_guide.html#krefs">Krefs</a></li>
+<li class="toctree-l2"><a class="reference internal" href="usage_guide.html#working-with-projects">Working with Projects</a></li>
+<li class="toctree-l2"><a class="reference internal" href="usage_guide.html#spaces-organizing-assets">Spaces: Organizing Assets</a></li>
+<li class="toctree-l2"><a class="reference internal" href="usage_guide.html#items-and-revisions">Items and Revisions</a></li>
+<li class="toctree-l2"><a class="reference internal" href="usage_guide.html#bundles">Bundles</a></li>
+<li class="toctree-l2"><a class="reference internal" href="usage_guide.html#events-and-tenants">Events and Tenants</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="configuration.html">Configuration and Operations</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="configuration.html#connection-settings">Connection Settings</a></li>
+<li class="toctree-l2"><a class="reference internal" href="configuration.html#call-options-and-metadata">Call Options and Metadata</a></li>
+<li class="toctree-l2"><a class="reference internal" href="configuration.html#lifecycle">Lifecycle</a></li>
+<li class="toctree-l2"><a class="reference internal" href="configuration.html#error-handling">Error Handling</a></li>
+</ul>
+</li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="index.html">Kumiho Dart SDK</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content style-external-links">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="index.html" class="icon icon-home" aria-label="Home"></a></li>
+      <li class="breadcrumb-item active">Authentication</li>
+      <li class="wy-breadcrumbs-aside">
+            <a href="_sources/authentication.md.txt" rel="nofollow"> View page source</a>
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <section id="authentication">
+<h1>Authentication<a class="headerlink" href="#authentication" title="Link to this heading"></a></h1>
+<p>This guide covers authentication methods for the Kumiho Dart SDK.</p>
+<section id="overview">
+<h2>Overview<a class="headerlink" href="#overview" title="Link to this heading"></a></h2>
+<p>Kumiho Cloud uses <strong>Firebase Authentication</strong> for identity management. The authentication flow works as follows:</p>
+<ol class="arabic simple">
+<li><p>User authenticates with Firebase via email/password</p></li>
+<li><p>Firebase issues an ID token</p></li>
+<li><p>SDK exchanges the token with Kumiho Control Plane</p></li>
+<li><p>Control Plane returns tenant info and a region-scoped JWT</p></li>
+<li><p>SDK connects to the appropriate regional server</p></li>
+</ol>
+</section>
+<section id="token-sources">
+<h2>Token Sources<a class="headerlink" href="#token-sources" title="Link to this heading"></a></h2>
+<p>Kumiho authenticates with a Bearer token attached to every gRPC call. The client loads the token in the following order:</p>
+<ol class="arabic simple">
+<li><p>A token provided directly to <code class="docutils literal notranslate"><span class="pre">KumihoClient</span></code> via the <code class="docutils literal notranslate"><span class="pre">token</span></code> argument</p></li>
+<li><p>The <code class="docutils literal notranslate"><span class="pre">KUMIHO_AUTH_TOKEN</span></code> environment variable</p></li>
+<li><p>Credentials cached by <code class="docutils literal notranslate"><span class="pre">kumiho-auth</span> <span class="pre">login</span></code> at <code class="docutils literal notranslate"><span class="pre">~/.kumiho/kumiho_authentication.json</span></code></p></li>
+</ol>
+<p>You can disable automatic loading by setting <code class="docutils literal notranslate"><span class="pre">autoLoadToken:</span> <span class="pre">false</span></code> when constructing <code class="docutils literal notranslate"><span class="pre">KumihoClientBase</span></code>.</p>
+</section>
+<section id="cli-authentication">
+<h2>CLI Authentication<a class="headerlink" href="#cli-authentication" title="Link to this heading"></a></h2>
+<p>The simplest way to authenticate is using the CLI:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>kumiho-auth<span class="w"> </span>login
+</pre></div>
+</div>
+<p>This prompts for your Kumiho Cloud email and password in the terminal. After successful login, credentials are cached in <code class="docutils literal notranslate"><span class="pre">~/.kumiho/kumiho_authentication.json</span></code>.</p>
+<section id="cached-credentials">
+<h3>Cached Credentials<a class="headerlink" href="#cached-credentials" title="Link to this heading"></a></h3>
+<p>The cached credentials include:</p>
+<ul class="simple">
+<li><p>Firebase refresh token (for automatic token renewal)</p></li>
+<li><p>Control Plane JWT (region-scoped access token)</p></li>
+<li><p>Token expiration times</p></li>
+</ul>
+<div class="highlight-dart notranslate"><div class="highlight"><pre><span></span><span class="c1">// SDK automatically uses cached credentials</span>
+<span class="kd">final</span><span class="w"> </span><span class="n">client</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">KumihoClient</span><span class="p">(</span>
+<span class="w">  </span><span class="nl">host:</span><span class="w"> </span><span class="s1">&#39;api.kumiho.io&#39;</span><span class="p">,</span>
+<span class="w">  </span><span class="nl">port:</span><span class="w"> </span><span class="m">443</span><span class="p">,</span>
+<span class="p">);</span>
+</pre></div>
+</div>
+</section>
+<section id="refreshing-tokens">
+<h3>Refreshing Tokens<a class="headerlink" href="#refreshing-tokens" title="Link to this heading"></a></h3>
+<p>To manually refresh an expired token:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>kumiho-auth<span class="w"> </span>refresh
+</pre></div>
+</div>
+</section>
+</section>
+<section id="programmatic-authentication">
+<h2>Programmatic Authentication<a class="headerlink" href="#programmatic-authentication" title="Link to this heading"></a></h2>
+<section id="with-explicit-token">
+<h3>With Explicit Token<a class="headerlink" href="#with-explicit-token" title="Link to this heading"></a></h3>
+<p>If you have a Control Plane JWT (e.g., from a web app or mobile app):</p>
+<div class="highlight-dart notranslate"><div class="highlight"><pre><span></span><span class="kd">final</span><span class="w"> </span><span class="n">client</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">KumihoClient</span><span class="p">(</span>
+<span class="w">  </span><span class="nl">host:</span><span class="w"> </span><span class="s1">&#39;api.kumiho.io&#39;</span><span class="p">,</span>
+<span class="w">  </span><span class="nl">port:</span><span class="w"> </span><span class="m">443</span><span class="p">,</span>
+<span class="w">  </span><span class="nl">token:</span><span class="w"> </span><span class="s1">&#39;eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVC...&#39;</span><span class="p">,</span>
+<span class="p">);</span>
+</pre></div>
+</div>
+</section>
+<section id="with-environment-variables">
+<h3>With Environment Variables<a class="headerlink" href="#with-environment-variables" title="Link to this heading"></a></h3>
+<p>For CI/CD pipelines and containerized deployments:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="nb">export</span><span class="w"> </span><span class="nv">KUMIHO_AUTH_TOKEN</span><span class="o">=</span><span class="s2">&quot;your-control-plane-jwt&quot;</span>
+</pre></div>
+</div>
+<div class="highlight-dart notranslate"><div class="highlight"><pre><span></span><span class="c1">// SDK reads from environment automatically</span>
+<span class="kd">final</span><span class="w"> </span><span class="n">client</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">KumihoClient</span><span class="p">(</span>
+<span class="w">  </span><span class="nl">host:</span><span class="w"> </span><span class="s1">&#39;api.kumiho.io&#39;</span><span class="p">,</span>
+<span class="w">  </span><span class="nl">port:</span><span class="w"> </span><span class="m">443</span><span class="p">,</span>
+<span class="p">);</span>
+</pre></div>
+</div>
+</section>
+</section>
+<section id="environment-variables">
+<h2>Environment Variables<a class="headerlink" href="#environment-variables" title="Link to this heading"></a></h2>
+<p>The SDK recognizes several environment variables for authentication behavior:</p>
+<table class="docutils align-default">
+<thead>
+<tr class="row-odd"><th class="head"><p>Variable</p></th>
+<th class="head"><p>Description</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">KUMIHO_AUTH_TOKEN</span></code></p></td>
+<td><p>Primary token, overrides anything stored in the credentials file</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">KUMIHO_ENABLE_AUTO_REFRESH</span></code></p></td>
+<td><p>When <code class="docutils literal notranslate"><span class="pre">true</span></code>, refreshes expiring tokens using cached credentials</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">KUMIHO_USE_CONTROL_PLANE_TOKEN</span></code></p></td>
+<td><p>Prefer the control-plane token if present in cached credentials</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">KUMIHO_AUTH_TOKEN_GRACE_SECONDS</span></code></p></td>
+<td><p>Grace period before expiry that triggers refresh (default <code class="docutils literal notranslate"><span class="pre">300</span></code>)</p></td>
+</tr>
+</tbody>
+</table>
+</section>
+<section id="token-refresh">
+<h2>Token Refresh<a class="headerlink" href="#token-refresh" title="Link to this heading"></a></h2>
+<p>Automatic refresh is opt-in via <code class="docutils literal notranslate"><span class="pre">KUMIHO_ENABLE_AUTO_REFRESH</span></code>. When enabled, the client:</p>
+<ol class="arabic simple">
+<li><p>Loads cached credentials from <code class="docutils literal notranslate"><span class="pre">~/.kumiho/kumiho_authentication.json</span></code></p></li>
+<li><p>Monitors token expiration</p></li>
+<li><p>Refreshes tokens when they approach expiry (within grace period)</p></li>
+<li><p>Updates the Bearer token used in subsequent requests</p></li>
+</ol>
+<p>You can also force a refresh attempt regardless of expiry state:</p>
+<div class="highlight-dart notranslate"><div class="highlight"><pre><span></span><span class="kd">await</span><span class="w"> </span><span class="n">client</span><span class="p">.</span><span class="n">forceRefreshToken</span><span class="p">();</span>
+</pre></div>
+</div>
+</section>
+<section id="manual-token-updates">
+<h2>Manual Token Updates<a class="headerlink" href="#manual-token-updates" title="Link to this heading"></a></h2>
+<p>Set <code class="docutils literal notranslate"><span class="pre">client.token</span></code> at runtime to replace the active Bearer token. This is useful when:</p>
+<ul class="simple">
+<li><p>Rotating tokens in long-lived applications</p></li>
+<li><p>Swapping between user sessions</p></li>
+<li><p>Implementing custom token refresh logic</p></li>
+</ul>
+<div class="highlight-dart notranslate"><div class="highlight"><pre><span></span><span class="c1">// Update token at runtime</span>
+<span class="n">client</span><span class="p">.</span><span class="n">token</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s1">&#39;new-jwt-token&#39;</span><span class="p">;</span>
+</pre></div>
+</div>
+</section>
+<section id="flutter-authentication">
+<h2>Flutter Authentication<a class="headerlink" href="#flutter-authentication" title="Link to this heading"></a></h2>
+<p>For Flutter applications, you might want to integrate with Firebase Auth directly:</p>
+<div class="highlight-dart notranslate"><div class="highlight"><pre><span></span><span class="k">import</span><span class="w"> </span><span class="s1">&#39;package:firebase_auth/firebase_auth.dart&#39;</span><span class="p">;</span>
+<span class="k">import</span><span class="w"> </span><span class="s1">&#39;package:kumiho/kumiho.dart&#39;</span><span class="p">;</span>
+
+<span class="n">Future</span><span class="o">&lt;</span><span class="n">KumihoClient</span><span class="o">&gt;</span><span class="w"> </span><span class="n">createAuthenticatedClient</span><span class="p">()</span><span class="w"> </span><span class="kd">async</span><span class="w"> </span><span class="p">{</span>
+<span class="w">  </span><span class="c1">// Get Firebase ID token</span>
+<span class="w">  </span><span class="kd">final</span><span class="w"> </span><span class="n">user</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">FirebaseAuth</span><span class="p">.</span><span class="n">instance</span><span class="p">.</span><span class="n">currentUser</span><span class="p">;</span>
+<span class="w">  </span><span class="kd">final</span><span class="w"> </span><span class="n">idToken</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="kd">await</span><span class="w"> </span><span class="n">user</span><span class="o">?</span><span class="p">.</span><span class="n">getIdToken</span><span class="p">();</span>
+<span class="w">  </span>
+<span class="w">  </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">idToken</span><span class="w"> </span><span class="o">==</span><span class="w"> </span><span class="kc">null</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="k">throw</span><span class="w"> </span><span class="n">Exception</span><span class="p">(</span><span class="s1">&#39;User not authenticated&#39;</span><span class="p">);</span>
+<span class="w">  </span><span class="p">}</span>
+<span class="w">  </span>
+<span class="w">  </span><span class="c1">// Exchange for Kumiho Control Plane JWT</span>
+<span class="w">  </span><span class="c1">// (Implement your exchange logic here)</span>
+<span class="w">  </span><span class="kd">final</span><span class="w"> </span><span class="n">controlPlaneJwt</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="kd">await</span><span class="w"> </span><span class="n">exchangeToken</span><span class="p">(</span><span class="n">idToken</span><span class="p">);</span>
+<span class="w">  </span>
+<span class="w">  </span><span class="k">return</span><span class="w"> </span><span class="n">KumihoClient</span><span class="p">(</span>
+<span class="w">    </span><span class="nl">host:</span><span class="w"> </span><span class="s1">&#39;api.kumiho.io&#39;</span><span class="p">,</span>
+<span class="w">    </span><span class="nl">port:</span><span class="w"> </span><span class="m">443</span><span class="p">,</span>
+<span class="w">    </span><span class="nl">token:</span><span class="w"> </span><span class="n">controlPlaneJwt</span><span class="p">,</span>
+<span class="w">  </span><span class="p">);</span>
+<span class="p">}</span>
+</pre></div>
+</div>
+</section>
+<section id="error-handling">
+<h2>Error Handling<a class="headerlink" href="#error-handling" title="Link to this heading"></a></h2>
+<p>Authentication errors surface as <code class="docutils literal notranslate"><span class="pre">GrpcError</span></code> instances. Common scenarios:</p>
+<div class="highlight-dart notranslate"><div class="highlight"><pre><span></span><span class="k">try</span><span class="w"> </span><span class="p">{</span>
+<span class="w">  </span><span class="kd">await</span><span class="w"> </span><span class="n">client</span><span class="p">.</span><span class="n">getProjects</span><span class="p">();</span>
+<span class="p">}</span><span class="w"> </span><span class="kd">on</span><span class="w"> </span><span class="n">GrpcError</span><span class="w"> </span><span class="k">catch</span><span class="w"> </span><span class="p">(</span><span class="n">e</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">  </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">e</span><span class="p">.</span><span class="n">code</span><span class="w"> </span><span class="o">==</span><span class="w"> </span><span class="n">StatusCode</span><span class="p">.</span><span class="n">unauthenticated</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="c1">// Token is invalid or expired</span>
+<span class="w">    </span><span class="kd">await</span><span class="w"> </span><span class="n">client</span><span class="p">.</span><span class="n">forceRefreshToken</span><span class="p">();</span>
+<span class="w">  </span><span class="p">}</span><span class="w"> </span><span class="k">else</span><span class="w"> </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">e</span><span class="p">.</span><span class="n">code</span><span class="w"> </span><span class="o">==</span><span class="w"> </span><span class="n">StatusCode</span><span class="p">.</span><span class="n">permissionDenied</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="c1">// Token lacks required permissions</span>
+<span class="w">    </span><span class="n">print</span><span class="p">(</span><span class="s1">&#39;Access denied: </span><span class="si">${</span><span class="n">e</span><span class="p">.</span><span class="n">message</span><span class="si">}</span><span class="s1">&#39;</span><span class="p">);</span>
+<span class="w">  </span><span class="p">}</span>
+<span class="p">}</span>
+</pre></div>
+</div>
+</section>
+<section id="security-best-practices">
+<h2>Security Best Practices<a class="headerlink" href="#security-best-practices" title="Link to this heading"></a></h2>
+<ol class="arabic simple">
+<li><p><strong>Never commit tokens</strong>: Use environment variables or secure credential storage</p></li>
+<li><p><strong>Use short-lived tokens</strong>: Enable auto-refresh for production deployments</p></li>
+<li><p><strong>Secure storage</strong>: On mobile/desktop, use platform-specific secure storage</p></li>
+<li><p><strong>Rotate tokens regularly</strong>: For service accounts, implement token rotation</p></li>
+</ol>
+</section>
+</section>
+
+
+           </div>
+          </div>
+          <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
+        <a href="concepts.html" class="btn btn-neutral float-left" title="Core Concepts" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+        <a href="usage_guide.html" class="btn btn-neutral float-right" title="Usage Guide" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2025, Kumiho Clouds.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

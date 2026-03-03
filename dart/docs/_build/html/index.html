@@ -1,0 +1,328 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="./">
+<head>
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Kumiho Dart SDK &mdash; Kumiho Dart SDK v0.2.0</title>
+      <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=80d5e7a1" />
+      <link rel="stylesheet" type="text/css" href="_static/css/theme.css?v=e59714d7" />
+
+  
+      <script src="_static/jquery.js?v=5d32c60e"></script>
+      <script src="_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="_static/documentation_options.js?v=938c9ccc"></script>
+      <script src="_static/doctools.js?v=9bcbadda"></script>
+      <script src="_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script src="_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="genindex.html" />
+    <link rel="search" title="Search" href="search.html" />
+    <link rel="next" title="Getting Started" href="getting-started.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="#" class="icon icon-home">
+            Kumiho Dart SDK
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">User Guide</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="getting-started.html">Getting Started</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="getting-started.html#installation">Installation</a></li>
+<li class="toctree-l2"><a class="reference internal" href="getting-started.html#authentication">Authentication</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="getting-started.html#using-the-cli">Using the CLI</a></li>
+<li class="toctree-l3"><a class="reference internal" href="getting-started.html#programmatic-authentication">Programmatic Authentication</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="getting-started.html#basic-concepts">Basic Concepts</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="getting-started.html#projects">Projects</a></li>
+<li class="toctree-l3"><a class="reference internal" href="getting-started.html#spaces">Spaces</a></li>
+<li class="toctree-l3"><a class="reference internal" href="getting-started.html#items">Items</a></li>
+<li class="toctree-l3"><a class="reference internal" href="getting-started.html#revisions">Revisions</a></li>
+<li class="toctree-l3"><a class="reference internal" href="getting-started.html#artifacts">Artifacts</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="getting-started.html#why-kumiho">Why Kumiho?</a></li>
+<li class="toctree-l2"><a class="reference internal" href="getting-started.html#next-steps">Next Steps</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="concepts.html">Core Concepts</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="concepts.html#graph-native-architecture">Graph-Native Architecture</a></li>
+<li class="toctree-l2"><a class="reference internal" href="concepts.html#entity-hierarchy">Entity Hierarchy</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="concepts.html#project">Project</a></li>
+<li class="toctree-l3"><a class="reference internal" href="concepts.html#space">Space</a></li>
+<li class="toctree-l3"><a class="reference internal" href="concepts.html#item">Item</a></li>
+<li class="toctree-l3"><a class="reference internal" href="concepts.html#revision">Revision</a></li>
+<li class="toctree-l3"><a class="reference internal" href="concepts.html#artifact">Artifact</a></li>
+<li class="toctree-l3"><a class="reference internal" href="concepts.html#bundle">Bundle</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="concepts.html#kref-uris">Kref URIs</a></li>
+<li class="toctree-l2"><a class="reference internal" href="concepts.html#edges-relationships">Edges (Relationships)</a></li>
+<li class="toctree-l2"><a class="reference internal" href="concepts.html#byo-storage-philosophy">BYO Storage Philosophy</a></li>
+<li class="toctree-l2"><a class="reference internal" href="concepts.html#multi-tenant-architecture">Multi-Tenant Architecture</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="authentication.html">Authentication</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="authentication.html#overview">Overview</a></li>
+<li class="toctree-l2"><a class="reference internal" href="authentication.html#token-sources">Token Sources</a></li>
+<li class="toctree-l2"><a class="reference internal" href="authentication.html#cli-authentication">CLI Authentication</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="authentication.html#cached-credentials">Cached Credentials</a></li>
+<li class="toctree-l3"><a class="reference internal" href="authentication.html#refreshing-tokens">Refreshing Tokens</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="authentication.html#programmatic-authentication">Programmatic Authentication</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="authentication.html#with-explicit-token">With Explicit Token</a></li>
+<li class="toctree-l3"><a class="reference internal" href="authentication.html#with-environment-variables">With Environment Variables</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="authentication.html#environment-variables">Environment Variables</a></li>
+<li class="toctree-l2"><a class="reference internal" href="authentication.html#token-refresh">Token Refresh</a></li>
+<li class="toctree-l2"><a class="reference internal" href="authentication.html#manual-token-updates">Manual Token Updates</a></li>
+<li class="toctree-l2"><a class="reference internal" href="authentication.html#flutter-authentication">Flutter Authentication</a></li>
+<li class="toctree-l2"><a class="reference internal" href="authentication.html#error-handling">Error Handling</a></li>
+<li class="toctree-l2"><a class="reference internal" href="authentication.html#security-best-practices">Security Best Practices</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="usage_guide.html">Usage Guide</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="usage_guide.html#two-layers-of-api">Two Layers of API</a></li>
+<li class="toctree-l2"><a class="reference internal" href="usage_guide.html#krefs">Krefs</a></li>
+<li class="toctree-l2"><a class="reference internal" href="usage_guide.html#working-with-projects">Working with Projects</a></li>
+<li class="toctree-l2"><a class="reference internal" href="usage_guide.html#spaces-organizing-assets">Spaces: Organizing Assets</a></li>
+<li class="toctree-l2"><a class="reference internal" href="usage_guide.html#items-and-revisions">Items and Revisions</a></li>
+<li class="toctree-l2"><a class="reference internal" href="usage_guide.html#bundles">Bundles</a></li>
+<li class="toctree-l2"><a class="reference internal" href="usage_guide.html#events-and-tenants">Events and Tenants</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="configuration.html">Configuration and Operations</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="configuration.html#connection-settings">Connection Settings</a></li>
+<li class="toctree-l2"><a class="reference internal" href="configuration.html#call-options-and-metadata">Call Options and Metadata</a></li>
+<li class="toctree-l2"><a class="reference internal" href="configuration.html#lifecycle">Lifecycle</a></li>
+<li class="toctree-l2"><a class="reference internal" href="configuration.html#error-handling">Error Handling</a></li>
+</ul>
+</li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="#">Kumiho Dart SDK</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content style-external-links">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="#" class="icon icon-home" aria-label="Home"></a></li>
+      <li class="breadcrumb-item active">Kumiho Dart SDK</li>
+      <li class="wy-breadcrumbs-aside">
+            <a href="_sources/index.rst.txt" rel="nofollow"> View page source</a>
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <section id="kumiho-dart-sdk">
+<h1>Kumiho Dart SDK<a class="headerlink" href="#kumiho-dart-sdk" title="Link to this heading"></a></h1>
+<p><strong>Graph-native creative &amp; AI asset management for Dart/Flutter</strong></p>
+<a class="reference external image-reference" href="https://pub.dev/packages/kumiho"><img alt="Pub version" src="https://img.shields.io/badge/pub-v0.2.0-blue.svg" />
+</a>
+<a class="reference external image-reference" href="https://dart.dev/"><img alt="Dart versions" src="https://img.shields.io/badge/dart-%3E%3D3.5.0-blue.svg" />
+</a>
+<a class="reference external image-reference" href="https://flutter.dev/"><img alt="Flutter compatible" src="https://img.shields.io/badge/flutter-compatible-blue.svg" />
+</a>
+<p>Kumiho is a Dart SDK for <a class="reference external" href="https://kumiho.io">Kumiho Cloud</a>, a graph-native
+creative and AI asset management platform designed for VFX, animation, and
+AI-driven workflows.</p>
+<section id="key-features">
+<h2>Key Features<a class="headerlink" href="#key-features" title="Link to this heading"></a></h2>
+<ul class="simple">
+<li><p><strong>Graph-Native Design</strong>: Built on Neo4j for tracking asset relationships and lineage</p></li>
+<li><p><strong>Version Control</strong>: Semantic versioning for creative assets with full history</p></li>
+<li><p><strong>AI Lineage Tracking</strong>: Track AI model training data provenance and dependencies</p></li>
+<li><p><strong>BYO Storage</strong>: Files stay on your local/NAS/on-prem storage</p></li>
+<li><p><strong>Multi-Tenant SaaS</strong>: Secure, region-aware multi-tenant architecture</p></li>
+<li><p><strong>Flutter Compatible</strong>: Works seamlessly with Flutter for desktop and mobile apps</p></li>
+</ul>
+</section>
+<section id="quick-start">
+<h2>Quick Start<a class="headerlink" href="#quick-start" title="Link to this heading"></a></h2>
+<section id="installation">
+<h3>Installation<a class="headerlink" href="#installation" title="Link to this heading"></a></h3>
+<p>Add the SDK to your <code class="docutils literal notranslate"><span class="pre">pubspec.yaml</span></code>:</p>
+<div class="highlight-yaml notranslate"><div class="highlight"><pre><span></span><span class="nt">dependencies</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">kumiho</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">git</span><span class="p">:</span>
+<span class="w">      </span><span class="nt">url</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">https://github.com/kumihoclouds/kumiho-dart.git</span>
+</pre></div>
+</div>
+<p>Then fetch dependencies:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>dart<span class="w"> </span>pub<span class="w"> </span>get
+</pre></div>
+</div>
+</section>
+<section id="authentication">
+<h3>Authentication<a class="headerlink" href="#authentication" title="Link to this heading"></a></h3>
+<p>First, authenticate with Kumiho Cloud using the CLI:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>kumiho-auth<span class="w"> </span>login
+</pre></div>
+</div>
+<p>This will prompt for your credentials and cache them for the SDK.</p>
+</section>
+<section id="basic-usage">
+<h3>Basic Usage<a class="headerlink" href="#basic-usage" title="Link to this heading"></a></h3>
+<div class="highlight-dart notranslate"><div class="highlight"><pre><span></span><span class="k">import</span><span class="w"> </span><span class="s1">&#39;package:kumiho/kumiho.dart&#39;</span><span class="p">;</span>
+
+<span class="n">Future</span><span class="o">&lt;</span><span class="kt">void</span><span class="o">&gt;</span><span class="w"> </span><span class="n">main</span><span class="p">()</span><span class="w"> </span><span class="kd">async</span><span class="w"> </span><span class="p">{</span>
+<span class="w">  </span><span class="kd">final</span><span class="w"> </span><span class="n">client</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">KumihoClient</span><span class="p">(</span>
+<span class="w">    </span><span class="nl">host:</span><span class="w"> </span><span class="s1">&#39;localhost&#39;</span><span class="p">,</span>
+<span class="w">    </span><span class="nl">port:</span><span class="w"> </span><span class="m">50051</span><span class="p">,</span>
+<span class="w">  </span><span class="p">);</span>
+
+<span class="w">  </span><span class="k">try</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="c1">// Create a new project</span>
+<span class="w">    </span><span class="kd">final</span><span class="w"> </span><span class="n">project</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="kd">await</span><span class="w"> </span><span class="n">client</span><span class="p">.</span><span class="n">createProject</span><span class="p">(</span><span class="s1">&#39;my-vfx-project&#39;</span><span class="p">);</span>
+
+<span class="w">    </span><span class="c1">// Create a space for characters</span>
+<span class="w">    </span><span class="kd">final</span><span class="w"> </span><span class="n">space</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="kd">await</span><span class="w"> </span><span class="n">client</span><span class="p">.</span><span class="n">createSpace</span><span class="p">(</span><span class="s1">&#39;/my-vfx-project&#39;</span><span class="p">,</span><span class="w"> </span><span class="s1">&#39;characters&#39;</span><span class="p">);</span>
+
+<span class="w">    </span><span class="c1">// Create an item (asset)</span>
+<span class="w">    </span><span class="kd">final</span><span class="w"> </span><span class="n">item</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="kd">await</span><span class="w"> </span><span class="n">client</span><span class="p">.</span><span class="n">createItem</span><span class="p">(</span>
+<span class="w">      </span><span class="s1">&#39;/my-vfx-project/characters&#39;</span><span class="p">,</span>
+<span class="w">      </span><span class="s1">&#39;hero&#39;</span><span class="p">,</span>
+<span class="w">      </span><span class="s1">&#39;model&#39;</span><span class="p">,</span>
+<span class="w">    </span><span class="p">);</span>
+
+<span class="w">    </span><span class="c1">// Create a revision with artifacts</span>
+<span class="w">    </span><span class="kd">final</span><span class="w"> </span><span class="n">revision</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="kd">await</span><span class="w"> </span><span class="n">client</span><span class="p">.</span><span class="n">createRevision</span><span class="p">(</span><span class="n">item</span><span class="p">.</span><span class="n">kref</span><span class="p">);</span>
+
+<span class="w">    </span><span class="c1">// Add a file artifact</span>
+<span class="w">    </span><span class="kd">await</span><span class="w"> </span><span class="n">client</span><span class="p">.</span><span class="n">createArtifact</span><span class="p">(</span>
+<span class="w">      </span><span class="n">revision</span><span class="p">.</span><span class="n">kref</span><span class="p">,</span>
+<span class="w">      </span><span class="s1">&#39;hero_model.fbx&#39;</span><span class="p">,</span>
+<span class="w">      </span><span class="s1">&#39;file:///projects/hero/hero_model.fbx&#39;</span><span class="p">,</span>
+<span class="w">    </span><span class="p">);</span>
+<span class="w">  </span><span class="p">}</span><span class="w"> </span><span class="k">finally</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="kd">await</span><span class="w"> </span><span class="n">client</span><span class="p">.</span><span class="n">shutdownAsync</span><span class="p">();</span>
+<span class="w">  </span><span class="p">}</span>
+<span class="p">}</span>
+</pre></div>
+</div>
+</section>
+</section>
+<section id="contents">
+<h2>Contents<a class="headerlink" href="#contents" title="Link to this heading"></a></h2>
+<div class="toctree-wrapper compound">
+<p class="caption" role="heading"><span class="caption-text">User Guide</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="getting-started.html">Getting Started</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="getting-started.html#installation">Installation</a></li>
+<li class="toctree-l2"><a class="reference internal" href="getting-started.html#authentication">Authentication</a></li>
+<li class="toctree-l2"><a class="reference internal" href="getting-started.html#basic-concepts">Basic Concepts</a></li>
+<li class="toctree-l2"><a class="reference internal" href="getting-started.html#why-kumiho">Why Kumiho?</a></li>
+<li class="toctree-l2"><a class="reference internal" href="getting-started.html#next-steps">Next Steps</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="concepts.html">Core Concepts</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="concepts.html#graph-native-architecture">Graph-Native Architecture</a></li>
+<li class="toctree-l2"><a class="reference internal" href="concepts.html#entity-hierarchy">Entity Hierarchy</a></li>
+<li class="toctree-l2"><a class="reference internal" href="concepts.html#kref-uris">Kref URIs</a></li>
+<li class="toctree-l2"><a class="reference internal" href="concepts.html#edges-relationships">Edges (Relationships)</a></li>
+<li class="toctree-l2"><a class="reference internal" href="concepts.html#byo-storage-philosophy">BYO Storage Philosophy</a></li>
+<li class="toctree-l2"><a class="reference internal" href="concepts.html#multi-tenant-architecture">Multi-Tenant Architecture</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="authentication.html">Authentication</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="authentication.html#overview">Overview</a></li>
+<li class="toctree-l2"><a class="reference internal" href="authentication.html#token-sources">Token Sources</a></li>
+<li class="toctree-l2"><a class="reference internal" href="authentication.html#cli-authentication">CLI Authentication</a></li>
+<li class="toctree-l2"><a class="reference internal" href="authentication.html#programmatic-authentication">Programmatic Authentication</a></li>
+<li class="toctree-l2"><a class="reference internal" href="authentication.html#environment-variables">Environment Variables</a></li>
+<li class="toctree-l2"><a class="reference internal" href="authentication.html#token-refresh">Token Refresh</a></li>
+<li class="toctree-l2"><a class="reference internal" href="authentication.html#manual-token-updates">Manual Token Updates</a></li>
+<li class="toctree-l2"><a class="reference internal" href="authentication.html#flutter-authentication">Flutter Authentication</a></li>
+<li class="toctree-l2"><a class="reference internal" href="authentication.html#error-handling">Error Handling</a></li>
+<li class="toctree-l2"><a class="reference internal" href="authentication.html#security-best-practices">Security Best Practices</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="usage_guide.html">Usage Guide</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="usage_guide.html#two-layers-of-api">Two Layers of API</a></li>
+<li class="toctree-l2"><a class="reference internal" href="usage_guide.html#krefs">Krefs</a></li>
+<li class="toctree-l2"><a class="reference internal" href="usage_guide.html#working-with-projects">Working with Projects</a></li>
+<li class="toctree-l2"><a class="reference internal" href="usage_guide.html#spaces-organizing-assets">Spaces: Organizing Assets</a></li>
+<li class="toctree-l2"><a class="reference internal" href="usage_guide.html#items-and-revisions">Items and Revisions</a></li>
+<li class="toctree-l2"><a class="reference internal" href="usage_guide.html#bundles">Bundles</a></li>
+<li class="toctree-l2"><a class="reference internal" href="usage_guide.html#events-and-tenants">Events and Tenants</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="configuration.html">Configuration and Operations</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="configuration.html#connection-settings">Connection Settings</a></li>
+<li class="toctree-l2"><a class="reference internal" href="configuration.html#call-options-and-metadata">Call Options and Metadata</a></li>
+<li class="toctree-l2"><a class="reference internal" href="configuration.html#lifecycle">Lifecycle</a></li>
+<li class="toctree-l2"><a class="reference internal" href="configuration.html#error-handling">Error Handling</a></li>
+</ul>
+</li>
+</ul>
+</div>
+</section>
+</section>
+<section id="indices-and-tables">
+<h1>Indices and tables<a class="headerlink" href="#indices-and-tables" title="Link to this heading"></a></h1>
+<ul class="simple">
+<li><p><a class="reference internal" href="genindex.html"><span class="std std-ref">Index</span></a></p></li>
+<li><p><a class="reference internal" href="search.html"><span class="std std-ref">Search Page</span></a></p></li>
+</ul>
+</section>
+
+
+           </div>
+          </div>
+          <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
+        <a href="getting-started.html" class="btn btn-neutral float-right" title="Getting Started" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2025, Kumiho Clouds.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

@@ -1,0 +1,10 @@
+# Test configuration for kumiho-dart
+#
+# Declares tags used by the suite so `dart test` doesn't warn.
+# Live/security integration tests are opt-in via env vars (see test files).
+
+tags:
+  live:
+    timeout: 10m
+  security:
+    timeout: 5m
