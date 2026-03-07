@@ -200,18 +200,16 @@ for event in kumiho.event_stream(kref_filter="kref://my-project/**/*.model"):
 | Real-time streaming | ✅ | ✅ | ✅ | ✅ |
 | Routing key filters | ✅ | ✅ | ✅ | ✅ |
 | Kref glob filters | ✅ | ✅ | ✅ | ✅ |
-| Event persistence | ❌ | 1 hour | 24 hours | 30 days |
-| Cursor-based resume | ❌ | ✅ | ✅ | ✅ |
+| Event persistence | in-memory | 1 hour | 24 hours | 30 days |
+| Cursor-based resume | ✅ | ✅ | ✅ | ✅ |
 | Consumer groups | ❌ | ❌ | ❌ | ✅ |
-
-> **Note**: Creator tier and above features are **Coming Soon**. Currently only Free tier is available.
 
 ```python
 # Check your tier's capabilities
 caps = kumiho.get_event_capabilities()
 print(f"Tier: {caps.tier}, Replay: {caps.supports_replay}")
 
-# Resumable streaming (Creator+ tiers, Coming Soon)
+# Resumable streaming (all tiers)
 for event in kumiho.event_stream(cursor=saved_cursor):
     process(event)
     save_cursor(event.cursor)  # Persist for recovery

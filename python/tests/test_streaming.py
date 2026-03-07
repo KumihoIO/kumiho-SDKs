@@ -219,7 +219,7 @@ def test_event_streaming(cleanup_test_data):
 def test_event_streaming_with_cursor_tracking(cleanup_test_data):
     """
     Tests that events include cursor field for resumable streaming.
-    Note: cursor-based resume requires Creator tier or above.
+    Cursor-based resume is available on all tiers.
     """
     cursors_received = []
     event_queue = Queue()

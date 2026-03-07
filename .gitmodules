@@ -1,0 +1,9 @@
+[submodule "cpp/proto"]
+	path = cpp/proto
+	url = ../kumiho-proto
+[submodule "dart/proto"]
+	path = dart/proto
+	url = ../kumiho-proto
+[submodule "python/proto"]
+	path = python/proto
+	url = ../kumiho-proto

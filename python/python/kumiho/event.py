@@ -13,10 +13,10 @@ Event Types (routing_key patterns):
     - ``artifact.created``, ``artifact.deleted``
     - ``edge.created``, ``edge.deleted``
 
-Cursor-based Resume (Creator tier and above):
+Cursor-based Resume:
     Events include a ``cursor`` field that can be saved and used to resume
     streaming from that point after a disconnection. This prevents missing
-    events during network interruptions.
+    events during network interruptions. Available on all tiers.
 
 Example::
 
@@ -81,8 +81,7 @@ class Event:
             (e.g., tag name for tagged events).
         cursor (Optional[str]): Opaque cursor for resumable streaming.
             Save this value and pass it to ``event_stream(cursor=...)`` to
-            resume from this event after reconnection. Only available on
-            Creator tier and above.
+            resume from this event after reconnection.
 
     Example::
 
