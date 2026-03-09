@@ -39,6 +39,8 @@ Note:
 
 import logging
 import os
+import random
+import time
 from typing import Any, Dict, Iterator, List, Optional, Sequence, Tuple, Union, TYPE_CHECKING
 from urllib.parse import urlparse
 
@@ -300,12 +302,20 @@ class _Client:
         if resolved_token:
             metadata.append(("authorization", f"Bearer {resolved_token}"))
 
-        # Apply interceptors in order: correlation ID, auto-login, then metadata injection
+        # Apply interceptors in order (innermost to outermost):
+        #   1. Correlation ID  — tags each RPC for tracing
+        #   2. Auto-login      — refreshes auth token on UNAUTHENTICATED
+        #   3. Metadata        — injects static headers (auth, tenant)
+        #   4. Transient retry — retries on UNAVAILABLE / DEADLINE_EXCEEDED
+        #
+        # The retry interceptor is outermost so a retry re-executes the full
+        # chain including fresh correlation IDs and auth headers.
         channel = grpc.intercept_channel(channel, _CorrelationIdInterceptor())
         if enable_auto_login:
             channel = grpc.intercept_channel(channel, _AutoLoginInterceptor())
         if metadata:
             channel = grpc.intercept_channel(channel, _MetadataInjector(metadata))
+        channel = grpc.intercept_channel(channel, _TransientRetryInterceptor())
 
         self.channel = channel
         self.stub = kumiho_pb2_grpc.KumihoServiceStub(self.channel)
@@ -2053,6 +2063,88 @@ class _MetadataInjector(
         return continuation(updated, request_iterator)
 
 
+# gRPC status codes that indicate transient failures worth retrying.
+_TRANSIENT_STATUS_CODES = frozenset({
+    grpc.StatusCode.UNAVAILABLE,
+    grpc.StatusCode.DEADLINE_EXCEEDED,
+})
+
+# Default retry configuration.
+_RETRY_MAX_ATTEMPTS = 3
+_RETRY_BASE_DELAY = 0.5  # seconds
+_RETRY_MAX_DELAY = 5.0   # seconds
+
+
+class _TransientRetryInterceptor(grpc.UnaryUnaryClientInterceptor):
+    """Client interceptor that retries unary RPCs on transient gRPC failures.
+
+    Retries on UNAVAILABLE and DEADLINE_EXCEEDED with exponential backoff
+    and jitter.  This handles the common case of gateway restarts or
+    momentary network blips without requiring every call site to implement
+    its own retry logic.
+
+    Only unary-unary RPCs are retried; streaming RPCs pass through
+    unchanged because their semantics make automatic retry unsafe.
+
+    Configuration via environment variables:
+        KUMIHO_GRPC_RETRY_MAX_ATTEMPTS  — max attempts (default 3)
+        KUMIHO_GRPC_RETRY_BASE_DELAY    — base delay seconds (default 0.5)
+        KUMIHO_GRPC_RETRY_MAX_DELAY     — max delay seconds (default 5.0)
+    """
+
+    def __init__(self) -> None:
+        self.max_attempts = int(
+            os.getenv("KUMIHO_GRPC_RETRY_MAX_ATTEMPTS", str(_RETRY_MAX_ATTEMPTS))
+        )
+        self.base_delay = float(
+            os.getenv("KUMIHO_GRPC_RETRY_BASE_DELAY", str(_RETRY_BASE_DELAY))
+        )
+        self.max_delay = float(
+            os.getenv("KUMIHO_GRPC_RETRY_MAX_DELAY", str(_RETRY_MAX_DELAY))
+        )
+
+    def intercept_unary_unary(self, continuation, client_call_details, request):
+        last_response = None
+
+        for attempt in range(self.max_attempts):
+            response = continuation(client_call_details, request)
+
+            # gRPC Python returns a future-like object; check the status code.
+            try:
+                code = response.code()
+            except Exception:
+                # If code() isn't available the call likely succeeded.
+                return response
+
+            if code is None or code == grpc.StatusCode.OK:
+                return response
+
+            if code not in _TRANSIENT_STATUS_CODES:
+                return response
+
+            last_response = response
+
+            # Don't sleep after the last attempt.
+            if attempt + 1 < self.max_attempts:
+                delay = min(self.base_delay * (2 ** attempt), self.max_delay)
+                jitter = random.uniform(0, delay * 0.25)
+                _LOGGER.warning(
+                    "Transient gRPC error %s on attempt %d/%d — retrying in %.1fs",
+                    code.name,
+                    attempt + 1,
+                    self.max_attempts,
+                    delay + jitter,
+                )
+                time.sleep(delay + jitter)
+
+        _LOGGER.error(
+            "gRPC call failed after %d attempts with %s",
+            self.max_attempts,
+            last_response.code().name if last_response else "unknown",
+        )
+        return last_response
+
+
 class _CorrelationIdInterceptor(
     grpc.UnaryUnaryClientInterceptor,
     grpc.UnaryStreamClientInterceptor,
@@ -2060,7 +2152,7 @@ class _CorrelationIdInterceptor(
     grpc.StreamStreamClientInterceptor,
 ):
     """Client interceptor that generates a unique correlation ID per request.
-    
+
     This enables end-to-end tracing across Control Plane and Data Plane.
     The correlation ID is sent as the 'x-correlation-id' header.
     """
