@@ -2012,7 +2012,7 @@ TOOLS: List[Dict[str, Any]] = [
                     ),
                 },
             },
-            "required": ["user_text", "assistant_text"],
+            "required": ["user_text"],
         },
     },
     {
