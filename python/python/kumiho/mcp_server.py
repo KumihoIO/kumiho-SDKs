@@ -570,9 +570,13 @@ def tool_search_items(
     context_filter: str = "",
     name_filter: str = "",
     kind_filter: str = "",
-    include_metadata: bool = False
+    include_metadata: bool = False,
+    auth_token: str = "",
 ) -> Dict[str, Any]:
     """Search for items across projects and spaces."""
+    import os
+    if auth_token:
+        os.environ["KUMIHO_AUTH_TOKEN"] = auth_token
     _ensure_configured()
     items = kumiho.item_search(
         context_filter=context_filter,
@@ -607,6 +611,7 @@ def tool_fulltext_search(
     include_artifact_metadata: bool = False,
     include_metadata: bool = False,
     limit: int = 20,
+    auth_token: str = "",
 ) -> Dict[str, Any]:
     """Full-text fuzzy search across items (Google-like search).
 
@@ -614,6 +619,9 @@ def tool_fulltext_search(
     (fulltext + vector similarity) for improved accuracy when searching
     revision metadata.
     """
+    import os
+    if auth_token:
+        os.environ["KUMIHO_AUTH_TOKEN"] = auth_token
     _ensure_configured()
     results = kumiho.search(
         query,
@@ -1894,6 +1902,11 @@ TOOLS: List[Dict[str, Any]] = [
                     "description": "Whether to include full metadata for each item. Default: false",
                     "default": False,
                 },
+                "auth_token": {
+                    "type": "string",
+                    "description": "Internal: bearer token to use for this call (overrides subprocess credentials). Pass the current session token to enable cross-project access.",
+                    "default": "",
+                },
             },
             "required": [],
         },
@@ -1942,6 +1955,11 @@ TOOLS: List[Dict[str, Any]] = [
                     "type": "integer",
                     "description": "Maximum number of results to return. Default: 20",
                     "default": 20,
+                },
+                "auth_token": {
+                    "type": "string",
+                    "description": "Internal: bearer token to use for this call (overrides subprocess credentials). Pass the current session token to enable cross-project access.",
+                    "default": "",
                 },
             },
             "required": ["query"],
@@ -2792,6 +2810,7 @@ TOOL_HANDLERS = {
         args.get("name_filter", ""),
         args.get("kind_filter", ""),
         args.get("include_metadata", False),
+        args.get("auth_token", ""),
     ),
     "kumiho_fulltext_search": lambda args: tool_fulltext_search(
         args["query"],
@@ -2802,6 +2821,7 @@ TOOL_HANDLERS = {
         args.get("include_artifact_metadata", False),
         args.get("include_metadata", False),
         args.get("limit", 20),
+        args.get("auth_token", ""),
     ),
     "kumiho_memory_store": lambda args: tool_memory_store(
         args.get("project", "CognitiveMemory"),
