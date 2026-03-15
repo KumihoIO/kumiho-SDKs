@@ -409,7 +409,9 @@ class Project(KumihoObject):
     def get_spaces(
         self,
         parent_path: Optional[str] = None,
-        recursive: bool = False
+        recursive: bool = False,
+        page_size: Optional[int] = None,
+        cursor: Optional[str] = None,
     ) -> List[Space]:
         """List spaces within this project.
 
@@ -417,6 +419,8 @@ class Project(KumihoObject):
             parent_path: Optional path to start from. Defaults to project root.
             recursive: If True, include all nested spaces. If False (default),
                 only direct children.
+            page_size: Optional page size for pagination.
+            cursor: Optional cursor for pagination.
 
         Returns:
             List[Space]: A list of Space objects.
@@ -433,7 +437,12 @@ class Project(KumihoObject):
             ...     print(s.path)
         """
         base_parent = parent_path or f"/{self.name}"
-        return self._client.get_child_spaces(base_parent, recursive=recursive)
+        return self._client.get_child_spaces(
+            base_parent,
+            recursive=recursive,
+            page_size=page_size,
+            cursor=cursor,
+        )
 
     def get_items(
         self,

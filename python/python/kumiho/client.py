@@ -523,20 +523,48 @@ class _Client:
         resp = self.stub.GetSpace(req)
         return Space(resp, self)
 
-    def get_child_spaces(self, parent_path: str = "", recursive: bool = False) -> List[Space]:
+    def get_child_spaces(
+        self,
+        parent_path: str = "",
+        recursive: bool = False,
+        page_size: Optional[int] = None,
+        cursor: Optional[str] = None,
+    ) -> List[Space]:
         """Get child spaces of a parent space.
 
         Args:
             parent_path: The path of the parent space. If empty or "/",
                          returns root-level spaces.
             recursive: Whether to fetch all descendant spaces recursively.
+            page_size: Optional page size for pagination.
+            cursor: Optional cursor for pagination.
 
         Returns:
             A list of Space objects that are direct children of the parent.
+            If pagination is used, returns a PagedList.
         """
-        req = GetChildSpacesRequest(parent_path=parent_path, recursive=recursive)
+        pagination = None
+        if page_size is not None or cursor is not None:
+            pagination = PaginationRequest(
+                page_size=page_size or 100,
+                cursor=cursor or "",
+            )
+
+        req = GetChildSpacesRequest(
+            parent_path=parent_path,
+            recursive=recursive,
+            pagination=pagination,
+        )
         resp = self.stub.GetChildSpaces(req)
-        return [Space(space_resp, self) for space_resp in resp.spaces]
+        spaces = [Space(space_resp, self) for space_resp in resp.spaces]
+
+        if resp.HasField("pagination"):
+            return PagedList(
+                spaces,
+                next_cursor=resp.pagination.next_cursor,
+                total_count=resp.pagination.total_count,
+            )
+        return spaces
 
     def update_space_metadata(self, kref: Kref, metadata: Dict[str, str]) -> Space:
         """Update metadata for a space.

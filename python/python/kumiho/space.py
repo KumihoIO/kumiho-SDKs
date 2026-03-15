@@ -138,12 +138,19 @@ class Space(KumihoObject):
         path = f"{self.path.rstrip('/')}/{name}"
         return self._client.get_space(path)
 
-    def get_spaces(self, recursive: bool = False) -> List['Space']:
+    def get_spaces(
+        self,
+        recursive: bool = False,
+        page_size: Optional[int] = None,
+        cursor: Optional[str] = None,
+    ) -> List['Space']:
         """List child spaces under this space.
 
         Args:
             recursive: If True, include all nested spaces. If False (default),
                 only direct children.
+            page_size: Optional page size for pagination.
+            cursor: Optional cursor for pagination.
 
         Returns:
             List[Space]: A list of Space objects.
@@ -155,7 +162,12 @@ class Space(KumihoObject):
             >>> # All nested spaces
             >>> all_spaces = space.get_spaces(recursive=True)
         """
-        return self._client.get_child_spaces(self.path, recursive=recursive)
+        return self._client.get_child_spaces(
+            self.path,
+            recursive=recursive,
+            page_size=page_size,
+            cursor=cursor,
+        )
 
     def create_item(self, item_name: str, kind: str) -> Item:
         """Create a new item within this space.
