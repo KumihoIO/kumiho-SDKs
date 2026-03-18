@@ -16,6 +16,13 @@ Command-line tools for Kumiho Cloud asset management system.
 pip install kumiho-cli
 ```
 
+`kumiho-cli` reuses the auth implementation from the `kumiho` SDK package, so
+upgrade them together when you install manually:
+
+```bash
+pip install -U kumiho kumiho-cli
+```
+
 Or install with [pipx](https://pypa.github.io/pipx/) (recommended for CLI tools):
 
 ```bash

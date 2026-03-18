@@ -40,7 +40,7 @@ classifiers = [
 
 dependencies = [
     "requests>=2.31.0",
-    "kumiho",
+    "kumiho>=0.9.20",
 ]
 
 [project.urls]
