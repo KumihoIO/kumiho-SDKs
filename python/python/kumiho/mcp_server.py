@@ -870,6 +870,7 @@ def tool_memory_retrieve(
     mode: str = "search",
     include_revision_metadata: bool = True,
     unroll_revisions: bool = False,
+    memory_types: Optional[List[str]] = None,
 ) -> Dict[str, Any]:
     """Retrieve memory krefs using fuzzy search with bundle and fallback support.
 
@@ -2123,6 +2124,11 @@ TOOLS: List[Dict[str, Any]] = [
                     "description": "Also search revision metadata for deeper matching (default: true)",
                     "default": True,
                 },
+                "memory_types": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Filter by memory type (e.g. ['decision', 'summary', 'error'])",
+                },
             },
             "required": [],
         },
@@ -2918,6 +2924,7 @@ TOOL_HANDLERS = {
         args.get("limit", 5),
         args.get("mode", "search"),
         args.get("include_revision_metadata", True),
+        memory_types=args.get("memory_types"),
     ),
     "kumiho_get_item_revisions": lambda args: tool_get_item_revisions(
         args["item_kref"],
