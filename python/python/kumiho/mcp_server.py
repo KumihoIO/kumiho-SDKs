@@ -1392,6 +1392,41 @@ def tool_get_revision_as_of(item_kref: str, tag: str, time: str) -> Dict[str, An
         return {"error": str(e)}
 
 
+def tool_batch_get_revisions(
+    revision_krefs: Optional[List[str]] = None,
+    item_krefs: Optional[List[str]] = None,
+    tag: str = "latest",
+    allow_partial: bool = True,
+) -> Dict[str, Any]:
+    """Batch-fetch multiple revisions in a single call.
+
+    Supports two modes:
+    - **Direct revision krefs**: provide ``revision_krefs`` to fetch specific revisions.
+    - **Item krefs + tag**: provide ``item_krefs`` and a ``tag`` to resolve
+      that tag (e.g. 'latest', 'published') for each item.
+
+    Returns found revisions and a list of krefs that could not be resolved.
+    """
+    _ensure_configured()
+    try:
+        revisions, not_found = kumiho.batch_get_revisions(
+            revision_krefs=revision_krefs or [],
+            item_krefs=item_krefs or [],
+            tag=tag,
+            allow_partial=allow_partial,
+        )
+        return {
+            "revisions": [_serialize_revision(r) for r in revisions],
+            "not_found": not_found,
+            "found_count": len(revisions),
+            "requested_count": len(revision_krefs or []) + len(item_krefs or []),
+        }
+    except grpc.RpcError as e:
+        return {"error": str(e)}
+    except Exception as e:
+        return {"error": str(e)}
+
+
 # ============================================================================
 # Write Operations (use with caution)
 # ============================================================================
@@ -2166,6 +2201,35 @@ TOOLS: List[Dict[str, Any]] = [
             "required": ["item_kref", "tag", "time"],
         },
     },
+    {
+        "name": "kumiho_batch_get_revisions",
+        "description": "Batch-fetch multiple revisions in a single call. Two modes: (1) provide revision_krefs to fetch specific revisions, or (2) provide item_krefs + tag to resolve that tag for each item. Returns found revisions and a list of krefs that could not be resolved.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "revision_krefs": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "List of revision kref URIs to fetch directly (e.g., ['kref://proj/space/item.kind?r=1', ...])",
+                },
+                "item_krefs": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "List of item kref URIs to resolve a tag for (e.g., ['kref://proj/space/item.kind', ...])",
+                },
+                "tag": {
+                    "type": "string",
+                    "description": "Tag to resolve when using item_krefs mode (default: 'latest')",
+                    "default": "latest",
+                },
+                "allow_partial": {
+                    "type": "boolean",
+                    "description": "If true, return partial results when some krefs are not found (default: true)",
+                    "default": True,
+                },
+            },
+        },
+    },
     # Read operations - Artifacts
     {
         "name": "kumiho_get_artifacts",
@@ -2868,6 +2932,12 @@ TOOL_HANDLERS = {
         args["item_kref"],
         args["tag"],
         args["time"],
+    ),
+    "kumiho_batch_get_revisions": lambda args: tool_batch_get_revisions(
+        args.get("revision_krefs"),
+        args.get("item_krefs"),
+        args.get("tag", "latest"),
+        args.get("allow_partial", True),
     ),
     "kumiho_get_artifacts": lambda args: tool_get_artifacts(args["revision_kref"]),
     "kumiho_get_artifact": lambda args: tool_get_artifact(args["artifact_kref"]),
