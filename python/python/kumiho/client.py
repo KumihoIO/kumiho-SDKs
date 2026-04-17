@@ -285,6 +285,10 @@ class _Client:
             ("grpc.keepalive_timeout_ms", 10_000),          # 10s to respond
             ("grpc.keepalive_permit_without_calls", True),  # ping even when idle
             ("grpc.http2.min_time_between_pings_ms", 10_000),
+            # Declare the channel dead if we send 3 pings in a row with no
+            # data response — survives half-open TCP resets where gRPC state
+            # stays READY while the underlying connection is gone.
+            ("grpc.http2.max_pings_without_data", 3),
         ]
 
         if use_tls:
@@ -2092,15 +2096,24 @@ class _MetadataInjector(
 
 
 # gRPC status codes that indicate transient failures worth retrying.
+# INTERNAL covers Neo4j transient errors (DeadlockDetected, transaction
+# timeout) that the server surfaces as gRPC INTERNAL; they clear on retry.
+# RESOURCE_EXHAUSTED covers backend rate limits and queue pressure.
 _TRANSIENT_STATUS_CODES = frozenset({
     grpc.StatusCode.UNAVAILABLE,
     grpc.StatusCode.DEADLINE_EXCEEDED,
+    grpc.StatusCode.INTERNAL,
+    grpc.StatusCode.RESOURCE_EXHAUSTED,
 })
 
 # Default retry configuration.
 _RETRY_MAX_ATTEMPTS = 3
 _RETRY_BASE_DELAY = 0.5  # seconds
 _RETRY_MAX_DELAY = 5.0   # seconds
+
+# Default per-RPC deadline. Without this, a half-open connection can leave
+# an await blocking forever. Overridable via KUMIHO_RPC_TIMEOUT_SECS.
+_DEFAULT_RPC_TIMEOUT_SECS = 30.0
 
 
 class _TransientRetryInterceptor(grpc.UnaryUnaryClientInterceptor):
@@ -2130,9 +2143,28 @@ class _TransientRetryInterceptor(grpc.UnaryUnaryClientInterceptor):
         self.max_delay = float(
             os.getenv("KUMIHO_GRPC_RETRY_MAX_DELAY", str(_RETRY_MAX_DELAY))
         )
+        self.default_timeout = float(
+            os.getenv("KUMIHO_RPC_TIMEOUT_SECS", str(_DEFAULT_RPC_TIMEOUT_SECS))
+        )
+
+    def _with_default_timeout(
+        self, client_call_details: grpc.ClientCallDetails
+    ) -> grpc.ClientCallDetails:
+        """Apply our default per-RPC deadline unless the caller set one."""
+        if client_call_details.timeout is not None:
+            return client_call_details
+        return _ClientCallDetails(
+            method=client_call_details.method,
+            timeout=self.default_timeout,
+            metadata=client_call_details.metadata,
+            credentials=client_call_details.credentials,
+            wait_for_ready=getattr(client_call_details, "wait_for_ready", None),
+            compression=getattr(client_call_details, "compression", None),
+        )
 
     def intercept_unary_unary(self, continuation, client_call_details, request):
         last_response = None
+        client_call_details = self._with_default_timeout(client_call_details)
 
         for attempt in range(self.max_attempts):
             response = continuation(client_call_details, request)
