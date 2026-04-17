@@ -62,15 +62,18 @@ class KrefValidationError(ValueError):
 # Valid formats:
 #   - Item: kref://project/space/item.kind?r=REVISION&a=ARTIFACT
 #   - Space: kref://project/space or kref:///space (root-level)
-# Each path segment must be alphanumeric with dots, underscores, or hyphens.
+# Path segments may contain Unicode letters/digits (\w is Unicode-aware in
+# Python 3), plus dots and hyphens. Path traversal (..) and control characters
+# are blocked by explicit checks in validate_kref, not by this regex.
+# Artifact IDs remain ASCII-only since they are server-generated opaque
+# identifiers — never user-provided content names.
 _KREF_PATTERN = re.compile(
-    r'^kref://'                                    # scheme
-    r'(/[a-zA-Z0-9_][a-zA-Z0-9._-]*'              # space path starting with / (root-level)
-    r'(/[a-zA-Z0-9_][a-zA-Z0-9._-]*)*'            # optional nested path segments
-    r'|'                                           # OR
-    r'[a-zA-Z0-9_][a-zA-Z0-9._-]*'                # project/item path segment
-    r'(/[a-zA-Z0-9_][a-zA-Z0-9._-]*)*)'           # optional nested path segments
-    r'(\?r=\d+(&a=[a-zA-Z0-9._-]+)?)?$'           # optional revision and artifact
+    r'^kref://'                      # scheme
+    r'(/\w[\w.-]*(/\w[\w.-]*)*'      # space path starting with / (root-level)
+    r'|'                             # OR
+    r'\w[\w.-]*(/\w[\w.-]*)*)'       # project/item path segments
+    r'(\?r=\d+(&a=[a-zA-Z0-9._-]+)?)?$',  # optional revision and artifact
+    re.UNICODE,
 )
 
 
