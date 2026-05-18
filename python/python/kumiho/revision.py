@@ -115,8 +115,8 @@ class Revision(KumihoObject):
             client: The client instance for making API calls.
         """
         super().__init__(client)
-        self.kref = Kref(pb_revision.kref.uri)
-        self.item_kref = Kref(pb_revision.item_kref.uri)
+        self.kref = Kref.from_pb(pb_revision.kref)
+        self.item_kref = Kref.from_pb(pb_revision.item_kref)
         self.number = pb_revision.number
         self.latest = pb_revision.latest
         self._cached_tags = list(pb_revision.tags)

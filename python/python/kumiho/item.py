@@ -102,7 +102,7 @@ class Item(KumihoObject):
             client: The client instance for making API calls.
         """
         super().__init__(client)
-        self.kref = Kref(pb_item.kref.uri)
+        self.kref = Kref.from_pb(pb_item.kref)
         self.name = pb_item.name
         self.item_name = pb_item.item_name
         self.kind = pb_item.kind
