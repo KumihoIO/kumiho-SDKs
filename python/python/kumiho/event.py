@@ -118,7 +118,7 @@ class Event:
             pb_event: The protobuf Event message from the server.
         """
         self.routing_key = pb_event.routing_key
-        self.kref = Kref(pb_event.kref.uri)
+        self.kref = Kref.from_pb(pb_event.kref)
         self.timestamp = pb_event.timestamp or None
         self.author = pb_event.author
         self.details = dict(pb_event.details)

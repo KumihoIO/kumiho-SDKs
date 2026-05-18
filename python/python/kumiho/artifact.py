@@ -107,11 +107,11 @@ class Artifact(KumihoObject):
             client: The client instance for making API calls.
         """
         super().__init__(client)
-        self.kref = Kref(pb_artifact.kref.uri)
+        self.kref = Kref.from_pb(pb_artifact.kref)
         self.location = pb_artifact.location
-        self.revision_kref = Kref(pb_artifact.revision_kref.uri)
+        self.revision_kref = Kref.from_pb(pb_artifact.revision_kref)
         self.item_kref = (
-            Kref(pb_artifact.item_kref.uri)
+            Kref.from_pb(pb_artifact.item_kref)
             if pb_artifact.HasField('item_kref') else None
         )
         self.created_at = pb_artifact.created_at or None
