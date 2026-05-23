@@ -239,8 +239,8 @@ class Edge(KumihoObject):
             client: The client instance for making API calls.
         """
         super().__init__(client)
-        self.source_kref = Kref(pb_edge.source_kref.uri)
-        self.target_kref = Kref(pb_edge.target_kref.uri)
+        self.source_kref = Kref.from_pb(pb_edge.source_kref)
+        self.target_kref = Kref.from_pb(pb_edge.target_kref)
         self.edge_type = pb_edge.edge_type
         self.metadata = dict(pb_edge.metadata)
         self.created_at = pb_edge.created_at or None
