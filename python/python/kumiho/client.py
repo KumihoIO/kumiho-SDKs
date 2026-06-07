@@ -49,7 +49,7 @@ import grpc
 from google.protobuf.json_format import MessageToDict
 
 from ._token_loader import load_bearer_token
-from .discovery import DiscoveryError, DiscoveryManager
+from .discovery import DiscoveryError, DiscoveryManager, resolve_local_ce_endpoint
 from .proto import kumiho_pb2
 from .proto import kumiho_pb2_grpc
 from .event import Event
@@ -181,6 +181,7 @@ class _Client:
         tenant_hint: Optional[str] = None,
         force_discovery_refresh: Optional[bool] = None,
         enable_auto_login: bool = True,
+        skip_auth_token_load: bool = False,
     ) -> None:
         """Initialize the gRPC client with connection and authentication settings.
 
@@ -237,7 +238,27 @@ class _Client:
                 )
         """
         metadata: List[Tuple[str, str]] = list(default_metadata or [])
-        resolved_token = auth_token or load_bearer_token()
+        token_error: Optional[ValueError] = None
+        if auth_token is not None:
+            resolved_token = auth_token or None
+        elif skip_auth_token_load:
+            resolved_token = None
+        else:
+            try:
+                resolved_token = load_bearer_token()
+            except ValueError as exc:
+                token_error = exc
+                resolved_token = None
+
+        if target is None and not resolved_token:
+            local_target = resolve_local_ce_endpoint()
+            if local_target:
+                target = local_target
+                use_discovery = False
+                enable_auto_login = False
+            elif token_error is not None:
+                raise token_error
+
         self._auth_token: Optional[str] = resolved_token
 
         discovery = self._maybe_resolve_via_discovery(

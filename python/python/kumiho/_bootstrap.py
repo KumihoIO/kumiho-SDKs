@@ -16,7 +16,10 @@ def bootstrap_default_client(*, force_refresh: bool = False) -> _Client:
 
     refresh_flag = True if force_refresh else None
 
-    token = load_bearer_token()
+    try:
+        token = load_bearer_token()
+    except ValueError:
+        token = None
     env_token_present = bool((os.getenv("KUMIHO_AUTH_TOKEN") or "").strip())
 
     # In non-interactive plugin sessions, an explicit env token should be enough.
