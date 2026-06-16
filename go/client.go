@@ -379,6 +379,15 @@ func firstNonEmpty(vals ...string) string {
 	return ""
 }
 
+// setMeta sets key=value on a metadata map, allocating it if nil. Used by model
+// mutators to keep their in-memory metadata in sync after a successful call.
+func setMeta(m *map[string]string, key, value string) {
+	if *m == nil {
+		*m = map[string]string{}
+	}
+	(*m)[key] = value
+}
+
 func normalizeTarget(raw string) (host string, port uint16, useTLS bool, err error) {
 	target := strings.TrimSpace(raw)
 	if target == "" {

@@ -45,9 +45,14 @@ func (a *Artifact) SetMetadata(ctx context.Context, metadata map[string]string) 
 	return a.client.UpdateArtifactMetadata(ctx, a.Kref, metadata)
 }
 
-// SetAttribute sets a single metadata attribute.
+// SetAttribute sets a single metadata attribute (updates the in-memory cache on
+// success, matching Python).
 func (a *Artifact) SetAttribute(ctx context.Context, key, value string) (bool, error) {
-	return a.client.SetAttribute(ctx, a.Kref, key, value)
+	ok, err := a.client.SetAttribute(ctx, a.Kref, key, value)
+	if err == nil && ok {
+		setMeta(&a.Metadata, key, value)
+	}
+	return ok, err
 }
 
 // GetAttribute gets a single metadata attribute (ok=false if unset).
@@ -55,9 +60,14 @@ func (a *Artifact) GetAttribute(ctx context.Context, key string) (string, bool, 
 	return a.client.GetAttribute(ctx, a.Kref, key)
 }
 
-// DeleteAttribute deletes a single metadata attribute.
+// DeleteAttribute deletes a single metadata attribute (updates the in-memory
+// cache on success, matching Python).
 func (a *Artifact) DeleteAttribute(ctx context.Context, key string) (bool, error) {
-	return a.client.DeleteAttribute(ctx, a.Kref, key)
+	ok, err := a.client.DeleteAttribute(ctx, a.Kref, key)
+	if err == nil && ok {
+		delete(a.Metadata, key)
+	}
+	return ok, err
 }
 
 // Delete deletes this artifact.
@@ -65,9 +75,13 @@ func (a *Artifact) Delete(ctx context.Context, force bool) error {
 	return a.client.DeleteArtifact(ctx, a.Kref, force)
 }
 
-// SetDeprecated deprecates/restores this artifact.
+// SetDeprecated deprecates/restores this artifact (updates the in-memory flag).
 func (a *Artifact) SetDeprecated(ctx context.Context, status bool) error {
-	return a.client.SetDeprecated(ctx, a.Kref, status)
+	err := a.client.SetDeprecated(ctx, a.Kref, status)
+	if err == nil {
+		a.Deprecated = status
+	}
+	return err
 }
 
 // SetDefault makes this artifact the default for its revision.

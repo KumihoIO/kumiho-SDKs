@@ -85,9 +85,14 @@ func (s *Space) SetMetadata(ctx context.Context, metadata map[string]string) (*S
 	return s.client.UpdateSpaceMetadata(ctx, Kref(s.Path), metadata)
 }
 
-// SetAttribute sets a single metadata attribute.
+// SetAttribute sets a single metadata attribute (updates the in-memory cache on
+// success, matching Python).
 func (s *Space) SetAttribute(ctx context.Context, key, value string) (bool, error) {
-	return s.client.SetAttribute(ctx, Kref(s.Path), key, value)
+	ok, err := s.client.SetAttribute(ctx, Kref(s.Path), key, value)
+	if err == nil && ok {
+		setMeta(&s.Metadata, key, value)
+	}
+	return ok, err
 }
 
 // GetAttribute gets a single metadata attribute (ok=false if unset).
@@ -95,9 +100,14 @@ func (s *Space) GetAttribute(ctx context.Context, key string) (string, bool, err
 	return s.client.GetAttribute(ctx, Kref(s.Path), key)
 }
 
-// DeleteAttribute deletes a single metadata attribute.
+// DeleteAttribute deletes a single metadata attribute (updates the in-memory
+// cache on success, matching Python).
 func (s *Space) DeleteAttribute(ctx context.Context, key string) (bool, error) {
-	return s.client.DeleteAttribute(ctx, Kref(s.Path), key)
+	ok, err := s.client.DeleteAttribute(ctx, Kref(s.Path), key)
+	if err == nil && ok {
+		delete(s.Metadata, key)
+	}
+	return ok, err
 }
 
 // Delete deletes this space (force=true for a non-empty space).

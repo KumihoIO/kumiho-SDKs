@@ -117,6 +117,10 @@ func (s *fakeServer) ResolveLocation(ctx context.Context, req *pb.ResolveLocatio
 	return &pb.ResolveLocationResponse{Location: "/data/hero.fbx"}, nil
 }
 
+func (s *fakeServer) SetAttribute(ctx context.Context, req *pb.SetAttributeRequest) (*pb.StatusResponse, error) {
+	return &pb.StatusResponse{Success: true}, nil
+}
+
 // startFake spins up the fake server and returns a connected SDK client.
 func startFake(t *testing.T) (*fakeServer, *kumiho.Client) {
 	t.Helper()
@@ -288,5 +292,24 @@ func TestIntegrationFindAllPathsTo(t *testing.T) {
 	}
 	if p == nil {
 		t.Error("FindPathTo returned nil, want a path")
+	}
+}
+
+func TestIntegrationModelLocalStateSync(t *testing.T) {
+	_, client := startFake(t)
+	ctx := context.Background()
+
+	item, err := client.CreateItem(ctx, "/vfx", "hero", "model", nil)
+	if err != nil {
+		t.Fatalf("CreateItem: %v", err)
+	}
+	// After a successful SetAttribute the in-memory metadata reflects the change
+	// (matching Python), so no re-fetch is needed.
+	ok, err := item.SetAttribute(ctx, "render", "cycles")
+	if err != nil || !ok {
+		t.Fatalf("SetAttribute: ok=%v err=%v", ok, err)
+	}
+	if item.Metadata["render"] != "cycles" {
+		t.Errorf("item.Metadata not synced after SetAttribute: %v", item.Metadata)
 	}
 }

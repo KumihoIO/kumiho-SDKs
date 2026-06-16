@@ -55,9 +55,14 @@ func (r *Revision) SetMetadata(ctx context.Context, metadata map[string]string) 
 	return r.client.UpdateRevisionMetadata(ctx, r.Kref, metadata)
 }
 
-// SetAttribute sets a single metadata attribute.
+// SetAttribute sets a single metadata attribute (updates the in-memory cache on
+// success, matching Python).
 func (r *Revision) SetAttribute(ctx context.Context, key, value string) (bool, error) {
-	return r.client.SetAttribute(ctx, r.Kref, key, value)
+	ok, err := r.client.SetAttribute(ctx, r.Kref, key, value)
+	if err == nil && ok {
+		setMeta(&r.Metadata, key, value)
+	}
+	return ok, err
 }
 
 // GetAttribute gets a single metadata attribute (ok=false if unset).
@@ -65,9 +70,14 @@ func (r *Revision) GetAttribute(ctx context.Context, key string) (string, bool, 
 	return r.client.GetAttribute(ctx, r.Kref, key)
 }
 
-// DeleteAttribute deletes a single metadata attribute.
+// DeleteAttribute deletes a single metadata attribute (updates the in-memory
+// cache on success, matching Python).
 func (r *Revision) DeleteAttribute(ctx context.Context, key string) (bool, error) {
-	return r.client.DeleteAttribute(ctx, r.Kref, key)
+	ok, err := r.client.DeleteAttribute(ctx, r.Kref, key)
+	if err == nil && ok {
+		delete(r.Metadata, key)
+	}
+	return ok, err
 }
 
 // HasTag reports whether this revision currently has a tag (server call).
@@ -75,14 +85,33 @@ func (r *Revision) HasTag(ctx context.Context, tag string) (bool, error) {
 	return r.client.HasTag(ctx, r.Kref, tag)
 }
 
-// Tag applies a tag.
+// Tag applies a tag (updates the in-memory Tags snapshot on success).
 func (r *Revision) Tag(ctx context.Context, tag string) error {
-	return r.client.TagRevision(ctx, r.Kref, tag)
+	err := r.client.TagRevision(ctx, r.Kref, tag)
+	if err == nil {
+		for _, t := range r.Tags {
+			if t == tag {
+				return nil
+			}
+		}
+		r.Tags = append(r.Tags, tag)
+	}
+	return err
 }
 
-// Untag removes a tag.
+// Untag removes a tag (updates the in-memory Tags snapshot on success).
 func (r *Revision) Untag(ctx context.Context, tag string) error {
-	return r.client.UntagRevision(ctx, r.Kref, tag)
+	err := r.client.UntagRevision(ctx, r.Kref, tag)
+	if err == nil {
+		out := r.Tags[:0]
+		for _, t := range r.Tags {
+			if t != tag {
+				out = append(out, t)
+			}
+		}
+		r.Tags = out
+	}
+	return err
 }
 
 // WasTagged reports whether this revision was ever tagged with tag.
@@ -143,8 +172,13 @@ func (r *Revision) Refresh(ctx context.Context) (*Revision, error) {
 }
 
 // SetDefaultArtifact sets the default artifact (used when resolving without &a=).
+// Updates the in-memory DefaultArtifact on success.
 func (r *Revision) SetDefaultArtifact(ctx context.Context, artifactName string) error {
-	return r.client.SetDefaultArtifact(ctx, r.Kref, artifactName)
+	err := r.client.SetDefaultArtifact(ctx, r.Kref, artifactName)
+	if err == nil {
+		r.DefaultArtifact = artifactName
+	}
+	return err
 }
 
 // Delete deletes this revision.
@@ -152,9 +186,13 @@ func (r *Revision) Delete(ctx context.Context, force bool) error {
 	return r.client.DeleteRevision(ctx, r.Kref, force)
 }
 
-// SetDeprecated deprecates/restores this revision.
+// SetDeprecated deprecates/restores this revision (updates the in-memory flag).
 func (r *Revision) SetDeprecated(ctx context.Context, status bool) error {
-	return r.client.SetDeprecated(ctx, r.Kref, status)
+	err := r.client.SetDeprecated(ctx, r.Kref, status)
+	if err == nil {
+		r.Deprecated = status
+	}
+	return err
 }
 
 // CreateEdge creates an edge from this revision to target.

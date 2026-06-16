@@ -153,9 +153,14 @@ func (i *Item) SetMetadata(ctx context.Context, metadata map[string]string) (*It
 	return i.client.UpdateItemMetadata(ctx, i.Kref, metadata)
 }
 
-// SetAttribute sets a single metadata attribute.
+// SetAttribute sets a single metadata attribute (updates the in-memory cache on
+// success, matching Python).
 func (i *Item) SetAttribute(ctx context.Context, key, value string) (bool, error) {
-	return i.client.SetAttribute(ctx, i.Kref, key, value)
+	ok, err := i.client.SetAttribute(ctx, i.Kref, key, value)
+	if err == nil && ok {
+		setMeta(&i.Metadata, key, value)
+	}
+	return ok, err
 }
 
 // GetAttribute gets a single metadata attribute (ok=false if unset).
@@ -163,9 +168,14 @@ func (i *Item) GetAttribute(ctx context.Context, key string) (string, bool, erro
 	return i.client.GetAttribute(ctx, i.Kref, key)
 }
 
-// DeleteAttribute deletes a single metadata attribute.
+// DeleteAttribute deletes a single metadata attribute (updates the in-memory
+// cache on success, matching Python).
 func (i *Item) DeleteAttribute(ctx context.Context, key string) (bool, error) {
-	return i.client.DeleteAttribute(ctx, i.Kref, key)
+	ok, err := i.client.DeleteAttribute(ctx, i.Kref, key)
+	if err == nil && ok {
+		delete(i.Metadata, key)
+	}
+	return ok, err
 }
 
 // Delete deletes this item (force=true to delete with revisions).
@@ -173,7 +183,11 @@ func (i *Item) Delete(ctx context.Context, force bool) error {
 	return i.client.DeleteItem(ctx, i.Kref, force)
 }
 
-// SetDeprecated deprecates/restores this item.
+// SetDeprecated deprecates/restores this item (updates the in-memory flag).
 func (i *Item) SetDeprecated(ctx context.Context, status bool) error {
-	return i.client.SetDeprecated(ctx, i.Kref, status)
+	err := i.client.SetDeprecated(ctx, i.Kref, status)
+	if err == nil {
+		i.Deprecated = status
+	}
+	return err
 }
