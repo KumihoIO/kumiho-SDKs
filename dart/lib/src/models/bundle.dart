@@ -42,7 +42,7 @@ import 'revision.dart';
 /// }
 ///
 /// // Get membership history
-/// final history = await bundle.getMembershipHistory(hero.kref);
+/// final history = await bundle.getMembershipHistory();
 /// ```
 class Bundle extends KumihoObject {
   /// Creates a [Bundle] from a protobuf ItemResponse.
@@ -146,17 +146,21 @@ class Bundle extends KumihoObject {
     return response.memberKrefs.map((k) => Kref(k.uri)).toList();
   }
 
-  /// Gets the membership history for a specific member.
+  /// Gets the full membership history of this bundle.
   ///
-  /// Returns the history of when the member was added/removed from this
-  /// bundle, including the metadata captured at each change. This is
-  /// useful for audits and debugging automation.
+  /// Returns the complete chronological history of membership changes
+  /// (additions and removals), including the metadata captured at each
+  /// change. Useful for audits and debugging automation.
+  ///
+  /// Mirrors the Python SDK's `Bundle.get_history()`: the GetBundleHistory
+  /// RPC returns the entire audit trail for the bundle and has no per-member
+  /// filter.
   ///
   /// ```dart
-  /// final history = await bundle.getMembershipHistory(hero.kref);
+  /// final history = await bundle.getMembershipHistory();
   /// ```
-  Future<pb.GetBundleHistoryResponse> getMembershipHistory(Kref memberKref) async {
-    return client.getBundleHistory(kref.uri, memberKref.uri);
+  Future<pb.GetBundleHistoryResponse> getMembershipHistory() async {
+    return client.getBundleHistory(kref.uri);
   }
 
   /// Creates a new revision of this bundle.

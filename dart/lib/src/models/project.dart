@@ -190,7 +190,8 @@ class Project extends KumihoObject {
   /// await project.update(description: 'Updated description');
   /// ```
   Future<Project> update({String? description}) async {
-    final response = await client.updateProject(name, description: description);
+    final response =
+        await client.updateProject(projectId, description: description);
     return Project(response, client);
   }
 
@@ -201,7 +202,7 @@ class Project extends KumihoObject {
   /// await project.delete(force: true);  // Hard delete
   /// ```
   Future<void> delete({bool force = false}) async {
-    await client.deleteProject(name, force: force);
+    await client.deleteProject(projectId, force: force);
   }
 
   /// Sets the public access mode for this project.
@@ -210,7 +211,8 @@ class Project extends KumihoObject {
   /// await project.setPublic(true);  // Enable public access
   /// ```
   Future<Project> setPublic(bool allowPublic) async {
-    final response = await client.updateProject(name, allowPublic: allowPublic);
+    final response =
+        await client.updateProject(projectId, allowPublic: allowPublic);
     return Project(response, client);
   }
 
