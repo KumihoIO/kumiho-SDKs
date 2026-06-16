@@ -148,9 +148,10 @@ public:
     /**
      * @brief Create a bundle in this project.
      * @param name The bundle name.
+     * @param metadata Optional key-value metadata for the bundle.
      * @return The created Bundle.
      */
-    std::shared_ptr<Bundle> createBundle(const std::string& name);
+    std::shared_ptr<Bundle> createBundle(const std::string& name, const Metadata& metadata = {});
 
     /**
      * @brief Get a bundle by name.

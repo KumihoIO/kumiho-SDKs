@@ -178,42 +178,52 @@ public:
     /**
      * @brief Add an item to this bundle.
      *
-     * Creates a new revision of the bundle with the membership change.
+     * Creates a new revision of the bundle with the membership change. The
+     * revision metadata records the action ("ADDED") and the member kref for
+     * audit purposes.
      *
      * @param item The item to add.
-     * @return The updated Bundle.
+     * @param metadata Optional additional metadata to store in the revision.
+     * @return A BundleMemberResult with success, message, and new_revision.
      */
-    std::shared_ptr<Bundle> addMember(const std::shared_ptr<Item>& item);
+    BundleMemberResult addMember(const std::shared_ptr<Item>& item, const Metadata& metadata = {});
 
     /**
      * @brief Add an item to this bundle by Kref.
      * @param item_kref The kref of the item to add.
-     * @return The updated Bundle.
+     * @param metadata Optional additional metadata to store in the revision.
+     * @return A BundleMemberResult with success, message, and new_revision.
      */
-    std::shared_ptr<Bundle> addMember(const Kref& item_kref);
+    BundleMemberResult addMember(const Kref& item_kref, const Metadata& metadata = {});
 
     /**
      * @brief Remove an item from this bundle.
      *
-     * Creates a new revision of the bundle with the membership change.
+     * Creates a new revision of the bundle with the membership change. The
+     * revision metadata records the action ("REMOVED") and the member kref for
+     * audit purposes.
      *
      * @param item The item to remove.
-     * @return The updated Bundle.
+     * @param metadata Optional additional metadata to store in the revision.
+     * @return A BundleMemberResult with success, message, and new_revision.
      */
-    std::shared_ptr<Bundle> removeMember(const std::shared_ptr<Item>& item);
+    BundleMemberResult removeMember(const std::shared_ptr<Item>& item, const Metadata& metadata = {});
 
     /**
      * @brief Remove an item from this bundle by Kref.
      * @param item_kref The kref of the item to remove.
-     * @return The updated Bundle.
+     * @param metadata Optional additional metadata to store in the revision.
+     * @return A BundleMemberResult with success, message, and new_revision.
      */
-    std::shared_ptr<Bundle> removeMember(const Kref& item_kref);
+    BundleMemberResult removeMember(const Kref& item_kref, const Metadata& metadata = {});
 
     /**
      * @brief Get all current members of this bundle.
+     * @param revision_number Optional specific revision to query (0 = current
+     *        membership / latest revision).
      * @return A list of BundleMember objects.
      */
-    std::vector<BundleMember> getMembers();
+    std::vector<BundleMember> getMembers(int revision_number = 0);
 
     /**
      * @brief Get the membership change history.

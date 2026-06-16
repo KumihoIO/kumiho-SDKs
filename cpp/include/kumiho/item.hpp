@@ -122,9 +122,11 @@ public:
      * with the "latest" tag, which moves to the newest revision.
      *
      * @param metadata Optional metadata for the revision.
+     * @param number Specific revision number to use. If 0 (default), the next
+     *        available number is auto-assigned.
      * @return The created Revision.
      */
-    std::shared_ptr<Revision> createRevision(const Metadata& metadata = {});
+    std::shared_ptr<Revision> createRevision(const Metadata& metadata = {}, int number = 0);
 
     /**
      * @brief Get a specific revision by number.

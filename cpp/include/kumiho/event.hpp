@@ -91,6 +91,28 @@ public:
      */
     Metadata getDetails() const;
 
+    /**
+     * @brief Get the event timestamp.
+     * @return The ISO timestamp when the event occurred (may be empty).
+     */
+    std::string getTimestamp() const;
+
+    /**
+     * @brief Get the author of the change that triggered the event.
+     * @return The user ID of the author (may be empty).
+     */
+    std::string getAuthor() const;
+
+    /**
+     * @brief Get the cursor for this event.
+     *
+     * Used to resume an event stream from this point. Empty if the tier
+     * does not support cursor-based resume.
+     *
+     * @return The cursor string (may be empty).
+     */
+    std::string getCursor() const;
+
 private:
     ::kumiho::Event event_;
 };

@@ -77,8 +77,8 @@ void Revision::setDefaultArtifact(const std::string& artifact_name) {
     client_->setDefaultArtifact(getKref(), artifact_name);
 }
 
-std::shared_ptr<Artifact> Revision::createArtifact(const std::string& name, const std::string& location) {
-    return client_->createArtifact(getKref(), name, location);
+std::shared_ptr<Artifact> Revision::createArtifact(const std::string& name, const std::string& location, const Metadata& metadata) {
+    return client_->createArtifact(getKref(), name, location, metadata);
 }
 
 std::shared_ptr<Artifact> Revision::getArtifact(const std::string& name) {
