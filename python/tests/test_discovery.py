@@ -150,8 +150,8 @@ def test_resolve_local_ce_endpoint_accepts_loopback_live_payload(monkeypatch) ->
 
     target = resolve_local_ce_endpoint(timeout=0.1)
 
-    assert target == "127.0.0.1:8080"
-    assert captured == {"url": "http://127.0.0.1:8080/api/_live", "timeout": 0.1}
+    assert target == "127.0.0.1:9190"
+    assert captured == {"url": "http://127.0.0.1:9190/api/_live", "timeout": 0.1}
 
 
 def test_resolve_local_ce_endpoint_refuses_non_loopback_override(monkeypatch) -> None:
@@ -186,13 +186,13 @@ def test_client_from_local_ce_is_tokenless(monkeypatch) -> None:
     monkeypatch.setattr("kumiho.discovery.Client", FakeClient)
     monkeypatch.setattr(
         "kumiho.discovery.resolve_local_ce_endpoint",
-        lambda timeout=None: "127.0.0.1:8080",
+        lambda timeout=None: "127.0.0.1:9190",
     )
 
     client_from_local_ce()
 
     assert created == {
-        "target": "127.0.0.1:8080",
+        "target": "127.0.0.1:9190",
         "auth_token": None,
         "metadata": [],
         "use_discovery": False,

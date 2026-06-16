@@ -38,7 +38,10 @@ _DEFAULT_CACHE_KEY = "__default__"
 _LOCAL_CE_ENDPOINT_ENV = "KUMIHO_LOCAL_SERVER_ENDPOINT"
 _LOCAL_CE_PORT_ENV = "KUMIHO_LOCAL_SERVER_PORT"
 _LOCAL_CE_TIMEOUT_ENV = "KUMIHO_LOCAL_DISCOVERY_TIMEOUT_SECONDS"
-_DEFAULT_LOCAL_CE_TARGET = "127.0.0.1:8080"
+# Self-hosted CE default loopback port. Must match the server's CE default
+# (kumiho-server config/apply_deployment_defaults) and the installer scripts.
+_DEFAULT_LOCAL_CE_PORT = 9190
+_DEFAULT_LOCAL_CE_TARGET = f"127.0.0.1:{_DEFAULT_LOCAL_CE_PORT}"
 
 
 class DiscoveryError(RuntimeError):
@@ -524,7 +527,7 @@ def _normalise_local_ce_target(raw: str) -> str:
         raise DiscoveryError(
             f"{_LOCAL_CE_ENDPOINT_ENV} must point to localhost, 127.0.0.1, or ::1"
         )
-    port = parsed.port or 8080
+    port = parsed.port or _DEFAULT_LOCAL_CE_PORT
     if port <= 0 or port > 65535:
         raise DiscoveryError(f"{_LOCAL_CE_ENDPOINT_ENV} port must be between 1 and 65535")
     return f"{_format_host_for_target(host)}:{port}"

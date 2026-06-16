@@ -49,7 +49,7 @@ dependencies = [
 Homepage = "https://kumiho.io"
 Documentation = "https://docs.kumiho.io"
 Repository = "https://github.com/kumihoclouds/kumiho-python"
-Changelog = "https://github.com/kumihoclouds/kumiho-python/blob/main/CHANGELOG.md"
+Changelog = "https://github.com/kumihoclouds/kumiho-python/releases"
 Issues = "https://github.com/kumihoclouds/kumiho-python/issues"
 
 [project.scripts]
@@ -78,7 +78,7 @@ all = [
 ]
 
 [build-system]
-requires = ["setuptools>=61.0", "wheel"]
+requires = ["setuptools>=77.0.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]

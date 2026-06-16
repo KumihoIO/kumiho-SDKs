@@ -74,7 +74,7 @@ def test_client_uses_local_ce_when_cached_token_is_malformed(monkeypatch) -> Non
         "load_bearer_token",
         lambda: (_ for _ in ()).throw(ValueError("bad token")),
     )
-    monkeypatch.setattr(client_mod, "resolve_local_ce_endpoint", lambda: "127.0.0.1:8080")
+    monkeypatch.setattr(client_mod, "resolve_local_ce_endpoint", lambda: "127.0.0.1:9190")
     monkeypatch.setattr(client_mod.grpc, "insecure_channel", fake_insecure_channel)
     monkeypatch.setattr(client_mod.grpc, "intercept_channel", fake_intercept_channel)
     monkeypatch.setattr(
@@ -86,7 +86,7 @@ def test_client_uses_local_ce_when_cached_token_is_malformed(monkeypatch) -> Non
     client = client_mod._Client()
 
     assert client._auth_token is None
-    assert captured["address"] == "127.0.0.1:8080"
+    assert captured["address"] == "127.0.0.1:9190"
     assert "_AutoLoginInterceptor" not in captured["interceptors"]
 
 

@@ -1,5 +1,26 @@
 # Kumiho Python SDK - Release Notes
 
+## kumiho 0.10.0 (June 2026) — Self-Hosted Community Edition Fallback 🦊
+
+Adds first-class support for the self-hosted **Community Edition (CE)** server (`kumiho-server` CE v1.3.0). When the SDK has **no auth token and no explicit target**, it auto-discovers a local CE server and connects tokenlessly — so local, single-user development works with no login.
+
+### ✨ Local CE auto-discovery
+
+- With no token (no `KUMIHO_AUTH_TOKEN`, no cached `~/.kumiho/kumiho_authentication.json`) **and** no explicit target, the SDK probes `GET http://127.0.0.1:9190/api/_live`. If it finds a `deployment_mode: self_hosted_ce` server, it builds a **tokenless** client with discovery and auto-login disabled.
+- `kumiho.client_from_local_ce()` creates such a client explicitly.
+
+### ☁️ Cloud behaviour is unchanged
+
+The CE probe **only** fires when there is no token and no explicit target. Any cached/env token, or an explicit `KUMIHO_SERVER_ENDPOINT` / `target=`, sends the SDK down the normal control-plane / discovery path exactly as before. A pre-existing cloud token therefore takes precedence over CE — rename `~/.kumiho/kumiho_authentication.json` to use CE auto-discovery.
+
+### Configuration
+
+| Env var | Purpose | Default |
+| --- | --- | --- |
+| `KUMIHO_LOCAL_SERVER_ENDPOINT` | Override the CE probe target (loopback only) | `127.0.0.1:9190` |
+| `KUMIHO_LOCAL_SERVER_PORT` | Override just the CE port | `9190` |
+| `KUMIHO_LOCAL_DISCOVERY_TIMEOUT_SECONDS` | CE probe timeout (seconds) | `0.5` |
+
 ## kumiho 0.9.7 (February 2026) - Graph-Augmented Recall & Revision Stacking 🧠
 
 This release introduces graph-augmented memory retrieval, server-side revision scoring, and intelligent revision stacking — closing the gap between isolated vector search and true graph-native reasoning. Ships alongside `kumiho-memory` 0.3.0.
