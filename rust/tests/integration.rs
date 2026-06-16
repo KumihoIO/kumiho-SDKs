@@ -99,8 +99,10 @@ impl KumihoService for FakeKumiho {
     ) -> Result<Response<pb::RevisionResponse>, Status> {
         let uri = req.into_inner().kref.map(|k| k.uri).unwrap_or_default();
         self.rec.lock().unwrap().last_revision_kref = uri.clone();
+        let item_uri = uri.split('?').next().unwrap_or(&uri).to_string();
         Ok(Response::new(pb::RevisionResponse {
             kref: Some(pb::Kref { uri }),
+            item_kref: Some(pb::Kref { uri: item_uri }),
             number: 3,
             latest: true,
             ..Default::default()
@@ -178,9 +180,22 @@ impl KumihoService for FakeKumiho {
     }
     async fn get_item(
         &self,
-        _r: Request<pb::GetItemRequest>,
+        req: Request<pb::GetItemRequest>,
     ) -> Result<Response<pb::ItemResponse>, Status> {
-        Err(unimpl("get_item"))
+        let r = req.into_inner();
+        let uri = format!(
+            "kref://{}/{}.{}",
+            r.parent_path.trim_start_matches('/'),
+            r.item_name,
+            r.kind
+        );
+        Ok(Response::new(pb::ItemResponse {
+            kref: Some(pb::Kref { uri }),
+            name: format!("{}.{}", r.item_name, r.kind),
+            item_name: r.item_name,
+            kind: r.kind,
+            ..Default::default()
+        }))
     }
     async fn get_items(
         &self,
@@ -370,9 +385,20 @@ impl KumihoService for FakeKumiho {
     }
     async fn find_shortest_path(
         &self,
-        _r: Request<pb::ShortestPathRequest>,
+        req: Request<pb::ShortestPathRequest>,
     ) -> Result<Response<pb::ShortestPathResponse>, Status> {
-        Err(unimpl("find_shortest_path"))
+        // Two shortest paths when all-shortest is requested, else one.
+        let n = if req.into_inner().all_shortest { 2 } else { 1 };
+        Ok(Response::new(pb::ShortestPathResponse {
+            paths: (0..n)
+                .map(|_| pb::RevisionPath {
+                    total_depth: 1,
+                    ..Default::default()
+                })
+                .collect(),
+            path_exists: true,
+            path_length: 1,
+        }))
     }
     async fn analyze_impact(
         &self,
@@ -498,12 +524,16 @@ async fn integration_create_item_fields_and_reserved_kind() {
         assert_eq!(req.kind, "model");
     }
 
-    // Reserved "bundle" kind is rejected client-side, before any RPC.
+    // Reserved "bundle" kind is rejected client-side, before any RPC, with a
+    // discriminable ReservedKind error.
     fake.rec.lock().unwrap().last_item = None;
     let err = client
         .create_item("/vfx/chars", "pack", "bundle", None)
         .await;
-    assert!(err.is_err(), "reserved kind 'bundle' should be rejected");
+    assert!(
+        matches!(err, Err(kumiho::Error::ReservedKind(_))),
+        "expected Error::ReservedKind, got {err:?}"
+    );
     assert!(
         fake.rec.lock().unwrap().last_item.is_none(),
         "reserved-kind create must not reach the server"
@@ -536,4 +566,37 @@ async fn integration_resolve_swallows_rpc_error() {
         .await
         .unwrap();
     assert_eq!(loc, None);
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn integration_get_item_from_revision() {
+    let (_fake, client) = start_server().await;
+    // Non-nested kref so the item-name/kind split is unambiguous.
+    let item = client
+        .get_item_from_revision("kref://vfx/hero.model?r=3")
+        .await
+        .unwrap();
+    assert_eq!(item.item_name, "hero");
+    assert_eq!(item.kind, "model");
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn integration_find_all_paths_to() {
+    let (_fake, client) = start_server().await;
+    let src = client
+        .get_revision("kref://vfx/chars/a.model?r=1")
+        .await
+        .unwrap();
+    let dst = client
+        .get_revision("kref://vfx/chars/b.model?r=1")
+        .await
+        .unwrap();
+
+    // find_all_paths_to requests all shortest paths; the fake returns two.
+    let all = src.find_all_paths_to(&dst, None, 0).await.unwrap();
+    assert_eq!(all.paths.len(), 2);
+
+    // find_path_to returns just the first.
+    let one = src.find_path_to(&dst, None, 0).await.unwrap();
+    assert!(one.is_some());
 }

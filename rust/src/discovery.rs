@@ -578,3 +578,39 @@ async fn probe_ce(target: &str) -> bool {
         Err(_) => false,
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use base64::Engine;
+
+    fn make_jwt(claims: serde_json::Value) -> String {
+        let payload = base64::engine::general_purpose::URL_SAFE_NO_PAD
+            .encode(serde_json::to_vec(&claims).unwrap());
+        format!("h.{payload}.s")
+    }
+
+    #[test]
+    fn control_plane_token_detection() {
+        assert!(is_control_plane_token(&make_jwt(
+            serde_json::json!({"tenant_id": "t1"})
+        )));
+        assert!(is_control_plane_token(&make_jwt(
+            serde_json::json!({"iss": "https://control.kumiho.cloud/x"})
+        )));
+        assert!(is_control_plane_token(&make_jwt(
+            serde_json::json!({"aud": "kumiho-server-prod"})
+        )));
+        assert!(!is_control_plane_token(&make_jwt(
+            serde_json::json!({"iss": "https://securetoken.google.com/p"})
+        )));
+        assert!(!is_control_plane_token("not-a-jwt"));
+    }
+
+    #[test]
+    fn firebase_token_has_no_fallback_candidate() {
+        // A non-control-plane token resolves to only itself (no Firebase lookup).
+        let fb = make_jwt(serde_json::json!({"iss": "https://securetoken.google.com/p"}));
+        assert_eq!(discovery_token_candidates(&fb), vec![fb.clone()]);
+    }
+}

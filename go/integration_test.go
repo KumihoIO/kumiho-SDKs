@@ -7,6 +7,7 @@ package kumiho_test
 
 import (
 	"context"
+	"errors"
 	"net"
 	"strings"
 	"sync"
@@ -70,10 +71,43 @@ func (s *fakeServer) CreateItem(ctx context.Context, req *pb.CreateItemRequest) 
 }
 
 func (s *fakeServer) GetRevision(ctx context.Context, req *pb.KrefRequest) (*pb.RevisionResponse, error) {
+	uri := req.GetKref().GetUri()
 	s.mu.Lock()
-	s.lastRevisionKref = req.GetKref().GetUri()
+	s.lastRevisionKref = uri
 	s.mu.Unlock()
-	return &pb.RevisionResponse{Kref: req.GetKref(), Number: 3, Latest: true}, nil
+	itemKref := uri
+	if i := strings.IndexByte(itemKref, '?'); i >= 0 {
+		itemKref = itemKref[:i]
+	}
+	return &pb.RevisionResponse{
+		Kref:     req.GetKref(),
+		ItemKref: &pb.Kref{Uri: itemKref},
+		Number:   3,
+		Latest:   true,
+	}, nil
+}
+
+func (s *fakeServer) GetItem(ctx context.Context, req *pb.GetItemRequest) (*pb.ItemResponse, error) {
+	uri := "kref://" + strings.TrimPrefix(req.GetParentPath(), "/") + "/" + req.GetItemName() + "." + req.GetKind()
+	return &pb.ItemResponse{
+		Kref:     &pb.Kref{Uri: uri},
+		Name:     req.GetItemName() + "." + req.GetKind(),
+		ItemName: req.GetItemName(),
+		Kind:     req.GetKind(),
+	}, nil
+}
+
+func (s *fakeServer) FindShortestPath(ctx context.Context, req *pb.ShortestPathRequest) (*pb.ShortestPathResponse, error) {
+	// Return two shortest paths when all-shortest is requested, else one.
+	n := 1
+	if req.GetAllShortest() {
+		n = 2
+	}
+	paths := make([]*pb.RevisionPath, 0, n)
+	for i := 0; i < n; i++ {
+		paths = append(paths, &pb.RevisionPath{TotalDepth: 1})
+	}
+	return &pb.ShortestPathResponse{Paths: paths, PathExists: true, PathLength: 1}, nil
 }
 
 func (s *fakeServer) ResolveLocation(ctx context.Context, req *pb.ResolveLocationRequest) (*pb.ResolveLocationResponse, error) {
@@ -160,8 +194,10 @@ func TestIntegrationCreateItemFieldsAndReservedKind(t *testing.T) {
 	fake.mu.Lock()
 	fake.lastItemReq = nil
 	fake.mu.Unlock()
-	if _, err := client.CreateItem(ctx, "/vfx/chars", "pack", "bundle", nil); err == nil {
-		t.Error("expected an error creating an item with reserved kind 'bundle'")
+	_, rerr := client.CreateItem(ctx, "/vfx/chars", "pack", "bundle", nil)
+	var rke *kumiho.ReservedKindError
+	if !errors.As(rerr, &rke) {
+		t.Errorf("expected a *ReservedKindError, got %v", rerr)
 	}
 	fake.mu.Lock()
 	leaked := fake.lastItemReq
@@ -208,5 +244,49 @@ func TestIntegrationResolveSwallowsRPCError(t *testing.T) {
 	}
 	if loc != "" {
 		t.Errorf("failed resolve location = %q, want empty", loc)
+	}
+}
+
+func TestIntegrationGetItemFromRevision(t *testing.T) {
+	_, client := startFake(t)
+	// Non-nested kref so the item-name/kind split is unambiguous.
+	item, err := client.GetItemFromRevision(context.Background(), "kref://vfx/hero.model?r=3")
+	if err != nil {
+		t.Fatalf("GetItemFromRevision: %v", err)
+	}
+	if item.ItemName != "hero" || item.Kind != "model" {
+		t.Errorf("item = %+v", item)
+	}
+}
+
+func TestIntegrationFindAllPathsTo(t *testing.T) {
+	_, client := startFake(t)
+	ctx := context.Background()
+
+	src, err := client.GetRevision(ctx, "kref://vfx/chars/a.model?r=1")
+	if err != nil {
+		t.Fatalf("GetRevision src: %v", err)
+	}
+	dst, err := client.GetRevision(ctx, "kref://vfx/chars/b.model?r=1")
+	if err != nil {
+		t.Fatalf("GetRevision dst: %v", err)
+	}
+
+	// FindAllPathsTo requests all shortest paths; the fake returns two.
+	res, err := src.FindAllPathsTo(ctx, dst, nil, 0)
+	if err != nil {
+		t.Fatalf("FindAllPathsTo: %v", err)
+	}
+	if len(res.Paths) != 2 {
+		t.Errorf("FindAllPathsTo paths = %d, want 2", len(res.Paths))
+	}
+
+	// FindPathTo returns just the first path.
+	p, err := src.FindPathTo(ctx, dst, nil, 0)
+	if err != nil {
+		t.Fatalf("FindPathTo: %v", err)
+	}
+	if p == nil {
+		t.Error("FindPathTo returned nil, want a path")
 	}
 }
