@@ -200,8 +200,8 @@ class Bundle extends KumihoObject {
   /// final revisions = await bundle.getRevisions();
   /// ```
   Future<List<Revision>> getRevisions() async {
-    final response = await client.getRevisions(kref.uri);
-    return response.revisions.map((r) => Revision(r, client)).toList();
+    final responses = await client.getRevisions(kref.uri);
+    return responses.map((r) => Revision(r, client)).toList();
   }
 
   /// Gets the latest revision of this bundle.
