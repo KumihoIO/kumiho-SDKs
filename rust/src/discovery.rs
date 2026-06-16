@@ -414,7 +414,11 @@ pub async fn resolve(
     let base_url = control_plane_url
         .filter(|s| !s.is_empty())
         .map(String::from)
-        .or_else(|| std::env::var("KUMIHO_CONTROL_PLANE_URL").ok().filter(|s| !s.is_empty()))
+        .or_else(|| {
+            std::env::var("KUMIHO_CONTROL_PLANE_URL")
+                .ok()
+                .filter(|s| !s.is_empty())
+        })
         .unwrap_or_else(|| DEFAULT_CONTROL_PLANE.to_string());
     let cache = DiscoveryCache {
         path: cache_path_override

@@ -437,8 +437,7 @@ impl Client {
         let token = crate::token_loader::load_bearer_token().map_err(Error::InvalidArgument)?;
         if let Some(tok) = token {
             // Token present -> control-plane discovery -> tenant's cloud server.
-            let record =
-                crate::discovery::resolve(&tok, tenant_hint, None, None, false).await?;
+            let record = crate::discovery::resolve(&tok, tenant_hint, None, None, false).await?;
             return ClientBuilder::default()
                 .endpoint(record.target())
                 .token(tok)
