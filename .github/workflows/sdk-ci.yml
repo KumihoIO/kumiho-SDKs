@@ -77,7 +77,7 @@ jobs:
       - name: Build
         run: cargo build --all-targets --verbose
       - name: Test
-        run: cargo test --verbose
+        run: cargo test --features mock-server --verbose
       - name: Format check
         run: cargo fmt --all --check
       - name: Clippy

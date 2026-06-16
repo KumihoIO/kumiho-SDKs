@@ -12,6 +12,11 @@ keywords = ["kumiho", "asset-management", "grpc", "version-control", "graph"]
 categories = ["api-bindings", "asynchronous"]
 readme = "README.md"
 
+[features]
+# Generates the gRPC *server* stubs (see build.rs) so the in-process integration
+# tests can stand up a mock KumihoService. Not needed by SDK consumers.
+mock-server = []
+
 [dependencies]
 tonic = { version = "0.12", features = ["tls", "tls-roots"] }
 prost = "0.13"
@@ -38,3 +43,5 @@ tonic-build = "0.12"
 
 [dev-dependencies]
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "time", "fs"] }
+tonic = "0.12"
+futures-core = "0.3"
