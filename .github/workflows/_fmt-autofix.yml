@@ -1,0 +1,42 @@
+# TEMPORARY (parity work): auto-format Go + Rust on each push using CI's stable
+# toolchains and commit the result back, so the hard fmt gate stays satisfied
+# without hand-formatting. Removed when the parity work is complete.
+name: _fmt-autofix
+on:
+  push:
+    branches:
+      - feat/rust-go-sdks
+
+permissions:
+  contents: write
+
+jobs:
+  fmt:
+    # Skip the bot's own format commits to avoid noise (they don't re-trigger
+    # workflows anyway, but this keeps the run list clean).
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go/go.mod
+      - name: gofmt
+        run: gofmt -w go
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+      - name: cargo fmt
+        working-directory: rust
+        run: cargo fmt --all
+      - name: Commit formatting
+        run: |
+          if git diff --quiet; then
+            echo "Already formatted; nothing to do."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "style: auto-format (gofmt + cargo fmt)"
+          git push

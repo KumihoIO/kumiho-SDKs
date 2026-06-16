@@ -15,6 +15,16 @@ type EdgeTypeValidationError struct{ Msg string }
 
 func (e *EdgeTypeValidationError) Error() string { return e.Msg }
 
+// ReservedKindError is returned when CreateItem is called with a reserved item
+// kind (e.g. "bundle"); use CreateBundle instead. Mirrors Python's
+// ReservedKindError so callers can discriminate this case.
+type ReservedKindError struct {
+	Kind string
+	Msg  string
+}
+
+func (e *ReservedKindError) Error() string { return e.Msg }
+
 // ProjectLimitError is returned when guardrails block project creation
 // (e.g. the tenant's project limit was reached).
 type ProjectLimitError struct{ Msg string }

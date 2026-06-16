@@ -585,9 +585,7 @@ impl Client {
         metadata: Option<HashMap<String, String>>,
     ) -> Result<Item> {
         if RESERVED_KINDS.contains(&kind.to_ascii_lowercase().as_str()) {
-            return Err(Error::InvalidArgument(format!(
-                "Item kind '{kind}' is reserved; use create_bundle() instead"
-            )));
+            return Err(Error::ReservedKind(kind.to_string()));
         }
         let req = pb::CreateItemRequest {
             parent_path: parent_path.to_string(),
@@ -811,6 +809,12 @@ impl Client {
         };
         let resp = unary!(self, get_revision, req)?;
         Ok(Revision::from_pb(resp, self.clone()))
+    }
+
+    /// Get the item that owns the given revision kref.
+    pub async fn get_item_from_revision(&self, revision_kref: &str) -> Result<Item> {
+        let rev = self.get_revision(revision_kref).await?;
+        self.get_item_by_kref(rev.item_kref.uri()).await
     }
 
     /// List all revisions of an item.

@@ -133,7 +133,7 @@ func (c *Client) DeleteSpace(ctx context.Context, path string, force bool) error
 // CreateItem creates an item. The reserved "bundle" kind is rejected.
 func (c *Client) CreateItem(ctx context.Context, parentPath, itemName, kind string, metadata map[string]string) (*Item, error) {
 	if isReservedKind(kind) {
-		return nil, &InvalidArgumentError{Msg: "item kind '" + kind + "' is reserved; use CreateBundle instead"}
+		return nil, &ReservedKindError{Kind: kind, Msg: "item kind '" + kind + "' is reserved; use CreateBundle instead"}
 	}
 	resp, err := c.grpc.CreateItem(ctx, &pb.CreateItemRequest{ParentPath: parentPath, ItemName: itemName, Kind: kind})
 	if err != nil {
@@ -162,6 +162,15 @@ func (c *Client) GetItemByKref(ctx context.Context, krefURI string) (*Item, erro
 		return nil, err
 	}
 	return c.GetItem(ctx, parent, name, kind)
+}
+
+// GetItemFromRevision returns the item that owns the given revision kref.
+func (c *Client) GetItemFromRevision(ctx context.Context, revisionKref string) (*Item, error) {
+	rev, err := c.GetRevision(ctx, revisionKref)
+	if err != nil {
+		return nil, err
+	}
+	return c.GetItemByKref(ctx, rev.ItemKref.URI())
 }
 
 // GetBundleByKref gets a bundle by kref URI (verifies kind == bundle).

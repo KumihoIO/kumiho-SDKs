@@ -172,18 +172,38 @@ func (r *Revision) DeleteEdge(ctx context.Context, target *Revision, edgeType st
 	return r.client.DeleteEdge(ctx, r.Kref, target.Kref, edgeType)
 }
 
+// traversalDepthLimit applies the Python defaults (max_depth=10, limit=100)
+// when the caller passes a non-positive value.
+func traversalDepthLimit(maxDepth, limit int32) (int32, int32) {
+	if maxDepth <= 0 {
+		maxDepth = 10
+	}
+	if limit <= 0 {
+		limit = 100
+	}
+	return maxDepth, limit
+}
+
 // GetAllDependencies returns all transitive dependencies (outgoing).
+// maxDepth<=0 defaults to 10 and limit<=0 to 100, matching Python.
 func (r *Revision) GetAllDependencies(ctx context.Context, edgeTypeFilter []string, maxDepth, limit int32) (*TraversalResult, error) {
+	maxDepth, limit = traversalDepthLimit(maxDepth, limit)
 	return r.client.TraverseEdges(ctx, r.Kref, Outgoing, edgeTypeFilter, maxDepth, limit, false)
 }
 
 // GetAllDependents returns all transitive dependents (incoming).
+// maxDepth<=0 defaults to 10 and limit<=0 to 100, matching Python.
 func (r *Revision) GetAllDependents(ctx context.Context, edgeTypeFilter []string, maxDepth, limit int32) (*TraversalResult, error) {
+	maxDepth, limit = traversalDepthLimit(maxDepth, limit)
 	return r.client.TraverseEdges(ctx, r.Kref, Incoming, edgeTypeFilter, maxDepth, limit, false)
 }
 
 // FindPathTo returns the shortest path to target, or (nil, nil) if none.
+// maxDepth<=0 defaults to 10, matching Python.
 func (r *Revision) FindPathTo(ctx context.Context, target *Revision, edgeTypeFilter []string, maxDepth int32) (*RevisionPath, error) {
+	if maxDepth <= 0 {
+		maxDepth = 10
+	}
 	res, err := r.client.FindShortestPath(ctx, r.Kref, target.Kref, edgeTypeFilter, maxDepth, false)
 	if err != nil {
 		return nil, err
@@ -191,7 +211,18 @@ func (r *Revision) FindPathTo(ctx context.Context, target *Revision, edgeTypeFil
 	return res.FirstPath(), nil
 }
 
+// FindAllPathsTo returns every shortest path to target (the Python
+// find_path_to(all_paths=True) capability). maxDepth<=0 defaults to 10.
+func (r *Revision) FindAllPathsTo(ctx context.Context, target *Revision, edgeTypeFilter []string, maxDepth int32) (*ShortestPathResult, error) {
+	if maxDepth <= 0 {
+		maxDepth = 10
+	}
+	return r.client.FindShortestPath(ctx, r.Kref, target.Kref, edgeTypeFilter, maxDepth, true)
+}
+
 // AnalyzeImpact returns revisions impacted by changes to this revision.
+// maxDepth<=0 defaults to 10 and limit<=0 to 100, matching Python.
 func (r *Revision) AnalyzeImpact(ctx context.Context, edgeTypeFilter []string, maxDepth, limit int32) ([]ImpactedRevision, error) {
+	maxDepth, limit = traversalDepthLimit(maxDepth, limit)
 	return r.client.AnalyzeImpact(ctx, r.Kref, edgeTypeFilter, maxDepth, limit)
 }

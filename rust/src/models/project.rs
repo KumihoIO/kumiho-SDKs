@@ -158,6 +158,12 @@ impl Project {
             .await
     }
 
+    /// Alias for [`Project::set_public`] (matching Python). The `allow_public`
+    /// field is read-only — assigning it does not persist; call this instead.
+    pub async fn set_allow_public(&self, allow_public: bool) -> Result<Project> {
+        self.set_public(allow_public).await
+    }
+
     /// Update description and/or public flag.
     pub async fn update(
         &self,

@@ -14,6 +14,11 @@ pub enum Error {
     #[error("invalid edge type: {0}")]
     EdgeTypeValidation(String),
 
+    /// `create_item` was called with a reserved item kind (e.g. "bundle");
+    /// use `create_bundle` instead. Mirrors Python's `ReservedKindError`.
+    #[error("item kind '{0}' is reserved; use create_bundle() instead")]
+    ReservedKind(String),
+
     /// A caller-supplied argument was invalid (e.g. malformed kref shape).
     #[error("invalid argument: {0}")]
     InvalidArgument(String),

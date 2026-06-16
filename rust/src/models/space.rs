@@ -65,6 +65,13 @@ impl Space {
             .await
     }
 
+    /// List the immediate child spaces (Python `get_child_spaces`).
+    pub async fn get_child_spaces(&self) -> Result<Page<Space>> {
+        self.client
+            .get_child_spaces(&self.path, false, None, None)
+            .await
+    }
+
     /// Create an item in this space.
     pub async fn create_item(&self, item_name: &str, kind: &str) -> Result<Item> {
         self.client

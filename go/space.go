@@ -48,6 +48,11 @@ func (s *Space) GetSpaces(ctx context.Context, recursive bool, pageSize int, cur
 	return s.client.GetChildSpaces(ctx, s.Path, recursive, pageSize, cursor)
 }
 
+// GetChildSpaces lists the immediate child spaces (Python get_child_spaces).
+func (s *Space) GetChildSpaces(ctx context.Context) (*Page[*Space], error) {
+	return s.client.GetChildSpaces(ctx, s.Path, false, 0, "")
+}
+
 // CreateItem creates an item in this space.
 func (s *Space) CreateItem(ctx context.Context, itemName, kind string) (*Item, error) {
 	return s.client.CreateItem(ctx, s.Path, itemName, kind, nil)

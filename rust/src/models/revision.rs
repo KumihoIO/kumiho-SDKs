@@ -1,7 +1,9 @@
 //! The [`Revision`] domain object — a specific iteration of an item.
 
 use crate::client::Client;
-use crate::edge::{Edge, EdgeDirection, ImpactedRevision, RevisionPath, TraversalResult};
+use crate::edge::{
+    Edge, EdgeDirection, ImpactedRevision, RevisionPath, ShortestPathResult, TraversalResult,
+};
 use crate::error::Result;
 use crate::kref::Kref;
 use crate::models::artifact::Artifact;
@@ -211,12 +213,15 @@ impl Revision {
     }
 
     /// All transitive dependencies (outgoing edges).
+    ///
+    /// `max_depth <= 0` defaults to 10 and `limit <= 0` to 100 (matching Python).
     pub async fn get_all_dependencies(
         &self,
         edge_type_filter: Option<Vec<String>>,
         max_depth: i32,
         limit: i32,
     ) -> Result<TraversalResult> {
+        let (max_depth, limit) = traversal_depth_limit(max_depth, limit);
         self.client
             .traverse_edges(
                 &self.kref,
@@ -230,12 +235,15 @@ impl Revision {
     }
 
     /// All transitive dependents (incoming edges).
+    ///
+    /// `max_depth <= 0` defaults to 10 and `limit <= 0` to 100 (matching Python).
     pub async fn get_all_dependents(
         &self,
         edge_type_filter: Option<Vec<String>>,
         max_depth: i32,
         limit: i32,
     ) -> Result<TraversalResult> {
+        let (max_depth, limit) = traversal_depth_limit(max_depth, limit);
         self.client
             .traverse_edges(
                 &self.kref,
@@ -249,12 +257,15 @@ impl Revision {
     }
 
     /// Shortest path from this revision to `target`, if one exists.
+    ///
+    /// `max_depth <= 0` defaults to 10 (matching Python).
     pub async fn find_path_to(
         &self,
         target: &Revision,
         edge_type_filter: Option<Vec<String>>,
         max_depth: i32,
     ) -> Result<Option<RevisionPath>> {
+        let max_depth = if max_depth <= 0 { 10 } else { max_depth };
         let result = self
             .client
             .find_shortest_path(&self.kref, &target.kref, edge_type_filter, max_depth, false)
@@ -262,17 +273,43 @@ impl Revision {
         Ok(result.first_path().cloned())
     }
 
+    /// Every shortest path to `target` (the Python `find_path_to(all_paths=True)`
+    /// capability). `max_depth <= 0` defaults to 10.
+    pub async fn find_all_paths_to(
+        &self,
+        target: &Revision,
+        edge_type_filter: Option<Vec<String>>,
+        max_depth: i32,
+    ) -> Result<ShortestPathResult> {
+        let max_depth = if max_depth <= 0 { 10 } else { max_depth };
+        self.client
+            .find_shortest_path(&self.kref, &target.kref, edge_type_filter, max_depth, true)
+            .await
+    }
+
     /// Revisions impacted by changes to this revision.
+    ///
+    /// `max_depth <= 0` defaults to 10 and `limit <= 0` to 100 (matching Python).
     pub async fn analyze_impact(
         &self,
         edge_type_filter: Option<Vec<String>>,
         max_depth: i32,
         limit: i32,
     ) -> Result<Vec<ImpactedRevision>> {
+        let (max_depth, limit) = traversal_depth_limit(max_depth, limit);
         self.client
             .analyze_impact(&self.kref, edge_type_filter, max_depth, limit)
             .await
     }
+}
+
+/// Applies the Python traversal defaults (max_depth=10, limit=100) when a
+/// non-positive value is supplied.
+fn traversal_depth_limit(max_depth: i32, limit: i32) -> (i32, i32) {
+    (
+        if max_depth <= 0 { 10 } else { max_depth },
+        if limit <= 0 { 100 } else { limit },
+    )
 }
 
 impl std::fmt::Debug for Revision {

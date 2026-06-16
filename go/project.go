@@ -96,6 +96,12 @@ func (p *Project) SetPublic(ctx context.Context, public bool) (*Project, error) 
 	return p.client.UpdateProject(ctx, p.ProjectID, &public, nil)
 }
 
+// SetAllowPublic is an alias for SetPublic (matching Python). The AllowPublic
+// field is read-only — assigning it does not persist; call this instead.
+func (p *Project) SetAllowPublic(ctx context.Context, allowPublic bool) (*Project, error) {
+	return p.SetPublic(ctx, allowPublic)
+}
+
 // Update updates description and/or public flag (nil = leave unchanged).
 func (p *Project) Update(ctx context.Context, description *string, allowPublic *bool) (*Project, error) {
 	return p.client.UpdateProject(ctx, p.ProjectID, allowPublic, description)
