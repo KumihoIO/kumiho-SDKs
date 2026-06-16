@@ -4,8 +4,8 @@
 # or protoc. The Rust SDK generates protobuf at build time via build.rs
 # (tonic-build), so it needs the rust/proto submodule and protoc on PATH.
 #
-# build + test are the hard gate; fmt/clippy are advisory (continue-on-error)
-# so a formatting nit never blocks a PR that actually compiles and passes tests.
+# build, test and fmt are hard gates; clippy is advisory (continue-on-error)
+# so a new lint suggestion never blocks a PR that compiles and passes tests.
 name: SDK CI
 
 on:
@@ -48,7 +48,6 @@ jobs:
       - name: Test
         run: go test -race ./...
       - name: gofmt
-        continue-on-error: true
         run: |
           unformatted=$(gofmt -l .)
           if [ -n "$unformatted" ]; then
@@ -80,7 +79,6 @@ jobs:
       - name: Test
         run: cargo test --verbose
       - name: Format check
-        continue-on-error: true
         run: cargo fmt --all --check
       - name: Clippy
         continue-on-error: true
