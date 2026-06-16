@@ -20,6 +20,33 @@ namespace kumiho {
 namespace api {
 
 /**
+ * @brief Event streaming capabilities for the current tenant tier.
+ *
+ * Returned by Client::getEventCapabilities(). Mirrors the protobuf
+ * EventCapabilities message and describes which streaming features are
+ * available based on the authenticated tenant's subscription tier.
+ */
+struct EventCapabilities {
+    /** @brief Whether this tier supports replaying past events. */
+    bool supports_replay = false;
+
+    /** @brief Whether cursor-based resume is supported. */
+    bool supports_cursor = false;
+
+    /** @brief Whether consumer groups are supported (Enterprise only). */
+    bool supports_consumer_groups = false;
+
+    /** @brief Maximum event retention in hours (0 = none, -1 = unlimited). */
+    long long max_retention_hours = 0;
+
+    /** @brief Maximum events in buffer (0 = none, -1 = unlimited). */
+    long long max_buffer_size = 0;
+
+    /** @brief Tier identifier (free, creator, studio, enterprise). */
+    std::string tier;
+};
+
+/**
  * @brief A real-time event from the Kumiho server.
  *
  * Events are emitted when entities are created, updated, or deleted.

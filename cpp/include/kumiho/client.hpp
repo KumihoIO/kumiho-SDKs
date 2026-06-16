@@ -26,6 +26,7 @@
 #include "kumiho/kref.hpp"
 #include "kumiho/error.hpp"
 #include "kumiho/bundle.hpp"  // For BundleMember, BundleRevisionHistory in inline functions
+#include "kumiho/event.hpp"   // For EventCapabilities return type
 #include "kumiho.grpc.pb.h"
 
 namespace kumiho {
@@ -116,8 +117,9 @@ public:
      * @brief Delete a project.
      * @param project_id The project UUID.
      * @param force If true, permanently delete. If false, soft delete.
+     * @return The StatusResponse returned by the server.
      */
-    void deleteProject(const std::string& project_id, bool force = false);
+    StatusResponse deleteProject(const std::string& project_id, bool force = false);
 
     /**
      * @brief Update a project.
@@ -152,9 +154,17 @@ public:
     /**
      * @brief Get child spaces of a parent.
      * @param parent_path The parent path (empty for root).
+     * @param recursive Whether to fetch all descendant spaces recursively.
+     * @param page_size Optional page size for pagination.
+     * @param cursor Optional cursor for pagination.
      * @return A list of Space objects.
      */
-    std::vector<std::shared_ptr<Space>> getChildSpaces(const std::string& parent_path = "");
+    std::vector<std::shared_ptr<Space>> getChildSpaces(
+        const std::string& parent_path = "",
+        bool recursive = false,
+        std::optional<int32_t> page_size = std::nullopt,
+        std::optional<std::string> cursor = std::nullopt
+    );
 
     /**
      * @brief Update space metadata.
@@ -168,8 +178,9 @@ public:
      * @brief Delete a space.
      * @param path The space path.
      * @param force If true, permanently delete.
+     * @return The StatusResponse returned by the server.
      */
-    void deleteSpace(const std::string& path, bool force = false);
+    StatusResponse deleteSpace(const std::string& path, bool force = false);
 
     // --- Item Operations ---
 
@@ -178,10 +189,11 @@ public:
      * @param parent_path The parent space path.
      * @param name The item name.
      * @param kind The item kind (type).
+     * @param metadata Optional metadata to set on the created item.
      * @return The created Item.
      * @throws ReservedKindError if kind is reserved.
      */
-    std::shared_ptr<Item> createItem(const std::string& parent_path, const std::string& name, const std::string& kind);
+    std::shared_ptr<Item> createItem(const std::string& parent_path, const std::string& name, const std::string& kind, const Metadata& metadata = {});
 
     /**
      * @brief Get an item by parent path, name, and kind.
@@ -198,6 +210,13 @@ public:
      * @return The Item.
      */
     std::shared_ptr<Item> getItemByKref(const std::string& kref_uri);
+
+    /**
+     * @brief Get the item that contains a specific revision.
+     * @param revision_kref The revision's Kref URI.
+     * @return The Item that contains the revision.
+     */
+    std::shared_ptr<Item> getItemFromRevision(const std::string& revision_kref);
 
     /**
      * @brief Search for items.
@@ -247,9 +266,12 @@ public:
      * @param item_kref The parent item's Kref.
      * @param metadata Optional metadata.
      * @param number Optional specific revision number (0 for auto).
+     * @param embedding_text Optional override for the text used to generate the
+     *        server-side embedding. When empty the server auto-generates from
+     *        concatenated metadata.
      * @return The created Revision.
      */
-    std::shared_ptr<Revision> createRevision(const Kref& item_kref, const Metadata& metadata = {}, int number = 0);
+    std::shared_ptr<Revision> createRevision(const Kref& item_kref, const Metadata& metadata = {}, int number = 0, const std::string& embedding_text = "");
 
     /**
      * @brief Get a revision by Kref.
@@ -348,9 +370,10 @@ public:
      * @param revision_kref The parent revision's Kref.
      * @param name The artifact name.
      * @param location The file path or URI.
+     * @param metadata Optional key-value metadata for the artifact.
      * @return The created Artifact.
      */
-    std::shared_ptr<Artifact> createArtifact(const Kref& revision_kref, const std::string& name, const std::string& location);
+    std::shared_ptr<Artifact> createArtifact(const Kref& revision_kref, const std::string& name, const std::string& location, const Metadata& metadata = {});
 
     /**
      * @brief Get an artifact by revision and name.
@@ -359,6 +382,20 @@ public:
      * @return The Artifact.
      */
     std::shared_ptr<Artifact> getArtifact(const Kref& revision_kref, const std::string& name);
+
+    /**
+     * @brief Get an artifact by its Kref URI.
+     *
+     * If the Kref contains an artifact name (`&a=`), that artifact is fetched
+     * directly. Otherwise the Kref is treated as an item/revision reference and
+     * the revision's default artifact is returned.
+     *
+     * @param kref_uri The artifact's Kref URI.
+     * @return The Artifact.
+     * @throws ValidationError if no artifact name is present and no default
+     *         artifact is set on the revision.
+     */
+    std::shared_ptr<Artifact> getArtifactByKref(const std::string& kref_uri);
 
     /**
      * @brief Get all artifacts for a revision.
@@ -570,6 +607,17 @@ public:
     std::shared_ptr<Bundle> getBundle(const std::string& parent_path, const std::string& name);
 
     /**
+     * @brief Get a bundle by its Kref URI.
+     *
+     * Retrieves the item and verifies it is a bundle (kind == "bundle").
+     *
+     * @param kref_uri The bundle's Kref URI.
+     * @return The Bundle.
+     * @throws ValidationError if the item exists but is not a bundle.
+     */
+    std::shared_ptr<Bundle> getBundleByKref(const std::string& kref_uri);
+
+    /**
      * @brief Add a member to a bundle.
      * @param bundle_kref The bundle's Kref.
      * @param item_kref The item to add.
@@ -618,6 +666,17 @@ public:
      * @return An EventStream for receiving events.
      */
     std::shared_ptr<EventStream> eventStream(const std::string& routing_key_filter = "", const std::string& kref_filter = "");
+
+    /**
+     * @brief Get event streaming capabilities for the current tenant tier.
+     *
+     * Returns the capabilities available based on the authenticated tenant's
+     * subscription tier (replay, cursor resume, consumer groups, retention and
+     * buffer limits).
+     *
+     * @return An EventCapabilities struct describing the tier's capabilities.
+     */
+    EventCapabilities getEventCapabilities();
 
     // --- Authentication ---
 

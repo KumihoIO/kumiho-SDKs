@@ -54,6 +54,9 @@ struct EdgeType {
     
     /** @brief Indicates the source contains or includes target. */
     static constexpr const char* CONTAINS = "CONTAINS";
+
+    /** @brief Indicates the source replaces/supersedes target (belief revision). */
+    static constexpr const char* SUPERSEDES = "SUPERSEDES";
 };
 
 /**

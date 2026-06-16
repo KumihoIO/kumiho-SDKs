@@ -49,8 +49,21 @@ struct PagedList {
 };
 
 /**
+ * @brief Result of a delete (or other status-returning) operation.
+ *
+ * Mirrors the protobuf StatusResponse message returned by delete RPCs.
+ */
+struct StatusResponse {
+    /** @brief True if the operation succeeded. */
+    bool success = false;
+
+    /** @brief Human-readable status or error message. */
+    std::string message;
+};
+
+/**
  * @brief Standard tag name for the latest version.
- * 
+ *
  * This tag automatically moves to the newest version of a product.
  */
 constexpr const char* LATEST_TAG = "latest";

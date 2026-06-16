@@ -353,7 +353,7 @@ std::shared_ptr<Project> Client::getProject(const std::string& name) {
     return nullptr;
 }
 
-void Client::deleteProject(const std::string& project_id, bool force) {
+StatusResponse Client::deleteProject(const std::string& project_id, bool force) {
     ::kumiho::DeleteProjectRequest req;
     req.set_project_id(project_id);
     req.set_force(force);
@@ -365,6 +365,7 @@ void Client::deleteProject(const std::string& project_id, bool force) {
     if (!status.ok()) {
         throw RpcError("DeleteProject failed: " + status.error_message(), static_cast<int>(status.error_code()));
     }
+    return StatusResponse{res.success(), res.message()};
 }
 
 std::shared_ptr<Project> Client::updateProject(
@@ -425,9 +426,21 @@ std::shared_ptr<Space> Client::getSpace(const std::string& path) {
     return std::make_shared<Space>(res, this);
 }
 
-std::vector<std::shared_ptr<Space>> Client::getChildSpaces(const std::string& parent_path) {
+std::vector<std::shared_ptr<Space>> Client::getChildSpaces(
+    const std::string& parent_path,
+    bool recursive,
+    std::optional<int32_t> page_size,
+    std::optional<std::string> cursor
+) {
     ::kumiho::GetChildSpacesRequest req;
     req.set_parent_path(parent_path);
+    req.set_recursive(recursive);
+
+    if (page_size.has_value() || cursor.has_value()) {
+        auto* pagination = req.mutable_pagination();
+        pagination->set_page_size(page_size.value_or(100));
+        if (cursor.has_value()) pagination->set_cursor(cursor.value());
+    }
 
     ::kumiho::GetChildSpacesResponse res;
     grpc::ClientContext context; configureContext(context);
@@ -461,7 +474,7 @@ std::shared_ptr<Space> Client::updateSpaceMetadata(const Kref& kref, const Metad
     return std::make_shared<Space>(res, this);
 }
 
-void Client::deleteSpace(const std::string& path, bool force) {
+StatusResponse Client::deleteSpace(const std::string& path, bool force) {
     ::kumiho::DeleteSpaceRequest req;
     req.set_path(path);
     req.set_force(force);
@@ -473,11 +486,12 @@ void Client::deleteSpace(const std::string& path, bool force) {
     if (!status.ok()) {
         throw RpcError("DeleteSpace failed: " + status.error_message(), static_cast<int>(status.error_code()));
     }
+    return StatusResponse{res.success(), res.message()};
 }
 
 // --- Item Operations (formerly Product) ---
 
-std::shared_ptr<Item> Client::createItem(const std::string& parent_path, const std::string& name, const std::string& kind) {
+std::shared_ptr<Item> Client::createItem(const std::string& parent_path, const std::string& name, const std::string& kind, const Metadata& metadata) {
     if (isReservedKind(kind)) {
         throw ReservedKindError(
             "Item kind '" + kind + "' is reserved. Use createBundle() instead."
@@ -495,6 +509,12 @@ std::shared_ptr<Item> Client::createItem(const std::string& parent_path, const s
 
     if (!status.ok()) {
         throw RpcError("CreateItem failed: " + status.error_message(), static_cast<int>(status.error_code()));
+    }
+
+    // CreateItemRequest has no metadata field; mirror Python by applying any
+    // supplied metadata via a follow-up UpdateItemMetadata call.
+    if (!metadata.empty()) {
+        updateItemMetadata(Kref(res.kref().uri()), metadata);
     }
     return std::make_shared<Item>(res, this);
 }
@@ -537,8 +557,13 @@ std::shared_ptr<Item> Client::getItemByKref(const std::string& kref_uri) {
     
     std::string item_name = item_name_kind.substr(0, dot_pos);
     std::string kind = item_name_kind.substr(dot_pos + 1);
-    
+
     return getItem(space_path, item_name, kind);
+}
+
+std::shared_ptr<Item> Client::getItemFromRevision(const std::string& revision_kref) {
+    auto revision = getRevision(revision_kref);
+    return getItemByKref(revision->getItemKref());
 }
 
 PagedList<std::shared_ptr<Item>> Client::itemSearch(
@@ -629,13 +654,16 @@ void Client::setItemDeprecated(const Kref& kref, bool deprecated) {
 
 // --- Revision Operations (formerly Version) ---
 
-std::shared_ptr<Revision> Client::createRevision(const Kref& item_kref, const Metadata& metadata, int number) {
+std::shared_ptr<Revision> Client::createRevision(const Kref& item_kref, const Metadata& metadata, int number, const std::string& embedding_text) {
     ::kumiho::CreateRevisionRequest req;
     *req.mutable_item_kref() = item_kref.toPb();
     for (const auto& pair : metadata) {
         (*req.mutable_metadata())[pair.first] = pair.second;
     }
     req.set_number(number);
+    if (!embedding_text.empty()) {
+        req.set_embedding_text(embedding_text);
+    }
 
     ::kumiho::RevisionResponse res;
     grpc::ClientContext context; configureContext(context);
@@ -648,6 +676,48 @@ std::shared_ptr<Revision> Client::createRevision(const Kref& item_kref, const Me
 }
 
 std::shared_ptr<Revision> Client::getRevision(const std::string& kref_uri) {
+    // Parse kref_uri for tag/time parameters (?t=/?tag=/?time=) and resolve
+    // those via ResolveKref, mirroring the Python client.
+    std::string base_kref = kref_uri;
+    std::string tag;
+    std::string time;
+    bool has_tag = false;
+    bool has_time = false;
+
+    auto qpos = kref_uri.find('?');
+    if (qpos != std::string::npos) {
+        base_kref = kref_uri.substr(0, qpos);
+        std::string params = kref_uri.substr(qpos + 1);
+        std::stringstream ss(params);
+        std::string param;
+        while (std::getline(ss, param, '&')) {
+            if (param.rfind("t=", 0) == 0) {
+                tag = param.substr(2);
+                has_tag = true;
+            } else if (param.rfind("tag=", 0) == 0) {
+                tag = param.substr(4);
+                has_tag = true;
+            } else if (param.rfind("time=", 0) == 0) {
+                time = param.substr(5);
+                has_time = true;
+                std::regex time_regex("^\\d{12}$");
+                if (!std::regex_match(time, time_regex)) {
+                    throw ValidationError("time must be in YYYYMMDDHHMM format");
+                }
+            }
+        }
+    }
+
+    // Presence-based (like Python's `tag is not None`): an explicit ?t= with an
+    // empty value still routes through ResolveKref, not the direct GetRevision.
+    if (has_tag || has_time) {
+        auto revision = resolveKref(base_kref, tag, time);
+        if (!revision) {
+            throw NotFoundError("Revision not found: " + kref_uri);
+        }
+        return revision;
+    }
+
     ::kumiho::KrefRequest req;
     req.mutable_kref()->set_uri(kref_uri);
 
@@ -867,11 +937,14 @@ void Client::deleteRevision(const Kref& kref, bool force) {
 
 // --- Artifact Operations (formerly Resource) ---
 
-std::shared_ptr<Artifact> Client::createArtifact(const Kref& revision_kref, const std::string& name, const std::string& location) {
+std::shared_ptr<Artifact> Client::createArtifact(const Kref& revision_kref, const std::string& name, const std::string& location, const Metadata& metadata) {
     ::kumiho::CreateArtifactRequest req;
     *req.mutable_revision_kref() = revision_kref.toPb();
     req.set_name(name);
     req.set_location(location);
+    for (const auto& pair : metadata) {
+        (*req.mutable_metadata())[pair.first] = pair.second;
+    }
 
     ::kumiho::ArtifactResponse res;
     grpc::ClientContext context; configureContext(context);
@@ -899,6 +972,32 @@ std::shared_ptr<Artifact> Client::getArtifact(const Kref& revision_kref, const s
         throw RpcError("GetArtifact failed: " + status.error_message(), static_cast<int>(status.error_code()));
     }
     return std::make_shared<Artifact>(res, this);
+}
+
+std::shared_ptr<Artifact> Client::getArtifactByKref(const std::string& kref_uri) {
+    Kref kref(kref_uri);
+    std::string artifact_name = kref.getArtifactName();
+    if (!artifact_name.empty()) {
+        // Build the revision kref by removing the artifact part ("&a=...").
+        std::string revision_kref_uri = kref_uri;
+        auto pos = kref_uri.find("&a=");
+        if (pos != std::string::npos) {
+            revision_kref_uri = kref_uri.substr(0, pos);
+        }
+        return getArtifact(Kref(revision_kref_uri), artifact_name);
+    }
+
+    // No artifact name: interpret as a request for the default artifact of the
+    // resolved revision (item kref -> latest revision; revision kref -> itself).
+    auto revision = getRevision(kref_uri);
+    auto default_name = revision->getDefaultArtifact();
+    if (!default_name || default_name->empty()) {
+        throw ValidationError(
+            "Invalid artifact kref format: " + kref_uri +
+            " (missing &a=artifact_name and no default_artifact set)"
+        );
+    }
+    return getArtifact(revision->getKref(), *default_name);
 }
 
 std::vector<std::shared_ptr<Artifact>> Client::getArtifacts(const Kref& revision_kref) {
@@ -1058,6 +1157,8 @@ std::vector<std::shared_ptr<Edge>> Client::getEdges(const Kref& kref, const std:
 }
 
 void Client::deleteEdge(const Kref& source_kref, const Kref& target_kref, const std::string& edge_type) {
+    validateEdgeType(edge_type);
+
     ::kumiho::DeleteEdgeRequest req;
     *req.mutable_source_kref() = source_kref.toPb();
     *req.mutable_target_kref() = target_kref.toPb();
@@ -1312,6 +1413,34 @@ std::shared_ptr<Bundle> Client::getBundle(const std::string& parent_path, const 
     return std::make_shared<Bundle>(res, this);
 }
 
+std::shared_ptr<Bundle> Client::getBundleByKref(const std::string& kref_uri) {
+    // Verify the referenced item is a bundle.
+    auto item = getItemByKref(kref_uri);
+    if (item->getKind() != "bundle") {
+        throw ValidationError(
+            "Item '" + kref_uri + "' is not a bundle (kind='" + item->getKind() + "'). "
+            "Use getItem() for non-bundle items."
+        );
+    }
+
+    // Parse the kref path: parent space path (with leading '/') is everything
+    // before the last '/', and the bundle name is the last segment before '.'.
+    Kref kref(kref_uri);
+    std::string path = kref.getPath();
+    size_t slash_pos = path.rfind('/');
+    if (slash_pos == std::string::npos) {
+        throw ValidationError("Invalid bundle kref format: " + kref_uri);
+    }
+
+    std::string parent_path = "/" + path.substr(0, slash_pos);
+    std::string item_name_kind = path.substr(slash_pos + 1);
+    size_t dot_pos = item_name_kind.find('.');
+    std::string bundle_name =
+        (dot_pos == std::string::npos) ? item_name_kind : item_name_kind.substr(0, dot_pos);
+
+    return getBundle(parent_path, bundle_name);
+}
+
 void Client::addBundleMember(const Kref& bundle_kref, const Kref& item_kref) {
     ::kumiho::AddBundleMemberRequest req;
     *req.mutable_bundle_kref() = bundle_kref.toPb();
@@ -1429,6 +1558,26 @@ std::shared_ptr<EventStream> Client::eventStream(const std::string& routing_key_
     std::unique_ptr<grpc::ClientReaderInterface<::kumiho::Event>> reader =
         stub_->EventStream(context_.get(), request);
     return std::make_shared<EventStream>(std::move(reader));
+}
+
+EventCapabilities Client::getEventCapabilities() {
+    ::kumiho::GetEventCapabilitiesRequest req;
+    ::kumiho::EventCapabilities res;
+    grpc::ClientContext context; configureContext(context);
+    grpc::Status status = stub_->GetEventCapabilities(&context, req, &res);
+
+    if (!status.ok()) {
+        throw RpcError("GetEventCapabilities failed: " + status.error_message(), static_cast<int>(status.error_code()));
+    }
+
+    EventCapabilities caps;
+    caps.supports_replay = res.supports_replay();
+    caps.supports_cursor = res.supports_cursor();
+    caps.supports_consumer_groups = res.supports_consumer_groups();
+    caps.max_retention_hours = res.max_retention_hours();
+    caps.max_buffer_size = res.max_buffer_size();
+    caps.tier = res.tier();
+    return caps;
 }
 
 // --- Convenience Functions ---
