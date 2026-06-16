@@ -170,5 +170,33 @@ void main() {
       expect(out, startsWith('ERROR:'));
       expect(out, contains('numeric'));
     });
+
+    test('out-of-range port env (0) is an error', () async {
+      final result = await runProbe({'KUMIHO_LOCAL_SERVER_PORT': '0'});
+
+      final out = result.stdout.toString().trim();
+      expect(out, startsWith('ERROR:'));
+      expect(out, contains('between 1 and 65535'));
+    });
+
+    test('out-of-range port env (>65535) is an error', () async {
+      final result = await runProbe({'KUMIHO_LOCAL_SERVER_PORT': '99999'});
+
+      final out = result.stdout.toString().trim();
+      expect(out, startsWith('ERROR:'));
+      expect(out, contains('between 1 and 65535'));
+    });
+
+    test('a non-finite timeout env falls back to the default (no crash)',
+        () async {
+      final result = await runProbe({
+        'KUMIHO_LOCAL_DISCOVERY_TIMEOUT_SECONDS': 'NaN',
+      });
+
+      // The stub server always reports CE, so resolution must succeed with the
+      // default candidate rather than throwing on NaN.round().
+      expect(result.exitCode, equals(0), reason: result.stderr.toString());
+      expect(result.stdout.toString().trim(), equals('RESULT:127.0.0.1:9190'));
+    });
   });
 }

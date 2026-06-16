@@ -271,9 +271,16 @@ Future<KumihoClient> clientFromDiscovery({
       controlPlaneUrl != null && controlPlaneUrl.trim().isNotEmpty;
   final resolvedToken =
       (token != null && token.trim().isNotEmpty) ? token : loadBearerToken();
+  // A user authenticated only via KUMIHO_FIREBASE_ID_TOKEN is a valid cloud
+  // credential that discoverTenant honours, but loadBearerToken() does not read
+  // that env var. Treat it (and the cached Firebase id token) as "has a token"
+  // too, otherwise such a user would be silently routed to a loopback CE server.
+  final firebaseToken = loadFirebaseToken();
+  final hasCloudToken =
+      (resolvedToken != null && resolvedToken.trim().isNotEmpty) ||
+          (firebaseToken != null && firebaseToken.trim().isNotEmpty);
 
-  if (!hasExplicitEndpoint &&
-      (resolvedToken == null || resolvedToken.trim().isEmpty)) {
+  if (!hasExplicitEndpoint && !hasCloudToken) {
     final ceClient = await clientFromLocalCe();
     if (ceClient != null) {
       return ceClient;

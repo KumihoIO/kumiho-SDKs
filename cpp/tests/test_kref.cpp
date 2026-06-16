@@ -244,6 +244,32 @@ TEST_F(KrefValidationTest, RejectsSegmentLeadingDotOrHyphen) {
     EXPECT_FALSE(isValidKref("kref://project/-dash/item.kind"));
 }
 
+// The optional ?r=...&a=... query is validated for parity with Python, which
+// applies its regex to the whole URI rather than just the path.
+TEST_F(KrefValidationTest, AcceptsValidQuery) {
+    EXPECT_TRUE(isValidKref("kref://project/space/item.kind?r=1"));
+    EXPECT_TRUE(isValidKref("kref://project/space/item.kind?r=12&a=mesh"));
+    EXPECT_TRUE(isValidKref("kref://project/space/item.kind?r=3&a=mesh.v2"));
+}
+
+TEST_F(KrefValidationTest, RejectsNonNumericRevision) {
+    EXPECT_FALSE(isValidKref("kref://project/space/item.kind?r=abc"));
+    EXPECT_FALSE(isValidKref("kref://project/space/item.kind?r="));
+    EXPECT_FALSE(isValidKref("kref://project/space/item.kind?x=1"));
+    // Revision digits are ASCII-only; an Arabic-Indic "3" (U+0663) is rejected.
+    EXPECT_FALSE(isValidKref(std::string("kref://project/space/item.kind?r=\xD9\xA3")));
+}
+
+TEST_F(KrefValidationTest, RejectsDisallowedArtifactChars) {
+    EXPECT_FALSE(isValidKref("kref://project/space/item.kind?r=1&a=me@sh"));
+    EXPECT_FALSE(isValidKref("kref://project/space/item.kind?r=1&a="));
+    // Unknown trailing parameters are rejected (Python's regex is anchored).
+    EXPECT_FALSE(isValidKref("kref://project/space/item.kind?r=1&a=mesh&t=latest"));
+    // Artifact ids are ASCII allow-list only; non-ASCII bytes are rejected
+    // regardless of locale ("café").
+    EXPECT_FALSE(isValidKref(std::string("kref://project/space/item.kind?r=1&a=caf\xC3\xA9")));
+}
+
 // --- Edge Cases ---
 
 class KrefEdgeCasesTest : public ::testing::Test {};

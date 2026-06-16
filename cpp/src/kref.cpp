@@ -220,6 +220,62 @@ void validateKrefSegment(const std::string& segment, const std::string& kref_uri
     }
 }
 
+// Validate the optional query string, mirroring the Python validator's
+// `(\?r=\d+(&a=[a-zA-Z0-9._-]+)?)?$` tail. `query` is everything after '?'.
+// The revision must be one or more ASCII digits; the artifact id is an ASCII
+// allow-list only (it is a server-generated opaque id, never a content name).
+void validateKrefQuery(const std::string& query, const std::string& kref_uri) {
+    const auto fail = [&]() {
+        throw KrefValidationError(
+            "Invalid kref query '" + query + "' in kref: " + kref_uri
+        );
+    };
+
+    // Must begin with "r=<digit>+". Revision digits are ASCII-only (matching
+    // the Dart SDK's `\d`); Unicode digits are deliberately not accepted.
+    if (query.rfind("r=", 0) != 0) {
+        fail();
+    }
+    size_t i = 2;
+    const size_t digitsStart = i;
+    while (i < query.size()) {
+        const unsigned char d = static_cast<unsigned char>(query[i]);
+        if (d < '0' || d > '9') {
+            break;
+        }
+        ++i;
+    }
+    if (i == digitsStart) {
+        fail();  // need at least one ASCII digit
+    }
+    if (i == query.size()) {
+        return;  // just ?r=<digits>
+    }
+
+    // The only allowed remainder is "&a=<artifact>".
+    if (query.compare(i, 3, "&a=") != 0) {
+        fail();
+    }
+    i += 3;
+    const size_t artStart = i;
+    for (; i < query.size(); ++i) {
+        const unsigned char byte = static_cast<unsigned char>(query[i]);
+        // ASCII allow-list only, matching Python's [a-zA-Z0-9._-]. Using
+        // explicit ranges (not std::isalnum) keeps this locale-independent and
+        // rejects every byte >= 0x80.
+        const bool isAsciiAlnum =
+            (byte >= '0' && byte <= '9') ||
+            (byte >= 'A' && byte <= 'Z') ||
+            (byte >= 'a' && byte <= 'z');
+        if (!isAsciiAlnum && byte != '_' && byte != '.' && byte != '-') {
+            fail();
+        }
+    }
+    if (i == artStart) {
+        fail();  // need at least one artifact char
+    }
+}
+
 }  // namespace
 
 void validateKref(const std::string& kref_uri) {
@@ -264,6 +320,13 @@ void validateKref(const std::string& kref_uri) {
     std::string component;
     while (std::getline(ss, component, '/')) {
         validateKrefSegment(component, kref_uri);
+    }
+
+    // Validate the optional ?r=...&a=... query for parity with the Python
+    // validator, which applies its regex to the whole URI (not just the path).
+    const auto queryPos = kref_uri.find('?');
+    if (queryPos != std::string::npos) {
+        validateKrefQuery(kref_uri.substr(queryPos + 1), kref_uri);
     }
 }
 

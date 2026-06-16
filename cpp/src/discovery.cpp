@@ -23,6 +23,7 @@
 #include <mutex>
 #include <cstring>
 #include <cstdint>
+#include <cmath>
 #include <thread>
 
 #ifdef _WIN32
@@ -439,7 +440,21 @@ std::vector<std::string> localCeCandidates() {
                 std::string(kLocalCePortEnv) + " must be a numeric loopback port"
             );
         }
-        return {"127.0.0.1:" + port};
+        int portValue = 0;
+        try {
+            portValue = std::stoi(port);
+        } catch (const std::exception&) {
+            // All-digit but out of int range (e.g. a very long string).
+            throw DiscoveryError(
+                std::string(kLocalCePortEnv) + " must be between 1 and 65535"
+            );
+        }
+        if (portValue < 1 || portValue > 65535) {
+            throw DiscoveryError(
+                std::string(kLocalCePortEnv) + " must be between 1 and 65535"
+            );
+        }
+        return {"127.0.0.1:" + std::to_string(portValue)};
     }
 
     return {"127.0.0.1:" + std::to_string(kDefaultLocalCePort)};
@@ -454,20 +469,34 @@ double localCeTimeout() {
     }
     try {
         const double value = std::stod(raw);
-        return std::max(value, 0.05);
+        if (!std::isfinite(value)) {
+            return 0.5;
+        }
+        // Clamp to a sane range: min 50ms, max 1h (a huge value would otherwise
+        // overflow the long millisecond conversion in probeLocalCeCandidate).
+        return std::min(std::max(value, 0.05), 3600.0);
     } catch (const std::exception&) {
         return 0.5;
     }
+}
+
+// Initialise libcurl's global state exactly once for the whole process.
+// curl_global_init is NOT thread-safe and must not run more than once, so a
+// single shared once_flag guards every call site (the CE probe and the
+// discovery fetch). On Windows CURL_GLOBAL_DEFAULT also performs WSAStartup,
+// which inet_pton (InetPtonA) requires.
+void ensureCurlGlobalInit() {
+    static std::once_flag curlInitFlag;
+    std::call_once(curlInitFlag, []() {
+        curl_global_init(CURL_GLOBAL_DEFAULT);
+    });
 }
 
 // Probe a single loopback candidate with an HTTP GET to /api/_live.
 // Returns true only when the server responds HTTP < 400 with a JSON body whose
 // deployment_mode is exactly "self_hosted_ce". Any error/timeout => false.
 bool probeLocalCeCandidate(const std::string& target, double timeout) {
-    static std::once_flag curlInitFlag;
-    std::call_once(curlInitFlag, []() {
-        curl_global_init(CURL_GLOBAL_DEFAULT);
-    });
+    ensureCurlGlobalInit();
 
     CURL* curl = curl_easy_init();
     if (!curl) {
@@ -1030,10 +1059,7 @@ DiscoveryRecord DiscoveryManager::fetchRemote(
 ) {
     const std::string url = buildDiscoveryUrl(base_url_);
 
-    static std::once_flag curlInitFlag;
-    std::call_once(curlInitFlag, []() {
-        curl_global_init(CURL_GLOBAL_DEFAULT);
-    });
+    ensureCurlGlobalInit();
 
     nlohmann::json payload = nlohmann::json::object();
     if (tenant_hint && !tenant_hint->empty()) {
@@ -1157,6 +1183,10 @@ std::shared_ptr<Client> clientFromDiscovery(
 }
 
 std::optional<std::string> resolveLocalCeEndpoint(std::optional<double> timeout) {
+    // Initialise libcurl up front so that on Windows WSAStartup has run before
+    // isLoopbackHost()/localCeCandidates() call inet_pton (InetPtonA requires a
+    // started Winsock; otherwise a loopback literal would be misclassified).
+    ensureCurlGlobalInit();
     const double probeTimeout = timeout.has_value() ? *timeout : localCeTimeout();
     for (const auto& target : localCeCandidates()) {
         if (probeLocalCeCandidate(target, probeTimeout)) {

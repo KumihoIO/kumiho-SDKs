@@ -124,10 +124,12 @@ Duration _localCeTimeout() {
     return const Duration(milliseconds: 500);
   }
   final seconds = double.tryParse(raw.trim());
-  if (seconds == null) {
+  if (seconds == null || !seconds.isFinite) {
     return const Duration(milliseconds: 500);
   }
-  final clamped = seconds < 0.05 ? 0.05 : seconds;
+  // Clamp to a sane range: min 50ms (avoid a zero/negative probe timeout) and
+  // max 1h (guard against a huge value overflowing the microsecond conversion).
+  final clamped = seconds.clamp(0.05, 3600.0);
   return Duration(microseconds: (clamped * 1000000).round());
 }
 
@@ -144,6 +146,11 @@ List<String> _localCeCandidates() {
     if (parsed == null || !_isAllDigits(trimmed)) {
       throw CeDiscoveryError(
         '${CeDiscoveryEnvVars.port} must be a numeric loopback port',
+      );
+    }
+    if (parsed < 1 || parsed > 65535) {
+      throw CeDiscoveryError(
+        '${CeDiscoveryEnvVars.port} must be between 1 and 65535',
       );
     }
     return ['127.0.0.1:$parsed'];
