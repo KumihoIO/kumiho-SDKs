@@ -60,12 +60,6 @@ mixin RevisionApi on KumihoClientBase {
   Future<RevisionResponse> getRevision(String kref) async {
     final request = KrefRequest()..kref = Kref(uri: kref);
     final response = await stub.getRevision(request, options: callOptions);
-    // Debug: print the raw response
-    print('DEBUG getRevision response:');
-    print('  name: "${response.name}"');
-    print('  username: "${response.username}"');
-    print('  defaultArtifact: "${response.defaultArtifact}"');
-    print('  hasDefaultArtifact(): ${response.hasDefaultArtifact()}');
     return response;
   }
 
