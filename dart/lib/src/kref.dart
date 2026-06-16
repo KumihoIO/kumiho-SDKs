@@ -51,14 +51,21 @@ class KrefValidationError implements Exception {
 }
 
 /// Regex pattern for validating Kref URIs.
+///
+/// Path segments may contain Unicode letters/digits (mirroring Python's
+/// Unicode-aware `\w`), plus dots and hyphens. Path traversal (`..`) and
+/// control characters are blocked by explicit checks in [validateKref], not by
+/// this regex. Artifact IDs remain ASCII-only since they are server-generated
+/// opaque identifiers — never user-provided content names.
 final _krefPattern = RegExp(
   r'^kref://'
-  r'(/[a-zA-Z0-9][a-zA-Z0-9._-]*'
-  r'(/[a-zA-Z0-9][a-zA-Z0-9._-]*)*'
+  r'(/[\p{L}\p{N}_][\p{L}\p{N}_.-]*'
+  r'(/[\p{L}\p{N}_][\p{L}\p{N}_.-]*)*'
   r'|'
-  r'[a-zA-Z0-9][a-zA-Z0-9._-]*'
-  r'(/[a-zA-Z0-9][a-zA-Z0-9._-]*)*)'
+  r'[\p{L}\p{N}_][\p{L}\p{N}_.-]*'
+  r'(/[\p{L}\p{N}_][\p{L}\p{N}_.-]*)*)'
   r'(\?r=\d+(&a=[a-zA-Z0-9._-]+)?)?$',
+  unicode: true,
 );
 
 /// Validates a Kref URI for security and correctness.

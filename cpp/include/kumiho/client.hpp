@@ -643,9 +643,15 @@ private:
 
     /**
      * @brief Configure a ClientContext with authentication metadata.
+     *
+     * Adds a correlation id and (when set) the bearer token. For unary RPCs a
+     * default per-RPC deadline is applied (KUMIHO_RPC_TIMEOUT_SECONDS, default
+     * 30s); streaming RPCs opt out by passing with_deadline = false.
+     *
      * @param context The context to configure.
+     * @param with_deadline Whether to set a default per-RPC deadline.
      */
-    void configureContext(grpc::ClientContext& context) const;
+    void configureContext(grpc::ClientContext& context, bool with_deadline = true) const;
 };
 
 // --- Convenience Functions ---
@@ -671,6 +677,23 @@ inline std::shared_ptr<Space> createGroup(std::shared_ptr<Client> client, const 
  * @return The username, or "unknown" if not found.
  */
 std::string getCurrentUser();
+
+/**
+ * @brief Apply standard gRPC keepalive settings to channel arguments.
+ *
+ * Configures HTTP/2 keepalive pings so long-lived channels (including event
+ * streams) survive idle NAT/proxy timeouts and detect dead connections:
+ * - GRPC_ARG_KEEPALIVE_TIME_MS = 30000
+ * - GRPC_ARG_KEEPALIVE_TIMEOUT_MS = 10000
+ * - GRPC_ARG_KEEPALIVE_PERMIT_WITHOUT_CALLS = 1
+ * - GRPC_ARG_HTTP2_MIN_SENT_PING_INTERVAL_WITHOUT_DATA_MS = 10000
+ * - GRPC_ARG_HTTP2_MAX_PINGS_WITHOUT_DATA = 3
+ *
+ * Applied uniformly in createFromEnv, clientFromDiscovery, and the CE channel.
+ *
+ * @param args The channel arguments to mutate.
+ */
+void applyKeepaliveArgs(grpc::ChannelArguments& args);
 
 } // namespace api
 } // namespace kumiho

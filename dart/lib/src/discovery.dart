@@ -17,6 +17,7 @@ import 'package:http/http.dart' as http;
 import '../kumiho.dart' show KumihoClient;
 import 'auth/token_loader.dart';
 import 'auth/token_refresh.dart';
+import 'ce_discovery.dart' show clientFromLocalCe;
 
 const String _defaultCacheKey = '__default__';
 
@@ -253,12 +254,32 @@ Future<DiscoveryRecord> discoverTenant({
 /// - Uses discovery to find the correct data-plane endpoint.
 /// - Sets `tenantId` so the base client injects `x-tenant-id`.
 /// - If [token] is omitted, the client falls back to the standard token loader.
+///
+/// As a cloud-safe fallback, when no token can be resolved and no explicit
+/// [controlPlaneUrl] is supplied, a loopback self-hosted CE server is probed
+/// first. If one is present a tokenless CE client is returned; otherwise the
+/// normal cloud discovery path runs (and surfaces its usual "token required"
+/// error). The CE probe never runs when a token or explicit endpoint is
+/// present, preserving the cloud path unchanged.
 Future<KumihoClient> clientFromDiscovery({
   String? token,
   String? tenantHint,
   String? controlPlaneUrl,
   bool forceRefresh = false,
 }) async {
+  final hasExplicitEndpoint =
+      controlPlaneUrl != null && controlPlaneUrl.trim().isNotEmpty;
+  final resolvedToken =
+      (token != null && token.trim().isNotEmpty) ? token : loadBearerToken();
+
+  if (!hasExplicitEndpoint &&
+      (resolvedToken == null || resolvedToken.trim().isEmpty)) {
+    final ceClient = await clientFromLocalCe();
+    if (ceClient != null) {
+      return ceClient;
+    }
+  }
+
   final record = await discoverTenant(
     controlPlaneUrl: controlPlaneUrl,
     tenantHint: tenantHint,

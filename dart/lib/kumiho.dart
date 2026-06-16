@@ -191,6 +191,7 @@ class KumihoClient extends KumihoClientBase
     ClientChannelBase? channel,
     ChannelOptions? options,
     bool secure = false,
+    bool autoLoadToken = true,
   }) : super(
           clientChannel: channel,
           host: host,
@@ -199,6 +200,7 @@ class KumihoClient extends KumihoClientBase
           tenantId: tenantId,
           options: options,
           secure: secure,
+          autoLoadToken: autoLoadToken,
         );
 
 // ============================================================

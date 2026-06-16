@@ -21,13 +21,19 @@
 #include <array>
 #include <algorithm>
 #include <mutex>
+#include <cstring>
+#include <cstdint>
+#include <thread>
 
 #ifdef _WIN32
 #include <windows.h>
 #include <wincrypt.h>
+#include <ws2tcpip.h>  // InetPtonA for IP-literal parsing
 #pragma comment(lib, "advapi32.lib")
+#pragma comment(lib, "ws2_32.lib")
 #else
 #include <unistd.h>
+#include <arpa/inet.h>  // inet_pton for IP-literal parsing
 #endif
 
 // Simple JSON parsing (we avoid external dependencies)
@@ -281,6 +287,224 @@ std::string buildDiscoveryUrl(const std::string& baseUrl) {
         return base + "/discovery/tenant";
     }
     return base + "/api/discovery/tenant";
+}
+
+// --- Self-hosted CE discovery helpers ---
+
+// Trim leading/trailing ASCII whitespace.
+std::string trimWhitespace(const std::string& value) {
+    const auto start = value.find_first_not_of(" \t\r\n");
+    if (start == std::string::npos) {
+        return "";
+    }
+    const auto end = value.find_last_not_of(" \t\r\n");
+    return value.substr(start, end - start + 1);
+}
+
+// Determine whether a host is a loopback address. Uses a real IP parser
+// (inet_pton) rather than a regex; "localhost" is accepted by name.
+bool isLoopbackHost(const std::string& host) {
+    if (host.empty()) {
+        return false;
+    }
+
+    std::string lowered = host;
+    std::transform(lowered.begin(), lowered.end(), lowered.begin(),
+                   [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+    if (lowered == "localhost") {
+        return true;
+    }
+
+    // IPv4: loopback is the entire 127.0.0.0/8 block.
+    in_addr v4{};
+    if (inet_pton(AF_INET, host.c_str(), &v4) == 1) {
+        const uint32_t addr = ntohl(v4.s_addr);
+        return (addr >> 24) == 127;  // 127.0.0.0/8
+    }
+
+    // IPv6: only ::1 is loopback.
+    in6_addr v6{};
+    if (inet_pton(AF_INET6, host.c_str(), &v6) == 1) {
+        static const unsigned char loopback[16] = {0, 0, 0, 0, 0, 0, 0, 0,
+                                                    0, 0, 0, 0, 0, 0, 0, 1};
+        return std::memcmp(&v6, loopback, sizeof(loopback)) == 0;
+    }
+
+    return false;
+}
+
+// Format a host for use in a "host:port" gRPC target, bracketing IPv6 literals.
+std::string formatHostForTarget(const std::string& host) {
+    if (host.find(':') != std::string::npos && host.front() != '[') {
+        return "[" + host + "]";
+    }
+    return host;
+}
+
+// Normalise an explicit CE endpoint to a loopback "host:port" target.
+// Rejects non-loopback hosts and out-of-range ports as a security invariant.
+std::string normaliseLocalCeTarget(const std::string& raw) {
+    std::string text = trimWhitespace(raw);
+
+    // Strip an optional scheme (e.g. "http://", "grpc://").
+    const auto schemePos = text.find("://");
+    if (schemePos != std::string::npos) {
+        text = text.substr(schemePos + 3);
+    }
+    // Strip any path component.
+    const auto slashPos = text.find('/');
+    if (slashPos != std::string::npos) {
+        text = text.substr(0, slashPos);
+    }
+
+    std::string host;
+    std::string portText;
+
+    if (!text.empty() && text.front() == '[') {
+        // Bracketed IPv6 literal: [::1]:9190
+        const auto closeBracket = text.find(']');
+        if (closeBracket == std::string::npos) {
+            throw DiscoveryError(
+                std::string(kLocalCeEndpointEnv) + " has an unterminated IPv6 host"
+            );
+        }
+        host = text.substr(1, closeBracket - 1);
+        const auto afterBracket = text.substr(closeBracket + 1);
+        if (!afterBracket.empty() && afterBracket.front() == ':') {
+            portText = afterBracket.substr(1);
+        }
+    } else {
+        // Use the LAST colon as the port separator so unbracketed IPv6
+        // literals (which contain colons) are treated as host-only.
+        const auto colonPos = text.rfind(':');
+        const auto firstColon = text.find(':');
+        if (colonPos != std::string::npos && colonPos == firstColon) {
+            host = text.substr(0, colonPos);
+            portText = text.substr(colonPos + 1);
+        } else {
+            host = text;
+        }
+    }
+
+    if (host.empty()) {
+        throw DiscoveryError(
+            std::string(kLocalCeEndpointEnv) + " must include a loopback host"
+        );
+    }
+    if (!isLoopbackHost(host)) {
+        throw DiscoveryError(
+            std::string(kLocalCeEndpointEnv) +
+            " must point to localhost, 127.0.0.1, or ::1"
+        );
+    }
+
+    int port = kDefaultLocalCePort;
+    if (!portText.empty()) {
+        try {
+            size_t consumed = 0;
+            port = std::stoi(portText, &consumed);
+            if (consumed != portText.size()) {
+                throw std::invalid_argument("trailing characters");
+            }
+        } catch (const std::exception&) {
+            throw DiscoveryError(
+                std::string(kLocalCeEndpointEnv) + " has an invalid port"
+            );
+        }
+    }
+    if (port < 1 || port > 65535) {
+        throw DiscoveryError(
+            std::string(kLocalCeEndpointEnv) + " port must be between 1 and 65535"
+        );
+    }
+
+    return formatHostForTarget(host) + ":" + std::to_string(port);
+}
+
+// Resolve the ordered list of loopback CE candidates.
+// Resolution order: endpoint env > port env > default 127.0.0.1:9190.
+std::vector<std::string> localCeCandidates() {
+    const std::string endpoint = trimWhitespace(getEnvVar(kLocalCeEndpointEnv));
+    if (!endpoint.empty()) {
+        return {normaliseLocalCeTarget(endpoint)};
+    }
+
+    const std::string port = trimWhitespace(getEnvVar(kLocalCePortEnv));
+    if (!port.empty()) {
+        const bool allDigits = std::all_of(port.begin(), port.end(), [](unsigned char c) {
+            return std::isdigit(c) != 0;
+        });
+        if (!allDigits) {
+            throw DiscoveryError(
+                std::string(kLocalCePortEnv) + " must be a numeric loopback port"
+            );
+        }
+        return {"127.0.0.1:" + port};
+    }
+
+    return {"127.0.0.1:" + std::to_string(kDefaultLocalCePort)};
+}
+
+// Resolve the CE liveness-probe timeout in seconds.
+// Explicit arg wins; else env parsed as float (min 0.05); else default 0.5.
+double localCeTimeout() {
+    const std::string raw = trimWhitespace(getEnvVar(kLocalCeTimeoutEnv));
+    if (raw.empty()) {
+        return 0.5;
+    }
+    try {
+        const double value = std::stod(raw);
+        return std::max(value, 0.05);
+    } catch (const std::exception&) {
+        return 0.5;
+    }
+}
+
+// Probe a single loopback candidate with an HTTP GET to /api/_live.
+// Returns true only when the server responds HTTP < 400 with a JSON body whose
+// deployment_mode is exactly "self_hosted_ce". Any error/timeout => false.
+bool probeLocalCeCandidate(const std::string& target, double timeout) {
+    static std::once_flag curlInitFlag;
+    std::call_once(curlInitFlag, []() {
+        curl_global_init(CURL_GLOBAL_DEFAULT);
+    });
+
+    CURL* curl = curl_easy_init();
+    if (!curl) {
+        return false;
+    }
+
+    const std::string url = "http://" + target + "/api/_live";
+    std::string responseBody;
+
+    curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
+    curl_easy_setopt(curl, CURLOPT_HTTPGET, 1L);
+    const long timeoutMs = std::max(1L, static_cast<long>(timeout * 1000.0));
+    curl_easy_setopt(curl, CURLOPT_TIMEOUT_MS, timeoutMs);
+    curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT_MS, timeoutMs);
+    curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, CurlWriteCallback);
+    curl_easy_setopt(curl, CURLOPT_WRITEDATA, &responseBody);
+
+    const CURLcode res = curl_easy_perform(curl);
+    long httpCode = 0;
+    curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &httpCode);
+    curl_easy_cleanup(curl);
+
+    if (res != CURLE_OK || httpCode >= 400) {
+        return false;
+    }
+
+    try {
+        const auto body = nlohmann::json::parse(responseBody);
+        if (!body.is_object()) {
+            return false;
+        }
+        const auto it = body.find("deployment_mode");
+        return it != body.end() && it->is_string() &&
+               it->get<std::string>() == "self_hosted_ce";
+    } catch (const nlohmann::json::exception&) {
+        return false;
+    }
 }
 
 // Ensure we have a Firebase token (not a control-plane token)
@@ -916,8 +1140,9 @@ std::shared_ptr<Client> clientFromDiscovery(
     // For now, create using the resolved endpoint
     
     auto channelCreds = grpc::SslCredentials(grpc::SslCredentialsOptions());
-    
+
     grpc::ChannelArguments args;
+    applyKeepaliveArgs(args);
     if (record.region.grpc_authority) {
         args.SetString(GRPC_SSL_TARGET_NAME_OVERRIDE_ARG, *record.region.grpc_authority);
     }
@@ -929,6 +1154,32 @@ std::shared_ptr<Client> clientFromDiscovery(
     auto client = std::make_shared<Client>(channel);
     client->setAuthToken(token);
     return client;
+}
+
+std::optional<std::string> resolveLocalCeEndpoint(std::optional<double> timeout) {
+    const double probeTimeout = timeout.has_value() ? *timeout : localCeTimeout();
+    for (const auto& target : localCeCandidates()) {
+        if (probeLocalCeCandidate(target, probeTimeout)) {
+            return target;
+        }
+    }
+    return std::nullopt;
+}
+
+std::shared_ptr<Client> clientFromLocalCe(std::optional<double> timeout) {
+    auto target = resolveLocalCeEndpoint(timeout);
+    if (!target) {
+        return nullptr;
+    }
+
+    // Loopback CE servers run insecure (no TLS). Build the channel directly with
+    // no token loaded: discovery and auto-login are inherently disabled because
+    // this path does not touch loadBearerToken() or createFromEnv's fallback.
+    grpc::ChannelArguments args;
+    applyKeepaliveArgs(args);
+    auto credentials = grpc::InsecureChannelCredentials();
+    auto channel = grpc::CreateCustomChannel(*target, credentials, args);
+    return std::make_shared<Client>(channel);
 }
 
 } // namespace api

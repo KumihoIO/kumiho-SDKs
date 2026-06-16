@@ -202,6 +202,48 @@ TEST_F(KrefValidationTest, ValidateKrefThrows) {
     EXPECT_THROW(validateKref("invalid"), KrefValidationError);
 }
 
+// --- Unicode / security validation (CE parity with Python validate_kref) ---
+
+// Path traversal patterns are rejected anywhere in the URI.
+TEST_F(KrefValidationTest, RejectsPathTraversal) {
+    EXPECT_THROW(validateKref("kref://project/../etc/item.kind"), KrefValidationError);
+    EXPECT_THROW(validateKref("kref://project/space/..hidden"), KrefValidationError);
+    EXPECT_FALSE(isValidKref("kref://project/../secret"));
+}
+
+// Control characters are rejected.
+TEST_F(KrefValidationTest, RejectsControlCharacters) {
+    // Split string literals so the hex escape does not absorb following digits.
+    EXPECT_THROW(validateKref(std::string("kref://project/sp\x01" "ace")), KrefValidationError);
+    // Tab is a control char (< 0x20).
+    EXPECT_THROW(validateKref(std::string("kref://project/sp\tace")), KrefValidationError);
+    // DEL (0x7f) is rejected.
+    EXPECT_THROW(validateKref(std::string("kref://project/sp\x7f" "ace")), KrefValidationError);
+    EXPECT_FALSE(isValidKref(std::string("kref://project/a\nb")));
+}
+
+// UTF-8 letter bytes (>= 0x80) are accepted in path segments.
+TEST_F(KrefValidationTest, AcceptsUnicodeSegments) {
+    // "проект" (Cyrillic) as a project name.
+    EXPECT_NO_THROW(validateKref("kref://\xD0\xBF\xD1\x80\xD0\xBE\xD0\xB5\xD0\xBA\xD1\x82/space"));
+    EXPECT_TRUE(isValidKref("kref://\xD0\xBF\xD1\x80\xD0\xBE/asset/item.kind"));
+    // Japanese "資産" segment with an ASCII item.
+    EXPECT_TRUE(isValidKref("kref://project/\xE8\xB3\x87\xE7\x94\xA3/hero.model"));
+}
+
+// ASCII allow-list still rejects disallowed punctuation in segments.
+TEST_F(KrefValidationTest, RejectsDisallowedAsciiPunctuation) {
+    EXPECT_FALSE(isValidKref("kref://project/sp ace/item.kind"));  // space
+    EXPECT_FALSE(isValidKref("kref://project/sp@ce/item.kind"));   // '@'
+    EXPECT_FALSE(isValidKref("kref://project/sp*ce"));             // '*'
+}
+
+// A segment may not start with '.' or '-' (must start with a word byte).
+TEST_F(KrefValidationTest, RejectsSegmentLeadingDotOrHyphen) {
+    EXPECT_FALSE(isValidKref("kref://project/.hidden/item.kind"));
+    EXPECT_FALSE(isValidKref("kref://project/-dash/item.kind"));
+}
+
 // --- Edge Cases ---
 
 class KrefEdgeCasesTest : public ::testing::Test {};

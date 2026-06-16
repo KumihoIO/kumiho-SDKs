@@ -12,8 +12,8 @@
 
 #include "kumiho/kref.hpp"
 #include "kumiho/error.hpp"
-#include <regex>
 #include <sstream>
+#include <cctype>
 
 namespace kumiho {
 namespace api {
@@ -179,36 +179,91 @@ bool Kref::isValid() const {
     return !path.empty();
 }
 
+namespace {
+
+// True for the ASCII characters allowed inside a path segment (besides UTF-8
+// continuation/letter bytes, which are handled separately). This mirrors the
+// Python validator's Unicode-aware `[\w.-]` allow-list for the ASCII range.
+bool isAllowedSegmentAsciiByte(unsigned char byte) {
+    return std::isalnum(byte) != 0 || byte == '_' || byte == '.' || byte == '-';
+}
+
+// Validate one path segment. Segments may contain ASCII alphanumerics, '_',
+// '.', '-', plus any UTF-8 multibyte sequence (lead/continuation bytes >= 0x80,
+// i.e. Unicode letters/digits). The leading character must be a "word" byte
+// (alphanumeric, '_', or a UTF-8 byte) — not a '.' or '-'.
+void validateKrefSegment(const std::string& segment, const std::string& kref_uri) {
+    if (segment.empty()) {
+        return;  // Empty segments arise from leading '/'; skip like Python's regex.
+    }
+
+    const unsigned char first = static_cast<unsigned char>(segment.front());
+    const bool firstIsWord =
+        first >= 0x80 || std::isalnum(first) != 0 || first == '_';
+    if (!firstIsWord) {
+        throw KrefValidationError(
+            "Invalid path component '" + segment + "' in kref: " + kref_uri
+        );
+    }
+
+    for (char ch : segment) {
+        const unsigned char byte = static_cast<unsigned char>(ch);
+        // Accept UTF-8 letter/continuation bytes (>= 0x80) verbatim.
+        if (byte >= 0x80) {
+            continue;
+        }
+        if (!isAllowedSegmentAsciiByte(byte)) {
+            throw KrefValidationError(
+                "Invalid path component '" + segment + "' in kref: " + kref_uri
+            );
+        }
+    }
+}
+
+}  // namespace
+
 void validateKref(const std::string& kref_uri) {
     if (kref_uri.empty()) {
         throw KrefValidationError("Kref cannot be empty");
     }
-    
+
+    // Reject path traversal attempts anywhere in the URI.
+    if (kref_uri.find("..") != std::string::npos) {
+        throw KrefValidationError(
+            "Invalid kref URI '" + kref_uri + "': path traversal (..) not allowed"
+        );
+    }
+
+    // Reject control characters (C0 range and DEL).
+    for (char ch : kref_uri) {
+        const unsigned char byte = static_cast<unsigned char>(ch);
+        if (byte < 0x20 || byte == 0x7f) {
+            throw KrefValidationError(
+                "Invalid kref URI '" + kref_uri + "': control characters not allowed"
+            );
+        }
+    }
+
     // Must start with kref:// or kumiho://
     if (kref_uri.find("kref://") != 0 && kref_uri.find("kumiho://") != 0) {
         throw KrefValidationError(
             "Kref must start with 'kref://' or 'kumiho://': " + kref_uri
         );
     }
-    
+
     Kref kref(kref_uri);
     std::string path = kref.getPath();
-    
+
     if (path.empty()) {
         throw KrefValidationError("Kref path cannot be empty: " + kref_uri);
     }
-    
-    // Path components should be valid identifiers
-    std::regex component_regex("^[a-zA-Z0-9_-]+(\\.[a-zA-Z0-9_-]+)?$");
+
+    // Validate each path segment. Unicode letters (UTF-8 bytes >= 0x80) are
+    // accepted; the ASCII allow-list is [A-Za-z0-9_.-] otherwise.
     std::stringstream ss(path);
     std::string component;
     while (std::getline(ss, component, '/')) {
-        if (component.empty()) continue;
-        if (!std::regex_match(component, component_regex)) {
-            throw KrefValidationError(
-                "Invalid path component '" + component + "' in kref: " + kref_uri
-            );
-        }
+        validateKrefSegment(component, kref_uri);
     }
 }
 

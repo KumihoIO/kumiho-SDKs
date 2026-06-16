@@ -22,6 +22,7 @@
 #include "kumiho/event.hpp"
 #include "kumiho/error.hpp"
 #include "kumiho/token_loader.hpp"
+#include "kumiho/discovery.hpp"
 #include <grpcpp/grpcpp.h>
 #include <regex>
 #include <sstream>
@@ -158,7 +159,36 @@ std::string generateCorrelationId() {
     return ss.str();
 }
 
+/// Resolve the default per-RPC deadline in seconds.
+/// Reads KUMIHO_RPC_TIMEOUT_SECONDS; defaults to 30s. Non-positive or
+/// unparseable values fall back to the default.
+double defaultRpcTimeoutSeconds() {
+    const char* raw = std::getenv("KUMIHO_RPC_TIMEOUT_SECONDS");
+    if (raw == nullptr || *raw == '\0') {
+        return 30.0;
+    }
+    try {
+        double value = std::stod(raw);
+        if (value > 0.0) {
+            return value;
+        }
+    } catch (...) {
+        // Fall through to default on any parse failure.
+    }
+    return 30.0;
+}
+
 }  // namespace
+
+void applyKeepaliveArgs(grpc::ChannelArguments& args) {
+    // Keep long-lived channels (including event streams) alive through idle
+    // NAT/proxy timeouts and surface dead connections promptly.
+    args.SetInt(GRPC_ARG_KEEPALIVE_TIME_MS, 30000);
+    args.SetInt(GRPC_ARG_KEEPALIVE_TIMEOUT_MS, 10000);
+    args.SetInt(GRPC_ARG_KEEPALIVE_PERMIT_WITHOUT_CALLS, 1);
+    args.SetInt(GRPC_ARG_HTTP2_MIN_SENT_PING_INTERVAL_WITHOUT_DATA_MS, 10000);
+    args.SetInt(GRPC_ARG_HTTP2_MAX_PINGS_WITHOUT_DATA, 3);
+}
 
 // --- Client Implementation ---
 
@@ -173,21 +203,46 @@ void Client::setAuthToken(const std::string& token) {
     auth_token_ = token;
 }
 
-void Client::configureContext(grpc::ClientContext& context) const {
+void Client::configureContext(grpc::ClientContext& context, bool with_deadline) const {
     // Add correlation ID for end-to-end tracing
     context.AddMetadata("x-correlation-id", generateCorrelationId());
-    
+
     if (!auth_token_.empty()) {
         context.AddMetadata("authorization", "Bearer " + auth_token_);
+    }
+
+    // Apply a default per-RPC deadline for unary calls. Streaming RPCs opt out
+    // (they pass with_deadline = false) so long-lived streams are not cut off.
+    if (with_deadline) {
+        const double seconds = defaultRpcTimeoutSeconds();
+        const auto millis = static_cast<long long>(seconds * 1000.0);
+        context.set_deadline(
+            std::chrono::system_clock::now() + std::chrono::milliseconds(millis)
+        );
     }
 }
 
 std::shared_ptr<Client> Client::createFromEnv() {
     const char* env_endpoint = std::getenv("KUMIHO_SERVER_ENDPOINT");
+    const char* legacy_endpoint = std::getenv("KUMIHO_SERVER_ADDRESS");
+    const bool has_explicit_endpoint =
+        (env_endpoint && *env_endpoint != '\0') ||
+        (legacy_endpoint && *legacy_endpoint != '\0');
+
+    // Self-hosted CE auto-probe (cloud-safety invariant): only when the caller
+    // supplied neither an explicit endpoint nor a resolved token. A user with a
+    // token or explicit endpoint behaves exactly as before. On a CE hit we adopt
+    // the tokenless loopback client and skip token loading + discovery entirely.
+    if (!has_explicit_endpoint && !loadBearerToken().has_value()) {
+        auto ce_client = clientFromLocalCe();
+        if (ce_client) {
+            return ce_client;
+        }
+    }
+
     std::string endpoint = env_endpoint ? env_endpoint : "";
     if (endpoint.empty()) {
-        const char* legacy = std::getenv("KUMIHO_SERVER_ADDRESS");
-        endpoint = legacy ? legacy : "localhost:50051";
+        endpoint = legacy_endpoint ? legacy_endpoint : "localhost:50051";
     }
 
     EndpointConfig config = NormaliseEndpoint(endpoint);
@@ -220,6 +275,7 @@ std::shared_ptr<Client> Client::createFromEnv() {
     }
 
     grpc::ChannelArguments args;
+    applyKeepaliveArgs(args);
     std::shared_ptr<grpc::ChannelCredentials> credentials;
 
     if (config.use_tls) {
@@ -1365,8 +1421,11 @@ std::shared_ptr<EventStream> Client::eventStream(const std::string& routing_key_
     request.set_kref_filter(kref_filter);
 
     context_ = std::make_shared<grpc::ClientContext>();
+    // Streaming RPC: configure auth/correlation but opt out of the per-RPC
+    // deadline so the stream is not cut off after KUMIHO_RPC_TIMEOUT_SECONDS.
+    configureContext(*context_, /*with_deadline=*/false);
 
-    std::unique_ptr<grpc::ClientReaderInterface<::kumiho::Event>> reader = 
+    std::unique_ptr<grpc::ClientReaderInterface<::kumiho::Event>> reader =
         stub_->EventStream(context_.get(), request);
     return std::make_shared<EventStream>(std::move(reader));
 }

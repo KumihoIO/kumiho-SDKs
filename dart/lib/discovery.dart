@@ -14,3 +14,12 @@ export 'src/discovery.dart'
         getDefaultDiscoveryCacheFile,
         discoverTenant,
         clientFromDiscovery;
+
+export 'src/ce_discovery.dart'
+    show
+        CeDiscoveryEnvVars,
+        CeDiscoveryError,
+        kDefaultLocalCePort,
+        kDefaultLocalCeTarget,
+        resolveLocalCeEndpoint,
+        clientFromLocalCe;

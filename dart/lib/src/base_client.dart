@@ -90,6 +90,15 @@ abstract class KumihoClientBase {
               credentials: secure
                   ? const ChannelCredentials.secure()
                   : const ChannelCredentials.insecure(),
+              // HTTP/2 keepalive: prevent idle connections from being silently
+              // closed by intermediate proxies (Cloudflare, Cloud Run,
+              // firewalls). Mirrors the Python SDK defaults (ping every 30s,
+              // 10s to respond, ping even when idle).
+              keepAlive: const ClientKeepAliveOptions(
+                pingInterval: Duration(seconds: 30),
+                timeout: Duration(seconds: 10),
+                permitWithoutCalls: true,
+              ),
             ),
       );
     }
