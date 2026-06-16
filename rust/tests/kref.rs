@@ -96,7 +96,11 @@ fn edge_type_validation() {
     use kumiho::{is_valid_edge_type, validate_edge_type};
     assert!(is_valid_edge_type(EdgeType::DEPENDS_ON));
     assert!(validate_edge_type("CUSTOM_REL").is_ok());
-    assert!(validate_edge_type("depends_on").is_err()); // lowercase
+    // Returns the named EdgeTypeValidationError (not a generic error).
+    assert!(matches!(
+        validate_edge_type("depends_on"),
+        Err(kumiho::EdgeTypeValidationError(_))
+    ));
     assert!(validate_edge_type("1BAD").is_err()); // starts with digit
     assert!(validate_edge_type("").is_err());
 }

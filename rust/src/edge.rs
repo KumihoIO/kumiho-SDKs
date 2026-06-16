@@ -18,11 +18,14 @@ static EDGE_TYPE_PATTERN: Lazy<Regex> =
     Lazy::new(|| Regex::new(r"^[A-Z][A-Z0-9_]{0,49}$").expect("edge type regex is valid"));
 
 /// Validate an edge type (uppercase, `[A-Z0-9_]`, 1-50 chars).
-pub fn validate_edge_type(edge_type: &str) -> Result<()> {
+///
+/// Returns the named [`EdgeTypeValidationError`] (mirroring `validate_kref` and
+/// the Python/Go SDKs); it converts to [`crate::Error`] via `?`.
+pub fn validate_edge_type(edge_type: &str) -> std::result::Result<(), EdgeTypeValidationError> {
     if EDGE_TYPE_PATTERN.is_match(edge_type) {
         Ok(())
     } else {
-        Err(crate::Error::EdgeTypeValidation(format!(
+        Err(EdgeTypeValidationError(format!(
             "Invalid edge_type '{edge_type}'. Must start with an uppercase letter, contain only \
              uppercase letters, digits, underscores, and be 1-50 chars."
         )))

@@ -6,8 +6,25 @@ package kumiho
 import (
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"testing"
 )
+
+func TestKumihoErrorCatchAll(t *testing.T) {
+	for _, err := range []error{
+		&KrefValidationError{Msg: "x"},
+		&EdgeTypeValidationError{Msg: "x"},
+		&ReservedKindError{Kind: "bundle", Msg: "x"},
+		&ProjectLimitError{Msg: "x"},
+		&InvalidArgumentError{Msg: "x"},
+		&DiscoveryError{Msg: "x"},
+	} {
+		var ke KumihoError
+		if !errors.As(err, &ke) {
+			t.Errorf("%T should satisfy the KumihoError catch-all interface", err)
+		}
+	}
+}
 
 func makeJWT(claims map[string]any) string {
 	payload, _ := json.Marshal(claims)

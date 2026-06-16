@@ -50,3 +50,9 @@ impl Error {
         matches!(self, Error::Rpc(s) if s.code() == tonic::Code::NotFound)
     }
 }
+
+impl From<crate::edge::EdgeTypeValidationError> for Error {
+    fn from(e: crate::edge::EdgeTypeValidationError) -> Self {
+        Error::EdgeTypeValidation(e.0)
+    }
+}

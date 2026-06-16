@@ -31,6 +31,8 @@ type DiscoveryError struct{ Msg string }
 
 func (e *DiscoveryError) Error() string { return "discovery: " + e.Msg }
 
+func (e *DiscoveryError) kumihoError() {}
+
 // RegionRouting is the regional gRPC routing returned by the control plane.
 type RegionRouting struct {
 	RegionCode    string `json:"region_code"`

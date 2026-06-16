@@ -37,6 +37,23 @@ type InvalidArgumentError struct{ Msg string }
 
 func (e *InvalidArgumentError) Error() string { return e.Msg }
 
+// KumihoError is the common interface implemented by every error this SDK
+// returns, so callers can match them all with a single errors.As. Mirrors
+// Python's KumihoError base exception.
+//
+//	var ke kumiho.KumihoError
+//	if errors.As(err, &ke) { /* any kumiho error */ }
+type KumihoError interface {
+	error
+	kumihoError()
+}
+
+func (e *KrefValidationError) kumihoError()     {}
+func (e *EdgeTypeValidationError) kumihoError() {}
+func (e *ReservedKindError) kumihoError()       {}
+func (e *ProjectLimitError) kumihoError()       {}
+func (e *InvalidArgumentError) kumihoError()    {}
+
 // IsNotFound reports whether err is a gRPC NOT_FOUND status.
 func IsNotFound(err error) bool {
 	return status.Code(err) == codes.NotFound
