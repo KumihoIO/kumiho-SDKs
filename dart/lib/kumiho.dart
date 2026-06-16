@@ -100,6 +100,7 @@ import 'src/models/space.dart' as models;
 import 'src/models/item.dart' as models;
 import 'src/models/revision.dart' as models;
 import 'src/models/artifact.dart' as models;
+import 'src/models/bundle.dart' as models;
 
 // Export all public APIs
 export 'src/kref.dart';
@@ -307,6 +308,80 @@ class KumihoClient extends KumihoClientBase
     }
     final response = await getArtifact(revisionKref.uri, artifactName);
     return models.Artifact(response, this);
+  }
+
+  /// Gets the item that contains a revision, returned as an [Item] model.
+  ///
+  /// Mirrors Python's `get_item_from_revision`: resolves the revision, then
+  /// fetches its owning item.
+  ///
+  /// ```dart
+  /// final item = await client.getItemFromRevision(
+  ///   'kref://film-2024/models/hero.model?r=3');
+  /// ```
+  Future<models.Item> getItemFromRevision(String revisionKref) async {
+    final rev = await getRevision(revisionKref);
+    final response = await getItemByKref(rev.itemKref.uri);
+    return models.Item(response, this);
+  }
+
+  /// Gets an artifact by kref, returned as an [Artifact] model.
+  ///
+  /// If the kref includes `&a=<name>`, that artifact is returned. Otherwise the
+  /// revision's default artifact is resolved, mirroring Python's
+  /// `get_artifact_by_kref`. Throws a [KumihoError] if no artifact name is
+  /// present and the revision has no default artifact.
+  ///
+  /// ```dart
+  /// final mesh = await client.getArtifactByKref(
+  ///   'kref://film-2024/models/hero.model?r=1&a=mesh');
+  /// final dflt = await client.getArtifactByKref(
+  ///   'kref://film-2024/models/hero.model?r=1'); // default artifact
+  /// ```
+  Future<models.Artifact> getArtifactByKref(String krefUri) async {
+    final kref = Kref(krefUri);
+    final artifactName = kref.artifactName;
+    if (artifactName != null) {
+      final revisionKref = kref.revisionKref;
+      if (revisionKref == null) {
+        throw KumihoError('Artifact kref must include revision: $krefUri');
+      }
+      final response = await getArtifact(revisionKref.uri, artifactName);
+      return models.Artifact(response, this);
+    }
+    // No &a= -> resolve the revision's default artifact.
+    final rev = await getRevision(krefUri);
+    final defaultName = rev.defaultArtifact;
+    if (defaultName.isEmpty) {
+      throw KumihoError(
+        'Invalid artifact kref: $krefUri '
+        '(missing &a=<name> and no default artifact set)',
+      );
+    }
+    final response = await getArtifact(rev.kref.uri, defaultName);
+    return models.Artifact(response, this);
+  }
+
+  /// Gets a bundle by kref, returned as a [Bundle] model.
+  ///
+  /// Verifies the item's kind is `bundle`, mirroring Python's
+  /// `get_bundle_by_kref`; throws a [KumihoError] if the item exists but is
+  /// not a bundle.
+  ///
+  /// ```dart
+  /// final bundle = await client.getBundleByKref(
+  ///   'kref://film-2024/assets/character.bundle');
+  /// final members = await bundle.getMembers();
+  /// ```
+  Future<models.Bundle> getBundleByKref(String krefUri) async {
+    final response = await getItemByKref(krefUri);
+    if (response.kind != 'bundle') {
+      throw KumihoError(
+        "Item '$krefUri' is not a bundle (kind='${response.kind}'). "
+        'Use item() for non-bundle items.',
+      );
+    }
+    return models.Bundle(response, this);
   }
 
   /// Searches for items and returns [Item] models.
