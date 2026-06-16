@@ -167,6 +167,26 @@ public:
     );
 
     /**
+     * @brief Get child spaces of a parent with pagination metadata surfaced.
+     *
+     * Sibling of getChildSpaces() that returns a PagedList carrying the
+     * response's next_cursor and total_count. Mirrors the Python behavior
+     * of returning a PagedList when pagination is supplied.
+     *
+     * @param parent_path The parent path (empty for root).
+     * @param recursive Whether to fetch all descendant spaces recursively.
+     * @param page_size Page size for pagination (0 = server default).
+     * @param cursor Cursor for pagination (empty = first page).
+     * @return A PagedList of Space objects.
+     */
+    PagedList<std::shared_ptr<Space>> getChildSpacesPaged(
+        const std::string& parent_path = "",
+        bool recursive = false,
+        int32_t page_size = 0,
+        const std::string& cursor = ""
+    );
+
+    /**
      * @brief Update space metadata.
      * @param kref The space's Kref.
      * @param metadata The metadata to set.
@@ -217,6 +237,29 @@ public:
      * @return The Item that contains the revision.
      */
     std::shared_ptr<Item> getItemFromRevision(const std::string& revision_kref);
+
+    /**
+     * @brief Get items within a space with optional filtering.
+     *
+     * Calls the GetItems RPC (mirrors Python Client.get_items). Unlike
+     * itemSearch(), this lists items under a specific parent space.
+     *
+     * @param parent_path The path of the parent space.
+     * @param item_name_filter Optional filter for item names.
+     * @param kind_filter Optional filter for item kinds.
+     * @param include_deprecated Whether to include deprecated items.
+     * @param page_size Optional page size for pagination.
+     * @param cursor Optional cursor for pagination.
+     * @return A list of Item objects matching the filters.
+     */
+    std::vector<std::shared_ptr<Item>> getItems(
+        const std::string& parent_path,
+        const std::string& item_name_filter = "",
+        const std::string& kind_filter = "",
+        bool include_deprecated = false,
+        std::optional<int32_t> page_size = std::nullopt,
+        std::optional<std::string> cursor = std::nullopt
+    );
 
     /**
      * @brief Search for items.
@@ -303,6 +346,17 @@ public:
      * @return A list of Revision objects.
      */
     std::vector<std::shared_ptr<Revision>> getRevisions(const Kref& item_kref);
+
+    /**
+     * @brief Get the latest revision of an item.
+     *
+     * Resolves the item kref to its latest revision (mirrors Python
+     * Client.get_latest_revision).
+     *
+     * @param item_kref The item's Kref.
+     * @return The latest Revision, or nullptr if the item has no revisions.
+     */
+    std::shared_ptr<Revision> getLatestRevision(const Kref& item_kref);
 
     /**
      * @brief Peek at the next revision number.
@@ -586,17 +640,19 @@ public:
      * @brief Create a bundle.
      * @param parent_path The parent space path.
      * @param name The bundle name.
+     * @param metadata Optional key-value metadata for the bundle.
      * @return The created Bundle.
      */
-    std::shared_ptr<Bundle> createBundle(const std::string& parent_path, const std::string& name);
+    std::shared_ptr<Bundle> createBundle(const std::string& parent_path, const std::string& name, const Metadata& metadata = {});
 
     /**
      * @brief Create a bundle using a parent Kref.
      * @param parent_kref The parent's Kref.
      * @param name The bundle name.
+     * @param metadata Optional key-value metadata for the bundle.
      * @return The created Bundle.
      */
-    std::shared_ptr<Bundle> createBundle(const Kref& parent_kref, const std::string& name);
+    std::shared_ptr<Bundle> createBundle(const Kref& parent_kref, const std::string& name, const Metadata& metadata = {});
 
     /**
      * @brief Get a bundle by parent path and name.
@@ -619,24 +675,35 @@ public:
 
     /**
      * @brief Add a member to a bundle.
+     *
+     * Creates a new bundle revision (mirrors Python add_bundle_member).
+     *
      * @param bundle_kref The bundle's Kref.
      * @param item_kref The item to add.
+     * @param metadata Optional key-value metadata to store in the revision.
+     * @return A BundleMemberResult with success, message, and new_revision.
      */
-    void addBundleMember(const Kref& bundle_kref, const Kref& item_kref);
+    BundleMemberResult addBundleMember(const Kref& bundle_kref, const Kref& item_kref, const Metadata& metadata = {});
 
     /**
      * @brief Remove a member from a bundle.
+     *
+     * Creates a new bundle revision (mirrors Python remove_bundle_member).
+     *
      * @param bundle_kref The bundle's Kref.
      * @param item_kref The item to remove.
+     * @param metadata Optional key-value metadata to store in the revision.
+     * @return A BundleMemberResult with success, message, and new_revision.
      */
-    void removeBundleMember(const Kref& bundle_kref, const Kref& item_kref);
+    BundleMemberResult removeBundleMember(const Kref& bundle_kref, const Kref& item_kref, const Metadata& metadata = {});
 
     /**
      * @brief Get bundle members.
      * @param bundle_kref The bundle's Kref.
+     * @param revision_number Optional revision to query (0 = latest revision).
      * @return A list of BundleMember objects.
      */
-    std::vector<BundleMember> getBundleMembers(const Kref& bundle_kref);
+    std::vector<BundleMember> getBundleMembers(const Kref& bundle_kref, int revision_number = 0);
 
     /**
      * @brief Get bundle history.

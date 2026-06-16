@@ -22,6 +22,24 @@ namespace api {
 
 // Forward declarations
 class Client;
+class Revision;
+
+/**
+ * @brief The result of an add/remove bundle member operation.
+ *
+ * Mirrors the protobuf AddBundleMemberResponse / RemoveBundleMemberResponse
+ * messages (and the Python tuple of (success, message, new_revision)).
+ */
+struct BundleMemberResult {
+    /** @brief Whether the operation succeeded. */
+    bool success = false;
+
+    /** @brief Status message (e.g., "Added" or error details). */
+    std::string message;
+
+    /** @brief The new bundle revision, or nullptr on failure. */
+    std::shared_ptr<Revision> new_revision;
+};
 
 /**
  * @brief An item that is a member of a bundle.

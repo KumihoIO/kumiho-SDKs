@@ -457,6 +457,43 @@ std::vector<std::shared_ptr<Space>> Client::getChildSpaces(
     return spaces;
 }
 
+PagedList<std::shared_ptr<Space>> Client::getChildSpacesPaged(
+    const std::string& parent_path,
+    bool recursive,
+    int32_t page_size,
+    const std::string& cursor
+) {
+    ::kumiho::GetChildSpacesRequest req;
+    req.set_parent_path(parent_path);
+    req.set_recursive(recursive);
+
+    if (page_size > 0 || !cursor.empty()) {
+        auto* pagination = req.mutable_pagination();
+        pagination->set_page_size(page_size > 0 ? page_size : 100);
+        if (!cursor.empty()) pagination->set_cursor(cursor);
+    }
+
+    ::kumiho::GetChildSpacesResponse res;
+    grpc::ClientContext context; configureContext(context);
+    grpc::Status status = stub_->GetChildSpaces(&context, req, &res);
+
+    if (!status.ok()) {
+        throw RpcError("GetChildSpaces failed: " + status.error_message(), static_cast<int>(status.error_code()));
+    }
+
+    PagedList<std::shared_ptr<Space>> result;
+    for (const auto& pb : res.spaces()) {
+        result.items.push_back(std::make_shared<Space>(pb, this));
+    }
+
+    if (res.has_pagination()) {
+        result.next_cursor = res.pagination().next_cursor();
+        result.total_count = res.pagination().total_count();
+    }
+
+    return result;
+}
+
 std::shared_ptr<Space> Client::updateSpaceMetadata(const Kref& kref, const Metadata& metadata) {
     ::kumiho::UpdateMetadataRequest req;
     req.mutable_kref()->set_uri(kref.uri());
@@ -564,6 +601,41 @@ std::shared_ptr<Item> Client::getItemByKref(const std::string& kref_uri) {
 std::shared_ptr<Item> Client::getItemFromRevision(const std::string& revision_kref) {
     auto revision = getRevision(revision_kref);
     return getItemByKref(revision->getItemKref());
+}
+
+std::vector<std::shared_ptr<Item>> Client::getItems(
+    const std::string& parent_path,
+    const std::string& item_name_filter,
+    const std::string& kind_filter,
+    bool include_deprecated,
+    std::optional<int32_t> page_size,
+    std::optional<std::string> cursor
+) {
+    ::kumiho::GetItemsRequest req;
+    req.set_parent_path(parent_path);
+    req.set_item_name_filter(item_name_filter);
+    req.set_kind_filter(kind_filter);
+    req.set_include_deprecated(include_deprecated);
+
+    if (page_size.has_value() || cursor.has_value()) {
+        auto* pagination = req.mutable_pagination();
+        pagination->set_page_size(page_size.value_or(100));
+        if (cursor.has_value()) pagination->set_cursor(cursor.value());
+    }
+
+    ::kumiho::GetItemsResponse res;
+    grpc::ClientContext context; configureContext(context);
+    grpc::Status status = stub_->GetItems(&context, req, &res);
+
+    if (!status.ok()) {
+        throw RpcError("GetItems failed: " + status.error_message(), static_cast<int>(status.error_code()));
+    }
+
+    std::vector<std::shared_ptr<Item>> items;
+    for (const auto& pb : res.items()) {
+        items.push_back(std::make_shared<Item>(pb, this));
+    }
+    return items;
 }
 
 PagedList<std::shared_ptr<Item>> Client::itemSearch(
@@ -816,6 +888,12 @@ std::vector<std::shared_ptr<Revision>> Client::getRevisions(const Kref& item_kre
         revisions.push_back(std::make_shared<Revision>(pb, this));
     }
     return revisions;
+}
+
+std::shared_ptr<Revision> Client::getLatestRevision(const Kref& item_kref) {
+    // Mirrors Python get_latest_revision: resolve the item kref to its latest
+    // revision; resolveKref returns nullptr on NOT_FOUND (no revisions).
+    return resolveKref(item_kref.uri());
 }
 
 int Client::peekNextRevision(const Kref& item_kref) {
@@ -1372,10 +1450,15 @@ bool Client::deleteAttribute(const Kref& kref, const std::string& key) {
 
 // --- Bundle Operations (formerly Collection) ---
 
-std::shared_ptr<Bundle> Client::createBundle(const std::string& parent_path, const std::string& name) {
+std::shared_ptr<Bundle> Client::createBundle(const std::string& parent_path, const std::string& name, const Metadata& metadata) {
     ::kumiho::CreateBundleRequest req;
     req.set_parent_path(parent_path);
     req.set_bundle_name(name);
+    // CreateBundleRequest carries metadata directly (unlike CreateItemRequest);
+    // mirror Python create_bundle which passes metadata in the request.
+    for (const auto& pair : metadata) {
+        (*req.mutable_metadata())[pair.first] = pair.second;
+    }
 
     ::kumiho::ItemResponse res;
     grpc::ClientContext context; configureContext(context);
@@ -1387,10 +1470,10 @@ std::shared_ptr<Bundle> Client::createBundle(const std::string& parent_path, con
     return std::make_shared<Bundle>(res, this);
 }
 
-std::shared_ptr<Bundle> Client::createBundle(const Kref& parent_kref, const std::string& name) {
+std::shared_ptr<Bundle> Client::createBundle(const Kref& parent_kref, const std::string& name, const Metadata& metadata) {
     // Convert Kref to path (Kref format: kref://project/path/to/space)
     std::string path = "/" + parent_kref.getPath();
-    return createBundle(path, name);
+    return createBundle(path, name, metadata);
 }
 
 std::shared_ptr<Bundle> Client::getBundle(const std::string& parent_path, const std::string& name) {
@@ -1441,10 +1524,13 @@ std::shared_ptr<Bundle> Client::getBundleByKref(const std::string& kref_uri) {
     return getBundle(parent_path, bundle_name);
 }
 
-void Client::addBundleMember(const Kref& bundle_kref, const Kref& item_kref) {
+BundleMemberResult Client::addBundleMember(const Kref& bundle_kref, const Kref& item_kref, const Metadata& metadata) {
     ::kumiho::AddBundleMemberRequest req;
     *req.mutable_bundle_kref() = bundle_kref.toPb();
     *req.mutable_member_item_kref() = item_kref.toPb();
+    for (const auto& pair : metadata) {
+        (*req.mutable_metadata())[pair.first] = pair.second;
+    }
 
     ::kumiho::AddBundleMemberResponse res;
     grpc::ClientContext context; configureContext(context);
@@ -1453,12 +1539,23 @@ void Client::addBundleMember(const Kref& bundle_kref, const Kref& item_kref) {
     if (!status.ok()) {
         throw RpcError("AddBundleMember failed: " + status.error_message(), static_cast<int>(status.error_code()));
     }
+
+    BundleMemberResult result;
+    result.success = res.success();
+    result.message = res.message();
+    if (res.has_new_revision()) {
+        result.new_revision = std::make_shared<Revision>(res.new_revision(), this);
+    }
+    return result;
 }
 
-void Client::removeBundleMember(const Kref& bundle_kref, const Kref& item_kref) {
+BundleMemberResult Client::removeBundleMember(const Kref& bundle_kref, const Kref& item_kref, const Metadata& metadata) {
     ::kumiho::RemoveBundleMemberRequest req;
     *req.mutable_bundle_kref() = bundle_kref.toPb();
     *req.mutable_member_item_kref() = item_kref.toPb();
+    for (const auto& pair : metadata) {
+        (*req.mutable_metadata())[pair.first] = pair.second;
+    }
 
     ::kumiho::RemoveBundleMemberResponse res;
     grpc::ClientContext context; configureContext(context);
@@ -1467,11 +1564,22 @@ void Client::removeBundleMember(const Kref& bundle_kref, const Kref& item_kref) 
     if (!status.ok()) {
         throw RpcError("RemoveBundleMember failed: " + status.error_message(), static_cast<int>(status.error_code()));
     }
+
+    BundleMemberResult result;
+    result.success = res.success();
+    result.message = res.message();
+    if (res.has_new_revision()) {
+        result.new_revision = std::make_shared<Revision>(res.new_revision(), this);
+    }
+    return result;
 }
 
-std::vector<BundleMember> Client::getBundleMembers(const Kref& bundle_kref) {
+std::vector<BundleMember> Client::getBundleMembers(const Kref& bundle_kref, int revision_number) {
     ::kumiho::GetBundleMembersRequest req;
     *req.mutable_bundle_kref() = bundle_kref.toPb();
+    if (revision_number > 0) {
+        req.set_revision_number(revision_number);
+    }
 
     ::kumiho::GetBundleMembersResponse res;
     grpc::ClientContext context; configureContext(context);
