@@ -40,13 +40,15 @@ type Client struct {
 
 // ClientBuilder configures a Client. Obtain one via Builder().
 type ClientBuilder struct {
-	endpoint     string
-	token        string
-	tokenSet     bool
-	tenantHint   string
-	useDiscovery *bool
-	forceRefresh bool
-	metadata     []string // key,value pairs
+	endpoint        string
+	token           string
+	tokenSet        bool
+	tenantHint      string
+	useDiscovery    *bool
+	forceRefresh    bool
+	controlPlaneURL string
+	cachePath       string
+	metadata        []string // key,value pairs
 }
 
 // Builder starts a new ClientBuilder.
@@ -67,6 +69,20 @@ func (b *ClientBuilder) UseDiscovery(yes bool) *ClientBuilder { b.useDiscovery =
 // ForceDiscoveryRefresh bypasses the discovery cache.
 func (b *ClientBuilder) ForceDiscoveryRefresh(yes bool) *ClientBuilder {
 	b.forceRefresh = yes
+	return b
+}
+
+// ControlPlaneURL overrides the control-plane discovery URL (otherwise
+// KUMIHO_CONTROL_PLANE_URL, else the default). Mirrors Python's control_plane_url.
+func (b *ClientBuilder) ControlPlaneURL(url string) *ClientBuilder {
+	b.controlPlaneURL = url
+	return b
+}
+
+// CachePath overrides the discovery cache file path (otherwise
+// KUMIHO_DISCOVERY_CACHE_FILE, else the default). Mirrors Python's cache_path.
+func (b *ClientBuilder) CachePath(path string) *ClientBuilder {
+	b.cachePath = path
 	return b
 }
 
@@ -102,7 +118,7 @@ func AutoWithTenant(ctx context.Context, tenantHint string) (*Client, error) {
 	}
 	if token != "" {
 		// Token present -> control-plane discovery -> tenant's cloud server.
-		rec, derr := resolveDiscovery(ctx, token, tenantHint, false)
+		rec, derr := resolveDiscovery(ctx, token, tenantHint, "", "", false)
 		if derr != nil {
 			return nil, derr
 		}
@@ -173,7 +189,7 @@ func (b *ClientBuilder) Build(ctx context.Context) (*Client, error) {
 	// 3. Discovery.
 	if endpoint == "" && useDiscovery {
 		if token != "" {
-			if rec, err := resolveDiscovery(ctx, token, b.tenantHint, b.forceRefresh); err == nil {
+			if rec, err := resolveDiscovery(ctx, token, b.tenantHint, b.controlPlaneURL, b.cachePath, b.forceRefresh); err == nil {
 				endpoint = rec.Target()
 				md = append(md, "x-tenant-id", rec.TenantID)
 			} else if b.tenantHint != "" {

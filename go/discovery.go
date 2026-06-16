@@ -197,7 +197,12 @@ func decryptCache(encrypted string) (string, bool) {
 	return string(pt), true
 }
 
-func cachePath() string {
+// resolveCachePath returns the discovery cache file: an explicit override wins,
+// then KUMIHO_DISCOVERY_CACHE_FILE, then the namespaced default.
+func resolveCachePath(override string) string {
+	if override != "" {
+		return override
+	}
 	if p := os.Getenv("KUMIHO_DISCOVERY_CACHE_FILE"); p != "" {
 		return p
 	}
@@ -205,9 +210,9 @@ func cachePath() string {
 	return filepath.Join(configDir(), "discovery-cache.go.json")
 }
 
-func cacheReadAll() map[string]DiscoveryRecord {
+func cacheReadAll(path string) map[string]DiscoveryRecord {
 	out := map[string]DiscoveryRecord{}
-	data, err := os.ReadFile(cachePath())
+	data, err := os.ReadFile(path)
 	if err != nil {
 		return out
 	}
@@ -219,15 +224,15 @@ func cacheReadAll() map[string]DiscoveryRecord {
 	return out
 }
 
-func cacheStore(key string, rec DiscoveryRecord) {
-	all := cacheReadAll()
+func cacheStore(path, key string, rec DiscoveryRecord) {
+	all := cacheReadAll(path)
 	all[key] = rec
 	data, err := json.MarshalIndent(all, "", "  ")
 	if err != nil {
 		return
 	}
-	_ = os.MkdirAll(filepath.Dir(cachePath()), 0o700)
-	_ = os.WriteFile(cachePath(), []byte(encryptCache(string(data))), 0o600)
+	_ = os.MkdirAll(filepath.Dir(path), 0o700)
+	_ = os.WriteFile(path, []byte(encryptCache(string(data))), 0o600)
 }
 
 func buildDiscoveryURL(base string) string {
@@ -290,22 +295,28 @@ func fetchFresh(ctx context.Context, base, idToken, tenantHint string) (Discover
 	return DiscoveryRecord{}, &DiscoveryError{Msg: "discovery failed without a usable bearer token"}
 }
 
-// resolveDiscovery resolves a DiscoveryRecord, using the encrypted cache when fresh.
-func resolveDiscovery(ctx context.Context, idToken, tenantHint string, forceRefresh bool) (DiscoveryRecord, error) {
-	base := os.Getenv("KUMIHO_CONTROL_PLANE_URL")
+// resolveDiscovery resolves a DiscoveryRecord, using the encrypted cache when
+// fresh. controlPlaneURL and cachePathOverride are programmatic overrides (empty
+// = env/default), mirroring Python's client_from_discovery.
+func resolveDiscovery(ctx context.Context, idToken, tenantHint, controlPlaneURL, cachePathOverride string, forceRefresh bool) (DiscoveryRecord, error) {
+	base := controlPlaneURL
+	if base == "" {
+		base = os.Getenv("KUMIHO_CONTROL_PLANE_URL")
+	}
 	if base == "" {
 		base = defaultControlPlane
 	}
+	path := resolveCachePath(cachePathOverride)
 	key := tenantHint
 	if key == "" {
 		key = defaultCacheKey
 	}
 
 	if !forceRefresh {
-		if cached, ok := cacheReadAll()[key]; ok && !cached.CacheControl.isExpired() {
+		if cached, ok := cacheReadAll(path)[key]; ok && !cached.CacheControl.isExpired() {
 			if cached.CacheControl.shouldRefresh() {
 				if fresh, err := fetchFresh(ctx, base, idToken, tenantHint); err == nil {
-					cacheStore(key, fresh)
+					cacheStore(path, key, fresh)
 					return fresh, nil
 				} else if !cached.CacheControl.isExpired() {
 					return cached, nil
@@ -320,7 +331,7 @@ func resolveDiscovery(ctx context.Context, idToken, tenantHint string, forceRefr
 	if err != nil {
 		return DiscoveryRecord{}, err
 	}
-	cacheStore(key, fresh)
+	cacheStore(path, key, fresh)
 	return fresh, nil
 }
 
@@ -332,7 +343,7 @@ func TenantInfo(tenantHint string) *DiscoveryRecord {
 	if key == "" {
 		key = defaultCacheKey
 	}
-	if rec, ok := cacheReadAll()[key]; ok {
+	if rec, ok := cacheReadAll(resolveCachePath(""))[key]; ok {
 		return &rec
 	}
 	return nil

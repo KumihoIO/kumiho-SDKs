@@ -401,14 +401,26 @@ fn is_control_plane_token(token: &str) -> bool {
 }
 
 /// Resolve a [`DiscoveryRecord`], using the encrypted cache when fresh.
+///
+/// `control_plane_url` and `cache_path_override` are programmatic overrides
+/// (`None` = env/default), mirroring Python's `client_from_discovery`.
 pub async fn resolve(
     id_token: &str,
     tenant_hint: Option<&str>,
+    control_plane_url: Option<&str>,
+    cache_path_override: Option<&str>,
     force_refresh: bool,
 ) -> Result<DiscoveryRecord, DiscoveryError> {
-    let base_url = std::env::var("KUMIHO_CONTROL_PLANE_URL")
-        .unwrap_or_else(|_| DEFAULT_CONTROL_PLANE.to_string());
-    let cache = DiscoveryCache { path: cache_path() };
+    let base_url = control_plane_url
+        .filter(|s| !s.is_empty())
+        .map(String::from)
+        .or_else(|| std::env::var("KUMIHO_CONTROL_PLANE_URL").ok().filter(|s| !s.is_empty()))
+        .unwrap_or_else(|| DEFAULT_CONTROL_PLANE.to_string());
+    let cache = DiscoveryCache {
+        path: cache_path_override
+            .map(PathBuf::from)
+            .unwrap_or_else(cache_path),
+    };
     let cache_key = tenant_hint.unwrap_or(DEFAULT_CACHE_KEY);
 
     if !force_refresh {

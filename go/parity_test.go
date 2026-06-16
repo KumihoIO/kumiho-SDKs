@@ -7,8 +7,28 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"path/filepath"
 	"testing"
 )
+
+func TestResolveCachePathOverride(t *testing.T) {
+	if got := resolveCachePath("/custom/cache.json"); got != "/custom/cache.json" {
+		t.Errorf("override = %q, want /custom/cache.json", got)
+	}
+	t.Setenv("KUMIHO_DISCOVERY_CACHE_FILE", "/env/cache.json")
+	if got := resolveCachePath(""); got != "/env/cache.json" {
+		t.Errorf("env = %q, want /env/cache.json", got)
+	}
+}
+
+func TestDiscoveryCacheRoundTripWithPath(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "disc.json")
+	cacheStore(path, "k", DiscoveryRecord{TenantID: "t1", TenantName: "studio"})
+	got, ok := cacheReadAll(path)["k"]
+	if !ok || got.TenantID != "t1" || got.TenantName != "studio" {
+		t.Errorf("round-trip = %+v ok=%v", got, ok)
+	}
+}
 
 func TestKumihoErrorCatchAll(t *testing.T) {
 	for _, err := range []error{

@@ -22,6 +22,9 @@ and error types have Go and Rust equivalents. Parity work explicitly added:
 - **Configurable timeouts** — `KUMIHO_DISCOVERY_TIMEOUT_SECONDS` and
   `KUMIHO_LOCAL_DISCOVERY_TIMEOUT_SECONDS` (Go + Rust; Rust previously had none).
 - **Traversal/path defaults** — `max_depth=10`, `limit=100` (Go + Rust).
+- **Programmatic discovery config** — `ControlPlaneURL` / `CachePath` builder
+  setters (Go) and `control_plane_url` / `cache_path` (Rust), matching Python's
+  `client_from_discovery` params (the env vars are still honored).
 - **`KumihoError` catch-all interface** (Go) and **named `EdgeTypeValidationError`**
   produced by `validate_edge_type` (Rust), matching Python's error model.
 - **Go models sync in-memory state** after a successful `set_attribute` /
@@ -38,9 +41,6 @@ and error types have Go and Rust equivalents. Parity work explicitly added:
   after a mutation (matching Python); Rust models are `Clone` value snapshots —
   re-fetch (or use a returned model) for fresh state. This avoids hidden mutation
   and is the idiomatic Rust choice.
-- **Discovery configured via env.** Python's `client_from_discovery` takes
-  `control_plane_url` / `cache_path` params; Go/Rust read `KUMIHO_CONTROL_PLANE_URL`
-  and `KUMIHO_DISCOVERY_CACHE_FILE` (same capability, idiomatic shape).
 - **`event_stream` timeout.** Python takes a `timeout`; Go uses `context` deadlines
   (idiomatic), Rust callers wrap the stream with `tokio::time::timeout`.
 - Minor: Go `ReservedKinds` is a slice (single value); Go `Page.TotalCount` is a

@@ -204,6 +204,8 @@ pub struct ClientBuilder {
     tenant_hint: Option<String>,
     use_discovery: Option<bool>,
     force_discovery_refresh: bool,
+    control_plane_url: Option<String>,
+    cache_path: Option<String>,
     metadata: Vec<(String, String)>,
 }
 
@@ -232,6 +234,18 @@ impl ClientBuilder {
     /// Bypass the discovery cache and re-fetch routing.
     pub fn force_discovery_refresh(mut self, yes: bool) -> Self {
         self.force_discovery_refresh = yes;
+        self
+    }
+    /// Override the control-plane discovery URL (otherwise `KUMIHO_CONTROL_PLANE_URL`,
+    /// else the default). Mirrors Python's `control_plane_url`.
+    pub fn control_plane_url(mut self, url: impl Into<String>) -> Self {
+        self.control_plane_url = Some(url.into());
+        self
+    }
+    /// Override the discovery cache file path (otherwise `KUMIHO_DISCOVERY_CACHE_FILE`,
+    /// else the default). Mirrors Python's `cache_path`.
+    pub fn cache_path(mut self, path: impl Into<String>) -> Self {
+        self.cache_path = Some(path.into());
         self
     }
     /// Add a static metadata header sent on every RPC.
@@ -267,6 +281,8 @@ impl ClientBuilder {
                 match crate::discovery::resolve(
                     &tok,
                     self.tenant_hint.as_deref(),
+                    self.control_plane_url.as_deref(),
+                    self.cache_path.as_deref(),
                     self.force_discovery_refresh,
                 )
                 .await
@@ -421,7 +437,8 @@ impl Client {
         let token = crate::token_loader::load_bearer_token().map_err(Error::InvalidArgument)?;
         if let Some(tok) = token {
             // Token present -> control-plane discovery -> tenant's cloud server.
-            let record = crate::discovery::resolve(&tok, tenant_hint, false).await?;
+            let record =
+                crate::discovery::resolve(&tok, tenant_hint, None, None, false).await?;
             return ClientBuilder::default()
                 .endpoint(record.target())
                 .token(tok)
