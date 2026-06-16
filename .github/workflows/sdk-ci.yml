@@ -78,6 +78,10 @@ jobs:
         run: cargo build --all-targets --verbose
       - name: Test
         run: cargo test --features mock-server --verbose
+      - name: Package check
+        # Verifies the crate packages cleanly (esp. that proto/kumiho.proto from
+        # the submodule is included) and builds from the packaged source.
+        run: cargo publish --dry-run
       - name: Format check
         run: cargo fmt --all --check
       - name: Clippy

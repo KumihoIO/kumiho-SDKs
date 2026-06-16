@@ -1,0 +1,30 @@
+# "Releases" the Go module on a `go/v*` tag. Go has no central registry — the
+# tag itself is the release (consumers run `go get .../go@vX.Y.Z`). This job just
+# builds + tests at the tag and cuts a GitHub Release. No secrets required.
+name: Release Go module
+
+on:
+  push:
+    tags:
+      - 'go/v*' # e.g. go/v0.10.0  (subdirectory module → tag must be prefixed "go/")
+
+permissions:
+  contents: write # needed to create the GitHub Release
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go/go.mod
+      - name: Build & test
+        working-directory: go
+        run: |
+          go build ./...
+          go test ./...
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" --title "$GITHUB_REF_NAME" --generate-notes

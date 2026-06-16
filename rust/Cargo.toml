@@ -11,6 +11,18 @@ documentation = "https://docs.kumiho.io"
 keywords = ["kumiho", "asset-management", "grpc", "version-control", "graph"]
 categories = ["api-bindings", "asynchronous"]
 readme = "README.md"
+# Explicit file list so `cargo package` includes proto/kumiho.proto, which lives
+# in a git submodule and would otherwise be omitted (cargo enumerates files via
+# git, which skips submodule contents). NOTE: consumers still need `protoc` on
+# PATH because build.rs compiles the proto with tonic-build at build time.
+include = [
+    "src/**/*.rs",
+    "build.rs",
+    "proto/kumiho.proto",
+    "Cargo.toml",
+    "README.md",
+    "LICENSE",
+]
 
 [features]
 # Generates the gRPC *server* stubs (see build.rs) so the in-process integration
