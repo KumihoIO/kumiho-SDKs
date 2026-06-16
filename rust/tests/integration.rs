@@ -500,7 +500,9 @@ async fn integration_create_item_fields_and_reserved_kind() {
 
     // Reserved "bundle" kind is rejected client-side, before any RPC.
     fake.rec.lock().unwrap().last_item = None;
-    let err = client.create_item("/vfx/chars", "pack", "bundle", None).await;
+    let err = client
+        .create_item("/vfx/chars", "pack", "bundle", None)
+        .await;
     assert!(err.is_err(), "reserved kind 'bundle' should be rejected");
     assert!(
         fake.rec.lock().unwrap().last_item.is_none(),
@@ -529,6 +531,9 @@ async fn integration_resolve_swallows_rpc_error() {
     assert_eq!(loc.as_deref(), Some("/data/hero.fbx"));
 
     // A failed resolution returns Ok(None) — not an error — per the SDK fix.
-    let loc = client.resolve("kref://vfx/chars/missing.model").await.unwrap();
+    let loc = client
+        .resolve("kref://vfx/chars/missing.model")
+        .await
+        .unwrap();
     assert_eq!(loc, None);
 }
