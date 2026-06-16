@@ -1,0 +1,87 @@
+# SDK CI — builds and tests the Go and Rust SDKs on pull requests.
+#
+# The Go SDK ships generated protobuf (go/kumihopb), so it needs no submodule
+# or protoc. The Rust SDK generates protobuf at build time via build.rs
+# (tonic-build), so it needs the rust/proto submodule and protoc on PATH.
+#
+# build + test are the hard gate; fmt/clippy are advisory (continue-on-error)
+# so a formatting nit never blocks a PR that actually compiles and passes tests.
+name: SDK CI
+
+on:
+  pull_request:
+    paths:
+      - 'go/**'
+      - 'rust/**'
+      - '.github/workflows/sdk-ci.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'go/**'
+      - 'rust/**'
+      - '.github/workflows/sdk-ci.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sdk-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  go:
+    name: Go (build / vet / test)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: go
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go/go.mod
+          cache-dependency-path: go/go.sum
+      - name: Build
+        run: go build ./...
+      - name: Vet
+        run: go vet ./...
+      - name: Test
+        run: go test -race ./...
+      - name: gofmt
+        continue-on-error: true
+        run: |
+          unformatted=$(gofmt -l .)
+          if [ -n "$unformatted" ]; then
+            echo "These files need gofmt:"
+            echo "$unformatted"
+            exit 1
+          fi
+
+  rust:
+    name: Rust (build / test / fmt / clippy)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: rust
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - name: Install protoc
+        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: rust
+      - name: Build
+        run: cargo build --all-targets --verbose
+      - name: Test
+        run: cargo test --verbose
+      - name: Format check
+        continue-on-error: true
+        run: cargo fmt --all --check
+      - name: Clippy
+        continue-on-error: true
+        run: cargo clippy --all-targets
