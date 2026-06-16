@@ -124,6 +124,20 @@ func AutoWithTenant(ctx context.Context, tenantHint string) (*Client, error) {
 	return nil, &DiscoveryError{Msg: "no credentials found: set KUMIHO_AUTH_TOKEN or run `kumiho-cli login`; no local self-hosted CE server detected on loopback"}
 }
 
+// FromLocalCE builds a tokenless client pointed at a locally-detected
+// self-hosted CE server, or returns (nil, nil) if none is detected. Mirrors
+// Python client_from_local_ce.
+func FromLocalCE(ctx context.Context) (*Client, error) {
+	local, err := resolveLocalCEEndpoint(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if local == "" {
+		return nil, nil
+	}
+	return Builder().Endpoint(local).UseDiscovery(false).Build(ctx)
+}
+
 // Build resolves routing/auth and dials the server (lazily).
 func (b *ClientBuilder) Build(ctx context.Context) (*Client, error) {
 	// 1. Token.

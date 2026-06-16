@@ -322,6 +322,49 @@ func resolveDiscovery(ctx context.Context, idToken, tenantHint string, forceRefr
 	return fresh, nil
 }
 
+// TenantInfo returns the cached discovery record for the given tenant hint (or
+// the default tenant), or nil if no cache entry exists. Mirrors Python
+// get_tenant_info (tenant id, name, roles, region, guardrails).
+func TenantInfo(tenantHint string) *DiscoveryRecord {
+	key := tenantHint
+	if key == "" {
+		key = defaultCacheKey
+	}
+	if rec, ok := cacheReadAll()[key]; ok {
+		return &rec
+	}
+	return nil
+}
+
+// TenantSlug returns a URL-safe tenant slug (or a shortened tenant id) for the
+// given tenant hint, or "" if no cached tenant info exists. Mirrors Python
+// get_tenant_slug.
+func TenantSlug(tenantHint string) string {
+	rec := TenantInfo(tenantHint)
+	if rec == nil {
+		return ""
+	}
+	if rec.TenantName != "" && isURLSafeSlug(rec.TenantName) {
+		return strings.ToLower(rec.TenantName)
+	}
+	if rec.TenantID != "" {
+		return strings.SplitN(rec.TenantID, "-", 2)[0]
+	}
+	return rec.TenantName
+}
+
+func isURLSafeSlug(s string) bool {
+	if s == "" {
+		return false
+	}
+	for _, r := range s {
+		if !((r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '-') {
+			return false
+		}
+	}
+	return true
+}
+
 // resolveLocalCEEndpoint probes loopback ports for a self-hosted CE server.
 // It returns an error when KUMIHO_LOCAL_SERVER_ENDPOINT / KUMIHO_LOCAL_SERVER_PORT
 // is set to a non-loopback or otherwise invalid value, mirroring the Python SDK.

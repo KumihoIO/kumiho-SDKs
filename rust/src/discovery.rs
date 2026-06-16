@@ -434,6 +434,34 @@ pub async fn resolve(
     Ok(fresh)
 }
 
+/// Cached discovery record for the given tenant hint (or the default tenant),
+/// or `None` if no cache entry exists. Mirrors Python `get_tenant_info`.
+pub fn tenant_info(tenant_hint: Option<&str>) -> Option<DiscoveryRecord> {
+    let cache = DiscoveryCache { path: cache_path() };
+    cache.load(tenant_hint.unwrap_or(DEFAULT_CACHE_KEY))
+}
+
+/// A URL-safe tenant slug (or shortened tenant id) for the given tenant hint,
+/// or `None` if no cached tenant info exists. Mirrors Python `get_tenant_slug`.
+pub fn tenant_slug(tenant_hint: Option<&str>) -> Option<String> {
+    let rec = tenant_info(tenant_hint)?;
+    if let Some(name) = rec.tenant_name.as_deref() {
+        if !name.is_empty() && name.chars().all(|c| c.is_ascii_alphanumeric() || c == '-') {
+            return Some(name.to_ascii_lowercase());
+        }
+    }
+    if !rec.tenant_id.is_empty() {
+        return Some(
+            rec.tenant_id
+                .split('-')
+                .next()
+                .unwrap_or(&rec.tenant_id)
+                .to_string(),
+        );
+    }
+    rec.tenant_name
+}
+
 /// Probe loopback ports for a self-hosted CE server; return a gRPC target.
 ///
 /// Returns an error when `KUMIHO_LOCAL_SERVER_ENDPOINT` / `KUMIHO_LOCAL_SERVER_PORT`

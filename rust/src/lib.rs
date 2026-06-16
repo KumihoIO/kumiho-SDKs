@@ -54,7 +54,7 @@ mod models;
 mod token_loader;
 
 pub use client::{Client, ClientBuilder, ScoredRevision, SearchResult};
-pub use discovery::{DiscoveryError, DiscoveryRecord};
+pub use discovery::{tenant_info, tenant_slug, DiscoveryError, DiscoveryRecord};
 pub use edge::{
     is_valid_edge_type, validate_edge_type, Edge, EdgeDirection, EdgeType, EdgeTypeValidationError,
     ImpactedRevision, PathStep, RevisionPath, ShortestPathResult, TraversalResult,

@@ -445,6 +445,21 @@ impl Client {
         ))
     }
 
+    /// Build a tokenless client pointed at a locally-detected self-hosted CE
+    /// server, or `None` if none is detected. Mirrors Python `client_from_local_ce`.
+    pub async fn from_local_ce() -> Result<Option<Client>> {
+        match crate::discovery::resolve_local_ce_endpoint().await? {
+            Some(local) => Ok(Some(
+                ClientBuilder::default()
+                    .endpoint(local)
+                    .use_discovery(false)
+                    .build()
+                    .await?,
+            )),
+            None => Ok(None),
+        }
+    }
+
     /// Start a [`ClientBuilder`] for full control.
     pub fn builder() -> ClientBuilder {
         ClientBuilder::default()
