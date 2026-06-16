@@ -1,0 +1,40 @@
+[package]
+name = "kumiho"
+version = "0.10.0"
+edition = "2021"
+rust-version = "1.75"
+description = "Rust SDK for Kumiho Cloud - Graph-native creative & AI asset management"
+license = "MIT"
+repository = "https://github.com/KumihoIO/kumiho-SDKs"
+homepage = "https://kumiho.io"
+documentation = "https://docs.kumiho.io"
+keywords = ["kumiho", "asset-management", "grpc", "version-control", "graph"]
+categories = ["api-bindings", "asynchronous"]
+readme = "README.md"
+
+[dependencies]
+tonic = { version = "0.12", features = ["tls", "tls-roots"] }
+prost = "0.13"
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "time", "fs"] }
+tokio-stream = "0.1"
+async-stream = "0.3"
+futures-core = "0.3"
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "1"
+regex = "1"
+once_cell = "1"
+uuid = { version = "1", features = ["v4"] }
+base64 = "0.22"
+sha2 = "0.10"
+hmac = "0.12"
+rand = "0.8"
+dirs = "5"
+chrono = { version = "0.4", default-features = false, features = ["clock"] }
+
+[build-dependencies]
+tonic-build = "0.12"
+
+[dev-dependencies]
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "time", "fs"] }

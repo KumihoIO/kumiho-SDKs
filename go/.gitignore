@@ -1,0 +1,4 @@
+# Go build artifacts
+/examples/quickstart/quickstart
+*.test
+*.out

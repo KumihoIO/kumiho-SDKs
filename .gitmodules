@@ -7,3 +7,9 @@
 [submodule "python/proto"]
 	path = python/proto
 	url = ../kumiho-proto
+[submodule "rust/proto"]
+	path = rust/proto
+	url = https://github.com/KumihoIO/kumiho-proto
+[submodule "go/proto"]
+	path = go/proto
+	url = https://github.com/KumihoIO/kumiho-proto
