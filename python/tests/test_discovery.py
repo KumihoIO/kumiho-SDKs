@@ -7,12 +7,17 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Dict
 
+import pytest
+
 from kumiho.discovery import (  # type: ignore[import]
     CacheControl,
     DiscoveryCache,
     DiscoveryRecord,
+    DiscoveryError,
     RegionRouting,
     client_from_discovery,
+    client_from_local_ce,
+    resolve_local_ce_endpoint,
 )
 
 
@@ -122,6 +127,78 @@ def test_client_from_discovery_refreshes_expired_cache(monkeypatch, tmp_path: Pa
 
     assert created["target"] == "eu:443"
     assert ("x-tenant-id", "tenant-abc") in created["metadata"]
+
+
+def test_resolve_local_ce_endpoint_accepts_loopback_live_payload(monkeypatch) -> None:
+    monkeypatch.delenv("KUMIHO_LOCAL_SERVER_ENDPOINT", raising=False)
+    monkeypatch.delenv("KUMIHO_LOCAL_SERVER_PORT", raising=False)
+
+    captured: Dict[str, Any] = {}
+
+    class FakeResponse:
+        status_code = 200
+
+        def json(self) -> Dict[str, str]:
+            return {"status": "ok", "deployment_mode": "self_hosted_ce"}
+
+    def fake_get(url: str, timeout: float):
+        captured["url"] = url
+        captured["timeout"] = timeout
+        return FakeResponse()
+
+    monkeypatch.setattr("kumiho.discovery.requests.get", fake_get)
+
+    target = resolve_local_ce_endpoint(timeout=0.1)
+
+    assert target == "127.0.0.1:9190"
+    assert captured == {"url": "http://127.0.0.1:9190/api/_live", "timeout": 0.1}
+
+
+def test_resolve_local_ce_endpoint_refuses_non_loopback_override(monkeypatch) -> None:
+    monkeypatch.setenv("KUMIHO_LOCAL_SERVER_ENDPOINT", "10.0.0.5:8080")
+
+    with pytest.raises(DiscoveryError, match="localhost"):
+        resolve_local_ce_endpoint(timeout=0.1)
+
+
+def test_client_from_local_ce_is_tokenless(monkeypatch) -> None:
+    created: Dict[str, Any] = {}
+
+    class FakeClient:
+        def __init__(
+            self,
+            *,
+            target: str,
+            auth_token: str | None = None,
+            default_metadata=None,
+            use_discovery=None,
+            enable_auto_login=True,
+            skip_auth_token_load=False,
+            **_kwargs,
+        ):
+            created["target"] = target
+            created["auth_token"] = auth_token
+            created["metadata"] = list(default_metadata or [])
+            created["use_discovery"] = use_discovery
+            created["enable_auto_login"] = enable_auto_login
+            created["skip_auth_token_load"] = skip_auth_token_load
+
+    monkeypatch.setattr("kumiho.discovery.Client", FakeClient)
+    monkeypatch.setattr(
+        "kumiho.discovery.resolve_local_ce_endpoint",
+        lambda timeout=None: "127.0.0.1:9190",
+    )
+
+    client_from_local_ce()
+
+    assert created == {
+        "target": "127.0.0.1:9190",
+        "auth_token": None,
+        "metadata": [],
+        "use_discovery": False,
+        "enable_auto_login": False,
+        "skip_auth_token_load": True,
+    }
 
 
 def _raise_network():

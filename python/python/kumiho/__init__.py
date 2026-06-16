@@ -110,7 +110,7 @@ Attributes:
     PUBLISHED_TAG (str): Standard tag name for published revisions.
 """
 
-__version__ = "0.9.24"
+__version__ = "0.10.0"
 
 import contextvars
 from typing import Any, Dict, List, Optional, Iterator, Tuple
@@ -147,7 +147,14 @@ from .artifact import Artifact
 from .proto.kumiho_pb2 import StatusResponse
 from .revision import Revision
 from .client import ProjectLimitError
-from .discovery import client_from_discovery, DiscoveryRecord, DiscoveryCache, DEFAULT_CACHE_PATH, _DEFAULT_CACHE_KEY
+from .discovery import (
+    client_from_discovery,
+    client_from_local_ce,
+    DiscoveryRecord,
+    DiscoveryCache,
+    DEFAULT_CACHE_PATH,
+    _DEFAULT_CACHE_KEY,
+)
 from ._bootstrap import bootstrap_default_client
 
 # Expose EdgeType constants for convenience
@@ -337,7 +344,19 @@ def auto_configure_from_discovery(
     from ._token_loader import load_bearer_token
 
     env_token_present = bool((os.getenv("KUMIHO_AUTH_TOKEN") or "").strip())
-    token = load_bearer_token()
+    token_error: Optional[ValueError] = None
+    try:
+        token = load_bearer_token()
+    except ValueError as exc:
+        token_error = exc
+        token = None
+
+    if not token:
+        local_client = client_from_local_ce()
+        if local_client is not None:
+            return configure_default_client(local_client)
+        if token_error is not None:
+            raise token_error
 
     if not env_token_present:
         try:
@@ -1165,6 +1184,7 @@ __all__ = [
     "get_client",
     "configure_default_client",
     "auto_configure_from_discovery",
+    "client_from_local_ce",
     # Constants
     "LATEST_TAG",
     "PUBLISHED_TAG",

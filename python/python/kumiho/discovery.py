@@ -6,6 +6,7 @@ import base64
 import binascii
 import hashlib
 import hmac
+import ipaddress
 import json
 import os
 import platform
@@ -15,6 +16,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Dict, Iterable, Optional, Sequence, Tuple, Type
+from urllib.parse import urlparse
 
 import requests
 
@@ -33,6 +35,13 @@ DEFAULT_CACHE_PATH = Path(
 )
 _DEFAULT_TIMEOUT = float(os.getenv("KUMIHO_DISCOVERY_TIMEOUT_SECONDS", "10"))
 _DEFAULT_CACHE_KEY = "__default__"
+_LOCAL_CE_ENDPOINT_ENV = "KUMIHO_LOCAL_SERVER_ENDPOINT"
+_LOCAL_CE_PORT_ENV = "KUMIHO_LOCAL_SERVER_PORT"
+_LOCAL_CE_TIMEOUT_ENV = "KUMIHO_LOCAL_DISCOVERY_TIMEOUT_SECONDS"
+# Self-hosted CE default loopback port. Must match the server's CE default
+# (kumiho-server config/apply_deployment_defaults) and the installer scripts.
+_DEFAULT_LOCAL_CE_PORT = 9190
+_DEFAULT_LOCAL_CE_TARGET = f"127.0.0.1:{_DEFAULT_LOCAL_CE_PORT}"
 
 
 class DiscoveryError(RuntimeError):
@@ -450,6 +459,108 @@ def client_from_discovery(
 
     client_cls = _get_client_class()
     return client_cls(target=target, auth_token=token, default_metadata=metadata)
+
+
+def client_from_local_ce(
+    *,
+    default_metadata: Optional[Sequence[Tuple[str, str]]] = None,
+    timeout: Optional[float] = None,
+) -> Optional["ClientType"]:
+    """Create a tokenless Client for a loopback self-hosted CE server, if present."""
+
+    target = resolve_local_ce_endpoint(timeout=timeout)
+    if not target:
+        return None
+
+    client_cls = _get_client_class()
+    return client_cls(
+        target=target,
+        auth_token=None,
+        default_metadata=default_metadata,
+        use_discovery=False,
+        enable_auto_login=False,
+        skip_auth_token_load=True,
+    )
+
+
+def resolve_local_ce_endpoint(*, timeout: Optional[float] = None) -> Optional[str]:
+    """Return a loopback CE gRPC target when a local server advertises CE mode."""
+
+    probe_timeout = timeout if timeout is not None else _local_ce_timeout()
+    for target in _local_ce_candidates():
+        if _probe_local_ce_candidate(target, timeout=probe_timeout):
+            return target
+    return None
+
+
+def _local_ce_timeout() -> float:
+    raw = os.getenv(_LOCAL_CE_TIMEOUT_ENV)
+    if not raw:
+        return 0.5
+    try:
+        return max(float(raw), 0.05)
+    except ValueError:
+        return 0.5
+
+
+def _local_ce_candidates() -> Sequence[str]:
+    endpoint = os.getenv(_LOCAL_CE_ENDPOINT_ENV)
+    if endpoint and endpoint.strip():
+        return [_normalise_local_ce_target(endpoint)]
+
+    port = os.getenv(_LOCAL_CE_PORT_ENV)
+    if port and port.strip():
+        if not port.strip().isdigit():
+            raise DiscoveryError(f"{_LOCAL_CE_PORT_ENV} must be a numeric loopback port")
+        return [f"127.0.0.1:{int(port.strip())}"]
+
+    return [_DEFAULT_LOCAL_CE_TARGET]
+
+
+def _normalise_local_ce_target(raw: str) -> str:
+    text = raw.strip()
+    parsed = urlparse(text if "://" in text else f"//{text}")
+    host = parsed.hostname
+    if not host:
+        raise DiscoveryError(f"{_LOCAL_CE_ENDPOINT_ENV} must include a loopback host")
+    if not _is_loopback_host(host):
+        raise DiscoveryError(
+            f"{_LOCAL_CE_ENDPOINT_ENV} must point to localhost, 127.0.0.1, or ::1"
+        )
+    port = parsed.port or _DEFAULT_LOCAL_CE_PORT
+    if port <= 0 or port > 65535:
+        raise DiscoveryError(f"{_LOCAL_CE_ENDPOINT_ENV} port must be between 1 and 65535")
+    return f"{_format_host_for_target(host)}:{port}"
+
+
+def _is_loopback_host(host: str) -> bool:
+    if host.lower() == "localhost":
+        return True
+    try:
+        return ipaddress.ip_address(host).is_loopback
+    except ValueError:
+        return False
+
+
+def _format_host_for_target(host: str) -> str:
+    if ":" in host and not host.startswith("["):
+        return f"[{host}]"
+    return host
+
+
+def _probe_local_ce_candidate(target: str, *, timeout: float) -> bool:
+    url = f"http://{target}/api/_live"
+    try:
+        response = requests.get(url, timeout=timeout)
+    except requests.RequestException:
+        return False
+    if response.status_code >= 400:
+        return False
+    try:
+        body = response.json()
+    except ValueError:
+        return False
+    return body.get("deployment_mode") == "self_hosted_ce"
 
 
 def _parse_iso8601(raw: Optional[str]) -> datetime:
