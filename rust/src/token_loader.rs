@@ -8,7 +8,6 @@
 use std::path::PathBuf;
 
 const TOKEN_ENV: &str = "KUMIHO_AUTH_TOKEN";
-#[allow(dead_code)]
 const FIREBASE_TOKEN_ENV: &str = "KUMIHO_FIREBASE_ID_TOKEN";
 const USE_CP_TOKEN_ENV: &str = "KUMIHO_USE_CONTROL_PLANE_TOKEN";
 const CREDENTIALS_FILENAME: &str = "kumiho_authentication.json";
@@ -120,7 +119,6 @@ pub fn load_bearer_token() -> Result<Option<String>, String> {
 }
 
 /// A Firebase ID token for control-plane interactions, if available.
-#[allow(dead_code)]
 pub fn load_firebase_token() -> Option<String> {
     if let Some(env_token) = normalize(std::env::var(FIREBASE_TOKEN_ENV).ok()) {
         return Some(env_token);

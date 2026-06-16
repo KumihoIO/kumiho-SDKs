@@ -255,7 +255,7 @@ func fetchRemote(ctx context.Context, baseURL, idToken, tenantHint string) (Disc
 	req.Header.Set("Authorization", "Bearer "+idToken)
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("User-Agent", "kumiho-go/"+Version)
-	resp, err := (&http.Client{Timeout: 10 * time.Second}).Do(req)
+	resp, err := (&http.Client{Timeout: discoveryTimeout()}).Do(req)
 	if err != nil {
 		return DiscoveryRecord{}, &DiscoveryError{Msg: err.Error()}
 	}
@@ -268,6 +268,24 @@ func fetchRemote(ctx context.Context, baseURL, idToken, tenantHint string) (Disc
 		return DiscoveryRecord{}, &DiscoveryError{Msg: "invalid discovery payload: " + err.Error()}
 	}
 	return rec, nil
+}
+
+// fetchFresh fetches a discovery record, trying each token candidate in turn
+// (the bearer token, plus a Firebase fallback when it's a control-plane token)
+// and returning the last error if all fail. Mirrors Python's fetch_fresh.
+func fetchFresh(ctx context.Context, base, idToken, tenantHint string) (DiscoveryRecord, error) {
+	var lastErr error
+	for _, tok := range discoveryTokenCandidates(idToken) {
+		rec, err := fetchRemote(ctx, base, tok, tenantHint)
+		if err == nil {
+			return rec, nil
+		}
+		lastErr = err
+	}
+	if lastErr != nil {
+		return DiscoveryRecord{}, lastErr
+	}
+	return DiscoveryRecord{}, &DiscoveryError{Msg: "discovery failed without a usable bearer token"}
 }
 
 // resolveDiscovery resolves a DiscoveryRecord, using the encrypted cache when fresh.
@@ -284,7 +302,7 @@ func resolveDiscovery(ctx context.Context, idToken, tenantHint string, forceRefr
 	if !forceRefresh {
 		if cached, ok := cacheReadAll()[key]; ok && !cached.CacheControl.isExpired() {
 			if cached.CacheControl.shouldRefresh() {
-				if fresh, err := fetchRemote(ctx, base, idToken, tenantHint); err == nil {
+				if fresh, err := fetchFresh(ctx, base, idToken, tenantHint); err == nil {
 					cacheStore(key, fresh)
 					return fresh, nil
 				} else if !cached.CacheControl.isExpired() {
@@ -296,7 +314,7 @@ func resolveDiscovery(ctx context.Context, idToken, tenantHint string, forceRefr
 			return cached, nil
 		}
 	}
-	fresh, err := fetchRemote(ctx, base, idToken, tenantHint)
+	fresh, err := fetchFresh(ctx, base, idToken, tenantHint)
 	if err != nil {
 		return DiscoveryRecord{}, err
 	}
@@ -375,12 +393,37 @@ func isLoopbackHost(host string) bool {
 	return false
 }
 
+// discoveryTimeout is the control-plane HTTP timeout (KUMIHO_DISCOVERY_TIMEOUT_SECONDS,
+// default 10s).
+func discoveryTimeout() time.Duration {
+	if v := os.Getenv("KUMIHO_DISCOVERY_TIMEOUT_SECONDS"); v != "" {
+		if f, err := strconv.ParseFloat(v, 64); err == nil && f > 0 {
+			return time.Duration(f * float64(time.Second))
+		}
+	}
+	return 10 * time.Second
+}
+
+// localCETimeout is the local-CE probe timeout (KUMIHO_LOCAL_DISCOVERY_TIMEOUT_SECONDS,
+// default 0.5s, floor 0.05s).
+func localCETimeout() time.Duration {
+	if v := os.Getenv("KUMIHO_LOCAL_DISCOVERY_TIMEOUT_SECONDS"); v != "" {
+		if f, err := strconv.ParseFloat(v, 64); err == nil {
+			if f < 0.05 {
+				f = 0.05
+			}
+			return time.Duration(f * float64(time.Second))
+		}
+	}
+	return 500 * time.Millisecond
+}
+
 func probeCE(ctx context.Context, target string) bool {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "http://"+target+"/api/_live", nil)
 	if err != nil {
 		return false
 	}
-	resp, err := (&http.Client{Timeout: 500 * time.Millisecond}).Do(req)
+	resp, err := (&http.Client{Timeout: localCETimeout()}).Do(req)
 	if err != nil {
 		return false
 	}

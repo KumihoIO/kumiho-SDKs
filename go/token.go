@@ -1,6 +1,7 @@
 package kumiho
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -116,4 +117,67 @@ func loadBearerToken() (string, error) {
 		return validateTokenFormat(cp, "control_plane_token")
 	}
 	return "", nil
+}
+
+// loadFirebaseToken returns a Firebase id token (env or credentials file), if any.
+func loadFirebaseToken() string {
+	if env := normalizeToken(os.Getenv(firebaseTokenEnv)); env != "" {
+		return env
+	}
+	_, firebase := credentialsTokens()
+	return firebase
+}
+
+// decodeClaims best-effort base64url-decodes a JWT payload into a claims map.
+func decodeClaims(token string) map[string]any {
+	parts := strings.Split(token, ".")
+	if len(parts) < 2 {
+		return nil
+	}
+	payload := parts[1]
+	if m := len(payload) % 4; m != 0 {
+		payload += strings.Repeat("=", 4-m)
+	}
+	data, err := base64.URLEncoding.DecodeString(payload)
+	if err != nil {
+		return nil
+	}
+	var claims map[string]any
+	if json.Unmarshal(data, &claims) != nil {
+		return nil
+	}
+	return claims
+}
+
+// isControlPlaneToken reports whether token looks like a control-plane token
+// (tenant_id claim, or iss/aud naming the control plane / kumiho-server).
+func isControlPlaneToken(token string) bool {
+	claims := decodeClaims(token)
+	if claims == nil {
+		return false
+	}
+	if _, ok := claims["tenant_id"].(string); ok {
+		return true
+	}
+	if iss, ok := claims["iss"].(string); ok && strings.HasPrefix(iss, "https://control.kumiho.cloud") {
+		return true
+	}
+	if aud, ok := claims["aud"].(string); ok && strings.HasPrefix(aud, "kumiho-server") {
+		return true
+	}
+	return false
+}
+
+// discoveryTokenCandidates returns the tokens to try for discovery: the bearer
+// token, plus a Firebase token fallback when the bearer is a control-plane token
+// (which the discovery endpoint rejects). Mirrors Python _discovery_token_candidates.
+func discoveryTokenCandidates(token string) []string {
+	candidates := []string{token}
+	if !isControlPlaneToken(token) {
+		return candidates
+	}
+	if fb := loadFirebaseToken(); fb != "" && fb != token {
+		candidates = append(candidates, fb)
+	}
+	return candidates
 }

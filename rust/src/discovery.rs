@@ -22,11 +22,27 @@ const DEFAULT_CACHE_KEY: &str = "__default__";
 const DEFAULT_LOCAL_CE_PORT: u16 = 9190;
 
 // Shared HTTP clients, built once so connections and TLS sessions are pooled
-// across discovery refreshes and CE probes instead of rebuilt per call.
-static DISCOVERY_HTTP: Lazy<reqwest::Client> = Lazy::new(reqwest::Client::new);
-static PROBE_HTTP: Lazy<reqwest::Client> = Lazy::new(|| {
+// across discovery refreshes and CE probes instead of rebuilt per call. Their
+// timeouts honor the same env vars as the Python SDK (read at first use).
+static DISCOVERY_HTTP: Lazy<reqwest::Client> = Lazy::new(|| {
+    let secs = std::env::var("KUMIHO_DISCOVERY_TIMEOUT_SECONDS")
+        .ok()
+        .and_then(|v| v.parse::<f64>().ok())
+        .filter(|s| *s > 0.0)
+        .unwrap_or(10.0);
     reqwest::Client::builder()
-        .timeout(std::time::Duration::from_millis(500))
+        .timeout(std::time::Duration::from_secs_f64(secs))
+        .build()
+        .unwrap_or_else(|_| reqwest::Client::new())
+});
+static PROBE_HTTP: Lazy<reqwest::Client> = Lazy::new(|| {
+    let secs = std::env::var("KUMIHO_LOCAL_DISCOVERY_TIMEOUT_SECONDS")
+        .ok()
+        .and_then(|v| v.parse::<f64>().ok())
+        .map(|s| s.max(0.05))
+        .unwrap_or(0.5);
+    reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs_f64(secs))
         .build()
         .unwrap_or_else(|_| reqwest::Client::new())
 });
@@ -317,6 +333,73 @@ async fn fetch_remote(
         .map_err(|e| DiscoveryError(format!("invalid discovery payload: {e}")))
 }
 
+/// Fetch a fresh discovery record, trying each token candidate in turn (the
+/// bearer token, plus a Firebase fallback when it's a control-plane token) and
+/// returning the last error if all fail. Mirrors Python's `fetch_fresh`.
+async fn fetch_fresh(
+    base_url: &str,
+    id_token: &str,
+    tenant_hint: Option<&str>,
+) -> Result<DiscoveryRecord, DiscoveryError> {
+    let mut last_err: Option<DiscoveryError> = None;
+    for tok in discovery_token_candidates(id_token) {
+        match fetch_remote(base_url, &tok, tenant_hint).await {
+            Ok(rec) => return Ok(rec),
+            Err(e) => last_err = Some(e),
+        }
+    }
+    Err(last_err
+        .unwrap_or_else(|| DiscoveryError("discovery failed without a usable bearer token".into())))
+}
+
+/// The token(s) to attempt discovery with: the bearer token, plus a Firebase
+/// fallback when the bearer is a control-plane token (which the discovery
+/// endpoint rejects). Mirrors Python's `_discovery_token_candidates`.
+fn discovery_token_candidates(token: &str) -> Vec<String> {
+    let candidates = vec![token.to_string()];
+    if !is_control_plane_token(token) {
+        return candidates;
+    }
+    let mut candidates = candidates;
+    if let Some(fb) = crate::token_loader::load_firebase_token() {
+        if fb != token {
+            candidates.push(fb);
+        }
+    }
+    candidates
+}
+
+/// Best-effort base64url-decode of a JWT payload into a claims object.
+fn decode_claims(token: &str) -> Option<serde_json::Value> {
+    let payload = token.split('.').nth(1)?;
+    let bytes = base64::engine::general_purpose::URL_SAFE_NO_PAD
+        .decode(payload)
+        .ok()?;
+    serde_json::from_slice(&bytes).ok()
+}
+
+/// Whether the token looks like a control-plane token (tenant_id claim, or
+/// iss/aud naming the control plane / kumiho-server).
+fn is_control_plane_token(token: &str) -> bool {
+    let Some(claims) = decode_claims(token) else {
+        return false;
+    };
+    if claims.get("tenant_id").and_then(|v| v.as_str()).is_some() {
+        return true;
+    }
+    if let Some(iss) = claims.get("iss").and_then(|v| v.as_str()) {
+        if iss.starts_with("https://control.kumiho.cloud") {
+            return true;
+        }
+    }
+    if let Some(aud) = claims.get("aud").and_then(|v| v.as_str()) {
+        if aud.starts_with("kumiho-server") {
+            return true;
+        }
+    }
+    false
+}
+
 /// Resolve a [`DiscoveryRecord`], using the encrypted cache when fresh.
 pub async fn resolve(
     id_token: &str,
@@ -332,7 +415,7 @@ pub async fn resolve(
         if let Some(cached) = cache.load(cache_key) {
             if !cached.cache_control.is_expired() {
                 if cached.cache_control.should_refresh() {
-                    match fetch_remote(&base_url, id_token, tenant_hint).await {
+                    match fetch_fresh(&base_url, id_token, tenant_hint).await {
                         Ok(fresh) => {
                             cache.store(cache_key, &fresh);
                             return Ok(fresh);
@@ -346,7 +429,7 @@ pub async fn resolve(
         }
     }
 
-    let fresh = fetch_remote(&base_url, id_token, tenant_hint).await?;
+    let fresh = fetch_fresh(&base_url, id_token, tenant_hint).await?;
     cache.store(cache_key, &fresh);
     Ok(fresh)
 }
