@@ -33,12 +33,16 @@ mixin ItemApi on KumihoClientBase {
   /// [parentPath] is the space path where the item will be created.
   /// [itemName] is the name of the item (e.g., 'hero').
   /// [kind] is the type of item (e.g., 'model', 'texture', 'workflow').
+  /// [metadata] is optional key-value metadata. Because the create RPC does
+  /// not carry metadata, it is applied via a follow-up metadata update once
+  /// the item exists, mirroring the Python SDK.
   /// [existsError] controls whether to throw an error if the item
   /// already exists (default: `true`).
   Future<ItemResponse> createItem(
     String parentPath,
     String itemName,
     String kind, {
+    Map<String, String>? metadata,
     bool existsError = true,
   }) async {
     final request = CreateItemRequest()
@@ -46,7 +50,13 @@ mixin ItemApi on KumihoClientBase {
       ..itemName = itemName
       ..kind = kind
       ..existsError = existsError;
-    return stub.createItem(request, options: callOptions);
+    final response = await stub.createItem(request, options: callOptions);
+    if (metadata != null && metadata.isNotEmpty) {
+      // Apply metadata via a follow-up update (the create RPC carries none),
+      // but return the original create response like the Python SDK does.
+      await updateItemMetadata(response.kref.uri, metadata);
+    }
+    return response;
   }
 
   /// Gets an item by its path components.

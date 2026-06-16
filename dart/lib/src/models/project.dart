@@ -84,6 +84,8 @@ class Project extends KumihoObject {
 
   /// Creates a new item within this project.
   ///
+  /// [metadata] is optional key-value metadata applied to the new item.
+  ///
   /// ```dart
   /// final hero = await project.createItem('hero', 'model');
   /// final texture = await project.createItem('skin', 'texture', parentPath: '/project/textures');
@@ -92,9 +94,11 @@ class Project extends KumihoObject {
     String itemName,
     String kind, {
     String? parentPath,
+    Map<String, String>? metadata,
   }) async {
     final baseParent = parentPath ?? '/$name';
-    final response = await client.createItem(baseParent, itemName, kind);
+    final response =
+        await client.createItem(baseParent, itemName, kind, metadata: metadata);
     return Item(response, client);
   }
 

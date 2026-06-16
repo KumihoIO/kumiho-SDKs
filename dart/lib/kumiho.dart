@@ -104,7 +104,8 @@ import 'src/models/bundle.dart' as models;
 
 // Export all public APIs
 export 'src/kref.dart';
-export 'src/api/edge_api.dart' show EdgeType;
+export 'src/api/edge_api.dart'
+    show EdgeType, EdgeTypeValidationError, validateEdgeType, isValidEdgeType;
 export 'src/generated/kumiho.pb.dart' hide Kref, Edge;
 export 'src/generated/kumiho.pbenum.dart';
 export 'src/generated/kumiho.pbgrpc.dart' hide Kref, Edge;

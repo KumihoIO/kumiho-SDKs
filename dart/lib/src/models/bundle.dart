@@ -187,11 +187,17 @@ class Bundle extends KumihoObject {
 
   /// Gets the latest revision of this bundle.
   ///
+  /// Returns `null` if the bundle has no revisions, mirroring Python's
+  /// `Item.get_latest_revision` (which `Bundle` inherits).
+  ///
   /// ```dart
   /// final latest = await bundle.getLatestRevision();
   /// ```
-  Future<Revision> getLatestRevision() async {
+  Future<Revision?> getLatestRevision() async {
     final response = await client.getLatestRevision(kref.uri);
+    if (response == null) {
+      return null;
+    }
     return Revision(response, client);
   }
 

@@ -1,8 +1,11 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2025 kumihoclouds
 
+import 'package:grpc/grpc.dart' show GrpcError, StatusCode;
+
 import '../base_client.dart';
 import '../generated/kumiho.pbgrpc.dart';
+import '../models/base.dart' show KumihoError;
 
 /// Revision API mixin for managing item versions.
 ///
@@ -54,10 +57,39 @@ mixin RevisionApi on KumihoClientBase {
     return stub.createRevision(request, options: callOptions);
   }
 
-  /// Gets a revision by its kref URI.
+  /// Gets a revision by its kref URI, with optional tag/time resolution.
   ///
-  /// [kref] must include the revision number (e.g., '?r=1').
+  /// [kref] can include the revision number (e.g., '?r=1'), or a tag
+  /// (`?t=`/`?tag=`) or timestamp (`?time=`) query parameter. When a tag or
+  /// time is present the kref is resolved via [resolveKref]; otherwise the
+  /// revision is fetched directly.
   Future<RevisionResponse> getRevision(String kref) async {
+    var baseKref = kref;
+    String? tag;
+    String? time;
+
+    final queryIndex = kref.indexOf('?');
+    if (queryIndex >= 0) {
+      baseKref = kref.substring(0, queryIndex);
+      final params = kref.substring(queryIndex + 1).split('&');
+      for (final param in params) {
+        if (param.startsWith('t=') || param.startsWith('tag=')) {
+          tag = param.substring(param.indexOf('=') + 1);
+        } else if (param.startsWith('time=')) {
+          time = param.substring(param.indexOf('=') + 1);
+          // Validate time format (YYYYMMDDHHMM).
+          if (!RegExp(r'^\d{12}$').hasMatch(time)) {
+            throw const KumihoError('time must be in YYYYMMDDHHMM format');
+          }
+        }
+      }
+    }
+
+    if (tag != null || time != null) {
+      // Resolve the base (item) kref with the supplied constraints.
+      return resolveKref(baseKref, tag: tag, time: time);
+    }
+
     final request = KrefRequest()..kref = Kref(uri: kref);
     final response = await stub.getRevision(request, options: callOptions);
     return response;
@@ -97,7 +129,8 @@ mixin RevisionApi on KumihoClientBase {
 
   /// Resolves a kref to a file location.
   ///
-  /// Returns the location of the default artifact for the resolved revision.
+  /// Returns the full [ResolveLocationResponse] for the resolved revision's
+  /// default artifact.
   Future<ResolveLocationResponse> resolveLocation(
     String kref, {
     String? tag,
@@ -113,18 +146,51 @@ mixin RevisionApi on KumihoClientBase {
     return stub.resolveLocation(request, options: callOptions);
   }
 
-  /// Gets the latest revision for an item.
+  /// Resolves a kref to a file location string, or `null` if it cannot be
+  /// resolved.
   ///
-  /// Convenience method that resolves to the revision with the 'latest' tag.
-  Future<RevisionResponse> getLatestRevision(String itemKref) async {
-    final revisions = await getRevisions(itemKref);
-    if (revisions.isEmpty) {
-      throw Exception('No revisions found');
+  /// Mirrors Python's `client.resolve`: parses any tag (`?t=`/`?tag=`) or
+  /// timestamp (`?time=`) from the kref, calls the `ResolveLocation` RPC, and
+  /// returns the resulting location. Any RPC failure is swallowed and surfaced
+  /// as `null`.
+  Future<String?> resolve(String kref) async {
+    String? tag;
+    String? time;
+
+    final queryIndex = kref.indexOf('?');
+    if (queryIndex >= 0) {
+      final params = kref.substring(queryIndex + 1).split('&');
+      for (final param in params) {
+        if (param.startsWith('t=') || param.startsWith('tag=')) {
+          tag = param.substring(param.indexOf('=') + 1);
+        } else if (param.startsWith('time=')) {
+          time = param.substring(param.indexOf('=') + 1);
+        }
+      }
     }
-    return revisions.firstWhere(
-      (revision) => revision.latest,
-      orElse: () => revisions.first,
-    );
+
+    try {
+      final response = await resolveLocation(kref, tag: tag, time: time);
+      return response.location;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Gets the latest revision for an item, or `null` if none exist.
+  ///
+  /// Mirrors Python's `get_latest_revision`: resolves the item kref via the
+  /// `ResolveKref` RPC and returns `null` when the control plane reports the
+  /// item has no revisions (NOT_FOUND).
+  Future<RevisionResponse?> getLatestRevision(String itemKref) async {
+    try {
+      return await resolveKref(itemKref);
+    } on GrpcError catch (e) {
+      if (e.code == StatusCode.notFound) {
+        return null;
+      }
+      rethrow;
+    }
   }
 
   /// Peeks at the next revision number without creating it.

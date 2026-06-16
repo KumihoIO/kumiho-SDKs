@@ -3,6 +3,7 @@
 
 import '../base_client.dart';
 import '../generated/kumiho.pbgrpc.dart';
+import '../models/paged_list.dart';
 
 /// Space API mixin for managing hierarchical containers.
 ///
@@ -60,14 +61,33 @@ mixin SpaceApi on KumihoClientBase {
   /// [parentPath] is the path to list children from.
   /// Use an empty string to list root-level spaces.
   /// Set [recursive] to `true` to include all nested spaces.
+  /// [pageSize] and [cursor] enable pagination; when either is supplied the
+  /// result is a [PagedList] exposing `nextCursor` and `totalCount`.
   Future<List<SpaceResponse>> getChildSpaces(
     String parentPath, {
     bool recursive = false,
+    int? pageSize,
+    String? cursor,
   }) async {
     final request = GetChildSpacesRequest()
       ..parentPath = parentPath
       ..recursive = recursive;
+
+    if (pageSize != null || cursor != null) {
+      request.pagination = PaginationRequest()
+        ..pageSize = pageSize ?? 100
+        ..cursor = cursor ?? '';
+    }
+
     final response = await stub.getChildSpaces(request, options: callOptions);
+
+    if (response.hasPagination()) {
+      return PagedList(
+        response.spaces,
+        nextCursor: response.pagination.nextCursor,
+        totalCount: response.pagination.totalCount,
+      );
+    }
     return response.spaces;
   }
 

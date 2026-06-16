@@ -7,6 +7,8 @@
 /// asset in the Kumiho system.
 library;
 
+import 'package:grpc/grpc.dart' show GrpcError, StatusCode;
+
 import '../generated/kumiho.pb.dart' as pb;
 import '../kref.dart';
 import 'base.dart';
@@ -131,13 +133,12 @@ class Item extends KumihoObject {
   /// }
   /// ```
   Future<Revision?> getLatestRevision() async {
-    try {
-      final response = await client.getLatestRevision(kref.uri);
-      return Revision(response, client);
-    } catch (e) {
+    final response = await client.getLatestRevision(kref.uri);
+    if (response == null) {
       // No revisions found
       return null;
     }
+    return Revision(response, client);
   }
 
   /// Gets all revisions of this item.
@@ -155,17 +156,23 @@ class Item extends KumihoObject {
 
   /// Gets a revision by tag.
   ///
+  /// Resolves the tag server-side via the `ResolveKref` RPC, mirroring
+  /// Python's `get_revision_by_tag`. Returns `null` if no revision carries
+  /// the tag (NOT_FOUND).
+  ///
   /// ```dart
   /// final approved = await item.getRevisionByTag('approved');
   /// ```
   Future<Revision?> getRevisionByTag(String tag) async {
-    final revisions = await getRevisions();
-    for (final rev in revisions) {
-      if (rev.tags.contains(tag)) {
-        return rev;
+    try {
+      final response = await client.resolveKref(kref.uri, tag: tag);
+      return Revision(response, client);
+    } on GrpcError catch (e) {
+      if (e.code == StatusCode.notFound) {
+        return null;
       }
+      rethrow;
     }
-    return null;
   }
 
   /// Sets metadata for this item.

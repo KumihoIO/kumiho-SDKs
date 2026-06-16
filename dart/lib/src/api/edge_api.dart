@@ -24,6 +24,40 @@ import '../generated/kumiho.pbgrpc.dart';
 ///   EdgeType.derivedFrom,
 /// );
 /// ```
+/// Thrown when an edge type is invalid or potentially malicious.
+class EdgeTypeValidationError implements Exception {
+  /// Creates a new [EdgeTypeValidationError] with the given [message].
+  const EdgeTypeValidationError(this.message);
+
+  /// The error message.
+  final String message;
+
+  @override
+  String toString() => 'EdgeTypeValidationError: $message';
+}
+
+/// Regex for validating edge types - must match the Rust server validation.
+final _edgeTypePattern = RegExp(r'^[A-Z][A-Z0-9_]{0,49}$');
+
+/// Validates an edge type for security and correctness.
+///
+/// Edge types must start with an uppercase letter, contain only uppercase
+/// letters, digits, and underscores, and be 1-50 characters long. Mirrors
+/// Python's `validate_edge_type`.
+///
+/// Throws an [EdgeTypeValidationError] if the edge type is invalid.
+void validateEdgeType(String edgeType) {
+  if (!_edgeTypePattern.hasMatch(edgeType)) {
+    throw EdgeTypeValidationError(
+      "Invalid edge_type '$edgeType'. Must start with uppercase letter, "
+      'contain only uppercase letters, digits, underscores, and be 1-50 chars.',
+    );
+  }
+}
+
+/// Checks if an edge type is valid without throwing exceptions.
+bool isValidEdgeType(String edgeType) => _edgeTypePattern.hasMatch(edgeType);
+
 class EdgeType {
   EdgeType._();
 
@@ -45,6 +79,9 @@ class EdgeType {
   /// Source contains or includes target.
   static const String contains = 'CONTAINS';
 
+  /// Source replaces or supersedes target (belief revision).
+  static const String supersedes = 'SUPERSEDES';
+
   /// All valid edge type values.
   static const List<String> values = [
     belongsTo,
@@ -53,6 +90,7 @@ class EdgeType {
     dependsOn,
     derivedFrom,
     contains,
+    supersedes,
   ];
 
   /// Checks if a string is a valid edge type.
@@ -98,6 +136,7 @@ mixin EdgeApi on KumihoClientBase {
     Map<String, String>? metadata,
     bool existsError = true,
   }) async {
+    validateEdgeType(edgeType);
     final request = CreateEdgeRequest()
       ..sourceRevisionKref = Kref(uri: sourceKref)
       ..targetRevisionKref = Kref(uri: targetKref)
@@ -140,6 +179,7 @@ mixin EdgeApi on KumihoClientBase {
     String targetKref,
     String edgeType,
   ) async {
+    validateEdgeType(edgeType);
     final request = DeleteEdgeRequest()
       ..sourceKref = Kref(uri: sourceKref)
       ..targetKref = Kref(uri: targetKref)
