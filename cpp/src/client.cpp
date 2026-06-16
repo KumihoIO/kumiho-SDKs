@@ -846,29 +846,38 @@ std::shared_ptr<Revision> Client::resolveKref(const std::string& kref_uri, const
 }
 
 std::optional<std::string> Client::resolve(const std::string& kref_uri) {
-    Kref kref(kref_uri);
-    std::string path = kref.getPath();
-    
-    // Try to get revision and resolve to default artifact location
-    try {
-        auto revision = resolveKref(kref_uri);
-        if (revision) {
-            auto default_res = revision->getDefaultArtifact();
-            if (default_res) {
-                auto artifact = revision->getArtifact(*default_res);
-                return artifact->getLocation();
-            }
-            // Fallback to first artifact
-            auto artifacts = revision->getArtifacts();
-            if (!artifacts.empty()) {
-                return artifacts[0]->getLocation();
+    // Resolve a kref to a file location via the server-side ResolveLocation RPC,
+    // mirroring the Python client.resolve. Tag/time are parsed from the query
+    // (?t=/?tag=/?time=) and passed explicitly; any failure yields nullopt.
+    std::string tag;
+    std::string time;
+    const auto qpos = kref_uri.find('?');
+    if (qpos != std::string::npos) {
+        std::stringstream ss(kref_uri.substr(qpos + 1));
+        std::string param;
+        while (std::getline(ss, param, '&')) {
+            if (param.rfind("t=", 0) == 0) {
+                tag = param.substr(2);
+            } else if (param.rfind("tag=", 0) == 0) {
+                tag = param.substr(4);
+            } else if (param.rfind("time=", 0) == 0) {
+                time = param.substr(5);
             }
         }
-    } catch (...) {
-        // Fall through
     }
-    
-    return std::nullopt;
+
+    ::kumiho::ResolveLocationRequest req;
+    req.set_kref(kref_uri);
+    if (!tag.empty()) req.set_tag(tag);
+    if (!time.empty()) req.set_time(time);
+
+    ::kumiho::ResolveLocationResponse res;
+    grpc::ClientContext context; configureContext(context);
+    grpc::Status status = stub_->ResolveLocation(&context, req, &res);
+    if (!status.ok()) {
+        return std::nullopt;
+    }
+    return res.location();
 }
 
 std::vector<std::shared_ptr<Revision>> Client::getRevisions(const Kref& item_kref) {
