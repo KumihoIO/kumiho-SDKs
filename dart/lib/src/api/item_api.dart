@@ -3,6 +3,7 @@
 
 import '../base_client.dart';
 import '../generated/kumiho.pbgrpc.dart';
+import '../models/base.dart' show ReservedKindError, reservedKinds;
 import '../models/paged_list.dart';
 
 /// Item API mixin for managing versioned assets.
@@ -45,6 +46,13 @@ mixin ItemApi on KumihoClientBase {
     Map<String, String>? metadata,
     bool existsError = true,
   }) async {
+    // The 'bundle' kind is reserved; mirror Python's create_item which raises
+    // ReservedKindError. Use createBundle() instead.
+    if (reservedKinds.contains(kind.toLowerCase())) {
+      throw ReservedKindError(
+        "Item kind '$kind' is reserved. Use createBundle() instead.",
+      );
+    }
     final request = CreateItemRequest()
       ..parentPath = parentPath
       ..itemName = itemName

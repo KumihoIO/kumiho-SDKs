@@ -29,6 +29,24 @@ class KumihoError implements Exception {
   String toString() => 'KumihoError: $message';
 }
 
+/// Item kinds that are reserved and cannot be created via `createItem`.
+///
+/// The `bundle` kind must be created with `createBundle` instead.
+const Set<String> reservedKinds = {'bundle'};
+
+/// Raised when attempting to create an item with a reserved kind.
+///
+/// Thrown by `createItem` when the requested kind (case-insensitive) is in
+/// [reservedKinds] (e.g. `bundle`). Use `createBundle` instead. Mirrors the
+/// Python SDK's `ReservedKindError`.
+class ReservedKindError extends KumihoError {
+  /// Creates a new [ReservedKindError] with the given [message].
+  const ReservedKindError(super.message);
+
+  @override
+  String toString() => 'ReservedKindError: $message';
+}
+
 /// Forward declaration of the client type.
 /// 
 /// This allows model classes to hold a reference to the client

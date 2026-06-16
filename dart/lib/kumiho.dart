@@ -227,19 +227,23 @@ class KumihoClient extends KumihoClientBase
     return models.Project(response, this);
   }
 
-  /// Gets a project by name and returns a [Project] model.
+  /// Gets a project by name and returns a [Project] model, or `null` if no
+  /// project with that name exists.
+  ///
+  /// Mirrors Python's `get_project`, which returns `Optional[Project]`.
   ///
   /// ```dart
   /// final project = await client.project('film-2024');
-  /// final spaces = await project.getSpaces();
+  /// final spaces = await project?.getSpaces();
   /// ```
-  Future<models.Project> project(String name) async {
+  Future<models.Project?> project(String name) async {
     final projectList = await getProjects();
-    final pb = projectList.firstWhere(
-      (p) => p.name == name,
-      orElse: () => throw KumihoError('Project not found: $name'),
-    );
-    return models.Project(pb, this);
+    for (final pb in projectList) {
+      if (pb.name == name) {
+        return models.Project(pb, this);
+      }
+    }
+    return null;
   }
 
   /// Gets all projects and returns [Project] models.
