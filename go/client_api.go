@@ -2,6 +2,7 @@ package kumiho
 
 import (
 	"context"
+	"strings"
 
 	pb "github.com/KumihoIO/kumiho-SDKs/go/kumihopb"
 	"google.golang.org/grpc/codes"
@@ -470,7 +471,7 @@ func (c *Client) GetArtifactByKref(ctx context.Context, krefURI string) (*Artifa
 	k := Kref(krefURI)
 	if name := k.ArtifactName(); name != "" {
 		revURI := krefURI
-		if i := indexOf(krefURI, "&a="); i >= 0 {
+		if i := strings.Index(krefURI, "&a="); i >= 0 {
 			revURI = krefURI[:i]
 		}
 		return c.GetArtifact(ctx, Kref(revURI), name)
@@ -540,7 +541,9 @@ func (c *Client) Resolve(ctx context.Context, kref string) (string, error) {
 	}
 	resp, err := c.grpc.ResolveLocation(ctx, &pb.ResolveLocationRequest{Kref: kref, Tag: tag, Time: t})
 	if err != nil {
-		return "", err
+		// A failed resolution yields an empty location (no error), matching the
+		// Python SDK's resolve() which returns None on any RPC failure.
+		return "", nil
 	}
 	return resp.GetLocation(), nil
 }
@@ -795,30 +798,11 @@ func (c *Client) GetEventCapabilities(ctx context.Context) (*EventCapabilities, 
 	}, nil
 }
 
-func indexOf(s, sub string) int {
-	for i := 0; i+len(sub) <= len(s); i++ {
-		if s[i:i+len(sub)] == sub {
-			return i
-		}
-	}
-	return -1
-}
-
 func isReservedKind(kind string) bool {
 	for _, r := range ReservedKinds {
-		if r == toLower(kind) {
+		if strings.EqualFold(r, kind) {
 			return true
 		}
 	}
 	return false
-}
-
-func toLower(s string) string {
-	b := []byte(s)
-	for i := range b {
-		if b[i] >= 'A' && b[i] <= 'Z' {
-			b[i] += 'a' - 'A'
-		}
-	}
-	return string(b)
 }

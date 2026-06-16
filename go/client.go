@@ -114,7 +114,11 @@ func AutoWithTenant(ctx context.Context, tenantHint string) (*Client, error) {
 			Build(ctx)
 	}
 	// No token -> fall back to a local self-hosted CE server if present.
-	if local := resolveLocalCEEndpoint(ctx); local != "" {
+	local, lerr := resolveLocalCEEndpoint(ctx)
+	if lerr != nil {
+		return nil, lerr
+	}
+	if local != "" {
 		return Builder().Endpoint(local).UseDiscovery(false).Build(ctx)
 	}
 	return nil, &DiscoveryError{Msg: "no credentials found: set KUMIHO_AUTH_TOKEN or run `kumiho-cli login`; no local self-hosted CE server detected on loopback"}
@@ -133,14 +137,18 @@ func (b *ClientBuilder) Build(ctx context.Context) (*Client, error) {
 	}
 
 	endpoint := b.endpoint
-	useDiscovery := !envFlag("KUMIHO_DISABLE_AUTO_DISCOVERY")
+	useDiscovery := !envTruthy("KUMIHO_DISABLE_AUTO_DISCOVERY")
 	if b.useDiscovery != nil {
 		useDiscovery = *b.useDiscovery
 	}
 
 	// 2. No endpoint + no token -> try local CE.
 	if endpoint == "" && token == "" {
-		if local := resolveLocalCEEndpoint(ctx); local != "" {
+		local, lerr := resolveLocalCEEndpoint(ctx)
+		if lerr != nil {
+			return nil, lerr
+		}
+		if local != "" {
 			endpoint = local
 			useDiscovery = false
 		}
@@ -248,13 +256,14 @@ func injectMeta(ctx context.Context, md []string) context.Context {
 
 func unaryInterceptor(md []string, maxAttempts int, timeout time.Duration) grpc.UnaryClientInterceptor {
 	return func(ctx context.Context, method string, req, reply any, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
-		ctx = injectMeta(ctx, md)
 		var lastErr error
 		for attempt := 0; attempt < maxAttempts; attempt++ {
-			callCtx := ctx
+			// Inject static metadata + a fresh correlation id on every attempt,
+			// mirroring the Python client where the retry interceptor is outermost.
+			callCtx := injectMeta(ctx, md)
 			var cancel context.CancelFunc
 			if timeout > 0 {
-				callCtx, cancel = context.WithTimeout(ctx, timeout)
+				callCtx, cancel = context.WithTimeout(callCtx, timeout)
 			}
 			err := invoker(callCtx, method, req, reply, cc, opts...)
 			if cancel != nil {
@@ -380,9 +389,12 @@ func normalizeTarget(raw string) (host string, port uint16, useTLS bool, err err
 	}
 	tlsScheme := scheme == "https" || scheme == "grpcs"
 	if portStr == "" {
-		if tlsScheme {
+		switch scheme {
+		case "https", "grpcs":
 			port = 443
-		} else {
+		case "http", "grpc":
+			port = 80
+		default:
 			port = 8080
 		}
 	} else {

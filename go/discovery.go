@@ -9,6 +9,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"net"
 	"net/http"
 	"os"
 	"os/exec"
@@ -304,34 +305,74 @@ func resolveDiscovery(ctx context.Context, idToken, tenantHint string, forceRefr
 }
 
 // resolveLocalCEEndpoint probes loopback ports for a self-hosted CE server.
-func resolveLocalCEEndpoint(ctx context.Context) string {
+// It returns an error when KUMIHO_LOCAL_SERVER_ENDPOINT / KUMIHO_LOCAL_SERVER_PORT
+// is set to a non-loopback or otherwise invalid value, mirroring the Python SDK.
+func resolveLocalCEEndpoint(ctx context.Context) (string, error) {
 	var candidates []string
 	if ep := strings.TrimSpace(os.Getenv("KUMIHO_LOCAL_SERVER_ENDPOINT")); ep != "" {
-		candidates = []string{normalizeLocalTarget(ep)}
-	} else if port := strings.TrimSpace(os.Getenv("KUMIHO_LOCAL_SERVER_PORT")); port != "" {
-		if _, err := strconv.Atoi(port); err == nil {
-			candidates = []string{"127.0.0.1:" + port}
+		t, err := normalizeLocalTarget(ep)
+		if err != nil {
+			return "", err
 		}
+		candidates = []string{t}
+	} else if port := strings.TrimSpace(os.Getenv("KUMIHO_LOCAL_SERVER_PORT")); port != "" {
+		n, err := strconv.Atoi(port)
+		if err != nil || n <= 0 || n > 65535 {
+			return "", &DiscoveryError{Msg: "KUMIHO_LOCAL_SERVER_PORT must be a numeric loopback port"}
+		}
+		candidates = []string{fmt.Sprintf("127.0.0.1:%d", n)}
 	} else {
 		candidates = []string{fmt.Sprintf("127.0.0.1:%d", defaultLocalCEPort)}
 	}
 	for _, t := range candidates {
 		if probeCE(ctx, t) {
-			return t
+			return t, nil
 		}
 	}
-	return ""
+	return "", nil
 }
 
-func normalizeLocalTarget(raw string) string {
+// normalizeLocalTarget strips the scheme/path from a local CE endpoint and
+// enforces that it points at a loopback host (localhost, 127.0.0.1, ::1) so a
+// tokenless client can never be routed to a remote server. Mirrors the Python
+// _normalise_local_ce_target guard.
+func normalizeLocalTarget(raw string) (string, error) {
 	raw = strings.TrimSpace(raw)
 	if i := strings.Index(raw, "://"); i >= 0 {
 		raw = raw[i+3:]
 	}
-	if strings.Contains(raw, ":") {
-		return raw
+	if i := strings.IndexByte(raw, '/'); i >= 0 {
+		raw = raw[:i] // strip any trailing path
 	}
-	return fmt.Sprintf("%s:%d", raw, defaultLocalCEPort)
+	host := raw
+	port := defaultLocalCEPort
+	if h, p, err := net.SplitHostPort(raw); err == nil {
+		host = h
+		n, perr := strconv.Atoi(p)
+		if perr != nil || n <= 0 || n > 65535 {
+			return "", &DiscoveryError{Msg: "KUMIHO_LOCAL_SERVER_ENDPOINT port must be between 1 and 65535"}
+		}
+		port = n
+	} else {
+		host = strings.TrimSuffix(strings.TrimPrefix(host, "["), "]") // bare/bracketed IPv6
+	}
+	if host == "" {
+		return "", &DiscoveryError{Msg: "KUMIHO_LOCAL_SERVER_ENDPOINT must include a loopback host"}
+	}
+	if !isLoopbackHost(host) {
+		return "", &DiscoveryError{Msg: "KUMIHO_LOCAL_SERVER_ENDPOINT must point to localhost, 127.0.0.1, or ::1"}
+	}
+	return net.JoinHostPort(host, strconv.Itoa(port)), nil
+}
+
+func isLoopbackHost(host string) bool {
+	if strings.EqualFold(host, "localhost") {
+		return true
+	}
+	if ip := net.ParseIP(host); ip != nil {
+		return ip.IsLoopback()
+	}
+	return false
 }
 
 func probeCE(ctx context.Context, target string) bool {

@@ -27,6 +27,23 @@ func envFlag(name string) bool {
 	}
 }
 
+// envTruthy mirrors the control-plane discovery flag semantics (Python's
+// _Client._env_flag): an unset variable is false, but any set value other than
+// 0/false/no (case-insensitive) is true. Use this for KUMIHO_DISABLE_AUTO_DISCOVERY;
+// envFlag's strict 1/true/yes set is correct for the token/TLS flags.
+func envTruthy(name string) bool {
+	v, ok := os.LookupEnv(name)
+	if !ok {
+		return false
+	}
+	switch strings.ToLower(strings.TrimSpace(v)) {
+	case "0", "false", "no":
+		return false
+	default:
+		return true
+	}
+}
+
 // configDir returns $KUMIHO_CONFIG_DIR or ~/.kumiho.
 func configDir() string {
 	if d := os.Getenv(configDirEnv); d != "" {

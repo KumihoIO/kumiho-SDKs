@@ -70,12 +70,12 @@ fn is_transient(code: tonic::Code) -> bool {
 macro_rules! unary {
     ($self:ident, $method:ident, $msg:expr) => {{
         let msg = $msg;
-        let max = retry_max_attempts();
+        let max = $self.max_attempts;
         let mut attempt: u32 = 0;
         loop {
             let mut grpc = $self.grpc.clone();
             let mut request = tonic::Request::new(msg.clone());
-            if let Some(d) = rpc_timeout() {
+            if let Some(d) = $self.rpc_timeout {
                 request.set_timeout(d);
             }
             match grpc.$method(request).await {
@@ -244,7 +244,7 @@ impl ClientBuilder {
 
         // 2. No endpoint + no token -> try a local self-hosted CE server.
         if self.endpoint.is_none() && token.is_none() {
-            if let Some(local) = crate::discovery::resolve_local_ce_endpoint().await {
+            if let Some(local) = crate::discovery::resolve_local_ce_endpoint().await? {
                 self.endpoint = Some(local);
                 self.use_discovery = Some(false);
             }
@@ -303,13 +303,20 @@ impl ClientBuilder {
         let grpc = pb::kumiho_service_client::KumihoServiceClient::with_interceptor(channel, interceptor)
             .max_decoding_message_size(64 * 1024 * 1024);
 
-        Ok(Client { grpc })
+        Ok(Client {
+            grpc,
+            max_attempts: retry_max_attempts(),
+            rpc_timeout: rpc_timeout(),
+        })
     }
 }
 
+// Mirrors the Python _Client._env_flag used for KUMIHO_DISABLE_AUTO_DISCOVERY:
+// an unset variable is false, but any set value other than 0/false/no (including
+// an empty string) is true.
 fn env_flag(name: &str) -> bool {
     std::env::var(name)
-        .map(|v| !matches!(v.trim().to_ascii_lowercase().as_str(), "0" | "false" | "no" | ""))
+        .map(|v| !matches!(v.trim().to_ascii_lowercase().as_str(), "0" | "false" | "no"))
         .unwrap_or(false)
 }
 
@@ -331,7 +338,11 @@ fn normalize_target(raw: &str) -> Result<(String, u16, bool)> {
         return Err(Error::InvalidArgument(format!("invalid endpoint: {raw}")));
     }
     let tls_scheme = matches!(scheme.as_str(), "https" | "grpcs");
-    let port = port_opt.unwrap_or(if tls_scheme { 443 } else { 8080 });
+    let port = port_opt.unwrap_or_else(|| match scheme.as_str() {
+        "https" | "grpcs" => 443,
+        "http" | "grpc" => 80,
+        _ => 8080,
+    });
     let use_tls = tls_scheme || port == 443;
     Ok((host, port, use_tls))
 }
@@ -363,6 +374,10 @@ async fn build_channel(host: &str, port: u16, use_tls: bool) -> Result<Channel> 
 #[derive(Clone)]
 pub struct Client {
     grpc: GrpcClient,
+    // Retry/deadline config, resolved once at build time rather than re-reading
+    // the environment on every RPC.
+    max_attempts: u32,
+    rpc_timeout: Option<Duration>,
 }
 
 impl Client {
@@ -406,7 +421,7 @@ impl Client {
                 .await;
         }
         // No token -> fall back to a local self-hosted CE server if present.
-        if let Some(local) = crate::discovery::resolve_local_ce_endpoint().await {
+        if let Some(local) = crate::discovery::resolve_local_ce_endpoint().await? {
             return ClientBuilder::default()
                 .endpoint(local)
                 .use_discovery(false)

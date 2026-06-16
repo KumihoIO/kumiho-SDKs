@@ -9,6 +9,7 @@
 use base64::Engine;
 use chrono::{DateTime, Utc};
 use hmac::{Hmac, Mac};
+use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
@@ -19,6 +20,16 @@ type HmacSha256 = Hmac<Sha256>;
 const DEFAULT_CONTROL_PLANE: &str = "https://control.kumiho.cloud";
 const DEFAULT_CACHE_KEY: &str = "__default__";
 const DEFAULT_LOCAL_CE_PORT: u16 = 9190;
+
+// Shared HTTP clients, built once so connections and TLS sessions are pooled
+// across discovery refreshes and CE probes instead of rebuilt per call.
+static DISCOVERY_HTTP: Lazy<reqwest::Client> = Lazy::new(reqwest::Client::new);
+static PROBE_HTTP: Lazy<reqwest::Client> = Lazy::new(|| {
+    reqwest::Client::builder()
+        .timeout(std::time::Duration::from_millis(500))
+        .build()
+        .unwrap_or_else(|_| reqwest::Client::new())
+});
 
 /// Discovery / control-plane bootstrap failure.
 #[derive(Debug, Clone, thiserror::Error)]
@@ -272,7 +283,7 @@ async fn fetch_remote(
     if let Some(hint) = tenant_hint {
         body.insert("tenant_hint".into(), serde_json::Value::String(hint.to_string()));
     }
-    let resp = reqwest::Client::new()
+    let resp = DISCOVERY_HTTP
         .post(&url)
         .header("Authorization", format!("Bearer {id_token}"))
         .header("Content-Type", "application/json")
@@ -330,17 +341,25 @@ pub async fn resolve(
 }
 
 /// Probe loopback ports for a self-hosted CE server; return a gRPC target.
-pub async fn resolve_local_ce_endpoint() -> Option<String> {
+///
+/// Returns an error when `KUMIHO_LOCAL_SERVER_ENDPOINT` / `KUMIHO_LOCAL_SERVER_PORT`
+/// is set to a non-loopback or otherwise invalid value, mirroring the Python SDK.
+pub async fn resolve_local_ce_endpoint() -> Result<Option<String>, DiscoveryError> {
     let candidates: Vec<String> = if let Ok(ep) = std::env::var("KUMIHO_LOCAL_SERVER_ENDPOINT") {
         if ep.trim().is_empty() {
             vec![]
         } else {
-            vec![normalize_local_target(ep.trim())]
+            vec![normalize_local_target(ep.trim())?]
         }
     } else if let Ok(port) = std::env::var("KUMIHO_LOCAL_SERVER_PORT") {
-        match port.trim().parse::<u16>() {
-            Ok(p) => vec![format!("127.0.0.1:{p}")],
-            Err(_) => vec![],
+        let p = port.trim();
+        if p.is_empty() {
+            vec![format!("127.0.0.1:{DEFAULT_LOCAL_CE_PORT}")]
+        } else {
+            let n: u16 = p.parse().map_err(|_| {
+                DiscoveryError("KUMIHO_LOCAL_SERVER_PORT must be a numeric loopback port".into())
+            })?;
+            vec![format!("127.0.0.1:{n}")]
         }
     } else {
         vec![format!("127.0.0.1:{DEFAULT_LOCAL_CE_PORT}")]
@@ -348,32 +367,83 @@ pub async fn resolve_local_ce_endpoint() -> Option<String> {
 
     for target in candidates {
         if probe_ce(&target).await {
-            return Some(target);
+            return Ok(Some(target));
         }
     }
-    None
+    Ok(None)
 }
 
-fn normalize_local_target(raw: &str) -> String {
+/// Strip the scheme/path from a local CE endpoint and enforce that it points at
+/// a loopback host (localhost, 127.0.0.1, ::1) so a tokenless client can never be
+/// routed to a remote server. Mirrors the Python `_normalise_local_ce_target` guard.
+fn normalize_local_target(raw: &str) -> Result<String, DiscoveryError> {
     let raw = raw.trim();
-    let stripped = raw.split("://").last().unwrap_or(raw);
-    if stripped.contains(':') {
-        stripped.to_string()
+    let after_scheme = raw.split_once("://").map(|x| x.1).unwrap_or(raw);
+    let hostport = after_scheme.split('/').next().unwrap_or(after_scheme);
+    let (host, port) = parse_host_port(hostport)?;
+    if !is_loopback_host(&host) {
+        return Err(DiscoveryError(
+            "KUMIHO_LOCAL_SERVER_ENDPOINT must point to localhost, 127.0.0.1, or ::1".into(),
+        ));
+    }
+    Ok(format_target(&host, port))
+}
+
+fn parse_host_port(s: &str) -> Result<(String, u16), DiscoveryError> {
+    // Bracketed IPv6: [host] or [host]:port
+    if let Some(rest) = s.strip_prefix('[') {
+        let close = rest
+            .find(']')
+            .ok_or_else(|| DiscoveryError("KUMIHO_LOCAL_SERVER_ENDPOINT has an unterminated '['".into()))?;
+        let host = rest[..close].to_string();
+        let port = match rest[close + 1..].strip_prefix(':') {
+            Some(p) => parse_port(p)?,
+            None => DEFAULT_LOCAL_CE_PORT,
+        };
+        return Ok((host, port));
+    }
+    match s.matches(':').count() {
+        0 => Ok((s.to_string(), DEFAULT_LOCAL_CE_PORT)),
+        // host:port (single colon) — split off the port.
+        1 => {
+            let (h, p) = s.rsplit_once(':').unwrap();
+            Ok((h.to_string(), parse_port(p)?))
+        }
+        // Multiple colons and no brackets -> a bare IPv6 address, no explicit port.
+        _ => Ok((s.to_string(), DEFAULT_LOCAL_CE_PORT)),
+    }
+}
+
+fn parse_port(p: &str) -> Result<u16, DiscoveryError> {
+    let n: u32 = p
+        .parse()
+        .map_err(|_| DiscoveryError("KUMIHO_LOCAL_SERVER_ENDPOINT port must be numeric".into()))?;
+    if n == 0 || n > 65535 {
+        return Err(DiscoveryError(
+            "KUMIHO_LOCAL_SERVER_ENDPOINT port must be between 1 and 65535".into(),
+        ));
+    }
+    Ok(n as u16)
+}
+
+fn is_loopback_host(host: &str) -> bool {
+    if host.eq_ignore_ascii_case("localhost") {
+        return true;
+    }
+    host.parse::<std::net::IpAddr>().map(|ip| ip.is_loopback()).unwrap_or(false)
+}
+
+fn format_target(host: &str, port: u16) -> String {
+    if host.contains(':') && !host.starts_with('[') {
+        format!("[{host}]:{port}") // bracket bare IPv6
     } else {
-        format!("{stripped}:{DEFAULT_LOCAL_CE_PORT}")
+        format!("{host}:{port}")
     }
 }
 
 async fn probe_ce(target: &str) -> bool {
     let url = format!("http://{target}/api/_live");
-    let client = match reqwest::Client::builder()
-        .timeout(std::time::Duration::from_millis(500))
-        .build()
-    {
-        Ok(c) => c,
-        Err(_) => return false,
-    };
-    let Ok(resp) = client.get(&url).send().await else {
+    let Ok(resp) = PROBE_HTTP.get(&url).send().await else {
         return false;
     };
     if resp.status().as_u16() >= 400 {

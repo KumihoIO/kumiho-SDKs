@@ -72,6 +72,20 @@ func TestHangulPathSegments(t *testing.T) {
 	}
 }
 
+func TestUnicodeClassParity(t *testing.T) {
+	// \p{No} (e.g. ½ U+00BD) is a valid segment char, matching Python's \w (\p{N}).
+	valid := "kref://proj/space/item½.kind"
+	if !IsValidKref(valid) {
+		t.Errorf("expected %q to be valid (Unicode number \\p{No})", valid)
+	}
+	// Connector punctuation other than '_' (e.g. ‿ U+203F) must be rejected,
+	// matching Python which allows only letters, numbers and underscore.
+	invalid := "kref://proj/space/a‿b.kind"
+	if IsValidKref(invalid) {
+		t.Errorf("expected %q to be rejected (connector punctuation \\p{Pc})", invalid)
+	}
+}
+
 func TestRejectsUnsafe(t *testing.T) {
 	unsafe := []string{
 		"kref://project/../item.skill",

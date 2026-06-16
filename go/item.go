@@ -3,6 +3,7 @@ package kumiho
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	pb "github.com/KumihoIO/kumiho-SDKs/go/kumihopb"
 )
@@ -67,8 +68,27 @@ func (i *Item) GetRevision(ctx context.Context, number int32) (*Revision, error)
 }
 
 // GetLatestRevision returns the latest revision, or (nil, nil) if none.
+//
+// Mirrors the Python Item.get_latest_revision: prefer the revision flagged
+// "latest", otherwise fall back to the highest-numbered revision.
 func (i *Item) GetLatestRevision(ctx context.Context) (*Revision, error) {
-	return i.client.GetLatestRevision(ctx, i.Kref)
+	revisions, err := i.GetRevisions(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if len(revisions) == 0 {
+		return nil, nil
+	}
+	latest := revisions[0]
+	for _, r := range revisions {
+		if r.Latest {
+			return r, nil
+		}
+		if r.Number > latest.Number {
+			latest = r
+		}
+	}
+	return latest, nil
 }
 
 // GetRevisionByTag returns the revision currently carrying tag, or (nil, nil).
@@ -88,7 +108,7 @@ func (i *Item) GetRevisionByTag(ctx context.Context, tag string) (*Revision, err
 func (i *Item) GetRevisionByTime(ctx context.Context, time string, tag string) (*Revision, error) {
 	var timeStr string
 	switch {
-	case containsByte(time, 'T'):
+	case strings.ContainsRune(time, 'T'):
 		timeStr = time
 	case len(time) >= 12:
 		timeStr = fmt.Sprintf("%s-%s-%sT%s:%s:59+00:00", time[0:4], time[4:6], time[6:8], time[8:10], time[10:12])
@@ -156,13 +176,4 @@ func (i *Item) Delete(ctx context.Context, force bool) error {
 // SetDeprecated deprecates/restores this item.
 func (i *Item) SetDeprecated(ctx context.Context, status bool) error {
 	return i.client.SetDeprecated(ctx, i.Kref, status)
-}
-
-func containsByte(s string, b byte) bool {
-	for i := 0; i < len(s); i++ {
-		if s[i] == b {
-			return true
-		}
-	}
-	return false
 }

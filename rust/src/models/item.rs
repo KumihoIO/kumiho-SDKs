@@ -76,8 +76,15 @@ impl Item {
     }
 
     /// Get the latest revision, or `None` if the item has none.
+    ///
+    /// Mirrors Python's `Item.get_latest_revision`: prefer the revision flagged
+    /// `latest`, otherwise fall back to the highest-numbered revision.
     pub async fn get_latest_revision(&self) -> Result<Option<Revision>> {
-        self.client.get_latest_revision(&self.kref).await
+        let revisions = self.get_revisions().await?;
+        if let Some(latest) = revisions.iter().find(|r| r.latest) {
+            return Ok(Some(latest.clone()));
+        }
+        Ok(revisions.into_iter().max_by_key(|r| r.number))
     }
 
     /// Get the revision currently carrying `tag`, or `None`.
@@ -95,10 +102,17 @@ impl Item {
     pub async fn get_revision_by_time(&self, time: &str, tag: Option<&str>) -> Result<Option<Revision>> {
         let time_str = if time.contains('T') {
             time.to_string()
-        } else if time.len() >= 12 {
+        } else if time.chars().count() >= 12 {
+            // Index by char (like Python's time[0:4]) so a non-ASCII time string
+            // can never split a multi-byte boundary and panic.
+            let c: Vec<char> = time.chars().collect();
             format!(
                 "{}-{}-{}T{}:{}:59+00:00",
-                &time[0..4], &time[4..6], &time[6..8], &time[8..10], &time[10..12]
+                c[0..4].iter().collect::<String>(),
+                c[4..6].iter().collect::<String>(),
+                c[6..8].iter().collect::<String>(),
+                c[8..10].iter().collect::<String>(),
+                c[10..12].iter().collect::<String>(),
             )
         } else {
             time.to_string()

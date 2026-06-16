@@ -49,6 +49,15 @@ fn hangul_path_segments_are_valid() {
 }
 
 #[test]
+fn unicode_class_parity_with_python() {
+    // \p{No} (e.g. ½ U+00BD) is a valid segment char, matching Python's \w (\p{N}).
+    assert!(is_valid_kref("kref://proj/space/item\u{00BD}.kind"));
+    // Connector punctuation other than '_' (e.g. ‿ U+203F) must be rejected,
+    // matching Python which allows only letters, numbers and underscore.
+    assert!(!is_valid_kref("kref://proj/space/a\u{203F}b.kind"));
+}
+
+#[test]
 fn rejects_unsafe_characters() {
     let unsafe_uris = [
         "kref://project/../item.skill",      // path traversal

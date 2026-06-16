@@ -15,13 +15,16 @@ use std::fmt;
 #[error("{0}")]
 pub struct KrefValidationError(pub String);
 
-// Path segments may contain Unicode letters/digits (regex `\w` is Unicode-aware
-// by default), plus dots and hyphens. Artifact ids stay ASCII because they are
-// server-generated opaque identifiers. Path traversal (`..`) and control
+// Path segments may contain Unicode letters/numbers plus underscore, dots and
+// hyphens. Python's `re` `\w` matches exactly `[\p{L}\p{N}_]`; the regex crate's
+// `\w` differs (it also matches combining marks `\p{M}` and connector punctuation
+// `\p{Pc}`, and uses `\p{Nd}` so it excludes other-numbers `\p{No}`), so we spell
+// the class out to match the Python gold standard. Artifact ids stay ASCII because
+// they are server-generated opaque identifiers. Path traversal (`..`) and control
 // characters are rejected by explicit checks, not by this pattern.
 static KREF_PATTERN: Lazy<Regex> = Lazy::new(|| {
     Regex::new(
-        r"^kref://(/\w[\w.\-]*(/\w[\w.\-]*)*|\w[\w.\-]*(/\w[\w.\-]*)*)(\?r=\d+(&a=[a-zA-Z0-9._\-]+)?)?$",
+        r"^kref://(/[\p{L}\p{N}_][\p{L}\p{N}_.\-]*(/[\p{L}\p{N}_][\p{L}\p{N}_.\-]*)*|[\p{L}\p{N}_][\p{L}\p{N}_.\-]*(/[\p{L}\p{N}_][\p{L}\p{N}_.\-]*)*)(\?r=\d+(&a=[a-zA-Z0-9._\-]+)?)?$",
     )
     .expect("kref regex is valid")
 });
