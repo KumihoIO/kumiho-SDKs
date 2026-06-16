@@ -1173,12 +1173,11 @@ std::shared_ptr<Client> clientFromDiscovery(
         args.SetString(GRPC_SSL_TARGET_NAME_OVERRIDE_ARG, *record.region.grpc_authority);
     }
     
-    // Add tenant ID as default metadata
-    // Note: gRPC doesn't support default metadata on channel; would need interceptor
-    
     auto channel = grpc::CreateCustomChannel(target, channelCreds, args);
     auto client = std::make_shared<Client>(channel);
     client->setAuthToken(token);
+    // Route to the resolved tenant via x-tenant-id on every RPC.
+    client->setTenantId(record.tenant_id);
     return client;
 }
 

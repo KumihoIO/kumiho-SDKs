@@ -732,7 +732,14 @@ public:
      * @param kref_filter Filter by Kref pattern.
      * @return An EventStream for receiving events.
      */
-    std::shared_ptr<EventStream> eventStream(const std::string& routing_key_filter = "", const std::string& kref_filter = "");
+    std::shared_ptr<EventStream> eventStream(
+        const std::string& routing_key_filter = "",
+        const std::string& kref_filter = "",
+        const std::string& cursor = "",
+        const std::string& consumer_group = "",
+        bool from_beginning = false,
+        double timeout_seconds = 0.0
+    );
 
     /**
      * @brief Get event streaming capabilities for the current tenant tier.
@@ -759,6 +766,15 @@ public:
      */
     const std::string& getAuthToken() const { return auth_token_; }
 
+    /**
+     * @brief Set the tenant id sent as the x-tenant-id metadata header.
+     *
+     * Used by discovery-built clients to route requests to the resolved
+     * tenant. When set, every RPC includes x-tenant-id.
+     * @param tenant_id The tenant id, or empty to disable.
+     */
+    void setTenantId(const std::string& tenant_id);
+
     // --- Utility ---
 
     /**
@@ -771,6 +787,7 @@ private:
     std::shared_ptr<kumiho::KumihoService::StubInterface> stub_;
     std::shared_ptr<grpc::ClientContext> context_; // For event stream
     std::string auth_token_;  // Bearer token for authentication
+    std::string tenant_id_;   // Tenant id for x-tenant-id routing (discovery)
 
     /**
      * @brief Configure a ClientContext with authentication metadata.

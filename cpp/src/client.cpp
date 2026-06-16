@@ -203,12 +203,21 @@ void Client::setAuthToken(const std::string& token) {
     auth_token_ = token;
 }
 
+void Client::setTenantId(const std::string& tenant_id) {
+    tenant_id_ = tenant_id;
+}
+
 void Client::configureContext(grpc::ClientContext& context, bool with_deadline) const {
     // Add correlation ID for end-to-end tracing
     context.AddMetadata("x-correlation-id", generateCorrelationId());
 
     if (!auth_token_.empty()) {
         context.AddMetadata("authorization", "Bearer " + auth_token_);
+    }
+
+    // Tenant routing for discovery-built clients.
+    if (!tenant_id_.empty()) {
+        context.AddMetadata("x-tenant-id", tenant_id_);
     }
 
     // Apply a default per-RPC deadline for unary calls. Streaming RPCs opt out
@@ -1662,15 +1671,29 @@ TenantUsage Client::getTenantUsage() {
 
 // --- Event Streaming ---
 
-std::shared_ptr<EventStream> Client::eventStream(const std::string& routing_key_filter, const std::string& kref_filter) {
+std::shared_ptr<EventStream> Client::eventStream(const std::string& routing_key_filter, const std::string& kref_filter, const std::string& cursor, const std::string& consumer_group, bool from_beginning, double timeout_seconds) {
     ::kumiho::EventStreamRequest request;
     request.set_routing_key_filter(routing_key_filter);
     request.set_kref_filter(kref_filter);
+    if (!cursor.empty()) {
+        request.set_cursor(cursor);
+    }
+    if (!consumer_group.empty()) {
+        request.set_consumer_group(consumer_group);
+    }
+    request.set_from_beginning(from_beginning);
 
     context_ = std::make_shared<grpc::ClientContext>();
     // Streaming RPC: configure auth/correlation but opt out of the per-RPC
     // deadline so the stream is not cut off after KUMIHO_RPC_TIMEOUT_SECONDS.
     configureContext(*context_, /*with_deadline=*/false);
+    // An explicit timeout (seconds) bounds the stream when the caller opts in.
+    if (timeout_seconds > 0.0) {
+        const auto millis = static_cast<long long>(timeout_seconds * 1000.0);
+        context_->set_deadline(
+            std::chrono::system_clock::now() + std::chrono::milliseconds(millis)
+        );
+    }
 
     std::unique_ptr<grpc::ClientReaderInterface<::kumiho::Event>> reader =
         stub_->EventStream(context_.get(), request);
