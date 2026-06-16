@@ -127,8 +127,7 @@ class Revision extends KumihoObject {
   /// final mesh = await revision.getArtifact('mesh');
   /// ```
   Future<Artifact> getArtifact(String name) async {
-    final artifactKref = kref.withArtifact(name);
-    final response = await client.getArtifact(artifactKref.uri);
+    final response = await client.getArtifact(kref.uri, name);
     return Artifact(response, client);
   }
 
