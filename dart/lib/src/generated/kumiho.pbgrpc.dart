@@ -141,6 +141,22 @@ class KumihoServiceClient extends $grpc.Client {
     return $createUnaryCall(_$updateItemMetadata, request, options: options);
   }
 
+  /// Full-text search (Google-like fuzzy search across items)
+  $grpc.ResponseFuture<$0.SearchResponse> search(
+    $0.SearchRequest request, {
+    $grpc.CallOptions? options,
+  }) {
+    return $createUnaryCall(_$search, request, options: options);
+  }
+
+  /// Score specific revisions against a query (server-side embeddings + fulltext)
+  $grpc.ResponseFuture<$0.ScoreRevisionsResponse> scoreRevisions(
+    $0.ScoreRevisionsRequest request, {
+    $grpc.CallOptions? options,
+  }) {
+    return $createUnaryCall(_$scoreRevisions, request, options: options);
+  }
+
   /// Revision methods
   $grpc.ResponseFuture<$0.RevisionResponse> resolveKref(
     $0.ResolveKrefRequest request, {
@@ -175,6 +191,13 @@ class KumihoServiceClient extends $grpc.Client {
     $grpc.CallOptions? options,
   }) {
     return $createUnaryCall(_$getRevisions, request, options: options);
+  }
+
+  $grpc.ResponseFuture<$0.BatchGetRevisionsResponse> batchGetRevisions(
+    $0.BatchGetRevisionsRequest request, {
+    $grpc.CallOptions? options,
+  }) {
+    return $createUnaryCall(_$batchGetRevisions, request, options: options);
   }
 
   $grpc.ResponseFuture<$0.StatusResponse> deleteRevision(
@@ -494,6 +517,16 @@ class KumihoServiceClient extends $grpc.Client {
           '/kumiho.KumihoService/UpdateItemMetadata',
           ($0.UpdateMetadataRequest value) => value.writeToBuffer(),
           $0.ItemResponse.fromBuffer);
+  static final _$search =
+      $grpc.ClientMethod<$0.SearchRequest, $0.SearchResponse>(
+          '/kumiho.KumihoService/Search',
+          ($0.SearchRequest value) => value.writeToBuffer(),
+          $0.SearchResponse.fromBuffer);
+  static final _$scoreRevisions =
+      $grpc.ClientMethod<$0.ScoreRevisionsRequest, $0.ScoreRevisionsResponse>(
+          '/kumiho.KumihoService/ScoreRevisions',
+          ($0.ScoreRevisionsRequest value) => value.writeToBuffer(),
+          $0.ScoreRevisionsResponse.fromBuffer);
   static final _$resolveKref =
       $grpc.ClientMethod<$0.ResolveKrefRequest, $0.RevisionResponse>(
           '/kumiho.KumihoService/ResolveKref',
@@ -519,6 +552,11 @@ class KumihoServiceClient extends $grpc.Client {
           '/kumiho.KumihoService/GetRevisions',
           ($0.GetRevisionsRequest value) => value.writeToBuffer(),
           $0.GetRevisionsResponse.fromBuffer);
+  static final _$batchGetRevisions = $grpc.ClientMethod<
+          $0.BatchGetRevisionsRequest, $0.BatchGetRevisionsResponse>(
+      '/kumiho.KumihoService/BatchGetRevisions',
+      ($0.BatchGetRevisionsRequest value) => value.writeToBuffer(),
+      $0.BatchGetRevisionsResponse.fromBuffer);
   static final _$deleteRevision =
       $grpc.ClientMethod<$0.DeleteRevisionRequest, $0.StatusResponse>(
           '/kumiho.KumihoService/DeleteRevision',
@@ -802,6 +840,22 @@ abstract class KumihoServiceBase extends $grpc.Service {
         ($core.List<$core.int> value) =>
             $0.UpdateMetadataRequest.fromBuffer(value),
         ($0.ItemResponse value) => value.writeToBuffer()));
+    $addMethod($grpc.ServiceMethod<$0.SearchRequest, $0.SearchResponse>(
+        'Search',
+        search_Pre,
+        false,
+        false,
+        ($core.List<$core.int> value) => $0.SearchRequest.fromBuffer(value),
+        ($0.SearchResponse value) => value.writeToBuffer()));
+    $addMethod($grpc.ServiceMethod<$0.ScoreRevisionsRequest,
+            $0.ScoreRevisionsResponse>(
+        'ScoreRevisions',
+        scoreRevisions_Pre,
+        false,
+        false,
+        ($core.List<$core.int> value) =>
+            $0.ScoreRevisionsRequest.fromBuffer(value),
+        ($0.ScoreRevisionsResponse value) => value.writeToBuffer()));
     $addMethod($grpc.ServiceMethod<$0.ResolveKrefRequest, $0.RevisionResponse>(
         'ResolveKref',
         resolveKref_Pre,
@@ -844,6 +898,15 @@ abstract class KumihoServiceBase extends $grpc.Service {
             ($core.List<$core.int> value) =>
                 $0.GetRevisionsRequest.fromBuffer(value),
             ($0.GetRevisionsResponse value) => value.writeToBuffer()));
+    $addMethod($grpc.ServiceMethod<$0.BatchGetRevisionsRequest,
+            $0.BatchGetRevisionsResponse>(
+        'BatchGetRevisions',
+        batchGetRevisions_Pre,
+        false,
+        false,
+        ($core.List<$core.int> value) =>
+            $0.BatchGetRevisionsRequest.fromBuffer(value),
+        ($0.BatchGetRevisionsResponse value) => value.writeToBuffer()));
     $addMethod($grpc.ServiceMethod<$0.DeleteRevisionRequest, $0.StatusResponse>(
         'DeleteRevision',
         deleteRevision_Pre,
@@ -1237,6 +1300,23 @@ abstract class KumihoServiceBase extends $grpc.Service {
   $async.Future<$0.ItemResponse> updateItemMetadata(
       $grpc.ServiceCall call, $0.UpdateMetadataRequest request);
 
+  $async.Future<$0.SearchResponse> search_Pre(
+      $grpc.ServiceCall $call, $async.Future<$0.SearchRequest> $request) async {
+    return search($call, await $request);
+  }
+
+  $async.Future<$0.SearchResponse> search(
+      $grpc.ServiceCall call, $0.SearchRequest request);
+
+  $async.Future<$0.ScoreRevisionsResponse> scoreRevisions_Pre(
+      $grpc.ServiceCall $call,
+      $async.Future<$0.ScoreRevisionsRequest> $request) async {
+    return scoreRevisions($call, await $request);
+  }
+
+  $async.Future<$0.ScoreRevisionsResponse> scoreRevisions(
+      $grpc.ServiceCall call, $0.ScoreRevisionsRequest request);
+
   $async.Future<$0.RevisionResponse> resolveKref_Pre($grpc.ServiceCall $call,
       $async.Future<$0.ResolveKrefRequest> $request) async {
     return resolveKref($call, await $request);
@@ -1278,6 +1358,15 @@ abstract class KumihoServiceBase extends $grpc.Service {
 
   $async.Future<$0.GetRevisionsResponse> getRevisions(
       $grpc.ServiceCall call, $0.GetRevisionsRequest request);
+
+  $async.Future<$0.BatchGetRevisionsResponse> batchGetRevisions_Pre(
+      $grpc.ServiceCall $call,
+      $async.Future<$0.BatchGetRevisionsRequest> $request) async {
+    return batchGetRevisions($call, await $request);
+  }
+
+  $async.Future<$0.BatchGetRevisionsResponse> batchGetRevisions(
+      $grpc.ServiceCall call, $0.BatchGetRevisionsRequest request);
 
   $async.Future<$0.StatusResponse> deleteRevision_Pre($grpc.ServiceCall $call,
       $async.Future<$0.DeleteRevisionRequest> $request) async {

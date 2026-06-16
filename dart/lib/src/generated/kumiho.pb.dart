@@ -10,7 +10,6 @@
 // ignore_for_file: deprecated_member_use_from_same_package, library_prefixes
 // ignore_for_file: non_constant_identifier_names, prefer_relative_imports
 
-import 'dart:async' as $async;
 import 'dart:core' as $core;
 
 import 'package:fixnum/fixnum.dart' as $fixnum;
@@ -1874,18 +1873,555 @@ class ItemSearchRequest extends $pb.GeneratedMessage {
   void clearIncludeDeprecated() => $_clearField(5);
 }
 
+class SearchRequest extends $pb.GeneratedMessage {
+  factory SearchRequest({
+    $core.String? query,
+    $core.String? contextFilter,
+    $core.String? kindFilter,
+    $core.bool? includeDeprecated,
+    PaginationRequest? pagination,
+    $core.double? minScore,
+    $core.bool? includeRevisionMetadata,
+    $core.bool? includeArtifactMetadata,
+  }) {
+    final result = create();
+    if (query != null) result.query = query;
+    if (contextFilter != null) result.contextFilter = contextFilter;
+    if (kindFilter != null) result.kindFilter = kindFilter;
+    if (includeDeprecated != null) result.includeDeprecated = includeDeprecated;
+    if (pagination != null) result.pagination = pagination;
+    if (minScore != null) result.minScore = minScore;
+    if (includeRevisionMetadata != null)
+      result.includeRevisionMetadata = includeRevisionMetadata;
+    if (includeArtifactMetadata != null)
+      result.includeArtifactMetadata = includeArtifactMetadata;
+    return result;
+  }
+
+  SearchRequest._();
+
+  factory SearchRequest.fromBuffer($core.List<$core.int> data,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromBuffer(data, registry);
+  factory SearchRequest.fromJson($core.String json,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromJson(json, registry);
+
+  static final $pb.BuilderInfo _i = $pb.BuilderInfo(
+      _omitMessageNames ? '' : 'SearchRequest',
+      package: const $pb.PackageName(_omitMessageNames ? '' : 'kumiho'),
+      createEmptyInstance: create)
+    ..aOS(1, _omitFieldNames ? '' : 'query')
+    ..aOS(2, _omitFieldNames ? '' : 'contextFilter')
+    ..aOS(3, _omitFieldNames ? '' : 'kindFilter')
+    ..aOB(4, _omitFieldNames ? '' : 'includeDeprecated')
+    ..aOM<PaginationRequest>(5, _omitFieldNames ? '' : 'pagination',
+        subBuilder: PaginationRequest.create)
+    ..aD(6, _omitFieldNames ? '' : 'minScore', fieldType: $pb.PbFieldType.OF)
+    ..aOB(7, _omitFieldNames ? '' : 'includeRevisionMetadata')
+    ..aOB(8, _omitFieldNames ? '' : 'includeArtifactMetadata')
+    ..hasRequiredFields = false;
+
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  SearchRequest clone() => deepCopy();
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  SearchRequest copyWith(void Function(SearchRequest) updates) =>
+      super.copyWith((message) => updates(message as SearchRequest))
+          as SearchRequest;
+
+  @$core.override
+  $pb.BuilderInfo get info_ => _i;
+
+  @$core.pragma('dart2js:noInline')
+  static SearchRequest create() => SearchRequest._();
+  @$core.override
+  SearchRequest createEmptyInstance() => create();
+  @$core.pragma('dart2js:noInline')
+  static SearchRequest getDefault() => _defaultInstance ??=
+      $pb.GeneratedMessage.$_defaultFor<SearchRequest>(create);
+  static SearchRequest? _defaultInstance;
+
+  /// Search query string (supports Lucene syntax for advanced users)
+  /// Simple usage: "hero model" finds items matching both terms
+  /// Fuzzy matching is automatic - typos like "heros" will match "hero"
+  @$pb.TagNumber(1)
+  $core.String get query => $_getSZ(0);
+  @$pb.TagNumber(1)
+  set query($core.String value) => $_setString(0, value);
+  @$pb.TagNumber(1)
+  $core.bool hasQuery() => $_has(0);
+  @$pb.TagNumber(1)
+  void clearQuery() => $_clearField(1);
+
+  /// Optional: Restrict search to a kref prefix (e.g., "myproject/assets")
+  @$pb.TagNumber(2)
+  $core.String get contextFilter => $_getSZ(1);
+  @$pb.TagNumber(2)
+  set contextFilter($core.String value) => $_setString(1, value);
+  @$pb.TagNumber(2)
+  $core.bool hasContextFilter() => $_has(1);
+  @$pb.TagNumber(2)
+  void clearContextFilter() => $_clearField(2);
+
+  /// Optional: Filter by exact item kind (e.g., "model", "texture", "rig")
+  @$pb.TagNumber(3)
+  $core.String get kindFilter => $_getSZ(2);
+  @$pb.TagNumber(3)
+  set kindFilter($core.String value) => $_setString(2, value);
+  @$pb.TagNumber(3)
+  $core.bool hasKindFilter() => $_has(2);
+  @$pb.TagNumber(3)
+  void clearKindFilter() => $_clearField(3);
+
+  /// Include soft-deleted (deprecated) items in results
+  @$pb.TagNumber(4)
+  $core.bool get includeDeprecated => $_getBF(3);
+  @$pb.TagNumber(4)
+  set includeDeprecated($core.bool value) => $_setBool(3, value);
+  @$pb.TagNumber(4)
+  $core.bool hasIncludeDeprecated() => $_has(3);
+  @$pb.TagNumber(4)
+  void clearIncludeDeprecated() => $_clearField(4);
+
+  /// Pagination parameters
+  @$pb.TagNumber(5)
+  PaginationRequest get pagination => $_getN(4);
+  @$pb.TagNumber(5)
+  set pagination(PaginationRequest value) => $_setField(5, value);
+  @$pb.TagNumber(5)
+  $core.bool hasPagination() => $_has(4);
+  @$pb.TagNumber(5)
+  void clearPagination() => $_clearField(5);
+  @$pb.TagNumber(5)
+  PaginationRequest ensurePagination() => $_ensure(4);
+
+  /// Minimum relevance score (0.0 to 1.0, default 0.0 returns all matches)
+  @$pb.TagNumber(6)
+  $core.double get minScore => $_getN(5);
+  @$pb.TagNumber(6)
+  set minScore($core.double value) => $_setFloat(5, value);
+  @$pb.TagNumber(6)
+  $core.bool hasMinScore() => $_has(5);
+  @$pb.TagNumber(6)
+  void clearMinScore() => $_clearField(6);
+
+  /// Search depth options - control performance vs completeness tradeoff
+  /// Default: Only search Item index (fastest)
+  /// When enabled, also searches Revision/Artifact metadata (slower but more comprehensive)
+  @$pb.TagNumber(7)
+  $core.bool get includeRevisionMetadata => $_getBF(6);
+  @$pb.TagNumber(7)
+  set includeRevisionMetadata($core.bool value) => $_setBool(6, value);
+  @$pb.TagNumber(7)
+  $core.bool hasIncludeRevisionMetadata() => $_has(6);
+  @$pb.TagNumber(7)
+  void clearIncludeRevisionMetadata() => $_clearField(7);
+
+  @$pb.TagNumber(8)
+  $core.bool get includeArtifactMetadata => $_getBF(7);
+  @$pb.TagNumber(8)
+  set includeArtifactMetadata($core.bool value) => $_setBool(7, value);
+  @$pb.TagNumber(8)
+  $core.bool hasIncludeArtifactMetadata() => $_has(7);
+  @$pb.TagNumber(8)
+  void clearIncludeArtifactMetadata() => $_clearField(8);
+}
+
+class SearchResult extends $pb.GeneratedMessage {
+  factory SearchResult({
+    ItemResponse? item,
+    $core.double? score,
+    $core.Iterable<$core.String>? matchedIn,
+  }) {
+    final result = create();
+    if (item != null) result.item = item;
+    if (score != null) result.score = score;
+    if (matchedIn != null) result.matchedIn.addAll(matchedIn);
+    return result;
+  }
+
+  SearchResult._();
+
+  factory SearchResult.fromBuffer($core.List<$core.int> data,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromBuffer(data, registry);
+  factory SearchResult.fromJson($core.String json,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromJson(json, registry);
+
+  static final $pb.BuilderInfo _i = $pb.BuilderInfo(
+      _omitMessageNames ? '' : 'SearchResult',
+      package: const $pb.PackageName(_omitMessageNames ? '' : 'kumiho'),
+      createEmptyInstance: create)
+    ..aOM<ItemResponse>(1, _omitFieldNames ? '' : 'item',
+        subBuilder: ItemResponse.create)
+    ..aD(2, _omitFieldNames ? '' : 'score', fieldType: $pb.PbFieldType.OF)
+    ..pPS(3, _omitFieldNames ? '' : 'matchedIn')
+    ..hasRequiredFields = false;
+
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  SearchResult clone() => deepCopy();
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  SearchResult copyWith(void Function(SearchResult) updates) =>
+      super.copyWith((message) => updates(message as SearchResult))
+          as SearchResult;
+
+  @$core.override
+  $pb.BuilderInfo get info_ => _i;
+
+  @$core.pragma('dart2js:noInline')
+  static SearchResult create() => SearchResult._();
+  @$core.override
+  SearchResult createEmptyInstance() => create();
+  @$core.pragma('dart2js:noInline')
+  static SearchResult getDefault() => _defaultInstance ??=
+      $pb.GeneratedMessage.$_defaultFor<SearchResult>(create);
+  static SearchResult? _defaultInstance;
+
+  /// The matched item (search always returns Items, even when matching on revision/artifact metadata)
+  @$pb.TagNumber(1)
+  ItemResponse get item => $_getN(0);
+  @$pb.TagNumber(1)
+  set item(ItemResponse value) => $_setField(1, value);
+  @$pb.TagNumber(1)
+  $core.bool hasItem() => $_has(0);
+  @$pb.TagNumber(1)
+  void clearItem() => $_clearField(1);
+  @$pb.TagNumber(1)
+  ItemResponse ensureItem() => $_ensure(0);
+
+  /// Relevance score from Lucene (higher = better match)
+  @$pb.TagNumber(2)
+  $core.double get score => $_getN(1);
+  @$pb.TagNumber(2)
+  set score($core.double value) => $_setFloat(1, value);
+  @$pb.TagNumber(2)
+  $core.bool hasScore() => $_has(1);
+  @$pb.TagNumber(2)
+  void clearScore() => $_clearField(2);
+
+  /// Where the match was found: "item", "revision", "artifact"
+  /// Multiple values if matched in multiple places
+  @$pb.TagNumber(3)
+  $pb.PbList<$core.String> get matchedIn => $_getList(2);
+}
+
+class SearchResponse extends $pb.GeneratedMessage {
+  factory SearchResponse({
+    $core.Iterable<SearchResult>? results,
+    PaginationResponse? pagination,
+    $core.String? searchMode,
+  }) {
+    final result = create();
+    if (results != null) result.results.addAll(results);
+    if (pagination != null) result.pagination = pagination;
+    if (searchMode != null) result.searchMode = searchMode;
+    return result;
+  }
+
+  SearchResponse._();
+
+  factory SearchResponse.fromBuffer($core.List<$core.int> data,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromBuffer(data, registry);
+  factory SearchResponse.fromJson($core.String json,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromJson(json, registry);
+
+  static final $pb.BuilderInfo _i = $pb.BuilderInfo(
+      _omitMessageNames ? '' : 'SearchResponse',
+      package: const $pb.PackageName(_omitMessageNames ? '' : 'kumiho'),
+      createEmptyInstance: create)
+    ..pPM<SearchResult>(1, _omitFieldNames ? '' : 'results',
+        subBuilder: SearchResult.create)
+    ..aOM<PaginationResponse>(2, _omitFieldNames ? '' : 'pagination',
+        subBuilder: PaginationResponse.create)
+    ..aOS(3, _omitFieldNames ? '' : 'searchMode')
+    ..hasRequiredFields = false;
+
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  SearchResponse clone() => deepCopy();
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  SearchResponse copyWith(void Function(SearchResponse) updates) =>
+      super.copyWith((message) => updates(message as SearchResponse))
+          as SearchResponse;
+
+  @$core.override
+  $pb.BuilderInfo get info_ => _i;
+
+  @$core.pragma('dart2js:noInline')
+  static SearchResponse create() => SearchResponse._();
+  @$core.override
+  SearchResponse createEmptyInstance() => create();
+  @$core.pragma('dart2js:noInline')
+  static SearchResponse getDefault() => _defaultInstance ??=
+      $pb.GeneratedMessage.$_defaultFor<SearchResponse>(create);
+  static SearchResponse? _defaultInstance;
+
+  /// Search results ordered by relevance score (highest first)
+  @$pb.TagNumber(1)
+  $pb.PbList<SearchResult> get results => $_getList(0);
+
+  /// Pagination info
+  @$pb.TagNumber(2)
+  PaginationResponse get pagination => $_getN(1);
+  @$pb.TagNumber(2)
+  set pagination(PaginationResponse value) => $_setField(2, value);
+  @$pb.TagNumber(2)
+  $core.bool hasPagination() => $_has(1);
+  @$pb.TagNumber(2)
+  void clearPagination() => $_clearField(2);
+  @$pb.TagNumber(2)
+  PaginationResponse ensurePagination() => $_ensure(1);
+
+  /// Search mode used: "fulltext" (Lucene only) or "hybrid" (fulltext + vector)
+  /// Hybrid mode is available for STUDIO+ tiers with vector embeddings enabled
+  @$pb.TagNumber(3)
+  $core.String get searchMode => $_getSZ(2);
+  @$pb.TagNumber(3)
+  set searchMode($core.String value) => $_setString(2, value);
+  @$pb.TagNumber(3)
+  $core.bool hasSearchMode() => $_has(2);
+  @$pb.TagNumber(3)
+  void clearSearchMode() => $_clearField(3);
+}
+
+class ScoreRevisionsRequest extends $pb.GeneratedMessage {
+  factory ScoreRevisionsRequest({
+    $core.String? query,
+    $core.Iterable<Kref>? revisionKrefs,
+    $core.Iterable<$core.String>? scoreFields,
+  }) {
+    final result = create();
+    if (query != null) result.query = query;
+    if (revisionKrefs != null) result.revisionKrefs.addAll(revisionKrefs);
+    if (scoreFields != null) result.scoreFields.addAll(scoreFields);
+    return result;
+  }
+
+  ScoreRevisionsRequest._();
+
+  factory ScoreRevisionsRequest.fromBuffer($core.List<$core.int> data,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromBuffer(data, registry);
+  factory ScoreRevisionsRequest.fromJson($core.String json,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromJson(json, registry);
+
+  static final $pb.BuilderInfo _i = $pb.BuilderInfo(
+      _omitMessageNames ? '' : 'ScoreRevisionsRequest',
+      package: const $pb.PackageName(_omitMessageNames ? '' : 'kumiho'),
+      createEmptyInstance: create)
+    ..aOS(1, _omitFieldNames ? '' : 'query')
+    ..pPM<Kref>(2, _omitFieldNames ? '' : 'revisionKrefs',
+        subBuilder: Kref.create)
+    ..pPS(3, _omitFieldNames ? '' : 'scoreFields')
+    ..hasRequiredFields = false;
+
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  ScoreRevisionsRequest clone() => deepCopy();
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  ScoreRevisionsRequest copyWith(
+          void Function(ScoreRevisionsRequest) updates) =>
+      super.copyWith((message) => updates(message as ScoreRevisionsRequest))
+          as ScoreRevisionsRequest;
+
+  @$core.override
+  $pb.BuilderInfo get info_ => _i;
+
+  @$core.pragma('dart2js:noInline')
+  static ScoreRevisionsRequest create() => ScoreRevisionsRequest._();
+  @$core.override
+  ScoreRevisionsRequest createEmptyInstance() => create();
+  @$core.pragma('dart2js:noInline')
+  static ScoreRevisionsRequest getDefault() => _defaultInstance ??=
+      $pb.GeneratedMessage.$_defaultFor<ScoreRevisionsRequest>(create);
+  static ScoreRevisionsRequest? _defaultInstance;
+
+  /// Query to score revisions against
+  @$pb.TagNumber(1)
+  $core.String get query => $_getSZ(0);
+  @$pb.TagNumber(1)
+  set query($core.String value) => $_setString(0, value);
+  @$pb.TagNumber(1)
+  $core.bool hasQuery() => $_has(0);
+  @$pb.TagNumber(1)
+  void clearQuery() => $_clearField(1);
+
+  /// Revisions to score (max 100)
+  @$pb.TagNumber(2)
+  $pb.PbList<Kref> get revisionKrefs => $_getList(1);
+
+  /// When non-empty, re-embed revisions from ONLY these metadata fields
+  /// instead of using the stored (broad) embedding.  Enables focused
+  /// scoring — e.g. ["title", "summary"] strips implications/events
+  /// so the most directly relevant revision ranks highest.
+  /// When empty (default), uses stored embeddings (current behavior).
+  @$pb.TagNumber(3)
+  $pb.PbList<$core.String> get scoreFields => $_getList(2);
+}
+
+class ScoredRevision extends $pb.GeneratedMessage {
+  factory ScoredRevision({
+    Kref? kref,
+    $core.double? score,
+    $core.String? scoreMethod,
+  }) {
+    final result = create();
+    if (kref != null) result.kref = kref;
+    if (score != null) result.score = score;
+    if (scoreMethod != null) result.scoreMethod = scoreMethod;
+    return result;
+  }
+
+  ScoredRevision._();
+
+  factory ScoredRevision.fromBuffer($core.List<$core.int> data,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromBuffer(data, registry);
+  factory ScoredRevision.fromJson($core.String json,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromJson(json, registry);
+
+  static final $pb.BuilderInfo _i = $pb.BuilderInfo(
+      _omitMessageNames ? '' : 'ScoredRevision',
+      package: const $pb.PackageName(_omitMessageNames ? '' : 'kumiho'),
+      createEmptyInstance: create)
+    ..aOM<Kref>(1, _omitFieldNames ? '' : 'kref', subBuilder: Kref.create)
+    ..aD(2, _omitFieldNames ? '' : 'score', fieldType: $pb.PbFieldType.OF)
+    ..aOS(3, _omitFieldNames ? '' : 'scoreMethod')
+    ..hasRequiredFields = false;
+
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  ScoredRevision clone() => deepCopy();
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  ScoredRevision copyWith(void Function(ScoredRevision) updates) =>
+      super.copyWith((message) => updates(message as ScoredRevision))
+          as ScoredRevision;
+
+  @$core.override
+  $pb.BuilderInfo get info_ => _i;
+
+  @$core.pragma('dart2js:noInline')
+  static ScoredRevision create() => ScoredRevision._();
+  @$core.override
+  ScoredRevision createEmptyInstance() => create();
+  @$core.pragma('dart2js:noInline')
+  static ScoredRevision getDefault() => _defaultInstance ??=
+      $pb.GeneratedMessage.$_defaultFor<ScoredRevision>(create);
+  static ScoredRevision? _defaultInstance;
+
+  /// The revision kref
+  @$pb.TagNumber(1)
+  Kref get kref => $_getN(0);
+  @$pb.TagNumber(1)
+  set kref(Kref value) => $_setField(1, value);
+  @$pb.TagNumber(1)
+  $core.bool hasKref() => $_has(0);
+  @$pb.TagNumber(1)
+  void clearKref() => $_clearField(1);
+  @$pb.TagNumber(1)
+  Kref ensureKref() => $_ensure(0);
+
+  /// Relevance score (0.0 - 1.0)
+  @$pb.TagNumber(2)
+  $core.double get score => $_getN(1);
+  @$pb.TagNumber(2)
+  set score($core.double value) => $_setFloat(1, value);
+  @$pb.TagNumber(2)
+  $core.bool hasScore() => $_has(1);
+  @$pb.TagNumber(2)
+  void clearScore() => $_clearField(2);
+
+  /// How the score was computed: "vector", "fulltext", or "hybrid"
+  @$pb.TagNumber(3)
+  $core.String get scoreMethod => $_getSZ(2);
+  @$pb.TagNumber(3)
+  set scoreMethod($core.String value) => $_setString(2, value);
+  @$pb.TagNumber(3)
+  $core.bool hasScoreMethod() => $_has(2);
+  @$pb.TagNumber(3)
+  void clearScoreMethod() => $_clearField(3);
+}
+
+class ScoreRevisionsResponse extends $pb.GeneratedMessage {
+  factory ScoreRevisionsResponse({
+    $core.Iterable<ScoredRevision>? scoredRevisions,
+    $core.String? searchMode,
+  }) {
+    final result = create();
+    if (scoredRevisions != null) result.scoredRevisions.addAll(scoredRevisions);
+    if (searchMode != null) result.searchMode = searchMode;
+    return result;
+  }
+
+  ScoreRevisionsResponse._();
+
+  factory ScoreRevisionsResponse.fromBuffer($core.List<$core.int> data,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromBuffer(data, registry);
+  factory ScoreRevisionsResponse.fromJson($core.String json,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromJson(json, registry);
+
+  static final $pb.BuilderInfo _i = $pb.BuilderInfo(
+      _omitMessageNames ? '' : 'ScoreRevisionsResponse',
+      package: const $pb.PackageName(_omitMessageNames ? '' : 'kumiho'),
+      createEmptyInstance: create)
+    ..pPM<ScoredRevision>(1, _omitFieldNames ? '' : 'scoredRevisions',
+        subBuilder: ScoredRevision.create)
+    ..aOS(2, _omitFieldNames ? '' : 'searchMode')
+    ..hasRequiredFields = false;
+
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  ScoreRevisionsResponse clone() => deepCopy();
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  ScoreRevisionsResponse copyWith(
+          void Function(ScoreRevisionsResponse) updates) =>
+      super.copyWith((message) => updates(message as ScoreRevisionsResponse))
+          as ScoreRevisionsResponse;
+
+  @$core.override
+  $pb.BuilderInfo get info_ => _i;
+
+  @$core.pragma('dart2js:noInline')
+  static ScoreRevisionsResponse create() => ScoreRevisionsResponse._();
+  @$core.override
+  ScoreRevisionsResponse createEmptyInstance() => create();
+  @$core.pragma('dart2js:noInline')
+  static ScoreRevisionsResponse getDefault() => _defaultInstance ??=
+      $pb.GeneratedMessage.$_defaultFor<ScoreRevisionsResponse>(create);
+  static ScoreRevisionsResponse? _defaultInstance;
+
+  /// Scored revisions ordered by score DESC
+  @$pb.TagNumber(1)
+  $pb.PbList<ScoredRevision> get scoredRevisions => $_getList(0);
+
+  /// Overall search mode used: "vector", "fulltext", "hybrid", or "none"
+  @$pb.TagNumber(2)
+  $core.String get searchMode => $_getSZ(1);
+  @$pb.TagNumber(2)
+  set searchMode($core.String value) => $_setString(1, value);
+  @$pb.TagNumber(2)
+  $core.bool hasSearchMode() => $_has(1);
+  @$pb.TagNumber(2)
+  void clearSearchMode() => $_clearField(2);
+}
+
 class CreateRevisionRequest extends $pb.GeneratedMessage {
   factory CreateRevisionRequest({
     Kref? itemKref,
     $core.Iterable<$core.MapEntry<$core.String, $core.String>>? metadata,
     $core.int? number,
     $core.bool? existsError,
+    $core.String? embeddingText,
   }) {
     final result = create();
     if (itemKref != null) result.itemKref = itemKref;
     if (metadata != null) result.metadata.addEntries(metadata);
     if (number != null) result.number = number;
     if (existsError != null) result.existsError = existsError;
+    if (embeddingText != null) result.embeddingText = embeddingText;
     return result;
   }
 
@@ -1910,6 +2446,7 @@ class CreateRevisionRequest extends $pb.GeneratedMessage {
         packageName: const $pb.PackageName('kumiho'))
     ..aI(3, _omitFieldNames ? '' : 'number')
     ..aOB(4, _omitFieldNames ? '' : 'existsError')
+    ..aOS(5, _omitFieldNames ? '' : 'embeddingText')
     ..hasRequiredFields = false;
 
   @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
@@ -1963,6 +2500,15 @@ class CreateRevisionRequest extends $pb.GeneratedMessage {
   $core.bool hasExistsError() => $_has(3);
   @$pb.TagNumber(4)
   void clearExistsError() => $_clearField(4);
+
+  @$pb.TagNumber(5)
+  $core.String get embeddingText => $_getSZ(4);
+  @$pb.TagNumber(5)
+  set embeddingText($core.String value) => $_setString(4, value);
+  @$pb.TagNumber(5)
+  $core.bool hasEmbeddingText() => $_has(4);
+  @$pb.TagNumber(5)
+  void clearEmbeddingText() => $_clearField(5);
 }
 
 class RevisionResponse extends $pb.GeneratedMessage {
@@ -2375,6 +2921,174 @@ class GetRevisionsResponse extends $pb.GeneratedMessage {
   void clearPagination() => $_clearField(2);
   @$pb.TagNumber(2)
   PaginationResponse ensurePagination() => $_ensure(1);
+}
+
+/// Batch revision fetching - fetch multiple revisions in a single call
+class BatchGetRevisionsRequest extends $pb.GeneratedMessage {
+  factory BatchGetRevisionsRequest({
+    $core.Iterable<Kref>? revisionKrefs,
+    $core.Iterable<Kref>? itemKrefs,
+    $core.String? tag,
+    $core.bool? allowPartial,
+  }) {
+    final result = create();
+    if (revisionKrefs != null) result.revisionKrefs.addAll(revisionKrefs);
+    if (itemKrefs != null) result.itemKrefs.addAll(itemKrefs);
+    if (tag != null) result.tag = tag;
+    if (allowPartial != null) result.allowPartial = allowPartial;
+    return result;
+  }
+
+  BatchGetRevisionsRequest._();
+
+  factory BatchGetRevisionsRequest.fromBuffer($core.List<$core.int> data,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromBuffer(data, registry);
+  factory BatchGetRevisionsRequest.fromJson($core.String json,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromJson(json, registry);
+
+  static final $pb.BuilderInfo _i = $pb.BuilderInfo(
+      _omitMessageNames ? '' : 'BatchGetRevisionsRequest',
+      package: const $pb.PackageName(_omitMessageNames ? '' : 'kumiho'),
+      createEmptyInstance: create)
+    ..pPM<Kref>(1, _omitFieldNames ? '' : 'revisionKrefs',
+        subBuilder: Kref.create)
+    ..pPM<Kref>(2, _omitFieldNames ? '' : 'itemKrefs', subBuilder: Kref.create)
+    ..aOS(3, _omitFieldNames ? '' : 'tag')
+    ..aOB(4, _omitFieldNames ? '' : 'allowPartial')
+    ..hasRequiredFields = false;
+
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  BatchGetRevisionsRequest clone() => deepCopy();
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  BatchGetRevisionsRequest copyWith(
+          void Function(BatchGetRevisionsRequest) updates) =>
+      super.copyWith((message) => updates(message as BatchGetRevisionsRequest))
+          as BatchGetRevisionsRequest;
+
+  @$core.override
+  $pb.BuilderInfo get info_ => _i;
+
+  @$core.pragma('dart2js:noInline')
+  static BatchGetRevisionsRequest create() => BatchGetRevisionsRequest._();
+  @$core.override
+  BatchGetRevisionsRequest createEmptyInstance() => create();
+  @$core.pragma('dart2js:noInline')
+  static BatchGetRevisionsRequest getDefault() => _defaultInstance ??=
+      $pb.GeneratedMessage.$_defaultFor<BatchGetRevisionsRequest>(create);
+  static BatchGetRevisionsRequest? _defaultInstance;
+
+  /// List of revision krefs to fetch (e.g., kref://project/space/item.kind?r=1)
+  @$pb.TagNumber(1)
+  $pb.PbList<Kref> get revisionKrefs => $_getList(0);
+
+  /// Or fetch by item krefs with optional tag (defaults to "latest")
+  @$pb.TagNumber(2)
+  $pb.PbList<Kref> get itemKrefs => $_getList(1);
+
+  /// Tag to resolve when using item_krefs (default: "latest")
+  @$pb.TagNumber(3)
+  $core.String get tag => $_getSZ(2);
+  @$pb.TagNumber(3)
+  set tag($core.String value) => $_setString(2, value);
+  @$pb.TagNumber(3)
+  $core.bool hasTag() => $_has(2);
+  @$pb.TagNumber(3)
+  void clearTag() => $_clearField(3);
+
+  /// If true, continue on not-found errors and return partial results
+  @$pb.TagNumber(4)
+  $core.bool get allowPartial => $_getBF(3);
+  @$pb.TagNumber(4)
+  set allowPartial($core.bool value) => $_setBool(3, value);
+  @$pb.TagNumber(4)
+  $core.bool hasAllowPartial() => $_has(3);
+  @$pb.TagNumber(4)
+  void clearAllowPartial() => $_clearField(4);
+}
+
+class BatchGetRevisionsResponse extends $pb.GeneratedMessage {
+  factory BatchGetRevisionsResponse({
+    $core.Iterable<RevisionResponse>? revisions,
+    $core.Iterable<$core.String>? notFound,
+    $core.int? requestedCount,
+    $core.int? foundCount,
+  }) {
+    final result = create();
+    if (revisions != null) result.revisions.addAll(revisions);
+    if (notFound != null) result.notFound.addAll(notFound);
+    if (requestedCount != null) result.requestedCount = requestedCount;
+    if (foundCount != null) result.foundCount = foundCount;
+    return result;
+  }
+
+  BatchGetRevisionsResponse._();
+
+  factory BatchGetRevisionsResponse.fromBuffer($core.List<$core.int> data,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromBuffer(data, registry);
+  factory BatchGetRevisionsResponse.fromJson($core.String json,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromJson(json, registry);
+
+  static final $pb.BuilderInfo _i = $pb.BuilderInfo(
+      _omitMessageNames ? '' : 'BatchGetRevisionsResponse',
+      package: const $pb.PackageName(_omitMessageNames ? '' : 'kumiho'),
+      createEmptyInstance: create)
+    ..pPM<RevisionResponse>(1, _omitFieldNames ? '' : 'revisions',
+        subBuilder: RevisionResponse.create)
+    ..pPS(2, _omitFieldNames ? '' : 'notFound')
+    ..aI(3, _omitFieldNames ? '' : 'requestedCount')
+    ..aI(4, _omitFieldNames ? '' : 'foundCount')
+    ..hasRequiredFields = false;
+
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  BatchGetRevisionsResponse clone() => deepCopy();
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  BatchGetRevisionsResponse copyWith(
+          void Function(BatchGetRevisionsResponse) updates) =>
+      super.copyWith((message) => updates(message as BatchGetRevisionsResponse))
+          as BatchGetRevisionsResponse;
+
+  @$core.override
+  $pb.BuilderInfo get info_ => _i;
+
+  @$core.pragma('dart2js:noInline')
+  static BatchGetRevisionsResponse create() => BatchGetRevisionsResponse._();
+  @$core.override
+  BatchGetRevisionsResponse createEmptyInstance() => create();
+  @$core.pragma('dart2js:noInline')
+  static BatchGetRevisionsResponse getDefault() => _defaultInstance ??=
+      $pb.GeneratedMessage.$_defaultFor<BatchGetRevisionsResponse>(create);
+  static BatchGetRevisionsResponse? _defaultInstance;
+
+  /// Successfully fetched revisions (in same order as request when possible)
+  @$pb.TagNumber(1)
+  $pb.PbList<RevisionResponse> get revisions => $_getList(0);
+
+  /// Krefs that were not found (only populated if allow_partial=true)
+  @$pb.TagNumber(2)
+  $pb.PbList<$core.String> get notFound => $_getList(1);
+
+  /// Total requested vs returned counts
+  @$pb.TagNumber(3)
+  $core.int get requestedCount => $_getIZ(2);
+  @$pb.TagNumber(3)
+  set requestedCount($core.int value) => $_setSignedInt32(2, value);
+  @$pb.TagNumber(3)
+  $core.bool hasRequestedCount() => $_has(2);
+  @$pb.TagNumber(3)
+  void clearRequestedCount() => $_clearField(3);
+
+  @$pb.TagNumber(4)
+  $core.int get foundCount => $_getIZ(3);
+  @$pb.TagNumber(4)
+  set foundCount($core.int value) => $_setSignedInt32(3, value);
+  @$pb.TagNumber(4)
+  $core.bool hasFoundCount() => $_has(3);
+  @$pb.TagNumber(4)
+  void clearFoundCount() => $_clearField(4);
 }
 
 class CreateArtifactRequest extends $pb.GeneratedMessage {
@@ -7048,248 +7762,6 @@ class TenantUsageResponse extends $pb.GeneratedMessage {
   $core.bool hasTenantId() => $_has(2);
   @$pb.TagNumber(3)
   void clearTenantId() => $_clearField(3);
-}
-
-/// The Kumiho service definition.
-class KumihoServiceApi {
-  final $pb.RpcClient _client;
-
-  KumihoServiceApi(this._client);
-
-  /// Project methods
-  $async.Future<ProjectResponse> createProject(
-          $pb.ClientContext? ctx, CreateProjectRequest request) =>
-      _client.invoke<ProjectResponse>(
-          ctx, 'KumihoService', 'CreateProject', request, ProjectResponse());
-  $async.Future<GetProjectsResponse> getProjects(
-          $pb.ClientContext? ctx, GetProjectsRequest request) =>
-      _client.invoke<GetProjectsResponse>(
-          ctx, 'KumihoService', 'GetProjects', request, GetProjectsResponse());
-  $async.Future<ProjectResponse> updateProject(
-          $pb.ClientContext? ctx, UpdateProjectRequest request) =>
-      _client.invoke<ProjectResponse>(
-          ctx, 'KumihoService', 'UpdateProject', request, ProjectResponse());
-  $async.Future<StatusResponse> deleteProject(
-          $pb.ClientContext? ctx, DeleteProjectRequest request) =>
-      _client.invoke<StatusResponse>(
-          ctx, 'KumihoService', 'DeleteProject', request, StatusResponse());
-
-  /// Space methods
-  $async.Future<SpaceResponse> createSpace(
-          $pb.ClientContext? ctx, CreateSpaceRequest request) =>
-      _client.invoke<SpaceResponse>(
-          ctx, 'KumihoService', 'CreateSpace', request, SpaceResponse());
-  $async.Future<SpaceResponse> getSpace(
-          $pb.ClientContext? ctx, GetSpaceRequest request) =>
-      _client.invoke<SpaceResponse>(
-          ctx, 'KumihoService', 'GetSpace', request, SpaceResponse());
-  $async.Future<GetChildSpacesResponse> getChildSpaces(
-          $pb.ClientContext? ctx, GetChildSpacesRequest request) =>
-      _client.invoke<GetChildSpacesResponse>(ctx, 'KumihoService',
-          'GetChildSpaces', request, GetChildSpacesResponse());
-  $async.Future<StatusResponse> deleteSpace(
-          $pb.ClientContext? ctx, DeleteSpaceRequest request) =>
-      _client.invoke<StatusResponse>(
-          ctx, 'KumihoService', 'DeleteSpace', request, StatusResponse());
-  $async.Future<SpaceResponse> updateSpaceMetadata(
-          $pb.ClientContext? ctx, UpdateMetadataRequest request) =>
-      _client.invoke<SpaceResponse>(ctx, 'KumihoService', 'UpdateSpaceMetadata',
-          request, SpaceResponse());
-
-  /// Item methods
-  $async.Future<ItemResponse> createItem(
-          $pb.ClientContext? ctx, CreateItemRequest request) =>
-      _client.invoke<ItemResponse>(
-          ctx, 'KumihoService', 'CreateItem', request, ItemResponse());
-  $async.Future<ItemResponse> getItem(
-          $pb.ClientContext? ctx, GetItemRequest request) =>
-      _client.invoke<ItemResponse>(
-          ctx, 'KumihoService', 'GetItem', request, ItemResponse());
-  $async.Future<GetItemsResponse> getItems(
-          $pb.ClientContext? ctx, GetItemsRequest request) =>
-      _client.invoke<GetItemsResponse>(
-          ctx, 'KumihoService', 'GetItems', request, GetItemsResponse());
-  $async.Future<GetItemsResponse> itemSearch(
-          $pb.ClientContext? ctx, ItemSearchRequest request) =>
-      _client.invoke<GetItemsResponse>(
-          ctx, 'KumihoService', 'ItemSearch', request, GetItemsResponse());
-  $async.Future<StatusResponse> deleteItem(
-          $pb.ClientContext? ctx, DeleteItemRequest request) =>
-      _client.invoke<StatusResponse>(
-          ctx, 'KumihoService', 'DeleteItem', request, StatusResponse());
-  $async.Future<ItemResponse> updateItemMetadata(
-          $pb.ClientContext? ctx, UpdateMetadataRequest request) =>
-      _client.invoke<ItemResponse>(
-          ctx, 'KumihoService', 'UpdateItemMetadata', request, ItemResponse());
-
-  /// Revision methods
-  $async.Future<RevisionResponse> resolveKref(
-          $pb.ClientContext? ctx, ResolveKrefRequest request) =>
-      _client.invoke<RevisionResponse>(
-          ctx, 'KumihoService', 'ResolveKref', request, RevisionResponse());
-  $async.Future<ResolveLocationResponse> resolveLocation(
-          $pb.ClientContext? ctx, ResolveLocationRequest request) =>
-      _client.invoke<ResolveLocationResponse>(ctx, 'KumihoService',
-          'ResolveLocation', request, ResolveLocationResponse());
-  $async.Future<RevisionResponse> createRevision(
-          $pb.ClientContext? ctx, CreateRevisionRequest request) =>
-      _client.invoke<RevisionResponse>(
-          ctx, 'KumihoService', 'CreateRevision', request, RevisionResponse());
-  $async.Future<RevisionResponse> getRevision(
-          $pb.ClientContext? ctx, KrefRequest request) =>
-      _client.invoke<RevisionResponse>(
-          ctx, 'KumihoService', 'GetRevision', request, RevisionResponse());
-  $async.Future<GetRevisionsResponse> getRevisions(
-          $pb.ClientContext? ctx, GetRevisionsRequest request) =>
-      _client.invoke<GetRevisionsResponse>(ctx, 'KumihoService', 'GetRevisions',
-          request, GetRevisionsResponse());
-  $async.Future<StatusResponse> deleteRevision(
-          $pb.ClientContext? ctx, DeleteRevisionRequest request) =>
-      _client.invoke<StatusResponse>(
-          ctx, 'KumihoService', 'DeleteRevision', request, StatusResponse());
-  $async.Future<PeekNextRevisionResponse> peekNextRevision(
-          $pb.ClientContext? ctx, PeekNextRevisionRequest request) =>
-      _client.invoke<PeekNextRevisionResponse>(ctx, 'KumihoService',
-          'PeekNextRevision', request, PeekNextRevisionResponse());
-  $async.Future<RevisionResponse> updateRevisionMetadata(
-          $pb.ClientContext? ctx, UpdateMetadataRequest request) =>
-      _client.invoke<RevisionResponse>(ctx, 'KumihoService',
-          'UpdateRevisionMetadata', request, RevisionResponse());
-  $async.Future<StatusResponse> tagRevision(
-          $pb.ClientContext? ctx, TagRevisionRequest request) =>
-      _client.invoke<StatusResponse>(
-          ctx, 'KumihoService', 'TagRevision', request, StatusResponse());
-  $async.Future<StatusResponse> unTagRevision(
-          $pb.ClientContext? ctx, UnTagRevisionRequest request) =>
-      _client.invoke<StatusResponse>(
-          ctx, 'KumihoService', 'UnTagRevision', request, StatusResponse());
-  $async.Future<HasTagResponse> hasTag(
-          $pb.ClientContext? ctx, HasTagRequest request) =>
-      _client.invoke<HasTagResponse>(
-          ctx, 'KumihoService', 'HasTag', request, HasTagResponse());
-  $async.Future<WasTaggedResponse> wasTagged(
-          $pb.ClientContext? ctx, WasTaggedRequest request) =>
-      _client.invoke<WasTaggedResponse>(
-          ctx, 'KumihoService', 'WasTagged', request, WasTaggedResponse());
-  $async.Future<StatusResponse> setDefaultArtifact(
-          $pb.ClientContext? ctx, SetDefaultArtifactRequest request) =>
-      _client.invoke<StatusResponse>(ctx, 'KumihoService', 'SetDefaultArtifact',
-          request, StatusResponse());
-
-  /// Artifact methods
-  $async.Future<ArtifactResponse> createArtifact(
-          $pb.ClientContext? ctx, CreateArtifactRequest request) =>
-      _client.invoke<ArtifactResponse>(
-          ctx, 'KumihoService', 'CreateArtifact', request, ArtifactResponse());
-  $async.Future<ArtifactResponse> getArtifact(
-          $pb.ClientContext? ctx, GetArtifactRequest request) =>
-      _client.invoke<ArtifactResponse>(
-          ctx, 'KumihoService', 'GetArtifact', request, ArtifactResponse());
-  $async.Future<GetArtifactsResponse> getArtifacts(
-          $pb.ClientContext? ctx, GetArtifactsRequest request) =>
-      _client.invoke<GetArtifactsResponse>(ctx, 'KumihoService', 'GetArtifacts',
-          request, GetArtifactsResponse());
-  $async.Future<GetArtifactsByLocationResponse> getArtifactsByLocation(
-          $pb.ClientContext? ctx, GetArtifactsByLocationRequest request) =>
-      _client.invoke<GetArtifactsByLocationResponse>(ctx, 'KumihoService',
-          'GetArtifactsByLocation', request, GetArtifactsByLocationResponse());
-  $async.Future<StatusResponse> deleteArtifact(
-          $pb.ClientContext? ctx, DeleteArtifactRequest request) =>
-      _client.invoke<StatusResponse>(
-          ctx, 'KumihoService', 'DeleteArtifact', request, StatusResponse());
-  $async.Future<ArtifactResponse> updateArtifactMetadata(
-          $pb.ClientContext? ctx, UpdateMetadataRequest request) =>
-      _client.invoke<ArtifactResponse>(ctx, 'KumihoService',
-          'UpdateArtifactMetadata', request, ArtifactResponse());
-
-  /// Attribute methods (granular metadata operations)
-  /// These work on any entity type (Revision, Item, Artifact, Space) identified by kref
-  $async.Future<StatusResponse> setAttribute(
-          $pb.ClientContext? ctx, SetAttributeRequest request) =>
-      _client.invoke<StatusResponse>(
-          ctx, 'KumihoService', 'SetAttribute', request, StatusResponse());
-  $async.Future<GetAttributeResponse> getAttribute(
-          $pb.ClientContext? ctx, GetAttributeRequest request) =>
-      _client.invoke<GetAttributeResponse>(ctx, 'KumihoService', 'GetAttribute',
-          request, GetAttributeResponse());
-  $async.Future<StatusResponse> deleteAttribute(
-          $pb.ClientContext? ctx, DeleteAttributeRequest request) =>
-      _client.invoke<StatusResponse>(
-          ctx, 'KumihoService', 'DeleteAttribute', request, StatusResponse());
-
-  /// Edge methods
-  $async.Future<StatusResponse> createEdge(
-          $pb.ClientContext? ctx, CreateEdgeRequest request) =>
-      _client.invoke<StatusResponse>(
-          ctx, 'KumihoService', 'CreateEdge', request, StatusResponse());
-  $async.Future<GetEdgesResponse> getEdges(
-          $pb.ClientContext? ctx, GetEdgesRequest request) =>
-      _client.invoke<GetEdgesResponse>(
-          ctx, 'KumihoService', 'GetEdges', request, GetEdgesResponse());
-  $async.Future<StatusResponse> deleteEdge(
-          $pb.ClientContext? ctx, DeleteEdgeRequest request) =>
-      _client.invoke<StatusResponse>(
-          ctx, 'KumihoService', 'DeleteEdge', request, StatusResponse());
-
-  /// Graph Traversal methods
-  $async.Future<TraverseEdgesResponse> traverseEdges(
-          $pb.ClientContext? ctx, TraverseEdgesRequest request) =>
-      _client.invoke<TraverseEdgesResponse>(ctx, 'KumihoService',
-          'TraverseEdges', request, TraverseEdgesResponse());
-  $async.Future<ShortestPathResponse> findShortestPath(
-          $pb.ClientContext? ctx, ShortestPathRequest request) =>
-      _client.invoke<ShortestPathResponse>(ctx, 'KumihoService',
-          'FindShortestPath', request, ShortestPathResponse());
-  $async.Future<ImpactAnalysisResponse> analyzeImpact(
-          $pb.ClientContext? ctx, ImpactAnalysisRequest request) =>
-      _client.invoke<ImpactAnalysisResponse>(ctx, 'KumihoService',
-          'AnalyzeImpact', request, ImpactAnalysisResponse());
-
-  /// Bundle methods
-  $async.Future<ItemResponse> createBundle(
-          $pb.ClientContext? ctx, CreateBundleRequest request) =>
-      _client.invoke<ItemResponse>(
-          ctx, 'KumihoService', 'CreateBundle', request, ItemResponse());
-  $async.Future<AddBundleMemberResponse> addBundleMember(
-          $pb.ClientContext? ctx, AddBundleMemberRequest request) =>
-      _client.invoke<AddBundleMemberResponse>(ctx, 'KumihoService',
-          'AddBundleMember', request, AddBundleMemberResponse());
-  $async.Future<RemoveBundleMemberResponse> removeBundleMember(
-          $pb.ClientContext? ctx, RemoveBundleMemberRequest request) =>
-      _client.invoke<RemoveBundleMemberResponse>(ctx, 'KumihoService',
-          'RemoveBundleMember', request, RemoveBundleMemberResponse());
-  $async.Future<GetBundleMembersResponse> getBundleMembers(
-          $pb.ClientContext? ctx, GetBundleMembersRequest request) =>
-      _client.invoke<GetBundleMembersResponse>(ctx, 'KumihoService',
-          'GetBundleMembers', request, GetBundleMembersResponse());
-  $async.Future<GetBundleHistoryResponse> getBundleHistory(
-          $pb.ClientContext? ctx, GetBundleHistoryRequest request) =>
-      _client.invoke<GetBundleHistoryResponse>(ctx, 'KumihoService',
-          'GetBundleHistory', request, GetBundleHistoryResponse());
-
-  /// Tenant methods
-  $async.Future<TenantUsageResponse> getTenantUsage(
-          $pb.ClientContext? ctx, GetTenantUsageRequest request) =>
-      _client.invoke<TenantUsageResponse>(ctx, 'KumihoService',
-          'GetTenantUsage', request, TenantUsageResponse());
-
-  /// Event Streaming
-  $async.Future<Event> eventStream(
-          $pb.ClientContext? ctx, EventStreamRequest request) =>
-      _client.invoke<Event>(
-          ctx, 'KumihoService', 'EventStream', request, Event());
-
-  /// Get event streaming capabilities for the authenticated tenant's tier
-  $async.Future<EventCapabilities> getEventCapabilities(
-          $pb.ClientContext? ctx, GetEventCapabilitiesRequest request) =>
-      _client.invoke<EventCapabilities>(ctx, 'KumihoService',
-          'GetEventCapabilities', request, EventCapabilities());
-
-  /// Deprecation methods
-  $async.Future<StatusResponse> setDeprecated(
-          $pb.ClientContext? ctx, SetDeprecatedRequest request) =>
-      _client.invoke<StatusResponse>(
-          ctx, 'KumihoService', 'SetDeprecated', request, StatusResponse());
 }
 
 const $core.bool _omitFieldNames =

@@ -43,6 +43,7 @@ mixin RevisionApi on KumihoClientBase {
     String itemKref, {
     Map<String, String>? metadata,
     int? number,
+    String? embeddingText,
     bool existsError = false,
   }) async {
     final request = CreateRevisionRequest()
@@ -54,7 +55,61 @@ mixin RevisionApi on KumihoClientBase {
     if (number != null && number > 0) {
       request.number = number;
     }
+    if (embeddingText != null && embeddingText.isNotEmpty) {
+      request.embeddingText = embeddingText;
+    }
     return stub.createRevision(request, options: callOptions);
+  }
+
+  /// Scores specific revisions against a [query] using server-side embeddings
+  /// and/or fulltext (no client-side embedding needed).
+  ///
+  /// [revisionKrefs] are the revision kref URIs to score (max 100).
+  /// [scoreFields], when non-empty, re-embeds revisions from only those
+  /// metadata fields instead of the stored embedding. Mirrors Python's
+  /// `score_revisions`; results are ordered by score descending.
+  Future<List<ScoredRevision>> scoreRevisions(
+    String query,
+    List<String> revisionKrefs, {
+    List<String>? scoreFields,
+  }) async {
+    final request = ScoreRevisionsRequest()..query = query;
+    request.revisionKrefs.addAll(revisionKrefs.map((k) => Kref(uri: k)));
+    if (scoreFields != null && scoreFields.isNotEmpty) {
+      request.scoreFields.addAll(scoreFields);
+    }
+    final response = await stub.scoreRevisions(request, options: callOptions);
+    return response.scoredRevisions.toList();
+  }
+
+  /// Batch-fetches multiple revisions in a single call.
+  ///
+  /// Supports direct [revisionKrefs] and/or [itemKrefs] resolved with [tag]
+  /// (default "latest"). When [allowPartial] is true, missing krefs are
+  /// returned in `notFound` instead of throwing. Mirrors Python's
+  /// `batch_get_revisions`, returning (revisions, notFound).
+  Future<({List<RevisionResponse> revisions, List<String> notFound})>
+      batchGetRevisions({
+    List<String>? revisionKrefs,
+    List<String>? itemKrefs,
+    String tag = 'latest',
+    bool allowPartial = true,
+  }) async {
+    final request = BatchGetRevisionsRequest()
+      ..tag = tag
+      ..allowPartial = allowPartial;
+    if (revisionKrefs != null) {
+      request.revisionKrefs.addAll(revisionKrefs.map((k) => Kref(uri: k)));
+    }
+    if (itemKrefs != null) {
+      request.itemKrefs.addAll(itemKrefs.map((k) => Kref(uri: k)));
+    }
+    final response =
+        await stub.batchGetRevisions(request, options: callOptions);
+    return (
+      revisions: response.revisions.toList(),
+      notFound: response.notFound.toList(),
+    );
   }
 
   /// Gets a revision by its kref URI, with optional tag/time resolution.

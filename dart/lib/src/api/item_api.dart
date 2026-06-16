@@ -180,9 +180,51 @@ mixin ItemApi on KumihoClientBase {
     }
 
     final response = await stub.itemSearch(request, options: callOptions);
-    
+
     return PagedList(
       response.items,
+      nextCursor: response.hasPagination() ? response.pagination.nextCursor : null,
+      totalCount: response.hasPagination() ? response.pagination.totalCount : null,
+    );
+  }
+
+  /// Full-text fuzzy search across items (typo-tolerant), mirroring Python's
+  /// `search`.
+  ///
+  /// Returns [SearchResult] entries (matched item + relevance score +
+  /// `matchedIn`) ordered by relevance. [contextFilter] restricts to a kref
+  /// prefix; [kindFilter] is an exact kind match; [includeRevisionMetadata] /
+  /// [includeArtifactMetadata] widen the search; [minScore] filters by
+  /// relevance (0.0-1.0); [pageSize]/[cursor] paginate.
+  Future<PagedList<SearchResult>> search(
+    String query, {
+    String contextFilter = '',
+    String kindFilter = '',
+    bool includeDeprecated = false,
+    bool includeRevisionMetadata = false,
+    bool includeArtifactMetadata = false,
+    int? pageSize,
+    String? cursor,
+    double minScore = 0.0,
+  }) async {
+    final request = SearchRequest()
+      ..query = query
+      ..contextFilter = contextFilter
+      ..kindFilter = kindFilter
+      ..includeDeprecated = includeDeprecated
+      ..includeRevisionMetadata = includeRevisionMetadata
+      ..includeArtifactMetadata = includeArtifactMetadata
+      ..minScore = minScore;
+    if (pageSize != null || cursor != null) {
+      request.pagination = PaginationRequest()
+        ..pageSize = pageSize ?? 100
+        ..cursor = cursor ?? '';
+    }
+
+    final response = await stub.search(request, options: callOptions);
+
+    return PagedList(
+      response.results,
       nextCursor: response.hasPagination() ? response.pagination.nextCursor : null,
       totalCount: response.hasPagination() ? response.pagination.totalCount : null,
     );
