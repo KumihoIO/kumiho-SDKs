@@ -21,9 +21,11 @@
 #include <vector>
 #include <memory>
 #include <optional>
+#include <utility>
 #include <grpcpp/grpcpp.h>
 #include "kumiho/types.hpp"
 #include "kumiho/kref.hpp"
+#include "kumiho/edge.hpp"  // for EdgeDirection used in getEdges()
 #include "kumiho/error.hpp"
 #include "kumiho/bundle.hpp"  // For BundleMember, BundleRevisionHistory in inline functions
 #include "kumiho/event.hpp"   // For EventCapabilities return type
@@ -42,6 +44,35 @@ class Artifact;
 class Edge;
 class Event;
 class EventStream;
+
+/**
+ * @brief A single full-text search hit (item + relevance score).
+ *
+ * Mirrors the protobuf SearchResult. Search always returns Items, even when
+ * the match was on revision/artifact metadata.
+ */
+struct SearchResult {
+    /** @brief The matched item. */
+    std::shared_ptr<Item> item;
+    /** @brief Relevance score (higher = better match). */
+    double score = 0.0;
+    /** @brief Where the match was found: "item", "revision", "artifact". */
+    std::vector<std::string> matched_in;
+};
+
+/**
+ * @brief A revision scored against a query (server-side embeddings/fulltext).
+ *
+ * Mirrors the protobuf ScoredRevision returned by scoreRevisions().
+ */
+struct ScoredRevision {
+    /** @brief The scored revision's kref. */
+    Kref kref;
+    /** @brief Relevance score (0.0 - 1.0). */
+    double score = 0.0;
+    /** @brief How the score was computed: "vector", "fulltext", or "hybrid". */
+    std::string score_method;
+};
 
 /**
  * @brief The main client for interacting with Kumiho Cloud services.
@@ -346,6 +377,60 @@ public:
      * @return A list of Revision objects.
      */
     std::vector<std::shared_ptr<Revision>> getRevisions(const Kref& item_kref);
+
+    /**
+     * @brief Full-text fuzzy search across items.
+     * @param query Search terms (supports fuzzy matching).
+     * @param context_filter Restrict to a kref prefix (e.g., "myproject/assets").
+     * @param kind_filter Exact kind match (e.g., "model").
+     * @param include_deprecated Include soft-deleted items.
+     * @param include_revision_metadata Also search revision tags/metadata.
+     * @param include_artifact_metadata Also search artifact names/metadata.
+     * @param page_size Optional results per page (1-1000, default 100).
+     * @param cursor Optional pagination cursor.
+     * @param min_score Minimum relevance score 0.0-1.0.
+     * @return A list of SearchResult ordered by relevance.
+     */
+    std::vector<SearchResult> search(
+        const std::string& query,
+        const std::string& context_filter = "",
+        const std::string& kind_filter = "",
+        bool include_deprecated = false,
+        bool include_revision_metadata = false,
+        bool include_artifact_metadata = false,
+        std::optional<int32_t> page_size = std::nullopt,
+        std::optional<std::string> cursor = std::nullopt,
+        double min_score = 0.0
+    );
+
+    /**
+     * @brief Score specific revisions against a query (server-side embeddings).
+     * @param query The query string to score against.
+     * @param revision_krefs Revision kref URIs to score (max 100).
+     * @param score_fields When non-empty, re-embed from only these metadata fields.
+     * @return ScoredRevision entries ordered by score descending.
+     */
+    std::vector<ScoredRevision> scoreRevisions(
+        const std::string& query,
+        const std::vector<std::string>& revision_krefs,
+        const std::vector<std::string>& score_fields = {}
+    );
+
+    /**
+     * @brief Batch fetch multiple revisions in a single call.
+     * @param revision_krefs Revision kref URIs to fetch directly.
+     * @param item_krefs Item kref URIs to resolve with the given tag.
+     * @param tag Tag to resolve when using item_krefs (default "latest").
+     * @param allow_partial If true, return partial results for not-found krefs.
+     * @return A pair of (found revisions, not-found kref URIs).
+     */
+    std::pair<std::vector<std::shared_ptr<Revision>>, std::vector<std::string>>
+    batchGetRevisions(
+        const std::vector<std::string>& revision_krefs = {},
+        const std::vector<std::string>& item_krefs = {},
+        const std::string& tag = "latest",
+        bool allow_partial = true
+    );
 
     /**
      * @brief Get the latest revision of an item.

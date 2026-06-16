@@ -908,6 +908,116 @@ std::vector<std::shared_ptr<Revision>> Client::getRevisions(const Kref& item_kre
     return revisions;
 }
 
+std::vector<SearchResult> Client::search(
+    const std::string& query,
+    const std::string& context_filter,
+    const std::string& kind_filter,
+    bool include_deprecated,
+    bool include_revision_metadata,
+    bool include_artifact_metadata,
+    std::optional<int32_t> page_size,
+    std::optional<std::string> cursor,
+    double min_score
+) {
+    ::kumiho::SearchRequest req;
+    req.set_query(query);
+    req.set_context_filter(context_filter);
+    req.set_kind_filter(kind_filter);
+    req.set_include_deprecated(include_deprecated);
+    req.set_include_revision_metadata(include_revision_metadata);
+    req.set_include_artifact_metadata(include_artifact_metadata);
+    req.set_min_score(static_cast<float>(min_score));
+    if (page_size.has_value() || cursor.has_value()) {
+        auto* pagination = req.mutable_pagination();
+        pagination->set_page_size(page_size.value_or(100));
+        pagination->set_cursor(cursor.value_or(""));
+    }
+
+    ::kumiho::SearchResponse res;
+    grpc::ClientContext context; configureContext(context);
+    grpc::Status status = stub_->Search(&context, req, &res);
+    if (!status.ok()) {
+        throw RpcError("Search failed: " + status.error_message(), static_cast<int>(status.error_code()));
+    }
+
+    std::vector<SearchResult> results;
+    results.reserve(res.results_size());
+    for (const auto& r : res.results()) {
+        SearchResult sr;
+        sr.item = std::make_shared<Item>(r.item(), this);
+        sr.score = r.score();
+        sr.matched_in.assign(r.matched_in().begin(), r.matched_in().end());
+        results.push_back(std::move(sr));
+    }
+    return results;
+}
+
+std::vector<ScoredRevision> Client::scoreRevisions(
+    const std::string& query,
+    const std::vector<std::string>& revision_krefs,
+    const std::vector<std::string>& score_fields
+) {
+    ::kumiho::ScoreRevisionsRequest req;
+    req.set_query(query);
+    for (const auto& k : revision_krefs) {
+        req.add_revision_krefs()->set_uri(k);
+    }
+    for (const auto& f : score_fields) {
+        req.add_score_fields(f);
+    }
+
+    ::kumiho::ScoreRevisionsResponse res;
+    grpc::ClientContext context; configureContext(context);
+    grpc::Status status = stub_->ScoreRevisions(&context, req, &res);
+    if (!status.ok()) {
+        throw RpcError("ScoreRevisions failed: " + status.error_message(), static_cast<int>(status.error_code()));
+    }
+
+    std::vector<ScoredRevision> scored;
+    scored.reserve(res.scored_revisions_size());
+    for (const auto& sr : res.scored_revisions()) {
+        scored.push_back(ScoredRevision{
+            Kref(sr.kref().uri()),
+            static_cast<double>(sr.score()),
+            sr.score_method()
+        });
+    }
+    return scored;
+}
+
+std::pair<std::vector<std::shared_ptr<Revision>>, std::vector<std::string>>
+Client::batchGetRevisions(
+    const std::vector<std::string>& revision_krefs,
+    const std::vector<std::string>& item_krefs,
+    const std::string& tag,
+    bool allow_partial
+) {
+    ::kumiho::BatchGetRevisionsRequest req;
+    for (const auto& k : revision_krefs) {
+        req.add_revision_krefs()->set_uri(k);
+    }
+    for (const auto& k : item_krefs) {
+        req.add_item_krefs()->set_uri(k);
+    }
+    req.set_tag(tag);
+    req.set_allow_partial(allow_partial);
+
+    ::kumiho::BatchGetRevisionsResponse res;
+    grpc::ClientContext context; configureContext(context);
+    grpc::Status status = stub_->BatchGetRevisions(&context, req, &res);
+    if (!status.ok()) {
+        throw RpcError("BatchGetRevisions failed: " + status.error_message(), static_cast<int>(status.error_code()));
+    }
+
+    std::vector<std::shared_ptr<Revision>> revisions;
+    revisions.reserve(res.revisions_size());
+    for (const auto& r : res.revisions()) {
+        revisions.push_back(std::make_shared<Revision>(r, this));
+    }
+    std::vector<std::string> not_found(res.not_found().begin(), res.not_found().end());
+    return {std::move(revisions), std::move(not_found)};
+}
+
 std::shared_ptr<Revision> Client::getLatestRevision(const Kref& item_kref) {
     // Mirrors Python get_latest_revision: resolve the item kref to its latest
     // revision; resolveKref returns nullptr on NOT_FOUND (no revisions).
