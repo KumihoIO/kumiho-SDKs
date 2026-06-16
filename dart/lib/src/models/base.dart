@@ -29,6 +29,19 @@ class KumihoError implements Exception {
   String toString() => 'KumihoError: $message';
 }
 
+/// Raised when project creation is blocked by a guardrail.
+///
+/// Thrown by `createProject` when the server returns `RESOURCE_EXHAUSTED`
+/// (for example, when the maximum number of projects has been reached).
+/// Mirrors the Python SDK's `ProjectLimitError`.
+class ProjectLimitError extends KumihoError {
+  /// Creates a new [ProjectLimitError] with the given [message].
+  const ProjectLimitError(super.message);
+
+  @override
+  String toString() => 'ProjectLimitError: $message';
+}
+
 /// Item kinds that are reserved and cannot be created via `createItem`.
 ///
 /// The `bundle` kind must be created with `createBundle` instead.

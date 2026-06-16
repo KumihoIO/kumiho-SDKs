@@ -79,8 +79,11 @@ mixin EventApi on KumihoClientBase {
     if (fromBeginning) {
       request.fromBeginning = true;
     }
-    final options =
-        timeout == null ? callOptions : mergeOptions(CallOptions(timeout: timeout));
+    // Streaming opts out of the default per-RPC deadline; only apply a
+    // deadline when the caller explicitly passes one.
+    final options = timeout == null
+        ? streamCallOptions
+        : streamCallOptions.mergedWith(CallOptions(timeout: timeout));
     return stub.eventStream(request, options: options);
   }
 

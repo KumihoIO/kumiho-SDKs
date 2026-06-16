@@ -342,13 +342,13 @@ class Revision extends KumihoObject {
 
   /// Sets metadata for this revision.
   ///
+  /// Existing keys are overwritten and new keys are added in a single RPC.
+  ///
   /// ```dart
   /// await revision.setMetadata({'notes': 'Updated mesh', 'artist': 'john'});
   /// ```
   Future<void> setMetadata(Map<String, String> metadata) async {
-    for (final entry in metadata.entries) {
-      await client.setAttribute(kref.uri, entry.key, entry.value);
-    }
+    await client.updateRevisionMetadata(kref.uri, metadata);
   }
 
   @override

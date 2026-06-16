@@ -128,13 +128,13 @@ mixin EdgeApi on KumihoClientBase {
   /// [targetKref] is the target revision's kref URI.
   /// [edgeType] is the type of relationship (use [EdgeType] constants).
   /// [metadata] is optional key-value pairs to attach.
-  /// [existsError] controls whether to throw if edge exists (default: `true`).
+  /// [existsError] controls whether to throw if edge exists (default: `false`).
   Future<StatusResponse> createEdge(
     String sourceKref,
     String targetKref,
     String edgeType, {
     Map<String, String>? metadata,
-    bool existsError = true,
+    bool existsError = false,
   }) async {
     validateEdgeType(edgeType);
     final request = CreateEdgeRequest()

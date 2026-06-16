@@ -10,6 +10,9 @@ library;
 import '../generated/kumiho.pb.dart' as pb;
 import '../kref.dart';
 import 'base.dart';
+import 'item.dart';
+import 'space.dart';
+import 'project.dart';
 
 /// A file reference within a revision in the Kumiho system.
 ///
@@ -85,7 +88,10 @@ class Artifact extends KumihoObject {
   late final Map<String, String> metadata;
 
   /// Whether the artifact is deprecated.
-  late final bool deprecated;
+  ///
+  /// Mutable so [setDeprecated] can keep the local model in sync with the
+  /// server after a successful update.
+  late bool deprecated;
 
   /// Display name of the creator.
   late final String username;
@@ -117,10 +123,9 @@ class Artifact extends KumihoObject {
 
   /// Sets metadata for this artifact.
   ///
-  /// Each key/value is stored as an attribute on the artifact kref.
+  /// Existing keys are overwritten and new keys are added in a single RPC.
   /// Metadata is immediately available to other SDK callers and in the
-  /// web console. Existing keys are overwritten; to remove a key, set its
-  /// value to an empty string.
+  /// web console.
   ///
   /// ```dart
   /// await artifact.setMetadata({
@@ -129,30 +134,45 @@ class Artifact extends KumihoObject {
   /// });
   /// ```
   Future<void> setMetadata(Map<String, String> metadata) async {
-    for (final entry in metadata.entries) {
-      await client.setAttribute(kref.uri, entry.key, entry.value);
-    }
+    await client.updateArtifactMetadata(kref.uri, metadata);
   }
 
   /// Gets a metadata value by key.
   ///
-  /// Returns `null` when the attribute is not set.
+  /// Returns `null` only when the attribute is not set. An attribute that
+  /// exists with an empty-string value returns `''`, not `null`.
   ///
   /// ```dart
   /// final format = await artifact.getMetadataValue('format');
   /// ```
   Future<String?> getMetadataValue(String key) async {
     final response = await client.getAttribute(kref.uri, key);
-    return response.value.isEmpty ? null : response.value;
+    return response.exists ? response.value : null;
+  }
+
+  /// Sets the deprecated status of this artifact.
+  ///
+  /// Deprecated artifacts are hidden from default queries but remain
+  /// accessible for historical reference.
+  ///
+  /// ```dart
+  /// await artifact.setDeprecated(true);   // Hide from queries
+  /// await artifact.setDeprecated(false);  // Restore visibility
+  /// ```
+  Future<void> setDeprecated(bool status) async {
+    await client.setDeprecated(kref.uri, status);
+    deprecated = status;
   }
 
   /// Deletes this artifact.
   ///
+  /// If [force] is true, force deletion regardless of normal rules.
+  ///
   /// ```dart
   /// await artifact.delete();
   /// ```
-  Future<void> delete() async {
-    await client.deleteArtifact(kref.uri);
+  Future<void> delete({bool force = false}) async {
+    await client.deleteArtifact(kref.uri, force: force);
   }
 
   /// Gets the parent revision of this artifact.
@@ -164,14 +184,37 @@ class Artifact extends KumihoObject {
     return client.getRevision(revisionKref.uri);
   }
 
-  /// Gets the parent item of this artifact.
+  /// Gets the parent item of this artifact as an [Item] model.
   ///
   /// ```dart
   /// final item = await artifact.getItem();
   /// ```
-  Future<dynamic> getItem() async {
+  Future<Item> getItem() async {
     final targetKref = itemKref ?? revisionKref.itemKref;
-    return client.getItemByKref(targetKref.uri);
+    final response = await client.getItemByKref(targetKref.uri);
+    return Item(response, client);
+  }
+
+  /// Gets the space containing this artifact's item as a [Space] model.
+  ///
+  /// ```dart
+  /// final space = await artifact.getSpace();
+  /// print(space.path);
+  /// ```
+  Future<Space> getSpace() async {
+    final item = await getItem();
+    return item.getSpace();
+  }
+
+  /// Gets the project containing this artifact as a [Project] model.
+  ///
+  /// ```dart
+  /// final project = await artifact.getProject();
+  /// print(project.name);
+  /// ```
+  Future<Project> getProject() async {
+    final item = await getItem();
+    return item.getProject();
   }
 
   @override

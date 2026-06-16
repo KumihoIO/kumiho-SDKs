@@ -38,12 +38,12 @@ mixin RevisionApi on KumihoClientBase {
   /// [itemKref] is the item's kref URI.
   /// [metadata] is optional key-value pairs to attach.
   /// [number] is optional; if not provided, uses the next available number.
-  /// [existsError] controls whether to throw if revision exists (default: `true`).
+  /// [existsError] controls whether to throw if revision exists (default: `false`).
   Future<RevisionResponse> createRevision(
     String itemKref, {
     Map<String, String>? metadata,
     int? number,
-    bool existsError = true,
+    bool existsError = false,
   }) async {
     final request = CreateRevisionRequest()
       ..itemKref = Kref(uri: itemKref)

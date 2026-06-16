@@ -1,8 +1,11 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2025 kumihoclouds
 
+import 'package:grpc/grpc.dart' show GrpcError, StatusCode;
+
 import '../base_client.dart';
 import '../generated/kumiho.pbgrpc.dart';
+import '../models/base.dart' show ProjectLimitError;
 
 /// Project API mixin for managing Kumiho projects.
 ///
@@ -34,8 +37,10 @@ mixin ProjectApi on KumihoClientBase {
   /// [name] must be URL-safe (alphanumeric with hyphens).
   /// [description] is an optional human-readable description.
   ///
-  /// Throws a gRPC error if the project already exists or
-  /// the project limit has been reached.
+  /// Throws a gRPC error if the project already exists.
+  ///
+  /// Throws a [ProjectLimitError] if the server returns `RESOURCE_EXHAUSTED`
+  /// (for example, when the project limit has been reached).
   Future<ProjectResponse> createProject(
     String name, {
     String? description,
@@ -43,7 +48,14 @@ mixin ProjectApi on KumihoClientBase {
     final request = CreateProjectRequest()
       ..name = name
       ..description = description ?? '';
-    return stub.createProject(request, options: callOptions);
+    try {
+      return await stub.createProject(request, options: callOptions);
+    } on GrpcError catch (e) {
+      if (e.code == StatusCode.resourceExhausted) {
+        throw ProjectLimitError(e.message ?? 'Project limit reached');
+      }
+      rethrow;
+    }
   }
 
   /// Lists all projects accessible to the current user.

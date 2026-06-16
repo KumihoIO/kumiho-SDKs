@@ -13,6 +13,8 @@ import '../generated/kumiho.pb.dart' as pb;
 import '../kref.dart';
 import 'base.dart';
 import 'revision.dart';
+import 'space.dart';
+import 'project.dart';
 
 /// A versioned asset in the Kumiho system.
 ///
@@ -99,13 +101,52 @@ class Item extends KumihoObject {
     return client.getSpace(path);
   }
 
+  /// Gets the space that contains this item as a [Space] model.
+  ///
+  /// ```dart
+  /// final space = await item.getSpace();
+  /// print(space.path);
+  /// ```
+  Future<Space> getSpace() async {
+    final path = '/${kref.project}${spacePath.isEmpty ? '' : '/$spacePath'}';
+    final response = await client.getSpace(path);
+    return Space(response, client);
+  }
+
+  /// Gets the project that contains this item as a [Project] model.
+  ///
+  /// ```dart
+  /// final project = await item.getProject();
+  /// print(project.name);
+  /// ```
+  Future<Project> getProject() async {
+    final projectName = kref.project;
+    final projectList = await client.getProjects();
+    final response = projectList.firstWhere(
+      (p) => p.name == projectName,
+      orElse: () => throw KumihoError('Project not found: $projectName'),
+    );
+    return Project(response, client);
+  }
+
   /// Creates a new revision of this item.
+  ///
+  /// If [number] is provided, the revision is created with that explicit
+  /// number; otherwise the next available number is assigned by the server.
   ///
   /// ```dart
   /// final v1 = await item.createRevision(metadata: {'notes': 'Initial'});
+  /// final v5 = await item.createRevision(number: 5);
   /// ```
-  Future<Revision> createRevision({Map<String, String>? metadata}) async {
-    final response = await client.createRevision(kref.uri, metadata: metadata);
+  Future<Revision> createRevision({
+    Map<String, String>? metadata,
+    int? number,
+  }) async {
+    final response = await client.createRevision(
+      kref.uri,
+      metadata: metadata,
+      number: number,
+    );
     return Revision(response, client);
   }
 
@@ -177,13 +218,57 @@ class Item extends KumihoObject {
 
   /// Sets metadata for this item.
   ///
+  /// Existing keys are overwritten and new keys are added in a single RPC.
+  ///
   /// ```dart
   /// await item.setMetadata({'status': 'final', 'priority': 'high'});
   /// ```
   Future<void> setMetadata(Map<String, String> metadata) async {
-    for (final entry in metadata.entries) {
-      await client.setAttribute(kref.uri, entry.key, entry.value);
-    }
+    await client.updateItemMetadata(kref.uri, metadata);
+  }
+
+  /// Sets a single metadata attribute on this item.
+  ///
+  /// Granular alternative to [setMetadata] that updates one key without
+  /// replacing the whole metadata map.
+  ///
+  /// ```dart
+  /// await item.setAttribute('status', 'final');
+  /// ```
+  Future<void> setAttribute(String key, String value) async {
+    await client.setAttribute(kref.uri, key, value);
+  }
+
+  /// Gets a single metadata attribute from this item.
+  ///
+  /// Returns `null` when the attribute is not set.
+  ///
+  /// ```dart
+  /// final status = await item.getAttribute('status');
+  /// ```
+  Future<String?> getAttribute(String key) async {
+    final response = await client.getAttribute(kref.uri, key);
+    return response.exists ? response.value : null;
+  }
+
+  /// Deletes a single metadata attribute from this item.
+  ///
+  /// ```dart
+  /// await item.deleteAttribute('old_field');
+  /// ```
+  Future<void> deleteAttribute(String key) async {
+    await client.deleteAttribute(kref.uri, key);
+  }
+
+  /// Gets the next revision number that would be assigned.
+  ///
+  /// Useful for previewing revision numbers before creating revisions.
+  ///
+  /// ```dart
+  /// final next = await item.peekNextRevision();
+  /// ```
+  Future<int> peekNextRevision() async {
+    return client.peekNextRevision(kref.uri);
   }
 
   /// Sets the deprecated status of this item.
@@ -197,11 +282,14 @@ class Item extends KumihoObject {
 
   /// Deletes this item.
   ///
+  /// If [force] is true, deletes even if the item has revisions.
+  ///
   /// ```dart
   /// await item.delete();
+  /// await item.delete(force: true);  // Delete with all revisions
   /// ```
-  Future<void> delete() async {
-    await client.deleteItem(kref.uri);
+  Future<void> delete({bool force = false}) async {
+    await client.deleteItem(kref.uri, force: force);
   }
 
   @override

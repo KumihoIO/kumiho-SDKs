@@ -34,11 +34,11 @@ mixin SpaceApi on KumihoClientBase {
   /// (e.g., '/project-name' or '/project-name/parent-space').
   /// [spaceName] is the name of the new space.
   /// [existsError] controls whether to throw an error if the space
-  /// already exists (default: `true`).
+  /// already exists (default: `false`).
   Future<SpaceResponse> createSpace(
     String parentPath,
     String spaceName, {
-    bool existsError = true,
+    bool existsError = false,
   }) async {
     final request = CreateSpaceRequest()
       ..parentPath = parentPath

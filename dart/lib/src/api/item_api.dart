@@ -38,13 +38,13 @@ mixin ItemApi on KumihoClientBase {
   /// not carry metadata, it is applied via a follow-up metadata update once
   /// the item exists, mirroring the Python SDK.
   /// [existsError] controls whether to throw an error if the item
-  /// already exists (default: `true`).
+  /// already exists (default: `false`).
   Future<ItemResponse> createItem(
     String parentPath,
     String itemName,
     String kind, {
     Map<String, String>? metadata,
-    bool existsError = true,
+    bool existsError = false,
   }) async {
     // The 'bundle' kind is reserved; mirror Python's create_item which raises
     // ReservedKindError. Use createBundle() instead.
