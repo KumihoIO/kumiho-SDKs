@@ -64,13 +64,22 @@ impl Revision {
     }
 
     /// Create an artifact on this revision.
-    pub async fn create_artifact(&self, name: &str, location: &str, metadata: Option<HashMap<String, String>>) -> Result<Artifact> {
-        self.client.create_artifact(&self.kref, name, location, metadata).await
+    pub async fn create_artifact(
+        &self,
+        name: &str,
+        location: &str,
+        metadata: Option<HashMap<String, String>>,
+    ) -> Result<Artifact> {
+        self.client
+            .create_artifact(&self.kref, name, location, metadata)
+            .await
     }
 
     /// Merge metadata into this revision.
     pub async fn set_metadata(&self, metadata: HashMap<String, String>) -> Result<Revision> {
-        self.client.update_revision_metadata(&self.kref, metadata).await
+        self.client
+            .update_revision_metadata(&self.kref, metadata)
+            .await
     }
 
     /// Set a single metadata attribute.
@@ -120,7 +129,12 @@ impl Revision {
 
     /// Get the file locations of all artifacts.
     pub async fn get_locations(&self) -> Result<Vec<String>> {
-        Ok(self.get_artifacts().await?.into_iter().map(|a| a.location).collect())
+        Ok(self
+            .get_artifacts()
+            .await?
+            .into_iter()
+            .map(|a| a.location)
+            .collect())
     }
 
     /// Get the parent item.
@@ -151,7 +165,9 @@ impl Revision {
 
     /// Set the default artifact (used when resolving without `&a=`).
     pub async fn set_default_artifact(&self, artifact_name: &str) -> Result<()> {
-        self.client.set_default_artifact(&self.kref, artifact_name).await
+        self.client
+            .set_default_artifact(&self.kref, artifact_name)
+            .await
     }
 
     /// Delete this revision.
@@ -165,32 +181,80 @@ impl Revision {
     }
 
     /// Create an edge from this revision to `target`.
-    pub async fn create_edge(&self, target: &Revision, edge_type: &str, metadata: Option<HashMap<String, String>>) -> Result<Edge> {
-        self.client.create_edge(self, target, edge_type, metadata).await
+    pub async fn create_edge(
+        &self,
+        target: &Revision,
+        edge_type: &str,
+        metadata: Option<HashMap<String, String>>,
+    ) -> Result<Edge> {
+        self.client
+            .create_edge(self, target, edge_type, metadata)
+            .await
     }
 
     /// Get edges for this revision.
-    pub async fn get_edges(&self, edge_type_filter: Option<&str>, direction: EdgeDirection) -> Result<Vec<Edge>> {
-        self.client.get_edges(&self.kref, edge_type_filter.unwrap_or(""), direction).await
+    pub async fn get_edges(
+        &self,
+        edge_type_filter: Option<&str>,
+        direction: EdgeDirection,
+    ) -> Result<Vec<Edge>> {
+        self.client
+            .get_edges(&self.kref, edge_type_filter.unwrap_or(""), direction)
+            .await
     }
 
     /// Delete an edge from this revision to `target`.
     pub async fn delete_edge(&self, target: &Revision, edge_type: &str) -> Result<()> {
-        self.client.delete_edge(&self.kref, &target.kref, edge_type).await
+        self.client
+            .delete_edge(&self.kref, &target.kref, edge_type)
+            .await
     }
 
     /// All transitive dependencies (outgoing edges).
-    pub async fn get_all_dependencies(&self, edge_type_filter: Option<Vec<String>>, max_depth: i32, limit: i32) -> Result<TraversalResult> {
-        self.client.traverse_edges(&self.kref, EdgeDirection::Outgoing, edge_type_filter, max_depth, limit, false).await
+    pub async fn get_all_dependencies(
+        &self,
+        edge_type_filter: Option<Vec<String>>,
+        max_depth: i32,
+        limit: i32,
+    ) -> Result<TraversalResult> {
+        self.client
+            .traverse_edges(
+                &self.kref,
+                EdgeDirection::Outgoing,
+                edge_type_filter,
+                max_depth,
+                limit,
+                false,
+            )
+            .await
     }
 
     /// All transitive dependents (incoming edges).
-    pub async fn get_all_dependents(&self, edge_type_filter: Option<Vec<String>>, max_depth: i32, limit: i32) -> Result<TraversalResult> {
-        self.client.traverse_edges(&self.kref, EdgeDirection::Incoming, edge_type_filter, max_depth, limit, false).await
+    pub async fn get_all_dependents(
+        &self,
+        edge_type_filter: Option<Vec<String>>,
+        max_depth: i32,
+        limit: i32,
+    ) -> Result<TraversalResult> {
+        self.client
+            .traverse_edges(
+                &self.kref,
+                EdgeDirection::Incoming,
+                edge_type_filter,
+                max_depth,
+                limit,
+                false,
+            )
+            .await
     }
 
     /// Shortest path from this revision to `target`, if one exists.
-    pub async fn find_path_to(&self, target: &Revision, edge_type_filter: Option<Vec<String>>, max_depth: i32) -> Result<Option<RevisionPath>> {
+    pub async fn find_path_to(
+        &self,
+        target: &Revision,
+        edge_type_filter: Option<Vec<String>>,
+        max_depth: i32,
+    ) -> Result<Option<RevisionPath>> {
         let result = self
             .client
             .find_shortest_path(&self.kref, &target.kref, edge_type_filter, max_depth, false)
@@ -199,8 +263,15 @@ impl Revision {
     }
 
     /// Revisions impacted by changes to this revision.
-    pub async fn analyze_impact(&self, edge_type_filter: Option<Vec<String>>, max_depth: i32, limit: i32) -> Result<Vec<ImpactedRevision>> {
-        self.client.analyze_impact(&self.kref, edge_type_filter, max_depth, limit).await
+    pub async fn analyze_impact(
+        &self,
+        edge_type_filter: Option<Vec<String>>,
+        max_depth: i32,
+        limit: i32,
+    ) -> Result<Vec<ImpactedRevision>> {
+        self.client
+            .analyze_impact(&self.kref, edge_type_filter, max_depth, limit)
+            .await
     }
 }
 

@@ -43,12 +43,16 @@ impl Project {
     }
 
     fn base_parent(&self, parent_path: Option<&str>) -> String {
-        parent_path.map(String::from).unwrap_or_else(|| format!("/{}", self.name))
+        parent_path
+            .map(String::from)
+            .unwrap_or_else(|| format!("/{}", self.name))
     }
 
     /// Create a space (defaults to the project root).
     pub async fn create_space(&self, name: &str, parent_path: Option<&str>) -> Result<Space> {
-        self.client.create_space(&self.base_parent(parent_path), name).await
+        self.client
+            .create_space(&self.base_parent(parent_path), name)
+            .await
     }
 
     /// Create an item (defaults to the project root).
@@ -59,7 +63,9 @@ impl Project {
         parent_path: Option<&str>,
         metadata: Option<HashMap<String, String>>,
     ) -> Result<Item> {
-        self.client.create_item(&self.base_parent(parent_path), item_name, kind, metadata).await
+        self.client
+            .create_item(&self.base_parent(parent_path), item_name, kind, metadata)
+            .await
     }
 
     /// Create a bundle (defaults to the project root).
@@ -69,11 +75,18 @@ impl Project {
         parent_path: Option<&str>,
         metadata: Option<HashMap<String, String>>,
     ) -> Result<Bundle> {
-        self.client.create_bundle(&self.base_parent(parent_path), bundle_name, metadata).await
+        self.client
+            .create_bundle(&self.base_parent(parent_path), bundle_name, metadata)
+            .await
     }
 
     /// Get an item by name + kind (defaults to the project root).
-    pub async fn get_item(&self, item_name: &str, kind: &str, parent_path: Option<&str>) -> Result<Item> {
+    pub async fn get_item(
+        &self,
+        item_name: &str,
+        kind: &str,
+        parent_path: Option<&str>,
+    ) -> Result<Item> {
         let base = self.base_parent(parent_path);
         let uri = format!("kref://{}/{}.{}", base.trim_matches('/'), item_name, kind);
         self.client.get_item_by_kref(&uri).await
@@ -91,7 +104,11 @@ impl Project {
         let path = if name.starts_with('/') {
             name.to_string()
         } else {
-            format!("{}/{}", self.base_parent(parent_path).trim_end_matches('/'), name)
+            format!(
+                "{}/{}",
+                self.base_parent(parent_path).trim_end_matches('/'),
+                name
+            )
         };
         self.client.get_space(&path).await
     }
@@ -104,7 +121,9 @@ impl Project {
         page_size: Option<i32>,
         cursor: Option<String>,
     ) -> Result<Page<Space>> {
-        self.client.get_child_spaces(&self.base_parent(parent_path), recursive, page_size, cursor).await
+        self.client
+            .get_child_spaces(&self.base_parent(parent_path), recursive, page_size, cursor)
+            .await
     }
 
     /// Search items within this project.
@@ -115,7 +134,16 @@ impl Project {
         page_size: Option<i32>,
         cursor: Option<String>,
     ) -> Result<Page<Item>> {
-        self.client.item_search(&self.name, name_filter, kind_filter, page_size, cursor, false).await
+        self.client
+            .item_search(
+                &self.name,
+                name_filter,
+                kind_filter,
+                page_size,
+                cursor,
+                false,
+            )
+            .await
     }
 
     /// Delete (force=true) or deprecate this project.
@@ -125,12 +153,20 @@ impl Project {
 
     /// Enable/disable anonymous read access.
     pub async fn set_public(&self, public: bool) -> Result<Project> {
-        self.client.update_project(&self.project_id, Some(public), None).await
+        self.client
+            .update_project(&self.project_id, Some(public), None)
+            .await
     }
 
     /// Update description and/or public flag.
-    pub async fn update(&self, description: Option<String>, allow_public: Option<bool>) -> Result<Project> {
-        self.client.update_project(&self.project_id, allow_public, description).await
+    pub async fn update(
+        &self,
+        description: Option<String>,
+        allow_public: Option<bool>,
+    ) -> Result<Project> {
+        self.client
+            .update_project(&self.project_id, allow_public, description)
+            .await
     }
 }
 

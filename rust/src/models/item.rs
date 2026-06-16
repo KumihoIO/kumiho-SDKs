@@ -61,8 +61,14 @@ impl Item {
     }
 
     /// Create a new revision (`number = 0` auto-increments).
-    pub async fn create_revision(&self, metadata: Option<HashMap<String, String>>, number: i32) -> Result<Revision> {
-        self.client.create_revision(&self.kref, metadata, number, "").await
+    pub async fn create_revision(
+        &self,
+        metadata: Option<HashMap<String, String>>,
+        number: i32,
+    ) -> Result<Revision> {
+        self.client
+            .create_revision(&self.kref, metadata, number, "")
+            .await
     }
 
     /// List all revisions.
@@ -72,7 +78,9 @@ impl Item {
 
     /// Get a revision by number.
     pub async fn get_revision(&self, number: i32) -> Result<Revision> {
-        self.client.get_revision(&format!("{}?r={}", self.kref.uri(), number)).await
+        self.client
+            .get_revision(&format!("{}?r={}", self.kref.uri(), number))
+            .await
     }
 
     /// Get the latest revision, or `None` if the item has none.
@@ -89,7 +97,11 @@ impl Item {
 
     /// Get the revision currently carrying `tag`, or `None`.
     pub async fn get_revision_by_tag(&self, tag: &str) -> Result<Option<Revision>> {
-        match self.client.resolve_kref(self.kref.uri(), Some(tag.to_string()), None).await {
+        match self
+            .client
+            .resolve_kref(self.kref.uri(), Some(tag.to_string()), None)
+            .await
+        {
             Ok(r) => Ok(Some(r)),
             Err(e) if e.is_not_found() => Ok(None),
             Err(e) => Err(e),
@@ -99,7 +111,11 @@ impl Item {
     /// Get the revision that held `tag` (or latest) at `time`.
     ///
     /// `time` may be `YYYYMMDDHHMM` or an RFC3339 timestamp.
-    pub async fn get_revision_by_time(&self, time: &str, tag: Option<&str>) -> Result<Option<Revision>> {
+    pub async fn get_revision_by_time(
+        &self,
+        time: &str,
+        tag: Option<&str>,
+    ) -> Result<Option<Revision>> {
         let time_str = if time.contains('T') {
             time.to_string()
         } else if time.chars().count() >= 12 {

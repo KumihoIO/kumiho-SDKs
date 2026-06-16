@@ -54,18 +54,33 @@ impl Space {
     }
 
     /// List child spaces.
-    pub async fn get_spaces(&self, recursive: bool, page_size: Option<i32>, cursor: Option<String>) -> Result<Page<Space>> {
-        self.client.get_child_spaces(&self.path, recursive, page_size, cursor).await
+    pub async fn get_spaces(
+        &self,
+        recursive: bool,
+        page_size: Option<i32>,
+        cursor: Option<String>,
+    ) -> Result<Page<Space>> {
+        self.client
+            .get_child_spaces(&self.path, recursive, page_size, cursor)
+            .await
     }
 
     /// Create an item in this space.
     pub async fn create_item(&self, item_name: &str, kind: &str) -> Result<Item> {
-        self.client.create_item(&self.path, item_name, kind, None).await
+        self.client
+            .create_item(&self.path, item_name, kind, None)
+            .await
     }
 
     /// Create a bundle in this space.
-    pub async fn create_bundle(&self, bundle_name: &str, metadata: Option<HashMap<String, String>>) -> Result<Bundle> {
-        self.client.create_bundle(&self.path, bundle_name, metadata).await
+    pub async fn create_bundle(
+        &self,
+        bundle_name: &str,
+        metadata: Option<HashMap<String, String>>,
+    ) -> Result<Bundle> {
+        self.client
+            .create_bundle(&self.path, bundle_name, metadata)
+            .await
     }
 
     /// List items in this space.
@@ -76,7 +91,16 @@ impl Space {
         page_size: Option<i32>,
         cursor: Option<String>,
     ) -> Result<Page<Item>> {
-        self.client.get_items(&self.path, item_name_filter, kind_filter, page_size, cursor, false).await
+        self.client
+            .get_items(
+                &self.path,
+                item_name_filter,
+                kind_filter,
+                page_size,
+                cursor,
+                false,
+            )
+            .await
     }
 
     /// Get an item by name + kind.
@@ -86,7 +110,11 @@ impl Space {
 
     /// Get a bundle by name.
     pub async fn get_bundle(&self, bundle_name: &str) -> Result<Bundle> {
-        let uri = format!("kref://{}/{}.bundle", self.path.trim_start_matches('/'), bundle_name);
+        let uri = format!(
+            "kref://{}/{}.bundle",
+            self.path.trim_start_matches('/'),
+            bundle_name
+        );
         self.client.get_bundle_by_kref(&uri).await
     }
 

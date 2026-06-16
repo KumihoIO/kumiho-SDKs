@@ -152,7 +152,9 @@ fn machine_id() -> String {
 }
 
 fn derive_key() -> [u8; 32] {
-    let login = std::env::var("USER").or_else(|_| std::env::var("LOGNAME")).unwrap_or_default();
+    let login = std::env::var("USER")
+        .or_else(|_| std::env::var("LOGNAME"))
+        .unwrap_or_default();
     let material = format!("kumiho-discovery-cache-v1:{}:{}", machine_id(), login);
     let mut hasher = Sha256::new();
     hasher.update(material.as_bytes());
@@ -190,7 +192,10 @@ fn encrypt(plaintext: &str) -> String {
     blob.extend_from_slice(&iv);
     blob.extend_from_slice(&ct);
     blob.extend_from_slice(tag);
-    format!("enc:v1:{}", base64::engine::general_purpose::STANDARD.encode(blob))
+    format!(
+        "enc:v1:{}",
+        base64::engine::general_purpose::STANDARD.encode(blob)
+    )
 }
 
 fn decrypt(encrypted: &str) -> Option<String> {
@@ -281,13 +286,19 @@ async fn fetch_remote(
     let url = build_discovery_url(base_url);
     let mut body = serde_json::Map::new();
     if let Some(hint) = tenant_hint {
-        body.insert("tenant_hint".into(), serde_json::Value::String(hint.to_string()));
+        body.insert(
+            "tenant_hint".into(),
+            serde_json::Value::String(hint.to_string()),
+        );
     }
     let resp = DISCOVERY_HTTP
         .post(&url)
         .header("Authorization", format!("Bearer {id_token}"))
         .header("Content-Type", "application/json")
-        .header("User-Agent", format!("kumiho-rust/{}", env!("CARGO_PKG_VERSION")))
+        .header(
+            "User-Agent",
+            format!("kumiho-rust/{}", env!("CARGO_PKG_VERSION")),
+        )
         .json(&body)
         .send()
         .await
@@ -312,8 +323,8 @@ pub async fn resolve(
     tenant_hint: Option<&str>,
     force_refresh: bool,
 ) -> Result<DiscoveryRecord, DiscoveryError> {
-    let base_url =
-        std::env::var("KUMIHO_CONTROL_PLANE_URL").unwrap_or_else(|_| DEFAULT_CONTROL_PLANE.to_string());
+    let base_url = std::env::var("KUMIHO_CONTROL_PLANE_URL")
+        .unwrap_or_else(|_| DEFAULT_CONTROL_PLANE.to_string());
     let cache = DiscoveryCache { path: cache_path() };
     let cache_key = tenant_hint.unwrap_or(DEFAULT_CACHE_KEY);
 
@@ -392,9 +403,9 @@ fn normalize_local_target(raw: &str) -> Result<String, DiscoveryError> {
 fn parse_host_port(s: &str) -> Result<(String, u16), DiscoveryError> {
     // Bracketed IPv6: [host] or [host]:port
     if let Some(rest) = s.strip_prefix('[') {
-        let close = rest
-            .find(']')
-            .ok_or_else(|| DiscoveryError("KUMIHO_LOCAL_SERVER_ENDPOINT has an unterminated '['".into()))?;
+        let close = rest.find(']').ok_or_else(|| {
+            DiscoveryError("KUMIHO_LOCAL_SERVER_ENDPOINT has an unterminated '['".into())
+        })?;
         let host = rest[..close].to_string();
         let port = match rest[close + 1..].strip_prefix(':') {
             Some(p) => parse_port(p)?,
@@ -430,7 +441,9 @@ fn is_loopback_host(host: &str) -> bool {
     if host.eq_ignore_ascii_case("localhost") {
         return true;
     }
-    host.parse::<std::net::IpAddr>().map(|ip| ip.is_loopback()).unwrap_or(false)
+    host.parse::<std::net::IpAddr>()
+        .map(|ip| ip.is_loopback())
+        .unwrap_or(false)
 }
 
 fn format_target(host: &str, port: u16) -> String {

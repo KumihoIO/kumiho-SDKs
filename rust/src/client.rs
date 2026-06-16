@@ -4,7 +4,10 @@
 //! underlying channel is shared). Domain objects ([`crate::Project`], etc.)
 //! hold a `Client` and delegate to it. Mirrors Python's `_Client`.
 
-use crate::edge::{Edge, EdgeDirection, ImpactedRevision, PathStep, RevisionPath, ShortestPathResult, TraversalResult};
+use crate::edge::{
+    Edge, EdgeDirection, ImpactedRevision, PathStep, RevisionPath, ShortestPathResult,
+    TraversalResult,
+};
 use crate::error::{Error, Result};
 use crate::kref::Kref;
 use crate::models::artifact::Artifact;
@@ -101,7 +104,10 @@ pub(crate) struct KumihoInterceptor {
 }
 
 impl tonic::service::Interceptor for KumihoInterceptor {
-    fn call(&mut self, mut req: tonic::Request<()>) -> std::result::Result<tonic::Request<()>, tonic::Status> {
+    fn call(
+        &mut self,
+        mut req: tonic::Request<()>,
+    ) -> std::result::Result<tonic::Request<()>, tonic::Status> {
         let md = req.metadata_mut();
         for (k, v) in &self.metadata {
             if let (Ok(key), Ok(val)) = (
@@ -253,9 +259,9 @@ impl ClientBuilder {
         let mut metadata = self.metadata.clone();
 
         // 3. Discovery (when no explicit endpoint, enabled, token present).
-        let discovery_enabled = self.use_discovery.unwrap_or_else(|| {
-            !env_flag("KUMIHO_DISABLE_AUTO_DISCOVERY")
-        });
+        let discovery_enabled = self
+            .use_discovery
+            .unwrap_or_else(|| !env_flag("KUMIHO_DISABLE_AUTO_DISCOVERY"));
         if self.endpoint.is_none() && discovery_enabled {
             if let Some(tok) = token.clone() {
                 match crate::discovery::resolve(
@@ -300,8 +306,9 @@ impl ClientBuilder {
         }
 
         let interceptor = KumihoInterceptor { metadata };
-        let grpc = pb::kumiho_service_client::KumihoServiceClient::with_interceptor(channel, interceptor)
-            .max_decoding_message_size(64 * 1024 * 1024);
+        let grpc =
+            pb::kumiho_service_client::KumihoServiceClient::with_interceptor(channel, interceptor)
+                .max_decoding_message_size(64 * 1024 * 1024);
 
         Ok(Client {
             grpc,
@@ -357,8 +364,11 @@ async fn build_channel(host: &str, port: u16, use_tls: bool) -> Result<Channel> 
         .keep_alive_while_idle(true);
 
     if use_tls {
-        let authority = std::env::var("KUMIHO_SERVER_AUTHORITY").unwrap_or_else(|_| host.to_string());
-        let mut tls = ClientTlsConfig::new().with_native_roots().domain_name(authority);
+        let authority =
+            std::env::var("KUMIHO_SERVER_AUTHORITY").unwrap_or_else(|_| host.to_string());
+        let mut tls = ClientTlsConfig::new()
+            .with_native_roots()
+            .domain_name(authority);
         if let Ok(ca_path) = std::env::var("KUMIHO_SERVER_CA_FILE") {
             if !ca_path.is_empty() {
                 let pem = std::fs::read(&ca_path)?;
@@ -443,8 +453,15 @@ impl Client {
     // ----------------------------------------------------------------- Projects
 
     /// Create a new project.
-    pub async fn create_project(&self, name: impl Into<String>, description: impl Into<String>) -> Result<Project> {
-        let req = pb::CreateProjectRequest { name: name.into(), description: description.into() };
+    pub async fn create_project(
+        &self,
+        name: impl Into<String>,
+        description: impl Into<String>,
+    ) -> Result<Project> {
+        let req = pb::CreateProjectRequest {
+            name: name.into(),
+            description: description.into(),
+        };
         match unary!(self, create_project, req) {
             Ok(resp) => Ok(Project::from_pb(resp, self.clone())),
             Err(Error::Rpc(s)) if s.code() == tonic::Code::ResourceExhausted => {
@@ -457,17 +474,28 @@ impl Client {
     /// List all projects accessible to the current user.
     pub async fn get_projects(&self) -> Result<Vec<Project>> {
         let resp = unary!(self, get_projects, pb::GetProjectsRequest {})?;
-        Ok(resp.projects.into_iter().map(|p| Project::from_pb(p, self.clone())).collect())
+        Ok(resp
+            .projects
+            .into_iter()
+            .map(|p| Project::from_pb(p, self.clone()))
+            .collect())
     }
 
     /// Get a project by name, or `None` if not found.
     pub async fn get_project(&self, name: &str) -> Result<Option<Project>> {
-        Ok(self.get_projects().await?.into_iter().find(|p| p.name == name))
+        Ok(self
+            .get_projects()
+            .await?
+            .into_iter()
+            .find(|p| p.name == name))
     }
 
     /// Delete (force=true) or deprecate a project.
     pub async fn delete_project(&self, project_id: &str, force: bool) -> Result<()> {
-        let req = pb::DeleteProjectRequest { project_id: project_id.to_string(), force };
+        let req = pb::DeleteProjectRequest {
+            project_id: project_id.to_string(),
+            force,
+        };
         unary!(self, delete_project, req)?;
         Ok(())
     }
@@ -503,7 +531,9 @@ impl Client {
 
     /// Get a space by path or kref.
     pub async fn get_space(&self, path: &str) -> Result<Space> {
-        let req = pb::GetSpaceRequest { path_or_kref: path.to_string() };
+        let req = pb::GetSpaceRequest {
+            path_or_kref: path.to_string(),
+        };
         let resp = unary!(self, get_space, req)?;
         Ok(Space::from_pb(resp, self.clone()))
     }
@@ -522,13 +552,24 @@ impl Client {
             pagination: make_pagination(page_size, cursor),
         };
         let resp = unary!(self, get_child_spaces, req)?;
-        let items = resp.spaces.into_iter().map(|s| Space::from_pb(s, self.clone())).collect();
+        let items = resp
+            .spaces
+            .into_iter()
+            .map(|s| Space::from_pb(s, self.clone()))
+            .collect();
         Ok(page_from(items, resp.pagination))
     }
 
     /// Replace/merge a space's metadata.
-    pub async fn update_space_metadata(&self, kref: &Kref, metadata: HashMap<String, String>) -> Result<Space> {
-        let req = pb::UpdateMetadataRequest { kref: Some(kref.to_pb()), metadata };
+    pub async fn update_space_metadata(
+        &self,
+        kref: &Kref,
+        metadata: HashMap<String, String>,
+    ) -> Result<Space> {
+        let req = pb::UpdateMetadataRequest {
+            kref: Some(kref.to_pb()),
+            metadata,
+        };
         let resp = unary!(self, update_space_metadata, req)?;
         Ok(Space::from_pb(resp, self.clone()))
     }
@@ -589,7 +630,11 @@ impl Client {
                 "'{kref_uri}' is not a bundle (kind='{kind}')"
             )));
         }
-        let req = pb::GetItemRequest { parent_path, item_name: name, kind: "bundle".into() };
+        let req = pb::GetItemRequest {
+            parent_path,
+            item_name: name,
+            kind: "bundle".into(),
+        };
         let resp = unary!(self, get_item, req)?;
         Bundle::from_pb(resp, self.clone())
     }
@@ -612,7 +657,11 @@ impl Client {
             include_deprecated,
         };
         let resp = unary!(self, get_items, req)?;
-        let items = resp.items.into_iter().map(|p| Item::from_pb(p, self.clone())).collect();
+        let items = resp
+            .items
+            .into_iter()
+            .map(|p| Item::from_pb(p, self.clone()))
+            .collect();
         Ok(page_from(items, resp.pagination))
     }
 
@@ -634,7 +683,11 @@ impl Client {
             include_deprecated,
         };
         let resp = unary!(self, item_search, req)?;
-        let items = resp.items.into_iter().map(|p| Item::from_pb(p, self.clone())).collect();
+        let items = resp
+            .items
+            .into_iter()
+            .map(|p| Item::from_pb(p, self.clone()))
+            .collect();
         Ok(page_from(items, resp.pagination))
     }
 
@@ -686,7 +739,10 @@ impl Client {
     ) -> Result<Vec<ScoredRevision>> {
         let req = pb::ScoreRevisionsRequest {
             query: query.to_string(),
-            revision_krefs: revision_krefs.iter().map(|k| pb::Kref { uri: k.clone() }).collect(),
+            revision_krefs: revision_krefs
+                .iter()
+                .map(|k| pb::Kref { uri: k.clone() })
+                .collect(),
             score_fields: score_fields.unwrap_or_default(),
         };
         let resp = unary!(self, score_revisions, req)?;
@@ -702,8 +758,15 @@ impl Client {
     }
 
     /// Merge metadata into an item.
-    pub async fn update_item_metadata(&self, kref: &Kref, metadata: HashMap<String, String>) -> Result<Item> {
-        let req = pb::UpdateMetadataRequest { kref: Some(kref.to_pb()), metadata };
+    pub async fn update_item_metadata(
+        &self,
+        kref: &Kref,
+        metadata: HashMap<String, String>,
+    ) -> Result<Item> {
+        let req = pb::UpdateMetadataRequest {
+            kref: Some(kref.to_pb()),
+            metadata,
+        };
         let resp = unary!(self, update_item_metadata, req)?;
         Ok(Item::from_pb(resp, self.clone()))
     }
@@ -733,25 +796,44 @@ impl Client {
     pub async fn get_revision(&self, kref_uri: &str) -> Result<Revision> {
         let (base, tag, time) = parse_tag_time(kref_uri)?;
         if tag.is_some() || time.is_some() {
-            let req = pb::ResolveKrefRequest { kref: base, tag, time };
+            let req = pb::ResolveKrefRequest {
+                kref: base,
+                tag,
+                time,
+            };
             let resp = unary!(self, resolve_kref, req)?;
             return Ok(Revision::from_pb(resp, self.clone()));
         }
-        let req = pb::KrefRequest { kref: Some(pb::Kref { uri: kref_uri.to_string() }) };
+        let req = pb::KrefRequest {
+            kref: Some(pb::Kref {
+                uri: kref_uri.to_string(),
+            }),
+        };
         let resp = unary!(self, get_revision, req)?;
         Ok(Revision::from_pb(resp, self.clone()))
     }
 
     /// List all revisions of an item.
     pub async fn get_revisions(&self, item_kref: &Kref) -> Result<Vec<Revision>> {
-        let req = pb::GetRevisionsRequest { item_kref: Some(item_kref.to_pb()), pagination: None };
+        let req = pb::GetRevisionsRequest {
+            item_kref: Some(item_kref.to_pb()),
+            pagination: None,
+        };
         let resp = unary!(self, get_revisions, req)?;
-        Ok(resp.revisions.into_iter().map(|r| Revision::from_pb(r, self.clone())).collect())
+        Ok(resp
+            .revisions
+            .into_iter()
+            .map(|r| Revision::from_pb(r, self.clone()))
+            .collect())
     }
 
     /// Resolve the latest revision of an item, or `None` if it has none.
     pub async fn get_latest_revision(&self, item_kref: &Kref) -> Result<Option<Revision>> {
-        let req = pb::ResolveKrefRequest { kref: item_kref.uri().to_string(), tag: None, time: None };
+        let req = pb::ResolveKrefRequest {
+            kref: item_kref.uri().to_string(),
+            tag: None,
+            time: None,
+        };
         match unary!(self, resolve_kref, req) {
             Ok(resp) => Ok(Some(Revision::from_pb(resp, self.clone()))),
             Err(Error::Rpc(s)) if s.code() == tonic::Code::NotFound => Ok(None),
@@ -768,85 +850,138 @@ impl Client {
         allow_partial: bool,
     ) -> Result<(Vec<Revision>, Vec<String>)> {
         let req = pb::BatchGetRevisionsRequest {
-            revision_krefs: revision_krefs.iter().map(|k| pb::Kref { uri: k.clone() }).collect(),
-            item_krefs: item_krefs.iter().map(|k| pb::Kref { uri: k.clone() }).collect(),
+            revision_krefs: revision_krefs
+                .iter()
+                .map(|k| pb::Kref { uri: k.clone() })
+                .collect(),
+            item_krefs: item_krefs
+                .iter()
+                .map(|k| pb::Kref { uri: k.clone() })
+                .collect(),
             tag: tag.to_string(),
             allow_partial,
         };
         let resp = unary!(self, batch_get_revisions, req)?;
-        let revisions = resp.revisions.into_iter().map(|r| Revision::from_pb(r, self.clone())).collect();
+        let revisions = resp
+            .revisions
+            .into_iter()
+            .map(|r| Revision::from_pb(r, self.clone()))
+            .collect();
         Ok((revisions, resp.not_found))
     }
 
     /// Delete a revision.
     pub async fn delete_revision(&self, kref: &Kref, force: bool) -> Result<()> {
-        let req = pb::DeleteRevisionRequest { kref: Some(kref.to_pb()), force };
+        let req = pb::DeleteRevisionRequest {
+            kref: Some(kref.to_pb()),
+            force,
+        };
         unary!(self, delete_revision, req)?;
         Ok(())
     }
 
     /// Delete a space by path (force=true to delete a non-empty space).
     pub async fn delete_space(&self, path: &str, force: bool) -> Result<()> {
-        let req = pb::DeleteSpaceRequest { path: path.to_string(), force };
+        let req = pb::DeleteSpaceRequest {
+            path: path.to_string(),
+            force,
+        };
         unary!(self, delete_space, req)?;
         Ok(())
     }
 
     /// Delete an item (force=true to delete with revisions).
     pub async fn delete_item(&self, kref: &Kref, force: bool) -> Result<()> {
-        let req = pb::DeleteItemRequest { kref: Some(kref.to_pb()), force };
+        let req = pb::DeleteItemRequest {
+            kref: Some(kref.to_pb()),
+            force,
+        };
         unary!(self, delete_item, req)?;
         Ok(())
     }
 
     /// Resolve an item kref to a revision by tag and/or time (low-level).
-    pub async fn resolve_kref(&self, kref: &str, tag: Option<String>, time: Option<String>) -> Result<Revision> {
-        let req = pb::ResolveKrefRequest { kref: kref.to_string(), tag, time };
+    pub async fn resolve_kref(
+        &self,
+        kref: &str,
+        tag: Option<String>,
+        time: Option<String>,
+    ) -> Result<Revision> {
+        let req = pb::ResolveKrefRequest {
+            kref: kref.to_string(),
+            tag,
+            time,
+        };
         let resp = unary!(self, resolve_kref, req)?;
         Ok(Revision::from_pb(resp, self.clone()))
     }
 
     /// Merge metadata into a revision.
-    pub async fn update_revision_metadata(&self, kref: &Kref, metadata: HashMap<String, String>) -> Result<Revision> {
-        let req = pb::UpdateMetadataRequest { kref: Some(kref.to_pb()), metadata };
+    pub async fn update_revision_metadata(
+        &self,
+        kref: &Kref,
+        metadata: HashMap<String, String>,
+    ) -> Result<Revision> {
+        let req = pb::UpdateMetadataRequest {
+            kref: Some(kref.to_pb()),
+            metadata,
+        };
         let resp = unary!(self, update_revision_metadata, req)?;
         Ok(Revision::from_pb(resp, self.clone()))
     }
 
     /// Peek the next revision number for an item.
     pub async fn peek_next_revision(&self, item_kref: &Kref) -> Result<i32> {
-        let req = pb::PeekNextRevisionRequest { item_kref: Some(item_kref.to_pb()) };
+        let req = pb::PeekNextRevisionRequest {
+            item_kref: Some(item_kref.to_pb()),
+        };
         Ok(unary!(self, peek_next_revision, req)?.number)
     }
 
     /// Apply a tag to a revision.
     pub async fn tag_revision(&self, kref: &Kref, tag: &str) -> Result<()> {
-        let req = pb::TagRevisionRequest { kref: Some(kref.to_pb()), tag: tag.to_string() };
+        let req = pb::TagRevisionRequest {
+            kref: Some(kref.to_pb()),
+            tag: tag.to_string(),
+        };
         unary!(self, tag_revision, req)?;
         Ok(())
     }
 
     /// Remove a tag from a revision.
     pub async fn untag_revision(&self, kref: &Kref, tag: &str) -> Result<()> {
-        let req = pb::UnTagRevisionRequest { kref: Some(kref.to_pb()), tag: tag.to_string() };
+        let req = pb::UnTagRevisionRequest {
+            kref: Some(kref.to_pb()),
+            tag: tag.to_string(),
+        };
         unary!(self, un_tag_revision, req)?;
         Ok(())
     }
 
     /// Whether a revision currently has a tag.
     pub async fn has_tag(&self, kref: &Kref, tag: &str) -> Result<bool> {
-        let req = pb::HasTagRequest { kref: Some(kref.to_pb()), tag: tag.to_string() };
+        let req = pb::HasTagRequest {
+            kref: Some(kref.to_pb()),
+            tag: tag.to_string(),
+        };
         Ok(unary!(self, has_tag, req)?.has_tag)
     }
 
     /// Whether a revision was ever tagged with a tag.
     pub async fn was_tagged(&self, kref: &Kref, tag: &str) -> Result<bool> {
-        let req = pb::WasTaggedRequest { kref: Some(kref.to_pb()), tag: tag.to_string() };
+        let req = pb::WasTaggedRequest {
+            kref: Some(kref.to_pb()),
+            tag: tag.to_string(),
+        };
         Ok(unary!(self, was_tagged, req)?.was_tagged)
     }
 
     /// Set the default artifact for a revision.
-    pub async fn set_default_artifact(&self, revision_kref: &Kref, artifact_name: &str) -> Result<()> {
+    pub async fn set_default_artifact(
+        &self,
+        revision_kref: &Kref,
+        artifact_name: &str,
+    ) -> Result<()> {
         let req = pb::SetDefaultArtifactRequest {
             revision_kref: Some(revision_kref.to_pb()),
             artifact_name: artifact_name.to_string(),
@@ -878,7 +1013,10 @@ impl Client {
 
     /// Get an artifact by revision kref + name.
     pub async fn get_artifact(&self, revision_kref: &Kref, name: &str) -> Result<Artifact> {
-        let req = pb::GetArtifactRequest { revision_kref: Some(revision_kref.to_pb()), name: name.to_string() };
+        let req = pb::GetArtifactRequest {
+            revision_kref: Some(revision_kref.to_pb()),
+            name: name.to_string(),
+        };
         let resp = unary!(self, get_artifact, req)?;
         Ok(Artifact::from_pb(resp, self.clone()))
     }
@@ -902,35 +1040,60 @@ impl Client {
 
     /// Get all artifacts on a revision.
     pub async fn get_artifacts(&self, revision_kref: &Kref) -> Result<Vec<Artifact>> {
-        let req = pb::GetArtifactsRequest { revision_kref: Some(revision_kref.to_pb()) };
+        let req = pb::GetArtifactsRequest {
+            revision_kref: Some(revision_kref.to_pb()),
+        };
         let resp = unary!(self, get_artifacts, req)?;
-        Ok(resp.artifacts.into_iter().map(|a| Artifact::from_pb(a, self.clone())).collect())
+        Ok(resp
+            .artifacts
+            .into_iter()
+            .map(|a| Artifact::from_pb(a, self.clone()))
+            .collect())
     }
 
     /// Reverse-lookup: all artifacts referencing a file location.
     pub async fn get_artifacts_by_location(&self, location: &str) -> Result<Vec<Artifact>> {
-        let req = pb::GetArtifactsByLocationRequest { location: location.to_string() };
+        let req = pb::GetArtifactsByLocationRequest {
+            location: location.to_string(),
+        };
         let resp = unary!(self, get_artifacts_by_location, req)?;
-        Ok(resp.artifacts.into_iter().map(|a| Artifact::from_pb(a, self.clone())).collect())
+        Ok(resp
+            .artifacts
+            .into_iter()
+            .map(|a| Artifact::from_pb(a, self.clone()))
+            .collect())
     }
 
     /// Delete an artifact.
     pub async fn delete_artifact(&self, kref: &Kref, force: bool) -> Result<()> {
-        let req = pb::DeleteArtifactRequest { kref: Some(kref.to_pb()), force };
+        let req = pb::DeleteArtifactRequest {
+            kref: Some(kref.to_pb()),
+            force,
+        };
         unary!(self, delete_artifact, req)?;
         Ok(())
     }
 
     /// Merge metadata into an artifact.
-    pub async fn update_artifact_metadata(&self, kref: &Kref, metadata: HashMap<String, String>) -> Result<Artifact> {
-        let req = pb::UpdateMetadataRequest { kref: Some(kref.to_pb()), metadata };
+    pub async fn update_artifact_metadata(
+        &self,
+        kref: &Kref,
+        metadata: HashMap<String, String>,
+    ) -> Result<Artifact> {
+        let req = pb::UpdateMetadataRequest {
+            kref: Some(kref.to_pb()),
+            metadata,
+        };
         let resp = unary!(self, update_artifact_metadata, req)?;
         Ok(Artifact::from_pb(resp, self.clone()))
     }
 
     /// Deprecate/restore any node (item, revision, artifact).
     pub async fn set_deprecated(&self, kref: &Kref, deprecated: bool) -> Result<()> {
-        let req = pb::SetDeprecatedRequest { kref: Some(kref.to_pb()), deprecated };
+        let req = pb::SetDeprecatedRequest {
+            kref: Some(kref.to_pb()),
+            deprecated,
+        };
         unary!(self, set_deprecated, req)?;
         Ok(())
     }
@@ -938,7 +1101,11 @@ impl Client {
     /// Resolve a kref to a file location, or `None` on failure.
     pub async fn resolve(&self, kref: &str) -> Result<Option<String>> {
         let (_, tag, time) = parse_tag_time(kref)?;
-        let req = pb::ResolveLocationRequest { kref: kref.to_string(), tag, time };
+        let req = pb::ResolveLocationRequest {
+            kref: kref.to_string(),
+            tag,
+            time,
+        };
         match unary!(self, resolve_location, req) {
             Ok(resp) => Ok(Some(resp.location)),
             Err(Error::Rpc(_)) => Ok(None),
@@ -950,20 +1117,30 @@ impl Client {
 
     /// Set a single metadata attribute on any entity.
     pub async fn set_attribute(&self, kref: &Kref, key: &str, value: &str) -> Result<bool> {
-        let req = pb::SetAttributeRequest { kref: Some(kref.to_pb()), key: key.to_string(), value: value.to_string() };
+        let req = pb::SetAttributeRequest {
+            kref: Some(kref.to_pb()),
+            key: key.to_string(),
+            value: value.to_string(),
+        };
         Ok(unary!(self, set_attribute, req)?.success)
     }
 
     /// Get a single metadata attribute, or `None` if unset.
     pub async fn get_attribute(&self, kref: &Kref, key: &str) -> Result<Option<String>> {
-        let req = pb::GetAttributeRequest { kref: Some(kref.to_pb()), key: key.to_string() };
+        let req = pb::GetAttributeRequest {
+            kref: Some(kref.to_pb()),
+            key: key.to_string(),
+        };
         let resp = unary!(self, get_attribute, req)?;
         Ok(resp.exists.then_some(resp.value))
     }
 
     /// Delete a single metadata attribute.
     pub async fn delete_attribute(&self, kref: &Kref, key: &str) -> Result<bool> {
-        let req = pb::DeleteAttributeRequest { kref: Some(kref.to_pb()), key: key.to_string() };
+        let req = pb::DeleteAttributeRequest {
+            kref: Some(kref.to_pb()),
+            key: key.to_string(),
+        };
         Ok(unary!(self, delete_attribute, req)?.success)
     }
 
@@ -1001,7 +1178,12 @@ impl Client {
     }
 
     /// Get edges for a revision, filtered by type and direction.
-    pub async fn get_edges(&self, kref: &Kref, edge_type_filter: &str, direction: EdgeDirection) -> Result<Vec<Edge>> {
+    pub async fn get_edges(
+        &self,
+        kref: &Kref,
+        edge_type_filter: &str,
+        direction: EdgeDirection,
+    ) -> Result<Vec<Edge>> {
         let req = pb::GetEdgesRequest {
             kref: Some(kref.to_pb()),
             edge_type_filter: edge_type_filter.to_string(),
@@ -1009,11 +1191,20 @@ impl Client {
             pagination: None,
         };
         let resp = unary!(self, get_edges, req)?;
-        Ok(resp.edges.into_iter().map(|e| Edge::from_pb(e, self.clone())).collect())
+        Ok(resp
+            .edges
+            .into_iter()
+            .map(|e| Edge::from_pb(e, self.clone()))
+            .collect())
     }
 
     /// Delete an edge.
-    pub async fn delete_edge(&self, source_kref: &Kref, target_kref: &Kref, edge_type: &str) -> Result<()> {
+    pub async fn delete_edge(
+        &self,
+        source_kref: &Kref,
+        target_kref: &Kref,
+        edge_type: &str,
+    ) -> Result<()> {
         crate::edge::validate_edge_type(edge_type)?;
         let req = pb::DeleteEdgeRequest {
             source_kref: Some(source_kref.to_pb()),
@@ -1045,10 +1236,25 @@ impl Client {
             include_path,
         };
         let resp = unary!(self, traverse_edges, req)?;
-        let revision_krefs = resp.revision_krefs.into_iter().map(|k| Kref::unchecked(k.uri)).collect();
+        let revision_krefs = resp
+            .revision_krefs
+            .into_iter()
+            .map(|k| Kref::unchecked(k.uri))
+            .collect();
         let paths = resp.paths.into_iter().map(map_path).collect();
-        let edges = resp.edges.into_iter().map(|e| Edge::from_pb(e, self.clone())).collect();
-        Ok(TraversalResult::new(revision_krefs, paths, edges, resp.total_count, resp.truncated, self.clone()))
+        let edges = resp
+            .edges
+            .into_iter()
+            .map(|e| Edge::from_pb(e, self.clone()))
+            .collect();
+        Ok(TraversalResult::new(
+            revision_krefs,
+            paths,
+            edges,
+            resp.total_count,
+            resp.truncated,
+            self.clone(),
+        ))
     }
 
     /// Find the shortest path between two revisions.
@@ -1095,7 +1301,9 @@ impl Client {
             .into_iter()
             .map(|iv| ImpactedRevision {
                 revision_kref: Kref::unchecked(iv.revision_kref.map(|k| k.uri).unwrap_or_default()),
-                item_kref: iv.item_kref.and_then(|k| (!k.uri.is_empty()).then(|| Kref::unchecked(k.uri))),
+                item_kref: iv
+                    .item_kref
+                    .and_then(|k| (!k.uri.is_empty()).then(|| Kref::unchecked(k.uri))),
                 impact_depth: iv.impact_depth,
                 impact_path_types: iv.impact_path_types,
             })
@@ -1133,7 +1341,9 @@ impl Client {
             metadata: metadata.unwrap_or_default(),
         };
         let resp = unary!(self, add_bundle_member, req)?;
-        let rev = resp.new_revision.map(|r| Revision::from_pb(r, self.clone()));
+        let rev = resp
+            .new_revision
+            .map(|r| Revision::from_pb(r, self.clone()));
         Ok((resp.success, resp.message, rev))
     }
 
@@ -1150,7 +1360,9 @@ impl Client {
             metadata: metadata.unwrap_or_default(),
         };
         let resp = unary!(self, remove_bundle_member, req)?;
-        let rev = resp.new_revision.map(|r| Revision::from_pb(r, self.clone()));
+        let rev = resp
+            .new_revision
+            .map(|r| Revision::from_pb(r, self.clone()));
         Ok((resp.success, resp.message, rev))
     }
 
@@ -1160,7 +1372,10 @@ impl Client {
         bundle_kref: &Kref,
         revision_number: Option<i32>,
     ) -> Result<(Vec<BundleMember>, i32, i32)> {
-        let req = pb::GetBundleMembersRequest { bundle_kref: Some(bundle_kref.to_pb()), revision_number };
+        let req = pb::GetBundleMembersRequest {
+            bundle_kref: Some(bundle_kref.to_pb()),
+            revision_number,
+        };
         let resp = unary!(self, get_bundle_members, req)?;
         let members = resp
             .members
@@ -1177,8 +1392,13 @@ impl Client {
     }
 
     /// Get a bundle's immutable membership-change history.
-    pub async fn get_bundle_history(&self, bundle_kref: &Kref) -> Result<Vec<BundleRevisionHistory>> {
-        let req = pb::GetBundleHistoryRequest { bundle_kref: Some(bundle_kref.to_pb()) };
+    pub async fn get_bundle_history(
+        &self,
+        bundle_kref: &Kref,
+    ) -> Result<Vec<BundleRevisionHistory>> {
+        let req = pb::GetBundleHistoryRequest {
+            bundle_kref: Some(bundle_kref.to_pb()),
+        };
         let resp = unary!(self, get_bundle_history, req)?;
         Ok(resp
             .history
@@ -1186,7 +1406,9 @@ impl Client {
             .map(|h| BundleRevisionHistory {
                 revision_number: h.revision_number,
                 action: h.action,
-                member_item_kref: h.member_item_kref.and_then(|k| (!k.uri.is_empty()).then(|| Kref::unchecked(k.uri))),
+                member_item_kref: h
+                    .member_item_kref
+                    .and_then(|k| (!k.uri.is_empty()).then(|| Kref::unchecked(k.uri))),
                 author: h.author,
                 username: h.username,
                 created_at: h.created_at,
@@ -1238,7 +1460,11 @@ impl Client {
 
     /// Get this tenant tier's event-streaming capabilities.
     pub async fn get_event_capabilities(&self) -> Result<EventCapabilities> {
-        let resp = unary!(self, get_event_capabilities, pb::GetEventCapabilitiesRequest {})?;
+        let resp = unary!(
+            self,
+            get_event_capabilities,
+            pb::GetEventCapabilitiesRequest {}
+        )?;
         Ok(EventCapabilities {
             supports_replay: resp.supports_replay,
             supports_cursor: resp.supports_cursor,
@@ -1252,7 +1478,10 @@ impl Client {
 
 // ------------------------------------------------------------------- free helpers
 
-fn make_pagination(page_size: Option<i32>, cursor: Option<String>) -> Option<pb::PaginationRequest> {
+fn make_pagination(
+    page_size: Option<i32>,
+    cursor: Option<String>,
+) -> Option<pb::PaginationRequest> {
     if page_size.is_none() && cursor.is_none() {
         return None;
     }
@@ -1284,9 +1513,9 @@ fn split_item_kref(kref_uri: &str) -> Result<(String, String, String)> {
     let (space_path, item_name_kind) = path
         .split_once('/')
         .ok_or_else(|| Error::InvalidArgument(format!("invalid item kref: {kref_uri}")))?;
-    let (name, kind) = item_name_kind
-        .split_once('.')
-        .ok_or_else(|| Error::InvalidArgument(format!("invalid item name.kind: {item_name_kind}")))?;
+    let (name, kind) = item_name_kind.split_once('.').ok_or_else(|| {
+        Error::InvalidArgument(format!("invalid item name.kind: {item_name_kind}"))
+    })?;
     Ok((format!("/{space_path}"), name.to_string(), kind.to_string()))
 }
 
@@ -1298,11 +1527,16 @@ fn parse_tag_time(kref_uri: &str) -> Result<(String, Option<String>, Option<Stri
     let mut tag = None;
     let mut time = None;
     for param in params.split('&') {
-        if let Some(v) = param.strip_prefix("t=").or_else(|| param.strip_prefix("tag=")) {
+        if let Some(v) = param
+            .strip_prefix("t=")
+            .or_else(|| param.strip_prefix("tag="))
+        {
             tag = Some(v.to_string());
         } else if let Some(v) = param.strip_prefix("time=") {
             if v.len() != 12 || !v.chars().all(|c| c.is_ascii_digit()) {
-                return Err(Error::InvalidArgument("time must be in YYYYMMDDHHMM format".into()));
+                return Err(Error::InvalidArgument(
+                    "time must be in YYYYMMDDHHMM format".into(),
+                ));
             }
             time = Some(v.to_string());
         }

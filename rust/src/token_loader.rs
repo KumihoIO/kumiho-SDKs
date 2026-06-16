@@ -75,7 +75,10 @@ fn credentials_tokens() -> (Option<String>, Option<String>) {
 }
 
 /// Validate a token has JWT shape (`header.payload.signature`).
-pub fn validate_token_format(token: Option<String>, source: &str) -> Result<Option<String>, String> {
+pub fn validate_token_format(
+    token: Option<String>,
+    source: &str,
+) -> Result<Option<String>, String> {
     let token = match normalize(token) {
         Some(t) => t,
         None => return Ok(None),

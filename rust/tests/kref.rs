@@ -60,9 +60,9 @@ fn unicode_class_parity_with_python() {
 #[test]
 fn rejects_unsafe_characters() {
     let unsafe_uris = [
-        "kref://project/../item.skill",      // path traversal
-        "kref://project/space bad/item.skill", // space char
-        "kref://project/space$/item.skill",  // disallowed symbol
+        "kref://project/../item.skill",         // path traversal
+        "kref://project/space bad/item.skill",  // space char
+        "kref://project/space$/item.skill",     // disallowed symbol
         "kref://project/space\u{0}/item.skill", // NUL control char
     ];
     for uri in unsafe_uris {

@@ -87,7 +87,9 @@ impl Kref {
 
     /// Convert into a protobuf `Kref` message for gRPC requests.
     pub fn to_pb(&self) -> pb::Kref {
-        pb::Kref { uri: self.0.clone() }
+        pb::Kref {
+            uri: self.0.clone(),
+        }
     }
 
     /// The full URI string.
@@ -145,9 +147,9 @@ impl Kref {
 
     /// The artifact name from `&a=`, if present.
     pub fn artifact_name(&self) -> Option<String> {
-        self.0.split_once("&a=").map(|(_, rest)| {
-            rest.chars().take_while(|&c| c != '&').collect()
-        })
+        self.0
+            .split_once("&a=")
+            .map(|(_, rest)| rest.chars().take_while(|&c| c != '&').collect())
     }
 }
 

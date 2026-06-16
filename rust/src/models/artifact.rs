@@ -37,7 +37,10 @@ pub struct Artifact {
 
 impl Artifact {
     pub(crate) fn from_pb(pb: pb::ArtifactResponse, client: Client) -> Self {
-        let item_kref = pb.item_kref.as_ref().and_then(|k| (!k.uri.is_empty()).then(|| Kref::from_pb(k)));
+        let item_kref = pb
+            .item_kref
+            .as_ref()
+            .and_then(|k| (!k.uri.is_empty()).then(|| Kref::from_pb(k)));
         Artifact {
             kref: Kref::from_pb(&pb.kref.unwrap_or_default()),
             location: pb.location,
@@ -59,7 +62,9 @@ impl Artifact {
 
     /// Merge metadata into this artifact.
     pub async fn set_metadata(&self, metadata: HashMap<String, String>) -> Result<Artifact> {
-        self.client.update_artifact_metadata(&self.kref, metadata).await
+        self.client
+            .update_artifact_metadata(&self.kref, metadata)
+            .await
     }
 
     /// Set a single metadata attribute.
@@ -89,7 +94,9 @@ impl Artifact {
 
     /// Make this artifact the default for its revision.
     pub async fn set_default(&self) -> Result<()> {
-        self.client.set_default_artifact(&self.revision_kref, &self.name()).await
+        self.client
+            .set_default_artifact(&self.revision_kref, &self.name())
+            .await
     }
 
     /// Get the parent revision.

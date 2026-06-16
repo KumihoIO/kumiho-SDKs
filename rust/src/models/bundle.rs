@@ -74,9 +74,14 @@ impl Bundle {
         metadata: Option<HashMap<String, String>>,
     ) -> Result<(bool, String, Option<Revision>)> {
         if member.kref == self.item.kref {
-            return Err(Error::InvalidArgument("a bundle cannot contain itself".into()));
+            return Err(Error::InvalidArgument(
+                "a bundle cannot contain itself".into(),
+            ));
         }
-        self.item.client.add_bundle_member(&self.item.kref, &member.kref, metadata).await
+        self.item
+            .client
+            .add_bundle_member(&self.item.kref, &member.kref, metadata)
+            .await
     }
 
     /// Remove an item from this bundle. Returns `(success, message, new_revision)`.
@@ -85,12 +90,19 @@ impl Bundle {
         member: &Item,
         metadata: Option<HashMap<String, String>>,
     ) -> Result<(bool, String, Option<Revision>)> {
-        self.item.client.remove_bundle_member(&self.item.kref, &member.kref, metadata).await
+        self.item
+            .client
+            .remove_bundle_member(&self.item.kref, &member.kref, metadata)
+            .await
     }
 
     /// Current members (or those at `revision_number`).
     pub async fn get_members(&self, revision_number: Option<i32>) -> Result<Vec<BundleMember>> {
-        let (members, _, _) = self.item.client.get_bundle_members(&self.item.kref, revision_number).await?;
+        let (members, _, _) = self
+            .item
+            .client
+            .get_bundle_members(&self.item.kref, revision_number)
+            .await?;
         Ok(members)
     }
 
