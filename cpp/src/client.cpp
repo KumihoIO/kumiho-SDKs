@@ -1036,10 +1036,11 @@ std::shared_ptr<Edge> Client::createEdge(
     return std::make_shared<Edge>(edge_pb, this);
 }
 
-std::vector<std::shared_ptr<Edge>> Client::getEdges(const Kref& kref, const std::string& edge_type_filter) {
+std::vector<std::shared_ptr<Edge>> Client::getEdges(const Kref& kref, const std::string& edge_type_filter, EdgeDirection direction) {
     ::kumiho::GetEdgesRequest req;
     *req.mutable_kref() = kref.toPb();
     req.set_edge_type_filter(edge_type_filter);
+    req.set_direction(static_cast<::kumiho::EdgeDirection>(static_cast<int>(direction)));
 
     ::kumiho::GetEdgesResponse res;
     grpc::ClientContext context; configureContext(context);

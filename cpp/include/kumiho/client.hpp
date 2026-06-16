@@ -424,9 +424,14 @@ public:
      * @brief Get edges for a revision.
      * @param kref The revision's Kref.
      * @param edge_type_filter Filter by edge type (empty = all).
+     * @param direction Direction of edges to retrieve (OUTGOING, INCOMING, or BOTH).
      * @return A list of Edge objects.
      */
-    std::vector<std::shared_ptr<Edge>> getEdges(const Kref& kref, const std::string& edge_type_filter = "");
+    std::vector<std::shared_ptr<Edge>> getEdges(
+        const Kref& kref,
+        const std::string& edge_type_filter = "",
+        EdgeDirection direction = EdgeDirection::OUTGOING
+    );
 
     /**
      * @brief Delete an edge.

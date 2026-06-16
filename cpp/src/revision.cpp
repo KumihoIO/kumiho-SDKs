@@ -166,8 +166,7 @@ std::vector<std::shared_ptr<Edge>> Revision::getEdges(
     const std::string& edge_type_filter,
     EdgeDirection direction
 ) {
-    // TODO: Add direction parameter to client method
-    return client_->getEdges(getKref(), edge_type_filter);
+    return client_->getEdges(getKref(), edge_type_filter, direction);
 }
 
 std::shared_ptr<Revision> Revision::refresh() {
