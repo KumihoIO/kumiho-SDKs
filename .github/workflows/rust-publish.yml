@@ -1,0 +1,44 @@
+# Publishes the Rust `kumiho` crate to crates.io on a `rust-v*` tag.
+#
+# Requires a CARGO_REGISTRY_TOKEN secret (see docs/RELEASING.md). The job runs in
+# the `crates-io` environment so you can require a reviewer / restrict the secret.
+name: Publish kumiho (Rust)
+
+on:
+  push:
+    tags:
+      - 'rust-v*' # e.g. rust-v0.10.0
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    environment: crates-io
+    defaults:
+      run:
+        working-directory: rust
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - name: Install protoc
+        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Check tag matches crate version
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          tag="${GITHUB_REF_NAME#rust-v}"
+          ver=$(grep -m1 '^version' Cargo.toml | sed -E 's/.*"(.*)".*/\1/')
+          if [ "$tag" != "$ver" ]; then
+            echo "tag rust-v$tag does not match Cargo.toml version $ver"
+            exit 1
+          fi
+      - name: Verify package
+        run: cargo publish --dry-run
+      - name: Publish to crates.io
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+        run: cargo publish
