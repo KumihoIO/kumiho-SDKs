@@ -313,4 +313,4 @@ For full documentation, see the [MCP Integration Guide](mcp.md).
 - Read the [Concepts](concepts.md) guide for deeper understanding
 - Learn about [MCP Integration](mcp.md) for AI assistant support
 - Explore the [API Reference](api/kumiho.rst) for all available methods
-- Check out [Examples](https://github.com/kumihoclouds/kumiho-python/tree/main/examples)
+- Check out [Examples](https://github.com/KumihoIO/kumiho-SDKs/tree/main/python/examples)

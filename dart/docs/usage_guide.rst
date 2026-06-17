@@ -77,17 +77,56 @@ Bundles aggregate other items or revisions to represent releases or delivery pac
    await bundle.addMember(item.kref);
    await bundle.addMember(rigRevision.kref);
 
-Events and Tenants
-------------------
+Search and Semantic Scoring
+---------------------------
 
-Subscribe to event streams to monitor changes, or query tenant metadata when running inside a multi-tenant deployment.
+Use ``search`` for full-text fuzzy (typo-tolerant) matching across items, returning ``SearchResult`` entries ordered by relevance. Use ``scoreRevisions`` to rank a known set of revisions against a query with server-side embeddings (no client-side embedding needed).
 
 .. code-block:: dart
 
-   final stream = client.subscribeEvents();
-   await for (final event in stream) {
-     print('Event: ${event.kind} on ${event.kref}');
+   // Ranked fuzzy search; minScore filters weak matches (0.0-1.0)
+   final results = await client.search('hero robt', contextFilter: 'film-2025/*', minScore: 0.2);
+   for (final r in results) {
+     print('${r.item.kref.uri} (score ${r.score}, matched in ${r.matchedIn})');
    }
 
-   final tenantInfo = await client.getTenant();
-   print('Tenant: ${tenantInfo.name}');
+   // Semantic scoring of specific revisions
+   final scored = await client.scoreRevisions('battle damaged armor', [revA.kref.uri, revB.kref.uri]);
+   for (final s in scored) {
+     print('${s.kref.uri}: ${s.score} (${s.scoreMethod})');
+   }
+
+Batch and By-Kref Accessors
+---------------------------
+
+Fetch many revisions in one round-trip with ``batchGetRevisions`` (by revision kref, or by item kref resolved with a ``tag``), and resolve related objects directly from a kref.
+
+.. code-block:: dart
+
+   final (:revisions, :notFound) = await client.batchGetRevisions(
+     itemKrefs: [itemA.kref.uri, itemB.kref.uri],
+     tag: 'latest',
+   );
+
+   final item = await client.getItemFromRevision(revisions.first.kref.uri);
+   final mesh = await client.getArtifactByKref('kref://film-2025/assets/hero.model?r=1&a=mesh');
+   final bundle = await client.getBundleByKref('kref://film-2025/assets/release.bundle');
+
+Events and Tenants
+------------------
+
+Stream events to monitor changes, or query tenant usage when running inside a multi-tenant deployment. Advanced ``eventStream`` parameters (``cursor`` resume, ``consumerGroup``, ``fromBeginning``, ``timeout``) depend on your tenant tier; call ``getEventCapabilities`` first to discover what is available.
+
+.. code-block:: dart
+
+   final caps = await client.getEventCapabilities();
+   final stream = client.eventStream(
+     routingKeyFilter: 'revision.tagged.*',
+     fromBeginning: caps.supportsReplay,
+   );
+   await for (final event in stream) {
+     print('Event: ${event.routingKey} on ${event.kref.uri}');
+   }
+
+   final usage = await client.getTenantUsage();
+   print('Using ${usage.nodeCount} of ${usage.nodeLimit} nodes');

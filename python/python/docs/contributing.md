@@ -6,8 +6,8 @@ Thank you for your interest in contributing to the Kumiho Python SDK!
 
 1. Clone the repository:
    ```bash
-   git clone https://github.com/kumihoclouds/kumiho-python.git
-   cd kumiho-python/python
+   git clone https://github.com/KumihoIO/kumiho-SDKs.git
+   cd kumiho-SDKs/python/python
    ```
 
 2. Create a virtual environment:

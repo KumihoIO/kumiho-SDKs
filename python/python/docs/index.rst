@@ -13,9 +13,9 @@ Kumiho Python SDK
    :target: https://pypi.org/project/kumiho/
    :alt: Python versions
 
-.. image:: https://readthedocs.org/projects/kumiho/badge/?version=latest
-   :target: https://kumiho.readthedocs.io/en/latest/?badge=latest
-   :alt: Documentation Status
+.. image:: https://img.shields.io/badge/docs-docs.kumiho.io-blue.svg
+   :target: https://docs.kumiho.io/python/
+   :alt: Documentation
 
 Kumiho is a Python SDK for `Kumiho Cloud <https://kumiho.io>`_, a graph-native
 creative and AI asset management platform designed for VFX, animation, and

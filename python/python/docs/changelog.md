@@ -5,6 +5,23 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.10.0] - 2026-06-17
+
+### Added
+- **Full-text fuzzy search** — `search(query, ...)` returns ranked items
+  (`SearchResult` with `item`, `score`, `matched_in`), with automatic typo tolerance.
+- **Semantic revision scoring** — `score_revisions(query, revision_krefs)` scores
+  revisions against a query using server-side embeddings and/or fulltext.
+- **Batch revision fetch** — `batch_get_revisions(revision_krefs=..., item_krefs=..., tag=...)`
+  fetches many revisions in a single call, returning `(revisions, not_found)`.
+- **By-kref accessors** — `get_artifact_by_kref()`, `get_bundle_by_kref()`, and
+  `client.get_item_from_revision()`.
+
+### Changed
+- The advanced `event_stream()` parameters (`cursor`, `consumer_group`,
+  `from_beginning`) and `get_event_capabilities()` are now generally available.
+- The C++ and Dart SDKs now have full feature parity with the Python SDK.
+
 ## [0.4.0] - 2025-12-03
 
 ### Added

@@ -11,6 +11,11 @@ pubspec.lock
 # If you don't generate documentation locally you can remove this line.
 doc/api/
 
+# Generated documentation output (Sphinx build + embedded dartdoc); the docs
+# workflow regenerates these on every build.
+docs/_build/
+docs/_extra/dartdoc/
+
 # dotenv environment variables file
 .env*
 
