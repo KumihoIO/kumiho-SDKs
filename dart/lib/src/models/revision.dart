@@ -127,8 +127,7 @@ class Revision extends KumihoObject {
   /// final mesh = await revision.getArtifact('mesh');
   /// ```
   Future<Artifact> getArtifact(String name) async {
-    final artifactKref = kref.withArtifact(name);
-    final response = await client.getArtifact(artifactKref.uri);
+    final response = await client.getArtifact(kref.uri, name);
     return Artifact(response, client);
   }
 
@@ -267,23 +266,31 @@ class Revision extends KumihoObject {
 
   /// Traverses edges starting from this revision.
   ///
+  /// [direction] is one of [pb.EdgeDirection.OUTGOING] (default),
+  /// [pb.EdgeDirection.INCOMING], or [pb.EdgeDirection.BOTH].
+  /// [edgeTypes] optionally filters by edge type (see [EdgeType]).
+  ///
   /// ```dart
   /// final results = await revision.traverseEdges(
-  ///   direction: 'outgoing',
+  ///   direction: pb.EdgeDirection.OUTGOING,
   ///   edgeTypes: [EdgeType.dependsOn],
   ///   maxDepth: 3,
   /// );
   /// ```
   Future<List<Kref>> traverseEdges({
-    String direction = 'outgoing',
+    pb.EdgeDirection direction = pb.EdgeDirection.OUTGOING,
     List<String>? edgeTypes,
     int maxDepth = 10,
+    int limit = 100,
+    bool includePath = false,
   }) async {
     final response = await client.traverseEdges(
       kref.uri,
-      direction: direction,
-      edgeTypes: edgeTypes,
+      direction,
+      edgeTypeFilter: edgeTypes,
       maxDepth: maxDepth,
+      limit: limit,
+      includePath: includePath,
     );
     return response.revisionKrefs.map((k) => Kref(k.uri)).toList();
   }
@@ -335,13 +342,13 @@ class Revision extends KumihoObject {
 
   /// Sets metadata for this revision.
   ///
+  /// Existing keys are overwritten and new keys are added in a single RPC.
+  ///
   /// ```dart
   /// await revision.setMetadata({'notes': 'Updated mesh', 'artist': 'john'});
   /// ```
   Future<void> setMetadata(Map<String, String> metadata) async {
-    for (final entry in metadata.entries) {
-      await client.setAttribute(kref.uri, entry.key, entry.value);
-    }
+    await client.updateRevisionMetadata(kref.uri, metadata);
   }
 
   @override

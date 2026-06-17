@@ -90,6 +90,15 @@ abstract class KumihoClientBase {
               credentials: secure
                   ? const ChannelCredentials.secure()
                   : const ChannelCredentials.insecure(),
+              // HTTP/2 keepalive: prevent idle connections from being silently
+              // closed by intermediate proxies (Cloudflare, Cloud Run,
+              // firewalls). Mirrors the Python SDK defaults (ping every 30s,
+              // 10s to respond, ping even when idle).
+              keepAlive: const ClientKeepAliveOptions(
+                pingInterval: Duration(seconds: 30),
+                timeout: Duration(seconds: 10),
+                permitWithoutCalls: true,
+              ),
             ),
       );
     }
@@ -133,28 +142,64 @@ abstract class KumihoClientBase {
     _tokenSource = value != null ? 'manual' : null;
   }
 
+  /// Default per-RPC deadline in seconds when `KUMIHO_RPC_TIMEOUT_SECONDS`
+  /// is unset or unparseable.
+  static const int _defaultRpcTimeoutSeconds = 30;
+
+  /// Builds the auth/correlation metadata shared by all RPC options.
+  Map<String, String> _buildMetadata() {
+    final metadata = <String, String>{
+      'x-correlation-id': _generateCorrelationId(),
+    };
+
+    if (_token != null && _token!.isNotEmpty) {
+      metadata['authorization'] = 'Bearer $_token';
+    }
+
+    // Add tenant ID for anonymous public access (final field promotes after
+    // the null check, so no `!` is needed).
+    if (_tenantId != null && _tenantId.isNotEmpty) {
+      metadata['x-tenant-id'] = _tenantId;
+    }
+
+    return metadata;
+  }
+
+  /// Resolves the per-RPC deadline from `KUMIHO_RPC_TIMEOUT_SECONDS`.
+  ///
+  /// Returns `null` (no deadline) when the value is `0` or negative, so
+  /// callers can explicitly disable the timeout. Falls back to
+  /// [_defaultRpcTimeoutSeconds] when the variable is unset or unparseable.
+  static Duration? _rpcTimeout() {
+    final raw = Platform.environment['KUMIHO_RPC_TIMEOUT_SECONDS'];
+    final seconds = raw == null
+        ? _defaultRpcTimeoutSeconds
+        : int.tryParse(raw.trim()) ?? _defaultRpcTimeoutSeconds;
+    if (seconds <= 0) return null;
+    return Duration(seconds: seconds);
+  }
+
   /// Creates [CallOptions] with authentication metadata and correlation ID.
   ///
   /// Call this to get options with the Bearer token and correlation ID injected.
   /// A unique correlation ID is generated per call for end-to-end tracing.
+  ///
+  /// A default per-RPC deadline is applied (configurable via
+  /// `KUMIHO_RPC_TIMEOUT_SECONDS`, default 30s). Use [streamCallOptions]
+  /// for server-streaming RPCs that must stay open indefinitely.
   CallOptions get callOptions {
-    final correlationId = _generateCorrelationId();
-    final metadata = <String, String>{
-      'x-correlation-id': correlationId,
-    };
-    
-    if (_token != null && _token!.isNotEmpty) {
-      metadata['authorization'] = 'Bearer $_token';
-    }
-    
-    // Add tenant ID for anonymous public access
-    if (_tenantId != null && _tenantId!.isNotEmpty) {
-      metadata['x-tenant-id'] = _tenantId!;
-    }
-    
-    return CallOptions(metadata: metadata);
+    return CallOptions(metadata: _buildMetadata(), timeout: _rpcTimeout());
   }
-  
+
+  /// Creates [CallOptions] for streaming RPCs.
+  ///
+  /// Identical to [callOptions] but without a default deadline, so long-lived
+  /// server streams (e.g. `eventStream`) are not cancelled after the per-RPC
+  /// timeout. Callers may still merge in an explicit timeout when desired.
+  CallOptions get streamCallOptions {
+    return CallOptions(metadata: _buildMetadata());
+  }
+
   /// Generates a unique correlation ID for request tracing.
   static String _generateCorrelationId() {
     // Use current timestamp + random suffix for uniqueness

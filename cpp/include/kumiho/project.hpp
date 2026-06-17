@@ -126,9 +126,17 @@ public:
     /**
      * @brief Get all spaces in this project.
      * @param recursive If true, include all descendant spaces.
+     * @param parent_path Optional path to start from (defaults to the project root).
+     * @param page_size Optional page size for pagination.
+     * @param cursor Optional pagination cursor.
      * @return A list of Space objects.
      */
-    std::vector<std::shared_ptr<Space>> getSpaces(bool recursive = false);
+    std::vector<std::shared_ptr<Space>> getSpaces(
+        bool recursive = false,
+        const std::string& parent_path = "",
+        std::optional<int32_t> page_size = std::nullopt,
+        std::optional<std::string> cursor = std::nullopt
+    );
 
     /**
      * @brief Search for items within this project.
@@ -148,9 +156,10 @@ public:
     /**
      * @brief Create a bundle in this project.
      * @param name The bundle name.
+     * @param metadata Optional key-value metadata for the bundle.
      * @return The created Bundle.
      */
-    std::shared_ptr<Bundle> createBundle(const std::string& name);
+    std::shared_ptr<Bundle> createBundle(const std::string& name, const Metadata& metadata = {});
 
     /**
      * @brief Get a bundle by name.

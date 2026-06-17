@@ -38,11 +38,11 @@ import 'revision.dart';
 /// // Get bundle members
 /// final members = await bundle.getMembers();
 /// for (final member in members) {
-///   print(member.uri);
+///   print(member.itemKref.uri);
 /// }
 ///
 /// // Get membership history
-/// final history = await bundle.getMembershipHistory(hero.kref);
+/// final history = await bundle.getMembershipHistory();
 /// ```
 class Bundle extends KumihoObject {
   /// Creates a [Bundle] from a protobuf ItemResponse.
@@ -93,14 +93,18 @@ class Bundle extends KumihoObject {
 
   /// Adds a member to this bundle.
   ///
-  /// The optional [metadata] map is attached to the membership edge and
+  /// The optional [metadata] map is attached to the new bundle revision and
   /// can later be inspected via [getMembershipHistory].
   ///
+  /// Returns the [pb.AddBundleMemberResponse] (success/message/newRevision),
+  /// mirroring the Python SDK's `Bundle.add_member`.
+  ///
   /// ```dart
-  /// await bundle.addMember(hero.kref, metadata: {'role': 'hero'});
+  /// final response = await bundle.addMember(hero.kref, metadata: {'role': 'hero'});
   /// ```
-  Future<void> addMember(Kref memberKref, {Map<String, String>? metadata}) async {
-    await client.addBundleMember(kref.uri, memberKref.uri, metadata: metadata);
+  Future<pb.AddBundleMemberResponse> addMember(Kref memberKref,
+      {Map<String, String>? metadata}) async {
+    return client.addBundleMember(kref.uri, memberKref.uri, metadata: metadata);
   }
 
   /// Adds an item to this bundle.
@@ -108,17 +112,26 @@ class Bundle extends KumihoObject {
   /// ```dart
   /// await bundle.addItem(hero);
   /// ```
-  Future<void> addItem(Item item, {Map<String, String>? metadata}) async {
-    await addMember(item.kref, metadata: metadata);
+  Future<pb.AddBundleMemberResponse> addItem(Item item,
+      {Map<String, String>? metadata}) async {
+    return addMember(item.kref, metadata: metadata);
   }
 
   /// Removes a member from this bundle.
   ///
+  /// The optional [metadata] map is attached to the new bundle revision and
+  /// can later be inspected via [getMembershipHistory].
+  ///
+  /// Returns the [pb.RemoveBundleMemberResponse] (success/message/newRevision),
+  /// mirroring the Python SDK's `Bundle.remove_member`.
+  ///
   /// ```dart
   /// await bundle.removeMember(hero.kref);
   /// ```
-  Future<void> removeMember(Kref memberKref) async {
-    await client.removeBundleMember(kref.uri, memberKref.uri);
+  Future<pb.RemoveBundleMemberResponse> removeMember(Kref memberKref,
+      {Map<String, String>? metadata}) async {
+    return client.removeBundleMember(kref.uri, memberKref.uri,
+        metadata: metadata);
   }
 
   /// Removes an item from this bundle.
@@ -126,37 +139,47 @@ class Bundle extends KumihoObject {
   /// ```dart
   /// await bundle.removeItem(hero);
   /// ```
-  Future<void> removeItem(Item item) async {
-    await removeMember(item.kref);
+  Future<pb.RemoveBundleMemberResponse> removeItem(Item item,
+      {Map<String, String>? metadata}) async {
+    return removeMember(item.kref, metadata: metadata);
   }
 
   /// Gets all current members of this bundle.
   ///
-  /// Returns the krefs of the linked items, allowing callers to lazily
-  /// hydrate the items only when needed.
+  /// Returns the rich [pb.BundleMember] entries (item kref plus audit fields:
+  /// addedAt, addedBy, addedByUsername, addedInRevision), mirroring the Python
+  /// SDK's `Bundle.get_members`.
+  ///
+  /// [revisionNumber] optionally queries membership at a specific bundle
+  /// revision; if omitted, returns the current (latest) membership.
   ///
   /// ```dart
   /// final members = await bundle.getMembers();
   /// for (final member in members) {
-  ///   print(member.uri);
+  ///   print(member.itemKref.uri);
   /// }
   /// ```
-  Future<List<Kref>> getMembers() async {
-    final response = await client.getBundleMembers(kref.uri);
-    return response.memberKrefs.map((k) => Kref(k.uri)).toList();
+  Future<List<pb.BundleMember>> getMembers({int? revisionNumber}) async {
+    final response = await client.getBundleMembers(kref.uri,
+        revisionNumber: revisionNumber);
+    return response.members.toList();
   }
 
-  /// Gets the membership history for a specific member.
+  /// Gets the full membership history of this bundle.
   ///
-  /// Returns the history of when the member was added/removed from this
-  /// bundle, including the metadata captured at each change. This is
-  /// useful for audits and debugging automation.
+  /// Returns the complete chronological history of membership changes
+  /// (additions and removals), including the metadata captured at each
+  /// change. Useful for audits and debugging automation.
+  ///
+  /// Mirrors the Python SDK's `Bundle.get_history()`: the GetBundleHistory
+  /// RPC returns the entire audit trail for the bundle and has no per-member
+  /// filter.
   ///
   /// ```dart
-  /// final history = await bundle.getMembershipHistory(hero.kref);
+  /// final history = await bundle.getMembershipHistory();
   /// ```
-  Future<pb.GetBundleHistoryResponse> getMembershipHistory(Kref memberKref) async {
-    return client.getBundleHistory(kref.uri, memberKref.uri);
+  Future<pb.GetBundleHistoryResponse> getMembershipHistory() async {
+    return client.getBundleHistory(kref.uri);
   }
 
   /// Creates a new revision of this bundle.
@@ -177,17 +200,23 @@ class Bundle extends KumihoObject {
   /// final revisions = await bundle.getRevisions();
   /// ```
   Future<List<Revision>> getRevisions() async {
-    final response = await client.getRevisions(kref.uri);
-    return response.revisions.map((r) => Revision(r, client)).toList();
+    final responses = await client.getRevisions(kref.uri);
+    return responses.map((r) => Revision(r, client)).toList();
   }
 
   /// Gets the latest revision of this bundle.
   ///
+  /// Returns `null` if the bundle has no revisions, mirroring Python's
+  /// `Item.get_latest_revision` (which `Bundle` inherits).
+  ///
   /// ```dart
   /// final latest = await bundle.getLatestRevision();
   /// ```
-  Future<Revision> getLatestRevision() async {
+  Future<Revision?> getLatestRevision() async {
     final response = await client.getLatestRevision(kref.uri);
+    if (response == null) {
+      return null;
+    }
     return Revision(response, client);
   }
 

@@ -76,8 +76,8 @@ bool Item::isDeprecated() const {
     return response_.deprecated();
 }
 
-std::shared_ptr<Revision> Item::createRevision(const Metadata& metadata) {
-    return client_->createRevision(getKref(), metadata);
+std::shared_ptr<Revision> Item::createRevision(const Metadata& metadata, int number) {
+    return client_->createRevision(getKref(), metadata, number);
 }
 
 std::shared_ptr<Revision> Item::getRevision(int revision_number) {

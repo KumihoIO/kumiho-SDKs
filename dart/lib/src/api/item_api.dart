@@ -3,6 +3,7 @@
 
 import '../base_client.dart';
 import '../generated/kumiho.pbgrpc.dart';
+import '../models/base.dart' show ReservedKindError, reservedKinds;
 import '../models/paged_list.dart';
 
 /// Item API mixin for managing versioned assets.
@@ -33,20 +34,37 @@ mixin ItemApi on KumihoClientBase {
   /// [parentPath] is the space path where the item will be created.
   /// [itemName] is the name of the item (e.g., 'hero').
   /// [kind] is the type of item (e.g., 'model', 'texture', 'workflow').
+  /// [metadata] is optional key-value metadata. Because the create RPC does
+  /// not carry metadata, it is applied via a follow-up metadata update once
+  /// the item exists, mirroring the Python SDK.
   /// [existsError] controls whether to throw an error if the item
-  /// already exists (default: `true`).
+  /// already exists (default: `false`).
   Future<ItemResponse> createItem(
     String parentPath,
     String itemName,
     String kind, {
-    bool existsError = true,
+    Map<String, String>? metadata,
+    bool existsError = false,
   }) async {
+    // The 'bundle' kind is reserved; mirror Python's create_item which raises
+    // ReservedKindError. Use createBundle() instead.
+    if (reservedKinds.contains(kind.toLowerCase())) {
+      throw ReservedKindError(
+        "Item kind '$kind' is reserved. Use createBundle() instead.",
+      );
+    }
     final request = CreateItemRequest()
       ..parentPath = parentPath
       ..itemName = itemName
       ..kind = kind
       ..existsError = existsError;
-    return stub.createItem(request, options: callOptions);
+    final response = await stub.createItem(request, options: callOptions);
+    if (metadata != null && metadata.isNotEmpty) {
+      // Apply metadata via a follow-up update (the create RPC carries none),
+      // but return the original create response like the Python SDK does.
+      await updateItemMetadata(response.kref.uri, metadata);
+    }
+    return response;
   }
 
   /// Gets an item by its path components.
@@ -162,9 +180,51 @@ mixin ItemApi on KumihoClientBase {
     }
 
     final response = await stub.itemSearch(request, options: callOptions);
-    
+
     return PagedList(
       response.items,
+      nextCursor: response.hasPagination() ? response.pagination.nextCursor : null,
+      totalCount: response.hasPagination() ? response.pagination.totalCount : null,
+    );
+  }
+
+  /// Full-text fuzzy search across items (typo-tolerant), mirroring Python's
+  /// `search`.
+  ///
+  /// Returns [SearchResult] entries (matched item + relevance score +
+  /// `matchedIn`) ordered by relevance. [contextFilter] restricts to a kref
+  /// prefix; [kindFilter] is an exact kind match; [includeRevisionMetadata] /
+  /// [includeArtifactMetadata] widen the search; [minScore] filters by
+  /// relevance (0.0-1.0); [pageSize]/[cursor] paginate.
+  Future<PagedList<SearchResult>> search(
+    String query, {
+    String contextFilter = '',
+    String kindFilter = '',
+    bool includeDeprecated = false,
+    bool includeRevisionMetadata = false,
+    bool includeArtifactMetadata = false,
+    int? pageSize,
+    String? cursor,
+    double minScore = 0.0,
+  }) async {
+    final request = SearchRequest()
+      ..query = query
+      ..contextFilter = contextFilter
+      ..kindFilter = kindFilter
+      ..includeDeprecated = includeDeprecated
+      ..includeRevisionMetadata = includeRevisionMetadata
+      ..includeArtifactMetadata = includeArtifactMetadata
+      ..minScore = minScore;
+    if (pageSize != null || cursor != null) {
+      request.pagination = PaginationRequest()
+        ..pageSize = pageSize ?? 100
+        ..cursor = cursor ?? '';
+    }
+
+    final response = await stub.search(request, options: callOptions);
+
+    return PagedList(
+      response.results,
       nextCursor: response.hasPagination() ? response.pagination.nextCursor : null,
       totalCount: response.hasPagination() ? response.pagination.totalCount : null,
     );

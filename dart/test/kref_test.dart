@@ -93,6 +93,27 @@ void main() {
           throwsA(isA<KrefValidationError>()),
         );
       });
+
+      test('accepts Unicode-letter path segments', () {
+        // Path segments are Unicode-aware (mirrors Python's Unicode \w).
+        expect(() => Kref('kref://проект/модели/герой.model'), returnsNormally);
+        expect(() => Kref('kref://日本語/作品/英雄.model'), returnsNormally);
+        expect(() => Kref('kref://café/items/naïve.kind'), returnsNormally);
+      });
+
+      test('keeps artifact ids ASCII-only', () {
+        // Artifact ids are server-generated opaque identifiers, never
+        // user content names, so they stay ASCII even when the path is
+        // Unicode.
+        expect(
+          () => Kref('kref://проект/модели/герой.model?r=1&a=mesh'),
+          returnsNormally,
+        );
+        expect(
+          () => Kref('kref://project/space/item.kind?r=1&a=меш'),
+          throwsA(isA<KrefValidationError>()),
+        );
+      });
     });
 
     group('helper methods', () {

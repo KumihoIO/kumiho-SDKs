@@ -191,10 +191,35 @@ public:
     std::shared_ptr<Space> getParentSpace();
 
     /**
-     * @brief Get child spaces.
+     * @brief Get child spaces under this space.
+     * @param recursive If true, include all nested descendant spaces. If false
+     *        (default), only direct children.
+     * @param page_size Optional page size for pagination.
+     * @param cursor Optional cursor for pagination.
      * @return A list of child Space objects.
      */
-    std::vector<std::shared_ptr<Space>> getChildSpaces();
+    std::vector<std::shared_ptr<Space>> getChildSpaces(
+        bool recursive = false,
+        std::optional<int32_t> page_size = std::nullopt,
+        std::optional<std::string> cursor = std::nullopt
+    );
+
+    /**
+     * @brief List child spaces under this space.
+     *
+     * Alias for getChildSpaces() mirroring the Python SDK's Space.get_spaces().
+     *
+     * @param recursive If true, include all nested descendant spaces. If false
+     *        (default), only direct children.
+     * @param page_size Optional page size for pagination.
+     * @param cursor Optional cursor for pagination.
+     * @return A list of child Space objects.
+     */
+    std::vector<std::shared_ptr<Space>> getSpaces(
+        bool recursive = false,
+        std::optional<int32_t> page_size = std::nullopt,
+        std::optional<std::string> cursor = std::nullopt
+    );
 
     /**
      * @brief Get the parent project.
@@ -205,9 +230,10 @@ public:
     /**
      * @brief Create a bundle in this space.
      * @param name The bundle name.
+     * @param metadata Optional key-value metadata for the bundle.
      * @return The created Bundle.
      */
-    std::shared_ptr<Bundle> createBundle(const std::string& name);
+    std::shared_ptr<Bundle> createBundle(const std::string& name, const Metadata& metadata = {});
 
     /**
      * @brief Get a bundle by name.

@@ -22,6 +22,18 @@ Metadata Event::getDetails() const {
     return {event_.details().begin(), event_.details().end()};
 }
 
+std::string Event::getTimestamp() const {
+    return event_.timestamp();
+}
+
+std::string Event::getAuthor() const {
+    return event_.author();
+}
+
+std::string Event::getCursor() const {
+    return event_.cursor();
+}
+
 EventStream::EventStream(std::unique_ptr<grpc::ClientReaderInterface<::kumiho::Event>> reader)
     : reader_(std::move(reader)) {}
 

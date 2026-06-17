@@ -21,11 +21,14 @@
 #include <vector>
 #include <memory>
 #include <optional>
+#include <utility>
 #include <grpcpp/grpcpp.h>
 #include "kumiho/types.hpp"
 #include "kumiho/kref.hpp"
+#include "kumiho/edge.hpp"  // for EdgeDirection used in getEdges()
 #include "kumiho/error.hpp"
 #include "kumiho/bundle.hpp"  // For BundleMember, BundleRevisionHistory in inline functions
+#include "kumiho/event.hpp"   // For EventCapabilities return type
 #include "kumiho.grpc.pb.h"
 
 namespace kumiho {
@@ -41,6 +44,35 @@ class Artifact;
 class Edge;
 class Event;
 class EventStream;
+
+/**
+ * @brief A single full-text search hit (item + relevance score).
+ *
+ * Mirrors the protobuf SearchResult. Search always returns Items, even when
+ * the match was on revision/artifact metadata.
+ */
+struct SearchResult {
+    /** @brief The matched item. */
+    std::shared_ptr<Item> item;
+    /** @brief Relevance score (higher = better match). */
+    double score = 0.0;
+    /** @brief Where the match was found: "item", "revision", "artifact". */
+    std::vector<std::string> matched_in;
+};
+
+/**
+ * @brief A revision scored against a query (server-side embeddings/fulltext).
+ *
+ * Mirrors the protobuf ScoredRevision returned by scoreRevisions().
+ */
+struct ScoredRevision {
+    /** @brief The scored revision's kref. */
+    Kref kref;
+    /** @brief Relevance score (0.0 - 1.0). */
+    double score = 0.0;
+    /** @brief How the score was computed: "vector", "fulltext", or "hybrid". */
+    std::string score_method;
+};
 
 /**
  * @brief The main client for interacting with Kumiho Cloud services.
@@ -116,8 +148,9 @@ public:
      * @brief Delete a project.
      * @param project_id The project UUID.
      * @param force If true, permanently delete. If false, soft delete.
+     * @return The StatusResponse returned by the server.
      */
-    void deleteProject(const std::string& project_id, bool force = false);
+    StatusResponse deleteProject(const std::string& project_id, bool force = false);
 
     /**
      * @brief Update a project.
@@ -152,9 +185,37 @@ public:
     /**
      * @brief Get child spaces of a parent.
      * @param parent_path The parent path (empty for root).
+     * @param recursive Whether to fetch all descendant spaces recursively.
+     * @param page_size Optional page size for pagination.
+     * @param cursor Optional cursor for pagination.
      * @return A list of Space objects.
      */
-    std::vector<std::shared_ptr<Space>> getChildSpaces(const std::string& parent_path = "");
+    std::vector<std::shared_ptr<Space>> getChildSpaces(
+        const std::string& parent_path = "",
+        bool recursive = false,
+        std::optional<int32_t> page_size = std::nullopt,
+        std::optional<std::string> cursor = std::nullopt
+    );
+
+    /**
+     * @brief Get child spaces of a parent with pagination metadata surfaced.
+     *
+     * Sibling of getChildSpaces() that returns a PagedList carrying the
+     * response's next_cursor and total_count. Mirrors the Python behavior
+     * of returning a PagedList when pagination is supplied.
+     *
+     * @param parent_path The parent path (empty for root).
+     * @param recursive Whether to fetch all descendant spaces recursively.
+     * @param page_size Page size for pagination (0 = server default).
+     * @param cursor Cursor for pagination (empty = first page).
+     * @return A PagedList of Space objects.
+     */
+    PagedList<std::shared_ptr<Space>> getChildSpacesPaged(
+        const std::string& parent_path = "",
+        bool recursive = false,
+        int32_t page_size = 0,
+        const std::string& cursor = ""
+    );
 
     /**
      * @brief Update space metadata.
@@ -168,8 +229,9 @@ public:
      * @brief Delete a space.
      * @param path The space path.
      * @param force If true, permanently delete.
+     * @return The StatusResponse returned by the server.
      */
-    void deleteSpace(const std::string& path, bool force = false);
+    StatusResponse deleteSpace(const std::string& path, bool force = false);
 
     // --- Item Operations ---
 
@@ -178,10 +240,11 @@ public:
      * @param parent_path The parent space path.
      * @param name The item name.
      * @param kind The item kind (type).
+     * @param metadata Optional metadata to set on the created item.
      * @return The created Item.
      * @throws ReservedKindError if kind is reserved.
      */
-    std::shared_ptr<Item> createItem(const std::string& parent_path, const std::string& name, const std::string& kind);
+    std::shared_ptr<Item> createItem(const std::string& parent_path, const std::string& name, const std::string& kind, const Metadata& metadata = {});
 
     /**
      * @brief Get an item by parent path, name, and kind.
@@ -198,6 +261,36 @@ public:
      * @return The Item.
      */
     std::shared_ptr<Item> getItemByKref(const std::string& kref_uri);
+
+    /**
+     * @brief Get the item that contains a specific revision.
+     * @param revision_kref The revision's Kref URI.
+     * @return The Item that contains the revision.
+     */
+    std::shared_ptr<Item> getItemFromRevision(const std::string& revision_kref);
+
+    /**
+     * @brief Get items within a space with optional filtering.
+     *
+     * Calls the GetItems RPC (mirrors Python Client.get_items). Unlike
+     * itemSearch(), this lists items under a specific parent space.
+     *
+     * @param parent_path The path of the parent space.
+     * @param item_name_filter Optional filter for item names.
+     * @param kind_filter Optional filter for item kinds.
+     * @param include_deprecated Whether to include deprecated items.
+     * @param page_size Optional page size for pagination.
+     * @param cursor Optional cursor for pagination.
+     * @return A list of Item objects matching the filters.
+     */
+    std::vector<std::shared_ptr<Item>> getItems(
+        const std::string& parent_path,
+        const std::string& item_name_filter = "",
+        const std::string& kind_filter = "",
+        bool include_deprecated = false,
+        std::optional<int32_t> page_size = std::nullopt,
+        std::optional<std::string> cursor = std::nullopt
+    );
 
     /**
      * @brief Search for items.
@@ -247,9 +340,12 @@ public:
      * @param item_kref The parent item's Kref.
      * @param metadata Optional metadata.
      * @param number Optional specific revision number (0 for auto).
+     * @param embedding_text Optional override for the text used to generate the
+     *        server-side embedding. When empty the server auto-generates from
+     *        concatenated metadata.
      * @return The created Revision.
      */
-    std::shared_ptr<Revision> createRevision(const Kref& item_kref, const Metadata& metadata = {}, int number = 0);
+    std::shared_ptr<Revision> createRevision(const Kref& item_kref, const Metadata& metadata = {}, int number = 0, const std::string& embedding_text = "");
 
     /**
      * @brief Get a revision by Kref.
@@ -281,6 +377,71 @@ public:
      * @return A list of Revision objects.
      */
     std::vector<std::shared_ptr<Revision>> getRevisions(const Kref& item_kref);
+
+    /**
+     * @brief Full-text fuzzy search across items.
+     * @param query Search terms (supports fuzzy matching).
+     * @param context_filter Restrict to a kref prefix (e.g., "myproject/assets").
+     * @param kind_filter Exact kind match (e.g., "model").
+     * @param include_deprecated Include soft-deleted items.
+     * @param include_revision_metadata Also search revision tags/metadata.
+     * @param include_artifact_metadata Also search artifact names/metadata.
+     * @param page_size Optional results per page (1-1000, default 100).
+     * @param cursor Optional pagination cursor.
+     * @param min_score Minimum relevance score 0.0-1.0.
+     * @return A list of SearchResult ordered by relevance.
+     */
+    std::vector<SearchResult> search(
+        const std::string& query,
+        const std::string& context_filter = "",
+        const std::string& kind_filter = "",
+        bool include_deprecated = false,
+        bool include_revision_metadata = false,
+        bool include_artifact_metadata = false,
+        std::optional<int32_t> page_size = std::nullopt,
+        std::optional<std::string> cursor = std::nullopt,
+        double min_score = 0.0
+    );
+
+    /**
+     * @brief Score specific revisions against a query (server-side embeddings).
+     * @param query The query string to score against.
+     * @param revision_krefs Revision kref URIs to score (max 100).
+     * @param score_fields When non-empty, re-embed from only these metadata fields.
+     * @return ScoredRevision entries ordered by score descending.
+     */
+    std::vector<ScoredRevision> scoreRevisions(
+        const std::string& query,
+        const std::vector<std::string>& revision_krefs,
+        const std::vector<std::string>& score_fields = {}
+    );
+
+    /**
+     * @brief Batch fetch multiple revisions in a single call.
+     * @param revision_krefs Revision kref URIs to fetch directly.
+     * @param item_krefs Item kref URIs to resolve with the given tag.
+     * @param tag Tag to resolve when using item_krefs (default "latest").
+     * @param allow_partial If true, return partial results for not-found krefs.
+     * @return A pair of (found revisions, not-found kref URIs).
+     */
+    std::pair<std::vector<std::shared_ptr<Revision>>, std::vector<std::string>>
+    batchGetRevisions(
+        const std::vector<std::string>& revision_krefs = {},
+        const std::vector<std::string>& item_krefs = {},
+        const std::string& tag = "latest",
+        bool allow_partial = true
+    );
+
+    /**
+     * @brief Get the latest revision of an item.
+     *
+     * Resolves the item kref to its latest revision (mirrors Python
+     * Client.get_latest_revision).
+     *
+     * @param item_kref The item's Kref.
+     * @return The latest Revision, or nullptr if the item has no revisions.
+     */
+    std::shared_ptr<Revision> getLatestRevision(const Kref& item_kref);
 
     /**
      * @brief Peek at the next revision number.
@@ -348,9 +509,10 @@ public:
      * @param revision_kref The parent revision's Kref.
      * @param name The artifact name.
      * @param location The file path or URI.
+     * @param metadata Optional key-value metadata for the artifact.
      * @return The created Artifact.
      */
-    std::shared_ptr<Artifact> createArtifact(const Kref& revision_kref, const std::string& name, const std::string& location);
+    std::shared_ptr<Artifact> createArtifact(const Kref& revision_kref, const std::string& name, const std::string& location, const Metadata& metadata = {});
 
     /**
      * @brief Get an artifact by revision and name.
@@ -359,6 +521,20 @@ public:
      * @return The Artifact.
      */
     std::shared_ptr<Artifact> getArtifact(const Kref& revision_kref, const std::string& name);
+
+    /**
+     * @brief Get an artifact by its Kref URI.
+     *
+     * If the Kref contains an artifact name (`&a=`), that artifact is fetched
+     * directly. Otherwise the Kref is treated as an item/revision reference and
+     * the revision's default artifact is returned.
+     *
+     * @param kref_uri The artifact's Kref URI.
+     * @return The Artifact.
+     * @throws ValidationError if no artifact name is present and no default
+     *         artifact is set on the revision.
+     */
+    std::shared_ptr<Artifact> getArtifactByKref(const std::string& kref_uri);
 
     /**
      * @brief Get all artifacts for a revision.
@@ -424,9 +600,14 @@ public:
      * @brief Get edges for a revision.
      * @param kref The revision's Kref.
      * @param edge_type_filter Filter by edge type (empty = all).
+     * @param direction Direction of edges to retrieve (OUTGOING, INCOMING, or BOTH).
      * @return A list of Edge objects.
      */
-    std::vector<std::shared_ptr<Edge>> getEdges(const Kref& kref, const std::string& edge_type_filter = "");
+    std::vector<std::shared_ptr<Edge>> getEdges(
+        const Kref& kref,
+        const std::string& edge_type_filter = "",
+        EdgeDirection direction = EdgeDirection::OUTGOING
+    );
 
     /**
      * @brief Delete an edge.
@@ -544,17 +725,19 @@ public:
      * @brief Create a bundle.
      * @param parent_path The parent space path.
      * @param name The bundle name.
+     * @param metadata Optional key-value metadata for the bundle.
      * @return The created Bundle.
      */
-    std::shared_ptr<Bundle> createBundle(const std::string& parent_path, const std::string& name);
+    std::shared_ptr<Bundle> createBundle(const std::string& parent_path, const std::string& name, const Metadata& metadata = {});
 
     /**
      * @brief Create a bundle using a parent Kref.
      * @param parent_kref The parent's Kref.
      * @param name The bundle name.
+     * @param metadata Optional key-value metadata for the bundle.
      * @return The created Bundle.
      */
-    std::shared_ptr<Bundle> createBundle(const Kref& parent_kref, const std::string& name);
+    std::shared_ptr<Bundle> createBundle(const Kref& parent_kref, const std::string& name, const Metadata& metadata = {});
 
     /**
      * @brief Get a bundle by parent path and name.
@@ -565,25 +748,47 @@ public:
     std::shared_ptr<Bundle> getBundle(const std::string& parent_path, const std::string& name);
 
     /**
+     * @brief Get a bundle by its Kref URI.
+     *
+     * Retrieves the item and verifies it is a bundle (kind == "bundle").
+     *
+     * @param kref_uri The bundle's Kref URI.
+     * @return The Bundle.
+     * @throws ValidationError if the item exists but is not a bundle.
+     */
+    std::shared_ptr<Bundle> getBundleByKref(const std::string& kref_uri);
+
+    /**
      * @brief Add a member to a bundle.
+     *
+     * Creates a new bundle revision (mirrors Python add_bundle_member).
+     *
      * @param bundle_kref The bundle's Kref.
      * @param item_kref The item to add.
+     * @param metadata Optional key-value metadata to store in the revision.
+     * @return A BundleMemberResult with success, message, and new_revision.
      */
-    void addBundleMember(const Kref& bundle_kref, const Kref& item_kref);
+    BundleMemberResult addBundleMember(const Kref& bundle_kref, const Kref& item_kref, const Metadata& metadata = {});
 
     /**
      * @brief Remove a member from a bundle.
+     *
+     * Creates a new bundle revision (mirrors Python remove_bundle_member).
+     *
      * @param bundle_kref The bundle's Kref.
      * @param item_kref The item to remove.
+     * @param metadata Optional key-value metadata to store in the revision.
+     * @return A BundleMemberResult with success, message, and new_revision.
      */
-    void removeBundleMember(const Kref& bundle_kref, const Kref& item_kref);
+    BundleMemberResult removeBundleMember(const Kref& bundle_kref, const Kref& item_kref, const Metadata& metadata = {});
 
     /**
      * @brief Get bundle members.
      * @param bundle_kref The bundle's Kref.
+     * @param revision_number Optional revision to query (0 = latest revision).
      * @return A list of BundleMember objects.
      */
-    std::vector<BundleMember> getBundleMembers(const Kref& bundle_kref);
+    std::vector<BundleMember> getBundleMembers(const Kref& bundle_kref, int revision_number = 0);
 
     /**
      * @brief Get bundle history.
@@ -612,7 +817,25 @@ public:
      * @param kref_filter Filter by Kref pattern.
      * @return An EventStream for receiving events.
      */
-    std::shared_ptr<EventStream> eventStream(const std::string& routing_key_filter = "", const std::string& kref_filter = "");
+    std::shared_ptr<EventStream> eventStream(
+        const std::string& routing_key_filter = "",
+        const std::string& kref_filter = "",
+        const std::string& cursor = "",
+        const std::string& consumer_group = "",
+        bool from_beginning = false,
+        double timeout_seconds = 0.0
+    );
+
+    /**
+     * @brief Get event streaming capabilities for the current tenant tier.
+     *
+     * Returns the capabilities available based on the authenticated tenant's
+     * subscription tier (replay, cursor resume, consumer groups, retention and
+     * buffer limits).
+     *
+     * @return An EventCapabilities struct describing the tier's capabilities.
+     */
+    EventCapabilities getEventCapabilities();
 
     // --- Authentication ---
 
@@ -628,6 +851,15 @@ public:
      */
     const std::string& getAuthToken() const { return auth_token_; }
 
+    /**
+     * @brief Set the tenant id sent as the x-tenant-id metadata header.
+     *
+     * Used by discovery-built clients to route requests to the resolved
+     * tenant. When set, every RPC includes x-tenant-id.
+     * @param tenant_id The tenant id, or empty to disable.
+     */
+    void setTenantId(const std::string& tenant_id);
+
     // --- Utility ---
 
     /**
@@ -640,12 +872,19 @@ private:
     std::shared_ptr<kumiho::KumihoService::StubInterface> stub_;
     std::shared_ptr<grpc::ClientContext> context_; // For event stream
     std::string auth_token_;  // Bearer token for authentication
+    std::string tenant_id_;   // Tenant id for x-tenant-id routing (discovery)
 
     /**
      * @brief Configure a ClientContext with authentication metadata.
+     *
+     * Adds a correlation id and (when set) the bearer token. For unary RPCs a
+     * default per-RPC deadline is applied (KUMIHO_RPC_TIMEOUT_SECONDS, default
+     * 30s); streaming RPCs opt out by passing with_deadline = false.
+     *
      * @param context The context to configure.
+     * @param with_deadline Whether to set a default per-RPC deadline.
      */
-    void configureContext(grpc::ClientContext& context) const;
+    void configureContext(grpc::ClientContext& context, bool with_deadline = true) const;
 };
 
 // --- Convenience Functions ---
@@ -671,6 +910,23 @@ inline std::shared_ptr<Space> createGroup(std::shared_ptr<Client> client, const 
  * @return The username, or "unknown" if not found.
  */
 std::string getCurrentUser();
+
+/**
+ * @brief Apply standard gRPC keepalive settings to channel arguments.
+ *
+ * Configures HTTP/2 keepalive pings so long-lived channels (including event
+ * streams) survive idle NAT/proxy timeouts and detect dead connections:
+ * - GRPC_ARG_KEEPALIVE_TIME_MS = 30000
+ * - GRPC_ARG_KEEPALIVE_TIMEOUT_MS = 10000
+ * - GRPC_ARG_KEEPALIVE_PERMIT_WITHOUT_CALLS = 1
+ * - GRPC_ARG_HTTP2_MIN_SENT_PING_INTERVAL_WITHOUT_DATA_MS = 10000
+ * - GRPC_ARG_HTTP2_MAX_PINGS_WITHOUT_DATA = 3
+ *
+ * Applied uniformly in createFromEnv, clientFromDiscovery, and the CE channel.
+ *
+ * @param args The channel arguments to mutate.
+ */
+void applyKeepaliveArgs(grpc::ChannelArguments& args);
 
 } // namespace api
 } // namespace kumiho

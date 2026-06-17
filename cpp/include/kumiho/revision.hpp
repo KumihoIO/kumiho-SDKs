@@ -157,9 +157,10 @@ public:
      *
      * @param name The name of the artifact (e.g., "mesh", "textures").
      * @param location The file path or URI where the artifact is stored.
+     * @param metadata Optional key-value metadata for the artifact.
      * @return The created Artifact.
      */
-    std::shared_ptr<Artifact> createArtifact(const std::string& name, const std::string& location);
+    std::shared_ptr<Artifact> createArtifact(const std::string& name, const std::string& location, const Metadata& metadata = {});
 
     /**
      * @brief Get an artifact by name.

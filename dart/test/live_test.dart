@@ -19,7 +19,6 @@ import 'dart:io';
 import 'package:test/test.dart';
 import 'package:kumiho/kumiho.dart';
 import 'package:kumiho/auth.dart';
-import 'package:kumiho/src/discovery.dart';
 
 /// Check if live integration tests should run.
 bool shouldRunLiveTests() {
@@ -80,8 +79,11 @@ void main() {
       ? null
       : 'Live tests disabled. Set KUMIHO_INTEGRATION_TEST=1 to enable.';
 
-  KumihoClient? client;
-  TestCleanup? cleanup;
+  // Assigned only when the live suite actually runs (skipReason == null);
+  // every group below is gated with `skip: skipReason`, so the test bodies
+  // (and setUp/tearDown) that read these only execute once they are assigned.
+  late KumihoClient client;
+  late TestCleanup cleanup;
 
   setUpAll(() async {
     if (skipReason != null) return;
@@ -110,22 +112,18 @@ void main() {
   });
 
   setUp(() {
-    final active = client;
-    if (active == null) return;
-    cleanup = TestCleanup(active);
+    if (skipReason != null) return;
+    cleanup = TestCleanup(client);
   });
 
   tearDown(() async {
-    final active = cleanup;
-    if (active == null) return;
-    await active.cleanup();
+    if (skipReason != null) return;
+    await cleanup.cleanup();
   });
 
   tearDownAll(() async {
     if (skipReason != null) return;
-    final active = client;
-    if (active == null) return;
-    await active.shutdownAsync();
+    await client.shutdownAsync();
   });
 
   group('Full Creation Workflow', () {

@@ -29,6 +29,37 @@ class KumihoError implements Exception {
   String toString() => 'KumihoError: $message';
 }
 
+/// Raised when project creation is blocked by a guardrail.
+///
+/// Thrown by `createProject` when the server returns `RESOURCE_EXHAUSTED`
+/// (for example, when the maximum number of projects has been reached).
+/// Mirrors the Python SDK's `ProjectLimitError`.
+class ProjectLimitError extends KumihoError {
+  /// Creates a new [ProjectLimitError] with the given [message].
+  const ProjectLimitError(super.message);
+
+  @override
+  String toString() => 'ProjectLimitError: $message';
+}
+
+/// Item kinds that are reserved and cannot be created via `createItem`.
+///
+/// The `bundle` kind must be created with `createBundle` instead.
+const Set<String> reservedKinds = {'bundle'};
+
+/// Raised when attempting to create an item with a reserved kind.
+///
+/// Thrown by `createItem` when the requested kind (case-insensitive) is in
+/// [reservedKinds] (e.g. `bundle`). Use `createBundle` instead. Mirrors the
+/// Python SDK's `ReservedKindError`.
+class ReservedKindError extends KumihoError {
+  /// Creates a new [ReservedKindError] with the given [message].
+  const ReservedKindError(super.message);
+
+  @override
+  String toString() => 'ReservedKindError: $message';
+}
+
 /// Forward declaration of the client type.
 /// 
 /// This allows model classes to hold a reference to the client

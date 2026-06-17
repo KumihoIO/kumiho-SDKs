@@ -84,6 +84,8 @@ class Project extends KumihoObject {
 
   /// Creates a new item within this project.
   ///
+  /// [metadata] is optional key-value metadata applied to the new item.
+  ///
   /// ```dart
   /// final hero = await project.createItem('hero', 'model');
   /// final texture = await project.createItem('skin', 'texture', parentPath: '/project/textures');
@@ -92,9 +94,11 @@ class Project extends KumihoObject {
     String itemName,
     String kind, {
     String? parentPath,
+    Map<String, String>? metadata,
   }) async {
     final baseParent = parentPath ?? '/$name';
-    final response = await client.createItem(baseParent, itemName, kind);
+    final response =
+        await client.createItem(baseParent, itemName, kind, metadata: metadata);
     return Item(response, client);
   }
 
@@ -146,21 +150,27 @@ class Project extends KumihoObject {
 
   /// Gets a space by path relative to this project.
   ///
+  /// If [relativePath] begins with `/` it is treated as an absolute path and
+  /// used as-is; otherwise it is resolved relative to this project's root.
+  ///
   /// ```dart
   /// final chars = await project.getSpace('characters');
   /// final heroes = await project.getSpace('characters/heroes');
+  /// final absolute = await project.getSpace('/film-2024/characters');
   /// ```
   Future<Space> getSpace(String relativePath) async {
-    final fullPath = '/$name/$relativePath';
+    final fullPath =
+        relativePath.startsWith('/') ? relativePath : '/$name/$relativePath';
     final response = await client.getSpace(fullPath);
     return Space(response, client);
   }
 
   /// Gets all child spaces of this project.
   ///
-  /// If [recursive] is true, traverses the entire space tree depth-first
-  /// and returns every space as a high-level [Space] model. This keeps the
-  /// caller insulated from the raw gRPC paging responses.
+  /// If [recursive] is true, the server traverses the entire space tree and
+  /// returns every descendant in a single RPC—no client-side fan-out. The
+  /// optional [pageSize] and [cursor] mirror the server-side paging
+  /// semantics. Every result is returned as a high-level [Space] model.
   ///
   /// ```dart
   /// final spaces = await project.getSpaces();
@@ -168,20 +178,18 @@ class Project extends KumihoObject {
   ///   print(space.path);
   /// }
   /// ```
-  Future<List<Space>> getSpaces({bool recursive = false}) async {
-    final spaceResponses = await client.getChildSpaces('/$name');
-    final spaces = spaceResponses.map<Space>((s) => Space(s, client)).toList();
-
-    if (recursive && spaces.isNotEmpty) {
-      final allSpaces = <Space>[...spaces];
-      for (final space in spaces) {
-        final children = await space.getChildSpaces(recursive: true);
-        allSpaces.addAll(children);
-      }
-      return allSpaces;
-    }
-
-    return spaces;
+  Future<List<Space>> getSpaces({
+    bool recursive = false,
+    int? pageSize,
+    String? cursor,
+  }) async {
+    final spaceResponses = await client.getChildSpaces(
+      '/$name',
+      recursive: recursive,
+      pageSize: pageSize,
+      cursor: cursor,
+    );
+    return spaceResponses.map<Space>((s) => Space(s, client)).toList();
   }
 
   /// Updates the project description.
@@ -190,7 +198,8 @@ class Project extends KumihoObject {
   /// await project.update(description: 'Updated description');
   /// ```
   Future<Project> update({String? description}) async {
-    final response = await client.updateProject(name, description: description);
+    final response =
+        await client.updateProject(projectId, description: description);
     return Project(response, client);
   }
 
@@ -201,7 +210,7 @@ class Project extends KumihoObject {
   /// await project.delete(force: true);  // Hard delete
   /// ```
   Future<void> delete({bool force = false}) async {
-    await client.deleteProject(name, force: force);
+    await client.deleteProject(projectId, force: force);
   }
 
   /// Sets the public access mode for this project.
@@ -210,7 +219,8 @@ class Project extends KumihoObject {
   /// await project.setPublic(true);  // Enable public access
   /// ```
   Future<Project> setPublic(bool allowPublic) async {
-    final response = await client.updateProject(name, allowPublic: allowPublic);
+    final response =
+        await client.updateProject(projectId, allowPublic: allowPublic);
     return Project(response, client);
   }
 

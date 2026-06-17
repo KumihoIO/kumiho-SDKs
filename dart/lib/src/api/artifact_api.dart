@@ -36,13 +36,13 @@ mixin ArtifactApi on KumihoClientBase {
   /// [name] is the artifact name (e.g., 'mesh', 'textures').
   /// [location] is the file path or URI where the artifact is stored.
   /// [metadata] is optional key-value metadata for the artifact.
-  /// [existsError] controls whether to throw if artifact exists (default: `true`).
+  /// [existsError] controls whether to throw if artifact exists (default: `false`).
   Future<ArtifactResponse> createArtifact(
     String revisionKref,
     String name,
     String location, {
     Map<String, String>? metadata,
-    bool existsError = true,
+    bool existsError = false,
   }) async {
     final request = CreateArtifactRequest()
       ..revisionKref = Kref(uri: revisionKref)

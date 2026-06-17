@@ -23,6 +23,24 @@ namespace api {
 // Forward declarations
 class Client;
 
+// --- Self-hosted Community Edition (CE) discovery ---
+//
+// These constants form a cross-component contract shared with the Python SDK,
+// kumiho-server (config/apply_deployment_defaults), and the installer scripts.
+// The names and the default port MUST NOT change.
+
+/** @brief Env var holding an explicit loopback CE endpoint (e.g. "127.0.0.1:9190"). */
+constexpr const char* kLocalCeEndpointEnv = "KUMIHO_LOCAL_SERVER_ENDPOINT";
+
+/** @brief Env var holding an explicit loopback CE port. */
+constexpr const char* kLocalCePortEnv = "KUMIHO_LOCAL_SERVER_PORT";
+
+/** @brief Env var overriding the CE liveness-probe timeout in seconds. */
+constexpr const char* kLocalCeTimeoutEnv = "KUMIHO_LOCAL_DISCOVERY_TIMEOUT_SECONDS";
+
+/** @brief Default loopback port for a self-hosted CE server. */
+constexpr int kDefaultLocalCePort = 9190;
+
 /**
  * @brief Region routing information from discovery.
  *
@@ -271,6 +289,45 @@ std::shared_ptr<Client> clientFromDiscovery(
     const std::string& control_plane_url = "",
     const std::string& cache_path = "",
     bool force_refresh = false
+);
+
+/**
+ * @brief Resolve a loopback gRPC target for a self-hosted CE server, if present.
+ *
+ * Probes loopback candidates (derived from KUMIHO_LOCAL_SERVER_ENDPOINT,
+ * KUMIHO_LOCAL_SERVER_PORT, or the default 127.0.0.1:9190) by issuing an HTTP
+ * GET to `http://<target>/api/_live`. A candidate matches only when the probe
+ * returns HTTP status < 400 and a JSON body with `deployment_mode` exactly
+ * equal to `"self_hosted_ce"`.
+ *
+ * Only loopback hosts (localhost, 127.0.0.0/8, ::1) are accepted; non-loopback
+ * targets are rejected as a hard security invariant.
+ *
+ * @param timeout Optional probe timeout in seconds. When omitted, falls back to
+ *                KUMIHO_LOCAL_DISCOVERY_TIMEOUT_SECONDS (min 0.05) or 0.5.
+ * @return The first probe-passing loopback target, or std::nullopt if none.
+ * @throws DiscoveryError if an explicit env var points to a non-loopback host
+ *         or an invalid port.
+ */
+std::optional<std::string> resolveLocalCeEndpoint(
+    std::optional<double> timeout = std::nullopt
+);
+
+/**
+ * @brief Create a tokenless Client for a loopback self-hosted CE server.
+ *
+ * Builds an insecure gRPC channel to the resolved loopback target with no auth
+ * token loaded, discovery disabled, and auto-login disabled. Returns nullptr
+ * (does NOT throw) when no CE server is detected.
+ *
+ * This must never run when the caller already has an explicit endpoint or a
+ * resolved token — see Client::createFromEnv for the gating logic.
+ *
+ * @param timeout Optional probe timeout in seconds (see resolveLocalCeEndpoint).
+ * @return A shared pointer to the configured Client, or nullptr if no CE server.
+ */
+std::shared_ptr<Client> clientFromLocalCe(
+    std::optional<double> timeout = std::nullopt
 );
 
 } // namespace api

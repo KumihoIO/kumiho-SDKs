@@ -130,19 +130,19 @@ TEST_F(ControlPlaneTokenTest, TokenWithTenantId) {
 }
 
 TEST_F(ControlPlaneTokenTest, TokenWithKumihoIssuer) {
-    // JWT with iss: https://kumiho.io/auth
-    // Payload: {"iss":"https://kumiho.io/auth"}
-    // Base64URL: eyJpc3MiOiJodHRwczovL2t1bWloby5pby9hdXRoIn0
-    std::string jwt = "eyJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJodHRwczovL2t1bWloby5pby9hdXRoIn0.sig";
+    // JWT with iss: https://control.kumiho.cloud/auth
+    // Payload: {"iss":"https://control.kumiho.cloud/auth"}
+    // Base64URL: eyJpc3MiOiJodHRwczovL2NvbnRyb2wua3VtaWhvLmNsb3VkL2F1dGgifQ
+    std::string jwt = "eyJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJodHRwczovL2NvbnRyb2wua3VtaWhvLmNsb3VkL2F1dGgifQ.sig";
     
     EXPECT_TRUE(isControlPlaneToken(jwt));
 }
 
 TEST_F(ControlPlaneTokenTest, TokenWithKumihoAudience) {
-    // JWT with aud: https://api.kumiho.io
-    // Payload: {"aud":"https://api.kumiho.io"}
-    // Base64URL: eyJhdWQiOiJodHRwczovL2FwaS5rdW1paG8uaW8ifQ
-    std::string jwt = "eyJhbGciOiJIUzI1NiJ9.eyJhdWQiOiJodHRwczovL2FwaS5rdW1paG8uaW8ifQ.sig";
+    // JWT with aud: kumiho-server
+    // Payload: {"aud":"kumiho-server"}
+    // Base64URL: eyJhdWQiOiJrdW1paG8tc2VydmVyIn0
+    std::string jwt = "eyJhbGciOiJIUzI1NiJ9.eyJhdWQiOiJrdW1paG8tc2VydmVyIn0.sig";
     
     EXPECT_TRUE(isControlPlaneToken(jwt));
 }

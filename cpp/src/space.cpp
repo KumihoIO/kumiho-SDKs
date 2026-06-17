@@ -84,19 +84,21 @@ PagedList<std::shared_ptr<Item>> Space::getItems(
 }
 
 std::shared_ptr<Space> Space::setMetadata(const Metadata& metadata) {
-    return client_->updateSpaceMetadata(getKref(), metadata);
+    // The server expects the raw space path in the kref uri field, not a
+    // "kref://"-prefixed URI. Mirrors the Python SDK (space.set_metadata).
+    return client_->updateSpaceMetadata(Kref(response_.path()), metadata);
 }
 
 std::optional<std::string> Space::getAttribute(const std::string& key) {
-    return client_->getAttribute(getKref(), key);
+    return client_->getAttribute(Kref(response_.path()), key);
 }
 
 bool Space::setAttribute(const std::string& key, const std::string& value) {
-    return client_->setAttribute(getKref(), key, value);
+    return client_->setAttribute(Kref(response_.path()), key, value);
 }
 
 bool Space::deleteAttribute(const std::string& key) {
-    return client_->deleteAttribute(getKref(), key);
+    return client_->deleteAttribute(Kref(response_.path()), key);
 }
 
 void Space::deleteSpace(bool force) {
@@ -140,8 +142,20 @@ std::shared_ptr<Space> Space::getParentSpace() {
     return client_->getSpace(parent_path);
 }
 
-std::vector<std::shared_ptr<Space>> Space::getChildSpaces() {
-    return client_->getChildSpaces(response_.path());
+std::vector<std::shared_ptr<Space>> Space::getChildSpaces(
+    bool recursive,
+    std::optional<int32_t> page_size,
+    std::optional<std::string> cursor
+) {
+    return client_->getChildSpaces(response_.path(), recursive, page_size, cursor);
+}
+
+std::vector<std::shared_ptr<Space>> Space::getSpaces(
+    bool recursive,
+    std::optional<int32_t> page_size,
+    std::optional<std::string> cursor
+) {
+    return getChildSpaces(recursive, page_size, cursor);
 }
 
 std::shared_ptr<Project> Space::getProject() {
@@ -157,8 +171,8 @@ std::shared_ptr<Project> Space::getProject() {
     return client_->getProject(project_name);
 }
 
-std::shared_ptr<Bundle> Space::createBundle(const std::string& name) {
-    return client_->createBundle(response_.path(), name);
+std::shared_ptr<Bundle> Space::createBundle(const std::string& name, const Metadata& metadata) {
+    return client_->createBundle(response_.path(), name, metadata);
 }
 
 std::shared_ptr<Bundle> Space::getBundle(const std::string& name) {

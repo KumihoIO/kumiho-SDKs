@@ -2,7 +2,7 @@
 
 **Goal:** Modernize kumiho-cpp to achieve feature parity with kumiho-python while adopting modular design patterns.
 
-**Reference:** kumiho-python v0.3.0
+**Reference:** kumiho-python v0.10.0
 
 ---
 
@@ -410,6 +410,58 @@ Local cache operations are fully functional.
 - Integration tests: 13 tests across 2 executables (6 workflow + 7 discovery)
 - All unit tests pass on Windows/MSVC
 - All integration tests pass against local servers (requires KUMIHO_INTEGRATION_TEST=1)
+
+---
+
+### Phase 9: Self-hosted CE Parity & Connection Hardening ✅
+> Mirror the kumiho-python (v0.10.0) self-hosted Community Edition discovery
+> contract and harden gRPC connections.
+
+- [x] **9.1** Self-hosted CE loopback discovery (`discovery.hpp` / `discovery.cpp`)
+  - [x] Constants `kDefaultLocalCePort = 9190` and the three env names
+    (`KUMIHO_LOCAL_SERVER_ENDPOINT`, `KUMIHO_LOCAL_SERVER_PORT`,
+    `KUMIHO_LOCAL_DISCOVERY_TIMEOUT_SECONDS`) — a cross-component contract that
+    must not change.
+  - [x] `localCeCandidates()` — resolution order: endpoint env > port env >
+    default `127.0.0.1:9190`; non-numeric port env is an error.
+  - [x] `normaliseLocalCeTarget()` — loopback-only (localhost / 127.0.0.0/8 /
+    ::1) via a real IP parser (`inet_pton`), validates port 1–65535, brackets
+    IPv6; rejects non-loopback hosts (hard security invariant).
+  - [x] `localCeTimeout()` — explicit arg wins, else env as float (min 0.05),
+    else default 0.5.
+  - [x] `probeLocalCeCandidate()` — libcurl GET `http://<target>/api/_live`,
+    accepts only HTTP < 400 **and** JSON `deployment_mode == "self_hosted_ce"`.
+  - [x] `resolveLocalCeEndpoint(timeout?)` — first probe-passing loopback target
+    or `std::nullopt`.
+  - [x] `clientFromLocalCe(timeout?)` — nullable tokenless insecure client;
+    returns `nullptr` (never throws) when no CE server is present.
+
+- [x] **9.2** Gate the implicit CE auto-probe in `Client::createFromEnv()`
+  - [x] Runs **only** when no explicit endpoint (`KUMIHO_SERVER_ENDPOINT` /
+    `KUMIHO_SERVER_ADDRESS`) **and** `loadBearerToken()` is empty.
+  - [x] On hit, adopt the tokenless CE client (token load + discovery skipped).
+  - [x] Cloud path unchanged: a user with a token or explicit endpoint behaves
+    exactly as before. Order: explicit env endpoint → (no token) CE 9190 probe →
+    existing `localhost:50051` fallback.
+
+- [x] **9.3** gRPC connection hardening
+  - [x] `applyKeepaliveArgs()` helper (KEEPALIVE_TIME_MS=30000,
+    KEEPALIVE_TIMEOUT_MS=10000, KEEPALIVE_PERMIT_WITHOUT_CALLS=1,
+    HTTP2_MIN_SENT_PING_INTERVAL_WITHOUT_DATA_MS=10000,
+    HTTP2_MAX_PINGS_WITHOUT_DATA=3), applied in `createFromEnv`,
+    `clientFromDiscovery`, and the CE channel.
+  - [x] Default per-RPC deadline in `Client::configureContext`
+    (`KUMIHO_RPC_TIMEOUT_SECONDS`, default 30s); streaming RPCs opt out.
+
+- [x] **9.4** Kref Unicode + security validation parity with Python
+  `validate_kref` — reject `..` and control chars, accept UTF-8 letter bytes
+  (>= 0x80) in segments, keep the ASCII allow-list otherwise.
+
+- [x] **9.5** Control-plane token detection fix — `iss` prefix
+  `https://control.kumiho.cloud`, `aud` prefix `kumiho-server`.
+
+**Deferred:** gRPC retry / automatic re-login interceptor (`grpc-retry-autologin`)
+— requires a generic client interceptor and is tracked separately.
 
 ---
 

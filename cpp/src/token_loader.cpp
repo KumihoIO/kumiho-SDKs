@@ -347,15 +347,15 @@ bool isControlPlaneToken(const std::string& token) {
     // Check issuer
     auto issIt = claims.find("iss");
     if (issIt != claims.end()) {
-        if (issIt->second.find("https://kumiho.io") == 0) {
+        if (issIt->second.find("https://control.kumiho.cloud") == 0) {
             return true;
         }
     }
-    
+
     // Check audience
     auto audIt = claims.find("aud");
     if (audIt != claims.end()) {
-        if (audIt->second.find("https://api.kumiho.io") == 0) {
+        if (audIt->second.find("kumiho-server") == 0) {
             return true;
         }
     }

@@ -98,8 +98,8 @@ std::string validateTokenFormat(const std::string& token, const std::string& sou
  *
  * Control plane tokens have specific claims that identify them:
  * - tenant_id claim
- * - iss starting with "https://kumiho.io"
- * - aud starting with "https://api.kumiho.io"
+ * - iss starting with "https://control.kumiho.cloud"
+ * - aud starting with "kumiho-server"
  *
  * @param token The JWT token string.
  * @return True if this is a control-plane token.

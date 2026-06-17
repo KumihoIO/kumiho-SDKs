@@ -17,6 +17,7 @@ import 'package:http/http.dart' as http;
 import '../kumiho.dart' show KumihoClient;
 import 'auth/token_loader.dart';
 import 'auth/token_refresh.dart';
+import 'ce_discovery.dart' show clientFromLocalCe;
 
 const String _defaultCacheKey = '__default__';
 
@@ -59,6 +60,53 @@ Uri _buildDiscoveryUrl(String controlPlaneUrl) {
     return Uri.parse(base);
   }
   return Uri.parse('$base/api/discovery/tenant');
+}
+
+/// Decodes the claims (payload) segment of a JWT.
+///
+/// Returns an empty map when the token is malformed or cannot be decoded.
+Map<String, dynamic> _decodeJwtClaims(String token) {
+  final parts = token.split('.');
+  if (parts.length < 2) {
+    return const {};
+  }
+  var payload = parts[1];
+  // base64url decoding requires the input length to be a multiple of 4.
+  final remainder = payload.length % 4;
+  if (remainder != 0) {
+    payload = '$payload${'=' * (4 - remainder)}';
+  }
+  try {
+    final bytes = base64Url.decode(payload);
+    final decoded = jsonDecode(utf8.decode(bytes));
+    return decoded is Map<String, dynamic> ? decoded : const {};
+  } catch (_) {
+    return const {};
+  }
+}
+
+/// Returns true when [token] carries control-plane claims.
+///
+/// Mirrors Python's `_is_control_plane_token`: a token is treated as a
+/// control-plane bearer when it has a string `tenant_id` claim, or its `iss`
+/// claim is a string beginning with `https://control.kumiho.cloud`.
+bool _isControlPlaneToken(String token) {
+  final claims = _decodeJwtClaims(token);
+  if (claims.isEmpty) {
+    return false;
+  }
+  if (claims['tenant_id'] is String) {
+    return true;
+  }
+  final iss = claims['iss'];
+  if (iss is String && iss.startsWith('https://control.kumiho.cloud')) {
+    return true;
+  }
+  final aud = claims['aud'];
+  if (aud is String && aud.startsWith('kumiho-server')) {
+    return true;
+  }
+  return false;
 }
 
 DiscoveryRecord _parseDiscoveryRecord(Object decoded) {
@@ -209,30 +257,61 @@ Future<DiscoveryRecord> discoverTenant({
         .timeout(timeout);
   }
 
-  var response = await postWithToken(token);
-
-  // If the cached token is expired/invalid, retry once after forcing refresh.
-  if (response.statusCode == 401 &&
-      firebaseToken == null &&
-      (Platform.environment[AuthEnvVars.firebaseToken]?.trim().isEmpty ?? true) &&
-      credentials != null &&
-      credentials.refreshToken.isNotEmpty) {
-    final bodyText = response.body;
-    if (bodyText.contains('invalid_id_token')) {
-      final refreshed = await autoRefreshCredentials(credentials, forceRefresh: true);
-      if (refreshed != null && refreshed.idToken.isNotEmpty && refreshed.idToken != token) {
-        token = refreshed.idToken;
-        response = await postWithToken(token);
-      }
+  // Build the ordered list of bearer-token candidates to try. Mirrors Python's
+  // `_discovery_token_candidates`: the resolved token first, plus the Firebase
+  // ID token as a fallback when the resolved token is a control-plane bearer
+  // (a control-plane token may not be accepted by the discovery endpoint, so we
+  // fall back to the Firebase token if it differs).
+  final resolvedToken = token;
+  final candidates = <String>[resolvedToken];
+  if (_isControlPlaneToken(resolvedToken)) {
+    final firebase = loadFirebaseToken();
+    if (firebase != null &&
+        firebase.isNotEmpty &&
+        !candidates.contains(firebase)) {
+      candidates.add(firebase);
     }
   }
 
-  if (response.statusCode >= 400) {
-    final snippet = response.body.length > 200
-        ? response.body.substring(0, 200)
-        : response.body;
+  http.Response? response;
+  // Try each candidate token in order, using the first that succeeds. On an
+  // error response we remember it and fall through to the next candidate; the
+  // last error is surfaced only after all candidates are exhausted.
+  for (var candidate = 0; candidate < candidates.length; candidate++) {
+    var bearer = candidates[candidate];
+    var attempt = await postWithToken(bearer);
+
+    // If the cached token is expired/invalid, retry once after forcing refresh.
+    if (attempt.statusCode == 401 &&
+        firebaseToken == null &&
+        (Platform.environment[AuthEnvVars.firebaseToken]?.trim().isEmpty ??
+            true) &&
+        credentials != null &&
+        credentials.refreshToken.isNotEmpty) {
+      final bodyText = attempt.body;
+      if (bodyText.contains('invalid_id_token')) {
+        final refreshed =
+            await autoRefreshCredentials(credentials, forceRefresh: true);
+        if (refreshed != null &&
+            refreshed.idToken.isNotEmpty &&
+            refreshed.idToken != bearer) {
+          bearer = refreshed.idToken;
+          attempt = await postWithToken(bearer);
+        }
+      }
+    }
+
+    response = attempt;
+    if (attempt.statusCode < 400) {
+      break;
+    }
+  }
+
+  if (response == null || response.statusCode >= 400) {
+    final body = response?.body ?? '';
+    final snippet = body.length > 200 ? body.substring(0, 200) : body;
     throw HttpException(
-      'Discovery endpoint returned ${response.statusCode}: $snippet',
+      'Discovery endpoint returned ${response?.statusCode ?? 0}: $snippet',
       uri: url,
     );
   }
@@ -253,12 +332,39 @@ Future<DiscoveryRecord> discoverTenant({
 /// - Uses discovery to find the correct data-plane endpoint.
 /// - Sets `tenantId` so the base client injects `x-tenant-id`.
 /// - If [token] is omitted, the client falls back to the standard token loader.
+///
+/// As a cloud-safe fallback, when no token can be resolved and no explicit
+/// [controlPlaneUrl] is supplied, a loopback self-hosted CE server is probed
+/// first. If one is present a tokenless CE client is returned; otherwise the
+/// normal cloud discovery path runs (and surfaces its usual "token required"
+/// error). The CE probe never runs when a token or explicit endpoint is
+/// present, preserving the cloud path unchanged.
 Future<KumihoClient> clientFromDiscovery({
   String? token,
   String? tenantHint,
   String? controlPlaneUrl,
   bool forceRefresh = false,
 }) async {
+  final hasExplicitEndpoint =
+      controlPlaneUrl != null && controlPlaneUrl.trim().isNotEmpty;
+  final resolvedToken =
+      (token != null && token.trim().isNotEmpty) ? token : loadBearerToken();
+  // A user authenticated only via KUMIHO_FIREBASE_ID_TOKEN is a valid cloud
+  // credential that discoverTenant honours, but loadBearerToken() does not read
+  // that env var. Treat it (and the cached Firebase id token) as "has a token"
+  // too, otherwise such a user would be silently routed to a loopback CE server.
+  final firebaseToken = loadFirebaseToken();
+  final hasCloudToken =
+      (resolvedToken != null && resolvedToken.trim().isNotEmpty) ||
+          (firebaseToken != null && firebaseToken.trim().isNotEmpty);
+
+  if (!hasExplicitEndpoint && !hasCloudToken) {
+    final ceClient = await clientFromLocalCe();
+    if (ceClient != null) {
+      return ceClient;
+    }
+  }
+
   final record = await discoverTenant(
     controlPlaneUrl: controlPlaneUrl,
     tenantHint: tenantHint,

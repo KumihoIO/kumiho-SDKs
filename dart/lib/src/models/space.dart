@@ -172,27 +172,27 @@ class Space extends KumihoObject {
 
   /// Gets all child spaces of this space.
   ///
-  /// When [recursive] is true, traverses the space tree depth-first to
-  /// return every descendant as a [Space] model. This mirrors
-  /// [Project.getSpaces] to keep navigation consistent.
+  /// When [recursive] is true, the server traverses the entire subtree and
+  /// returns every descendant in a single RPC—no client-side fan-out. The
+  /// optional [pageSize] and [cursor] mirror the server-side paging
+  /// semantics. This mirrors [Project.getSpaces] to keep navigation
+  /// consistent.
   ///
   /// ```dart
   /// final children = await assets.getChildSpaces();
   /// ```
-  Future<List<Space>> getChildSpaces({bool recursive = false}) async {
-    final spaceResponses = await client.getChildSpaces(path);
-    final spaces = spaceResponses.map<Space>((s) => Space(s, client)).toList();
-
-    if (recursive && spaces.isNotEmpty) {
-      final allSpaces = <Space>[...spaces];
-      for (final space in spaces) {
-        final children = await space.getChildSpaces(recursive: true);
-        allSpaces.addAll(children);
-      }
-      return allSpaces;
-    }
-
-    return spaces;
+  Future<List<Space>> getChildSpaces({
+    bool recursive = false,
+    int? pageSize,
+    String? cursor,
+  }) async {
+    final spaceResponses = await client.getChildSpaces(
+      path,
+      recursive: recursive,
+      pageSize: pageSize,
+      cursor: cursor,
+    );
+    return spaceResponses.map<Space>((s) => Space(s, client)).toList();
   }
 
   /// Gets the parent space of this space.

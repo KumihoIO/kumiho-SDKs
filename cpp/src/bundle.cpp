@@ -44,29 +44,24 @@ bool Bundle::isDeprecated() const {
     return response_.deprecated();
 }
 
-std::shared_ptr<Bundle> Bundle::addMember(const std::shared_ptr<Item>& item) {
-    return addMember(item->getKref());
+BundleMemberResult Bundle::addMember(const std::shared_ptr<Item>& item, const Metadata& metadata) {
+    return addMember(item->getKref(), metadata);
 }
 
-std::shared_ptr<Bundle> Bundle::addMember(const Kref& item_kref) {
-    client_->addBundleMember(getKref(), item_kref);
-    // Return refreshed bundle
-    // TODO: Implement proper refresh
-    return std::make_shared<Bundle>(response_, client_);
+BundleMemberResult Bundle::addMember(const Kref& item_kref, const Metadata& metadata) {
+    return client_->addBundleMember(getKref(), item_kref, metadata);
 }
 
-std::shared_ptr<Bundle> Bundle::removeMember(const std::shared_ptr<Item>& item) {
-    return removeMember(item->getKref());
+BundleMemberResult Bundle::removeMember(const std::shared_ptr<Item>& item, const Metadata& metadata) {
+    return removeMember(item->getKref(), metadata);
 }
 
-std::shared_ptr<Bundle> Bundle::removeMember(const Kref& item_kref) {
-    client_->removeBundleMember(getKref(), item_kref);
-    // Return refreshed bundle
-    return std::make_shared<Bundle>(response_, client_);
+BundleMemberResult Bundle::removeMember(const Kref& item_kref, const Metadata& metadata) {
+    return client_->removeBundleMember(getKref(), item_kref, metadata);
 }
 
-std::vector<BundleMember> Bundle::getMembers() {
-    return client_->getBundleMembers(getKref());
+std::vector<BundleMember> Bundle::getMembers(int revision_number) {
+    return client_->getBundleMembers(getKref(), revision_number);
 }
 
 std::vector<BundleRevisionHistory> Bundle::getHistory() {

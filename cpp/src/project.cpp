@@ -59,14 +59,24 @@ std::shared_ptr<Space> Project::createSpace(const std::string& name) {
 }
 
 std::shared_ptr<Space> Project::getSpace(const std::string& path) {
-    std::string full_path = "/" + response_.name() + "/" + path;
+    std::string full_path;
+    if (!path.empty() && path[0] == '/') {
+        full_path = path;
+    } else {
+        full_path = "/" + response_.name() + "/" + path;
+    }
     return client_->getSpace(full_path);
 }
 
-std::vector<std::shared_ptr<Space>> Project::getSpaces(bool recursive) {
-    std::string parent_path = "/" + response_.name();
-    // TODO: Add recursive parameter support
-    return client_->getChildSpaces(parent_path);
+std::vector<std::shared_ptr<Space>> Project::getSpaces(
+    bool recursive,
+    const std::string& parent_path,
+    std::optional<int32_t> page_size,
+    std::optional<std::string> cursor
+) {
+    const std::string base =
+        parent_path.empty() ? ("/" + response_.name()) : parent_path;
+    return client_->getChildSpaces(base, recursive, page_size, cursor);
 }
 
 PagedList<std::shared_ptr<Item>> Project::getItems(
@@ -78,9 +88,9 @@ PagedList<std::shared_ptr<Item>> Project::getItems(
     return client_->itemSearch(response_.name(), name_filter, kind_filter, page_size, cursor);
 }
 
-std::shared_ptr<Bundle> Project::createBundle(const std::string& name) {
+std::shared_ptr<Bundle> Project::createBundle(const std::string& name, const Metadata& metadata) {
     std::string parent_path = "/" + response_.name();
-    return client_->createBundle(parent_path, name);
+    return client_->createBundle(parent_path, name, metadata);
 }
 
 std::shared_ptr<Bundle> Project::getBundle(const std::string& name) {
