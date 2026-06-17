@@ -30,6 +30,8 @@ Key Features
 - **BYO Storage**: Files stay on your local/NAS/on-prem storage
 - **Multi-Tenant SaaS**: Secure, region-aware multi-tenant architecture
 - **Flutter Compatible**: Works seamlessly with Flutter for desktop and mobile apps
+- **Search & Semantic Scoring**: Full-text fuzzy search plus server-side semantic revision scoring
+- **Full Python Parity**: The Dart SDK now mirrors the Python SDK's complete feature surface
 
 Quick Start
 -----------
@@ -44,7 +46,8 @@ Add the SDK to your ``pubspec.yaml``:
    dependencies:
      kumiho:
        git:
-         url: https://github.com/kumihoclouds/kumiho-dart.git
+         url: https://github.com/KumihoIO/kumiho-SDKs.git
+         path: dart
 
 Then fetch dependencies:
 

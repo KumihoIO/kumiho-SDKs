@@ -1,0 +1,106 @@
+# Kumiho Rust SDK - Documentation Publishing Workflow
+#
+# Runs from the monorepo root. Builds rustdoc (cargo doc) for the Rust SDK and
+# deploys it to docs.kumiho.io/rust.
+
+name: Rust Docs
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'rust/**'
+      - '.github/workflows/rust-docs.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: "docs-rust"
+  cancel-in-progress: false
+
+jobs:
+  build-docs:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: rust
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          submodules: true   # rust/proto is compiled by build.rs (tonic-build)
+
+      - name: Install protoc
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y protobuf-compiler
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            rust/target
+          key: cargo-doc-${{ hashFiles('rust/Cargo.toml') }}
+
+      - name: Extract version from Cargo.toml
+        id: get_version
+        run: |
+          VERSION=$(grep -m1 '^version' Cargo.toml | sed -E 's/version *= *"([^"]+)".*/\1/')
+          echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
+          echo "Building docs for Kumiho Rust SDK v$VERSION"
+
+      - name: Generate rustdoc
+        run: cargo doc --no-deps
+
+      - name: Add crate redirect index
+        run: echo '<meta http-equiv="refresh" content="0; url=kumiho/index.html">' > target/doc/index.html
+
+      - name: Add version badge to output
+        run: |
+          VERSION="${{ steps.get_version.outputs.VERSION }}"
+          echo "Kumiho Rust SDK v$VERSION" > target/doc/VERSION.txt
+
+      - name: Upload docs artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: sphinx-docs-rust
+          path: rust/target/doc
+          retention-days: 7
+
+    outputs:
+      version: ${{ steps.get_version.outputs.VERSION }}
+
+  deploy-docs:
+    needs: build-docs
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    environment:
+      name: docs
+      url: https://docs.kumiho.io/rust
+
+    steps:
+      - name: Download documentation artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: sphinx-docs-rust
+          path: docs-html
+
+      - name: Deploy to docs.kumiho.io repository
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          deploy_key: ${{ secrets.DOCS_DEPLOY_KEY }}
+          external_repository: kumihoclouds/docs.kumiho.io
+          publish_branch: main
+          publish_dir: docs-html
+          destination_dir: rust
+          keep_files: true
+          commit_message: "docs(rust): update to v${{ needs.build-docs.outputs.version }}"

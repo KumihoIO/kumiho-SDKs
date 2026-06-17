@@ -2,3 +2,8 @@
 /examples/quickstart/quickstart
 *.test
 *.out
+
+# Generated documentation (gomarkdoc API reference + Sphinx build output); the
+# go-docs workflow regenerates these on every build.
+docs/api.md
+docs/_build/

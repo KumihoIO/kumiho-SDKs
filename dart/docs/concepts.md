@@ -187,6 +187,18 @@ await client.createEdge(
 final impact = await client.analyzeImpact(textureRevision.kref);
 ```
 
+## Search and Discovery
+
+Kumiho offers two complementary ways to find content:
+
+- **Full-text fuzzy search** (`search`): typo-tolerant matching across items, returning ranked results with relevance scores.
+- **Semantic revision scoring** (`scoreRevisions`): ranks a known set of revisions against a query using server-side embeddings.
+
+```dart
+final results = await client.search('hero robt', minScore: 0.2);
+final scored = await client.scoreRevisions('weathered metal', [revA.kref.uri, revB.kref.uri]);
+```
+
 ## BYO Storage Philosophy
 
 Kumiho does **not** store your files. Instead, it tracks references (artifacts) to files that remain on your storage:
@@ -212,6 +224,6 @@ Kumiho Cloud is a multi-tenant SaaS platform:
 ```dart
 // SDK handles tenant discovery automatically
 final client = KumihoClient(host: 'api.kumiho.io', port: 443);
-final tenantInfo = await client.getTenant();
-print('Connected to tenant: ${tenantInfo.name}');
+final usage = await client.getTenantUsage();
+print('Using ${usage.nodeCount} of ${usage.nodeLimit} nodes');
 ```

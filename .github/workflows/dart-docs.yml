@@ -1,24 +1,25 @@
-name: Docs & Publish
+# Kumiho Dart SDK - Documentation Publishing Workflow
+#
+# Runs from the monorepo root. Generates dartdoc + Sphinx HTML for the Dart SDK
+# and deploys it to docs.kumiho.io/dart.
+
+name: Dart Docs
 
 on:
   push:
     branches:
       - main
     paths:
-      - 'bin/**'
-      - 'lib/**'
-      - 'proto/**'
-      - 'docs/**'
-      - 'pubspec.yaml'
-      - '.github/workflows/docs-publish.yml'
-    tags:
-      - 'v*'  # Trigger on version tags like v0.3.0
-  workflow_dispatch:  # Allow manual trigger
+      - 'dart/bin/**'
+      - 'dart/lib/**'
+      - 'dart/docs/**'
+      - 'dart/pubspec.yaml'
+      - '.github/workflows/dart-docs.yml'
+  workflow_dispatch:
 
 permissions:
   contents: read
 
-# Allow only one concurrent deployment
 concurrency:
   group: "docs-dart"
   cancel-in-progress: false
@@ -27,11 +28,11 @@ env:
   PYTHON_VERSION: "3.11"
 
 jobs:
-  # ===========================================================================
-  # Build Documentation
-  # ===========================================================================
   build-docs:
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: dart
 
     steps:
       - name: Checkout repository
@@ -43,8 +44,7 @@ jobs:
           sdk: "stable"
 
       - name: Install Dart dependencies
-        run: |
-          dart pub get
+        run: dart pub get
 
       - name: Generate Dart API docs (dartdoc)
         run: |
@@ -57,7 +57,7 @@ jobs:
         with:
           python-version: ${{ env.PYTHON_VERSION }}
           cache: 'pip'
-          cache-dependency-path: docs/requirements.txt
+          cache-dependency-path: dart/docs/requirements.txt
 
       - name: Install documentation dependencies
         run: |
@@ -69,15 +69,14 @@ jobs:
         run: |
           VERSION=$(python -c "import yaml; from pathlib import Path; data=yaml.safe_load(Path('pubspec.yaml').read_text(encoding='utf-8')); print(data.get('version','0.0.0'))")
           echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
-          echo "📦 Building docs for Kumiho Dart SDK v$VERSION"
+          echo "Building docs for Kumiho Dart SDK v$VERSION"
 
       - name: Build Sphinx documentation
-        run: |
-          sphinx-build -b html docs docs/_build/html
+        run: sphinx-build -b html docs docs/_build/html
         env:
           SPHINXBUILD: sphinx-build
 
-      - name: Add version badge to index
+      - name: Add version badge to output
         run: |
           VERSION=${{ steps.get_version.outputs.VERSION }}
           echo "Kumiho Dart SDK v$VERSION" > docs/_build/html/VERSION.txt
@@ -85,16 +84,13 @@ jobs:
       - name: Upload docs artifact
         uses: actions/upload-artifact@v4
         with:
-          name: sphinx-docs
-          path: docs/_build/html
+          name: sphinx-docs-dart
+          path: dart/docs/_build/html
           retention-days: 7
 
     outputs:
       version: ${{ steps.get_version.outputs.VERSION }}
 
-  # ===========================================================================
-  # Deploy Documentation to docs.kumiho.io/dart
-  # ===========================================================================
   deploy-docs:
     needs: build-docs
     if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
@@ -107,7 +103,7 @@ jobs:
       - name: Download documentation artifact
         uses: actions/download-artifact@v4
         with:
-          name: sphinx-docs
+          name: sphinx-docs-dart
           path: docs-html
 
       - name: Deploy to docs.kumiho.io repository
@@ -118,5 +114,5 @@ jobs:
           publish_branch: main
           publish_dir: docs-html
           destination_dir: dart
-          keep_files: true  # Don't delete other SDK docs (cpp, python, etc.)
+          keep_files: true
           commit_message: "docs(dart): update to v${{ needs.build-docs.outputs.version }}"

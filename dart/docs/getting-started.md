@@ -10,8 +10,11 @@ Add the SDK to your `pubspec.yaml`. Until the package is published to pub.dev, u
 dependencies:
   kumiho:
     git:
-      url: https://github.com/kumihoclouds/kumiho-dart.git
+      url: https://github.com/KumihoIO/kumiho-SDKs.git
+      path: dart
 ```
+
+The Dart SDK lives in the `dart/` subdirectory of the Kumiho SDKs monorepo, so the `path:` field is required.
 
 Then fetch dependencies:
 
@@ -144,6 +147,22 @@ await client.createArtifact(
   'textures',
   's3://bucket/hero/textures.tar',
 );
+```
+
+### Search
+
+Beyond `searchItems` (exact filters), use `search` for full-text fuzzy, typo-tolerant matching with relevance scores:
+
+```dart
+// Ranked, typo-tolerant search across items
+final results = await client.search(
+  'hero robt',
+  contextFilter: 'my-project/*',
+  minScore: 0.2,
+);
+for (final r in results) {
+  print('${r.item.kref.uri} (score ${r.score})');
+}
 ```
 
 ## Why Kumiho?
