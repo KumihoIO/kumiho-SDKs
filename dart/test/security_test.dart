@@ -22,7 +22,6 @@ import 'dart:convert';
 import 'dart:math';
 import 'package:test/test.dart';
 import 'package:kumiho/kumiho.dart';
-import 'package:kumiho/auth.dart';
 import 'package:grpc/grpc.dart';
 
 /// Check if security tests should run

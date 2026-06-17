@@ -156,9 +156,10 @@ abstract class KumihoClientBase {
       metadata['authorization'] = 'Bearer $_token';
     }
 
-    // Add tenant ID for anonymous public access
-    if (_tenantId != null && _tenantId!.isNotEmpty) {
-      metadata['x-tenant-id'] = _tenantId!;
+    // Add tenant ID for anonymous public access (final field promotes after
+    // the null check, so no `!` is needed).
+    if (_tenantId != null && _tenantId.isNotEmpty) {
+      metadata['x-tenant-id'] = _tenantId;
     }
 
     return metadata;
