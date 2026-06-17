@@ -82,6 +82,12 @@ jobs:
   deploy-docs:
     needs: build-docs
     if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    # Serialize all SDK doc deploys: every *-docs workflow pushes to the SAME
+    # docs.kumiho.io repo, so concurrent pushes race (non-fast-forward). A shared
+    # concurrency group forces the deploy jobs to run one at a time.
+    concurrency:
+      group: docs-kumiho-io-deploy
+      cancel-in-progress: false
     runs-on: ubuntu-latest
     environment:
       name: docs
