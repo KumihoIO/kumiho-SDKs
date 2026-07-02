@@ -173,6 +173,7 @@ DEPENDS_ON = EdgeType.DEPENDS_ON
 DERIVED_FROM = EdgeType.DERIVED_FROM
 CONTAINS = EdgeType.CONTAINS
 SUPERSEDES = EdgeType.SUPERSEDES
+SUPPORTS = EdgeType.SUPPORTS
 
 # Expose EdgeDirection constants for convenience
 OUTGOING = EdgeDirection.OUTGOING
