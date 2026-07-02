@@ -115,6 +115,67 @@ def _get_manager():
         except Exception as exc:
             logger.warning("Auto-assess setup failed: %s", exc)
 
+    # Evidence-aware assessor (opt-in via KUMIHO_EVIDENCE_ASSESSOR=1).
+    # Takes precedence over KUMIHO_AUTO_ASSESS when both are set — it is
+    # a strict superset (same pipeline + evidence grading).
+    if os.environ.get("KUMIHO_EVIDENCE_ASSESSOR", "").strip() in ("1", "true"):
+        try:
+            from kumiho_memory.assessors import (
+                EvidencePolicy,
+                create_evidence_assessor,
+            )
+
+            _tmp_summarizer = MemorySummarizer()
+            _adapter = getattr(_tmp_summarizer, "adapter", None)
+            _model = getattr(_tmp_summarizer, "light_model", "")
+            if _adapter is not None:
+                try:
+                    min_corroboration = max(1, int(
+                        os.environ.get("KUMIHO_EVIDENCE_MIN_CORROBORATION", "2")
+                    ))
+                except ValueError:
+                    min_corroboration = 2
+                policy_kwargs: Dict[str, Any] = {
+                    "min_corroboration": min_corroboration,
+                    "create_supports_edges": os.environ.get(
+                        "KUMIHO_EVIDENCE_SUPPORTS_EDGES", "",
+                    ).strip() in ("1", "true"),
+                }
+                storage_policy = os.environ.get("KUMIHO_AUTO_ASSESS_POLICY", "").strip()
+                if storage_policy:
+                    policy_kwargs["storage_policy"] = storage_policy
+                if auto_assess_fn is not None:
+                    logger.info(
+                        "KUMIHO_EVIDENCE_ASSESSOR overrides KUMIHO_AUTO_ASSESS "
+                        "(both were set)"
+                    )
+                auto_assess_fn = create_evidence_assessor(
+                    _adapter, model=_model, policy=EvidencePolicy(**policy_kwargs),
+                )
+                logger.info(
+                    "Evidence assessor enabled (model=%s, min_corroboration=%d)",
+                    _model or "<default>", min_corroboration,
+                )
+            else:
+                logger.warning(
+                    "KUMIHO_EVIDENCE_ASSESSOR=1 but no LLM adapter detected — "
+                    "set ANTHROPIC_API_KEY or OPENAI_API_KEY to enable."
+                )
+        except Exception as exc:
+            logger.warning("Evidence assessor setup failed: %s", exc)
+
+    # Evidence-weighted recall reranking — DEFAULT ON (strict no-op when
+    # no memory carries an evidence grade).  KUMIHO_EVIDENCE_RERANK acts
+    # as a kill switch: "0"/"false" disables.
+    evidence_rank = None
+    if os.environ.get("KUMIHO_EVIDENCE_RERANK", "").strip().lower() in ("0", "false"):
+        try:
+            from kumiho_memory.evidence_rank import EvidenceRankConfig
+            evidence_rank = EvidenceRankConfig(enabled=False, badges=False)
+            logger.info("Evidence-weighted recall reranking disabled via env")
+        except Exception as exc:
+            logger.warning("Evidence rerank config failed: %s", exc)
+
     summarizer = MemorySummarizer()
     buffer = RedisMemoryBuffer()
     _manager = UniversalMemoryManager(
@@ -125,6 +186,7 @@ def _get_manager():
         sibling_similarity_threshold=sibling_threshold,
         embedding_adapter=embedding_adapter,
         auto_assess_fn=auto_assess_fn,
+        evidence_rank=evidence_rank,
     )
     return _manager
 
@@ -329,6 +391,18 @@ def tool_memory_store_execution(args: Dict[str, Any]) -> Dict[str, Any]:
     )
 
 
+def tool_memory_space_profile(args: Dict[str, Any]) -> Dict[str, Any]:
+    """Profile each Space's knowledge dynamics (no LLM)."""
+    from kumiho_memory import SpaceProfiler
+
+    profiler = SpaceProfiler(
+        project=args.get("project", "CognitiveMemory"),
+        window_days=args.get("window_days", 30),
+        dry_run=args.get("dry_run", False),
+    )
+    return asyncio.run(profiler.run())
+
+
 def tool_memory_dream_state(args: Dict[str, Any]) -> Dict[str, Any]:
     """Run a Dream State memory consolidation cycle."""
     from kumiho_memory import DreamState
@@ -369,6 +443,7 @@ def tool_memory_dream_state(args: Dict[str, Any]) -> Dict[str, Any]:
         dry_run=args.get("dry_run", False),
         max_deprecation_ratio=args.get("max_deprecation_ratio", 0.5),
         allow_published_deprecation=args.get("allow_published_deprecation", False),
+        extra_instructions=args.get("extra_instructions"),
         summarizer=summarizer,
     )
     return asyncio.run(ds.run())
@@ -1111,6 +1186,18 @@ MEMORY_TOOLS: List[Dict[str, Any]] = [
                     "default": False,
                     "description": "Allow deprecation of published items (use with caution).",
                 },
+                "extra_instructions": {
+                    "type": "string",
+                    "description": (
+                        "Deployment policy appended to the assessment system "
+                        "prompt under a DEPLOYMENT POLICY section (e.g. "
+                        "'Never propose deprecation for memories tagged "
+                        "evidence:official'). Falls back to the "
+                        "KUMIHO_DREAM_EXTRA_INSTRUCTIONS env var when omitted. "
+                        "Cannot weaken hard guardrails (deprecation cap, "
+                        "published protection, conservative-KEEP rule)."
+                    ),
+                },
                 "provider": {
                     "type": "string",
                     "enum": ["openai", "anthropic", "gemini"],
@@ -1127,6 +1214,37 @@ MEMORY_TOOLS: List[Dict[str, Any]] = [
                 "base_url": {
                     "type": "string",
                     "description": "OpenAI-compatible base URL. Falls back to KUMIHO_LLM_BASE_URL env var if not set.",
+                },
+            },
+        },
+    },
+    {
+        "name": "kumiho_memory_space_profile",
+        "description": (
+            "Profile each Space's knowledge dynamics: aggregate churn/"
+            "evidence/stability signals, classify Spaces as canonical/"
+            "working/correspondence, and persist versioned space-profile "
+            "items. Pure aggregation — no LLM calls. A space_class Space "
+            "attribute pins the label (drift is then reported only). Use "
+            "dry_run=true to classify without persisting."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "project": {
+                    "type": "string",
+                    "default": "CognitiveMemory",
+                    "description": "Kumiho project to profile.",
+                },
+                "window_days": {
+                    "type": "integer",
+                    "default": 30,
+                    "description": "Look-back window for the revision-rate signal.",
+                },
+                "dry_run": {
+                    "type": "boolean",
+                    "default": False,
+                    "description": "Classify but do not persist profiles.",
                 },
             },
         },
@@ -1151,4 +1269,5 @@ MEMORY_TOOL_HANDLERS: Dict[str, Any] = {
     "kumiho_memory_reflect": tool_memory_reflect,
     "kumiho_memory_store_execution": tool_memory_store_execution,
     "kumiho_memory_dream_state": tool_memory_dream_state,
+    "kumiho_memory_space_profile": tool_memory_space_profile,
 }

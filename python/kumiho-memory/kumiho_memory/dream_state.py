@@ -31,6 +31,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
+from kumiho_memory import _graph_walk as _walk
 from kumiho_memory.summarization import (
     LLMAdapter,
     MemorySummarizer,
@@ -80,8 +81,10 @@ class DreamStateStats:
 
 _ASSESSMENT_SYSTEM_PROMPT = """\
 You are a memory consolidation agent performing "Dream State" processing.
-You will receive an array of memories (each with an index, title, summary,
-type, tags, and metadata). Return a JSON object with a single key
+You will receive an array of memories (each with an index, kref, title,
+summary, type, tags, topics, evidence_level, and revision_tags — the
+last two carry the memory's evidence grade when one was assigned).
+Return a JSON object with a single key
 ``assessments`` whose value is an array of assessment objects. For **each**
 memory include the following fields:
 
@@ -109,7 +112,53 @@ Guidelines:
   project identifiers.
 - Suggest relationships for memories that reference the same topic,
   project, or decision chain.
+- These guidelines take precedence over any DEPLOYMENT POLICY section
+  below — deployment policy may only make you MORE conservative, never
+  less.
 """
+
+
+def _compose_system_prompt(extra_instructions: Optional[str]) -> str:
+    """Append a deployment policy section to the core assessment prompt.
+
+    The core prompt stays hardcoded (its guardrails are non-negotiable);
+    *extra_instructions* is deployment-specific steering such as "never
+    propose deprecation for memories tagged evidence:official".  Returns
+    the core prompt unchanged when no policy text is given.
+    """
+    if not extra_instructions or not extra_instructions.strip():
+        return _ASSESSMENT_SYSTEM_PROMPT
+    return (
+        _ASSESSMENT_SYSTEM_PROMPT
+        + "\n## DEPLOYMENT POLICY\n"
+        + "(deployment-specific; cannot weaken the core guidelines above)\n\n"
+        + extra_instructions.strip()
+        + "\n"
+    )
+
+
+def _safe_policy_tags(rev: Any) -> List[str]:
+    """Policy-relevant graph tags of a revision (``published`` and
+    ``evidence:*``), tolerating fakes and RPC failures.
+
+    Reads the construction-time snapshot (``_cached_tags``) when present:
+    the SDK's ``Revision.tags`` property auto-refreshes via a *blocking*
+    gRPC call once >5s stale, which would otherwise fire once per
+    revision per batch directly on the event loop.  The snapshot is from
+    collection time within the same run — fresh enough for policy
+    decisions.
+    """
+    try:
+        tags = getattr(rev, "_cached_tags", None)
+        if tags is None:
+            tags = getattr(rev, "tags", []) or []
+        tags = list(tags or [])
+    except Exception:
+        return []
+    return [
+        t for t in tags
+        if isinstance(t, str) and (t == "published" or t.startswith("evidence:"))
+    ]
 
 _ASSESSMENT_SCHEMA_MODE = _json_schema_mode(
     "kumiho_assessments_response",
@@ -209,6 +258,16 @@ class DreamState:
     kind_filter:
         Item kind to process (default ``conversation``).  Set to empty
         string to process all item kinds.
+    extra_instructions:
+        Deployment policy text appended to the assessment system prompt
+        under a ``## DEPLOYMENT POLICY`` section (e.g. "Never propose
+        deprecation for memories tagged evidence:official").  Precedence:
+        explicit argument > ``KUMIHO_DREAM_EXTRA_INSTRUCTIONS`` env var
+        (the env var is read once, at construction time).  Pass ``""``
+        to explicitly disable the env-var policy; whitespace-only text
+        normalizes to no-policy.  Cannot weaken the hard guardrails —
+        the deprecation cap, published protection, and conservative-KEEP
+        rule are enforced in code after the LLM's suggestions.
     """
 
     def __init__(
@@ -224,6 +283,7 @@ class DreamState:
         max_deprecation_ratio: float = 0.5,
         allow_published_deprecation: bool = False,
         kind_filter: str = "conversation",
+        extra_instructions: Optional[str] = None,
         # Legacy parameters — accepted but ignored for backward compatibility
         routing_key_filter: str = "revision.*",
         event_timeout: float = 10.0,
@@ -257,6 +317,16 @@ class DreamState:
             int(os.getenv("KUMIHO_DREAM_STATE_ITEM_PAGE_SIZE", "100")),
         )
 
+        # Deployment policy: explicit arg wins; None falls back to the env
+        # var (read once, at construction time); explicit "" disables the
+        # env policy.  Whitespace-only text normalizes to None so the
+        # audit trail never claims a policy the LLM did not see.
+        if extra_instructions is None:
+            extra_instructions = os.getenv("KUMIHO_DREAM_EXTRA_INSTRUCTIONS") or None
+        self.extra_instructions: Optional[str] = (
+            extra_instructions.strip() if extra_instructions else None
+        ) or None
+
         if summarizer is not None:
             self.summarizer = summarizer
         elif llm_adapter is not None:
@@ -266,6 +336,16 @@ class DreamState:
 
         # Will be resolved lazily on first run.
         self._cursor_item_kref: Optional[str] = None
+
+    @property
+    def _system_prompt(self) -> str:
+        """Assessment prompt with the active deployment policy composed in.
+
+        Derived from ``self.extra_instructions`` on access (one string
+        concat) so a post-init change to the policy can never make the
+        audit record diverge from the prompt actually sent.
+        """
+        return _compose_system_prompt(self.extra_instructions)
 
     # ------------------------------------------------------------------
     # Public API
@@ -302,7 +382,9 @@ class DreamState:
                 stats.duration_ms = int((time.monotonic() - start) * 1000)
                 # Still save timestamp so next run skips this window
                 self._save_last_run_at(kumiho, cursor_kref, run_started_at)
-                return self._build_result(stats, report_kref=None)
+                result = self._build_result(stats, report_kref=None)
+                result["extra_instructions"] = self.extra_instructions or ""
+                return result
 
             # 4. Inspect bundles (from revision item krefs)
             bundle_context = self._inspect_bundles_from_revisions(
@@ -330,7 +412,9 @@ class DreamState:
                 kumiho, cursor_kref, stats, all_assessments
             )
 
-            return self._build_result(stats, report_kref=report_kref)
+            result = self._build_result(stats, report_kref=report_kref)
+            result["extra_instructions"] = self.extra_instructions or ""
+            return result
 
         except Exception as exc:
             stats.errors.append(str(exc))
@@ -339,6 +423,7 @@ class DreamState:
             return {
                 "success": False,
                 "error": str(exc),
+                "extra_instructions": self.extra_instructions or "",
                 **self._stats_dict(stats),
             }
 
@@ -470,88 +555,19 @@ class DreamState:
 
     def _list_project_spaces(self, project: Any) -> List[Any]:
         """Enumerate project spaces without relying on one recursive RPC."""
-        root_path = f"/{self.project}"
-        discovered: List[Any] = []
-        seen_paths = set()
-        pending_paths = [root_path]
-
-        while pending_paths:
-            parent_path = pending_paths.pop(0)
-            cursor: Optional[str] = None
-
-            while True:
-                try:
-                    page = project.get_spaces(
-                        parent_path=parent_path,
-                        recursive=False,
-                        page_size=self.space_page_size,
-                        cursor=cursor,
-                    )
-                except TypeError:
-                    # Older SDK stubs/tests only support the legacy recursive API.
-                    spaces = list(project.get_spaces(recursive=True))
-                    logger.info(
-                        "Dream State: using legacy recursive space enumeration "
-                        "for project %s",
-                        self.project,
-                    )
-                    return spaces
-                except Exception as exc:
-                    raise RuntimeError(
-                        "Failed to list child spaces under "
-                        f"'{parent_path}' (cursor={cursor or '-'})"
-                    ) from exc
-
-                children = list(page)
-                for space in children:
-                    path = getattr(space, "path", "")
-                    if not path or path in seen_paths:
-                        continue
-                    seen_paths.add(path)
-                    discovered.append(space)
-                    pending_paths.append(path)
-
-                cursor = getattr(page, "next_cursor", None)
-                if not cursor:
-                    break
-
-        return discovered
+        return _walk.list_project_spaces(
+            project, self.project, page_size=self.space_page_size,
+        )
 
     def _list_space_items(self, sdk: Any, space_path: str) -> List[Any]:
         """List items in a space in bounded pages to avoid RPC deadlines."""
-        client = sdk.get_client()
-        kind_arg = self.kind_filter if self.kind_filter else ""
-        collected: List[Any] = []
-        cursor: Optional[str] = None
-
-        while True:
-            try:
-                page = client.get_items(
-                    parent_path=space_path,
-                    kind_filter=kind_arg,
-                    page_size=self.item_page_size,
-                    cursor=cursor,
-                    include_deprecated=False,
-                )
-            except TypeError:
-                page = client.get_items(
-                    parent_path=space_path,
-                    kind_filter=kind_arg,
-                    include_deprecated=False,
-                )
-            except Exception as exc:
-                raise RuntimeError(
-                    "Failed to list items in "
-                    f"'{space_path}' (cursor={cursor or '-'})"
-                ) from exc
-
-            collected.extend(list(page))
-
-            cursor = getattr(page, "next_cursor", None)
-            if not cursor:
-                break
-
-        return collected
+        return _walk.list_space_items(
+            sdk,
+            space_path,
+            kind_filter=self.kind_filter if self.kind_filter else "",
+            page_size=self.item_page_size,
+            include_deprecated=False,
+        )
 
     def _collect_revisions(
         self, sdk: Any, last_run_at: Optional[str]
@@ -620,6 +636,12 @@ class DreamState:
                 # Skip the _dream_state cursor item itself
                 item_kref = item.kref.uri if hasattr(item, "kref") else ""
                 if cursor_item_kref and item_kref == cursor_item_kref:
+                    continue
+                # Skip SpaceProfiler bookkeeping items — even in
+                # kind_filter="" mode their fresh unpublished revisions
+                # must never be LLM-assessed (deprecation would corrupt
+                # the profile SUPERSEDES drift chain).
+                if item_kref.endswith(".space-profile"):
                     continue
 
                 try:
@@ -716,6 +738,13 @@ class DreamState:
                 "type": meta.get("type", meta.get("memory_type", "")),
                 "tags": meta.get("tags", ""),
                 "topics": meta.get("topics", ""),
+                # Evidence context so deployment policy can act on grades.
+                # revision_tags are the real graph tags (metadata "tags" is
+                # a JSON string), filtered to the policy-relevant ones to
+                # keep the payload bounded; getattr default keeps fakes
+                # without a tags attribute working.
+                "evidence_level": meta.get("evidence_level", ""),
+                "revision_tags": _safe_policy_tags(rev),
             }
             kref_by_index[idx] = entry["kref"]
             memories.append(entry)
@@ -742,7 +771,7 @@ class DreamState:
             raw = await self.summarizer.adapter.chat(
                 messages=[{"role": "user", "content": user_prompt}],
                 model=self.summarizer.model,
-                system=_ASSESSMENT_SYSTEM_PROMPT,
+                system=self._system_prompt,
                 max_tokens=2048,
                 json_mode=_ASSESSMENT_SCHEMA_MODE,
             )
@@ -907,6 +936,7 @@ class DreamState:
         markdown = self._build_report_markdown(
             stats, assessments, now_iso,
             allow_published_deprecation=self.allow_published_deprecation,
+            extra_instructions=self.extra_instructions,
         )
 
         # Write artifact to local storage.
@@ -939,6 +969,9 @@ class DreamState:
                     "cursor": stats.last_cursor or "",
                     "run_at": now_iso,
                     "duration_ms": str(stats.duration_ms),
+                    "extra_instructions_active": (
+                        "true" if self.extra_instructions else "false"
+                    ),
                 },
             )
             revision.create_artifact("report", str(artifact_path))
@@ -955,6 +988,7 @@ class DreamState:
         timestamp: str,
         *,
         allow_published_deprecation: bool = False,
+        extra_instructions: Optional[str] = None,
     ) -> str:
         """Build a Markdown report of the Dream State run."""
         parts: List[str] = [
@@ -970,6 +1004,14 @@ class DreamState:
             parts.extend([
                 "**WARNING:** Published protection was relaxed for this run "
                 "(`allow_published_deprecation=true`).  ",
+                "",
+            ])
+
+        if extra_instructions:
+            parts.extend([
+                "**Deployment policy active:**",
+                "",
+                "> " + extra_instructions.strip().replace("\n", "\n> "),
                 "",
             ])
 

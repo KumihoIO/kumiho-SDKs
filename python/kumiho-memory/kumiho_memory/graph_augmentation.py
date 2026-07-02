@@ -52,7 +52,7 @@ class GraphAugmentationConfig:
     max_hops: int = 1
     edge_types: List[str] = field(default_factory=lambda: [
         "DERIVED_FROM", "DEPENDS_ON", "REFERENCED",
-        "CONTAINS", "CREATED_FROM", "SUPERSEDES",
+        "CONTAINS", "CREATED_FROM", "SUPERSEDES", "SUPPORTS",
     ])
     top_k_for_traversal: int = 5
     max_total: Optional[int] = None  # Defaults to base_limit * 3
@@ -92,12 +92,19 @@ class GraphAugmentedRecall:
         model: str = "",
         recall_fn: Optional[RecallFn] = None,
         config: Optional[GraphAugmentationConfig] = None,
+        evidence_rerank_fn: Optional[
+            Callable[[List[Dict[str, Any]]], List[Dict[str, Any]]]
+        ] = None,
     ) -> None:
         self.adapter = adapter
         self.model = model
         self.recall_fn = recall_fn  # type: ignore[assignment]
         self.config = config or GraphAugmentationConfig()
         self._has_llm = adapter is not None
+        # Deterministic score adjustment (e.g. evidence weighting) applied
+        # before each result cap.  Must be idempotent — it runs at both
+        # the multi-query merge slice and the final cap.
+        self.evidence_rerank_fn = evidence_rerank_fn
 
     # ------------------------------------------------------------------
     # Public API — recall
@@ -148,8 +155,16 @@ class GraphAugmentedRecall:
                 if existing is None or mem.get("score", 0) > existing.get("score", 0):
                     best_by_kref[kref] = mem
 
+        # Evidence weighting BEFORE the merge slice — an official-grade
+        # memory just past the unweighted boundary must survive the cut.
+        merged = list(best_by_kref.values())
+        if self.evidence_rerank_fn is not None:
+            try:
+                merged = self.evidence_rerank_fn(merged)
+            except Exception as exc:
+                logger.debug("evidence_rerank_fn failed at merge slice: %s", exc)
         memories = sorted(
-            best_by_kref.values(),
+            merged,
             key=lambda m: m.get("score", 0),
             reverse=True,
         )[: base_limit * 2]
@@ -207,6 +222,23 @@ class GraphAugmentedRecall:
                 "Graph augmentation: %d base + %d augmented = %d total",
                 len(memories), len(augmented) - len(memories), len(augmented),
             )
+
+        # Evidence weighting BEFORE the final cap, applied to the BASE
+        # results only.  Traversal entries carry a placeholder score 0.0
+        # meaning "relevance never measured", not "zero relevance" —
+        # mixing them into one score axis would let graph noise evict
+        # genuinely relevant (e.g. unverified-adjusted) direct hits.  The
+        # historical partition [base hits][traversal appended] is kept,
+        # so the cap still trims traversal noise first.  Idempotent
+        # (recomputes from base_score) with the merge-slice pass.
+        if self.evidence_rerank_fn is not None:
+            try:
+                base_part = [m for m in augmented if not m.get("graph_augmented")]
+                graph_part = [m for m in augmented if m.get("graph_augmented")]
+                base_part = self.evidence_rerank_fn(base_part)
+                augmented = list(base_part) + graph_part
+            except Exception as exc:
+                logger.debug("evidence_rerank_fn failed at final cap: %s", exc)
 
         # Cap to prevent context noise
         cap = self.config.max_total or (base_limit * 3)
@@ -524,7 +556,7 @@ class GraphAugmentedRecall:
                         seen_krefs.add(connected_uri)
                         try:
                             connected_rev = kumiho.get_revision(connected_uri)
-                            graph_augmented_results.append({
+                            entry = {
                                 "kref": connected_uri,
                                 "title": connected_rev.metadata.get("title", ""),
                                 "summary": connected_rev.metadata.get("summary", ""),
@@ -533,7 +565,17 @@ class GraphAugmentedRecall:
                                 "graph_augmented": True,
                                 "edge_type": edge.edge_type,
                                 "from_kref": kref_str,
-                            })
+                            }
+                            # Evidence grade so traversal results are
+                            # weightable/badgeable rather than always
+                            # default-weight.
+                            ev = connected_rev.metadata.get("evidence_level", "")
+                            if ev:
+                                entry["evidence_level"] = ev
+                            src = connected_rev.metadata.get("source", "")
+                            if src:
+                                entry["source"] = src
+                            graph_augmented_results.append(entry)
                             found += 1
                         except Exception as e:
                             logger.debug(

@@ -11,6 +11,8 @@ import mimetypes
 import os
 import re
 import shutil
+import threading
+import time
 from collections import Counter
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -54,6 +56,26 @@ class MemoryAssessResult:
 
     tags: List[str] = field(default_factory=list)
     """Extra tags to attach (``"auto-memorized"`` is always appended)."""
+
+    evidence_level: str = ""
+    """Optional evidence grade (see :mod:`kumiho_memory.evidence`).
+
+    When set, the manager stamps it as revision metadata plus the mirrored
+    ``evidence:<level>`` tag.  Assessors must never emit ``official`` —
+    that grade is reserved for explicit operator/ingest flags.
+    """
+
+    source: str = ""
+    """Optional source identifier for the claim (e.g. ``"news:reuters"``)."""
+
+    supporting_krefs: List[str] = field(default_factory=list)
+    """Revision krefs of corroborating memories — the manager creates
+    ``SUPPORTS`` edges from the new memory to each after storing."""
+
+    conflicting_krefs: List[str] = field(default_factory=list)
+    """Revision krefs of contradicted memories — recorded in metadata as
+    ``conflicts_with`` so the disagreement stays visible (the contradicted
+    belief itself is never revised at write time)."""
 
 
 # Callable protocol: async (messages, recalled_memories) → MemoryAssessResult.
@@ -166,6 +188,7 @@ class UniversalMemoryManager:
         auto_assess_fn: Optional[AutoAssessFn] = None,
         auto_assess_min_messages: int = 3,
         auto_assess_window: int = 6,
+        evidence_rank: Optional[Any] = None,
     ) -> None:
         self.project = project
         self.consolidation_threshold = consolidation_threshold
@@ -201,6 +224,17 @@ class UniversalMemoryManager:
         self.sibling_top_k = sibling_top_k
         self.embedding_adapter = embedding_adapter
         self.sibling_score_fields = sibling_score_fields
+        # Evidence-weighted recall reranking (deterministic, default on;
+        # strict no-op when no memory carries an evidence grade).  Falsy
+        # non-None values (False/0) read naturally as "disable" — honor
+        # that instead of crashing on attribute access.
+        if evidence_rank is None:
+            from kumiho_memory.evidence_rank import EvidenceRankConfig
+            evidence_rank = EvidenceRankConfig()
+        elif not evidence_rank:
+            from kumiho_memory.evidence_rank import EvidenceRankConfig
+            evidence_rank = EvidenceRankConfig(enabled=False, badges=False)
+        self.evidence_rank_config = evidence_rank
         # Background memory assessor (model-agnostic, optional)
         self.auto_assess_fn: Optional[AutoAssessFn] = auto_assess_fn
         self.auto_assess_min_messages = auto_assess_min_messages
@@ -397,14 +431,115 @@ class UniversalMemoryManager:
             if source_krefs:
                 store_payload["source_revision_krefs"] = source_krefs
 
-            await self._store_with_retry(**store_payload)
+            # Evidence grade from the assessor (never "official" — that
+            # grade is operator-only; sanitized rather than raised because
+            # LLM output must not crash the background task).
+            if assess_result.evidence_level:
+                level = assess_result.evidence_level
+                if level in EVIDENCE_LEVELS and level != "official":
+                    store_payload["metadata"]["evidence_level"] = level
+                    store_payload["tags"].append(evidence_tag(level))
+                else:
+                    logger.warning(
+                        "auto_assess: ignoring assessor evidence_level %r "
+                        "(unknown or operator-only)", level,
+                    )
+            if assess_result.source:
+                store_payload["metadata"]["source"] = assess_result.source
+            if assess_result.conflicting_krefs:
+                store_payload["metadata"]["conflicts_with"] = ",".join(
+                    assess_result.conflicting_krefs
+                )
+
+            store_result = await self._store_with_retry(**store_payload)
             logger.debug(
                 "auto_assess stored memory for session %s: %s",
                 session_id,
                 assess_result.content[:80],
             )
+
+            # SUPPORTS edges to corroborating memories.  Requires the new
+            # revision kref — skipped silently when the store was queued
+            # for retry (no kref exists yet; replay has no edge mechanism).
+            new_kref = (store_result or {}).get("revision_kref", "")
+            if new_kref and assess_result.supporting_krefs:
+                await self._create_support_edges(
+                    new_kref, assess_result.supporting_krefs,
+                )
         except Exception as exc:  # pragma: no cover
             logger.debug("_background_assess error for session %s: %s", session_id, exc)
+
+    async def _create_support_edges(
+        self,
+        revision_kref: str,
+        supporting_krefs: List[str],
+        timeout: float = 60.0,
+    ) -> int:
+        """Create ``SUPPORTS`` edges from a new memory to its corroborators.
+
+        Best-effort: each edge failure is logged at debug level and skipped —
+        evidence chains are an enrichment, never a store blocker.  Returns
+        the number of edges created.
+
+        The synchronous gRPC calls can hang indefinitely on Windows (see
+        graph_augmentation.py edge creation), so they run in a daemon
+        thread polled against a deadline instead of ``asyncio.to_thread``
+        — a hung RPC must not strand a shared executor thread.
+        """
+        def _sync_create() -> int:
+            import kumiho
+
+            source_rev = kumiho.get_revision(revision_kref)
+            created = 0
+            for target_kref in supporting_krefs:
+                try:
+                    target_rev = kumiho.get_revision(target_kref)
+                    source_rev.create_edge(
+                        target_rev,
+                        "SUPPORTS",
+                        metadata={"reason": "evidence corroboration"},
+                    )
+                    created += 1
+                except Exception as exc:
+                    logger.debug(
+                        "SUPPORTS edge %s -> %s failed: %s",
+                        revision_kref, target_kref, exc,
+                    )
+            return created
+
+        result: List[int] = []
+        done_event = threading.Event()
+
+        def _worker() -> None:
+            try:
+                result.append(_sync_create())
+            except Exception as exc:
+                logger.debug(
+                    "SUPPORTS edge creation failed for %s: %s",
+                    revision_kref, exc,
+                )
+            finally:
+                done_event.set()
+
+        t = threading.Thread(target=_worker, daemon=True)
+        t.start()
+
+        deadline = time.monotonic() + timeout
+        while not done_event.is_set():
+            if time.monotonic() >= deadline:
+                logger.debug(
+                    "SUPPORTS edge creation timed out after %.0fs for %s",
+                    timeout, revision_kref,
+                )
+                return 0
+            await asyncio.sleep(0.05)
+
+        created = result[0] if result else 0
+        if created:
+            logger.debug(
+                "Created %d SUPPORTS edge(s) from %s", created, revision_kref,
+            )
+        return created
 
     async def handle_user_message(
         self,
@@ -1264,6 +1399,10 @@ class UniversalMemoryManager:
             query, limit=limit, space_paths=space_paths,
             memory_types=memory_types,
         )
+        # Evidence weighting on the plain path.  The graph path applies it
+        # inside GraphAugmentedRecall (before its caps) — never both.
+        from kumiho_memory.evidence_rank import apply_evidence_weights
+        memories = apply_evidence_weights(memories, self.evidence_rank_config)
         return await self._enrich_with_siblings(memories, query)
 
     def _get_graph_recall(self) -> Optional[Any]:
@@ -1291,11 +1430,16 @@ class UniversalMemoryManager:
                     "multi-query reformulation."
                 )
 
+            from kumiho_memory.evidence_rank import apply_evidence_weights
+
             self._graph_recall = GraphAugmentedRecall(
                 adapter=adapter,
                 model=model,
                 recall_fn=self._lightweight_recall,
                 config=self.graph_augmentation_config,
+                evidence_rerank_fn=lambda mems: apply_evidence_weights(
+                    mems, self.evidence_rank_config,
+                ),
             )
             return self._graph_recall
         except Exception as e:
@@ -1344,6 +1488,8 @@ class UniversalMemoryManager:
             title + summary — lossy but cheaper.  Falls back to the
             instance's ``self.recall_mode`` when ``None``.
         """
+        from kumiho_memory.evidence_rank import evidence_badge
+
         mode = recall_mode or self.recall_mode
         threshold = self.sibling_similarity_threshold
 
@@ -1352,11 +1498,14 @@ class UniversalMemoryManager:
             title = mem.get("title", "")
             summary = mem.get("summary", "")
             content = mem.get("content", "")
+            badge = evidence_badge(mem, self.evidence_rank_config)
 
             if mode == "full" and content:
-                texts.append(content[:4000])
+                texts.append(badge + content[:4000])
             elif summary:
-                texts.append(f"{title}: {summary}" if title else summary)
+                texts.append(
+                    f"{badge}{title}: {summary}" if title else badge + summary
+                )
 
             # Unfold sibling revisions only in full mode.  In summarized
             # mode the primary title+summary is enough — unrolling siblings
@@ -1369,15 +1518,18 @@ class UniversalMemoryManager:
                     )
 
                 for sib in siblings:
+                    sib_badge = evidence_badge(sib, self.evidence_rank_config)
                     sib_content = sib.get("content", "")
                     if sib_content:
-                        texts.append(sib_content[:4000])
+                        texts.append(sib_badge + sib_content[:4000])
                     else:
                         sib_title = sib.get("title", "")
                         sib_summary = sib.get("summary", "")
                         if sib_summary:
                             texts.append(
-                                f"{sib_title}: {sib_summary}" if sib_title else sib_summary
+                                f"{sib_badge}{sib_title}: {sib_summary}"
+                                if sib_title
+                                else sib_badge + sib_summary
                             )
 
         return "\n\n".join(texts) if texts else ""
@@ -1712,6 +1864,10 @@ class UniversalMemoryManager:
                         val = meta.get(field, "")
                         if val:
                             sib_entry[field] = val
+                    # Evidence grade so sibling badges have data
+                    # (per-revision — stacked siblings may differ).
+                    if meta.get("evidence_level"):
+                        sib_entry["evidence_level"] = meta["evidence_level"]
                     siblings.append(sib_entry)
 
             if not siblings:
