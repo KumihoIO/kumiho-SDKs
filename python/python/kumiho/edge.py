@@ -119,6 +119,7 @@ class EdgeType:
         DERIVED_FROM (str): Indicates the source was derived/modified from target.
         CONTAINS (str): Indicates the source contains or includes the target.
         SUPERSEDES (str): Indicates the source replaces/supersedes the target (belief revision).
+        SUPPORTS (str): Indicates the source corroborates/supports the target (evidence chains).
 
     Example::
 
@@ -151,6 +152,9 @@ class EdgeType:
 
     SUPERSEDES = "SUPERSEDES"
     """Source replaces or supersedes target (belief revision)."""
+
+    SUPPORTS = "SUPPORTS"
+    """Source corroborates or supports target (evidence chains)."""
 
 class EdgeDirection:
     """Direction constants for edge traversal queries.
