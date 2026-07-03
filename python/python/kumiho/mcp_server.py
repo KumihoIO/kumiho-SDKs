@@ -816,7 +816,7 @@ def tool_memory_store(
         if tag == "latest":
             continue
         try:
-            kumiho.tag_revision(revision.kref, tag)
+            revision.tag(tag)
         except Exception:
             continue
 
