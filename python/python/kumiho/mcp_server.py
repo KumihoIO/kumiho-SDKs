@@ -446,6 +446,23 @@ def _parse_timestamp(value: Optional[str]) -> Optional[datetime]:
         return None
 
 
+def _most_recent_items(items: List[Any], cap: int) -> List[Any]:
+    """Newest-first slice bounding fallback revision resolution.
+
+    The pattern fallback resolves published/latest via 1-2 RPCs per item.
+    Unbounded, that is O(items-in-project) serial round-trips (measured in
+    production: 457 items -> 914 RPCs -> ~185s over a ~200ms link) only to
+    keep ``limit`` of them after sorting by a constant score.  Prefer the
+    newest items — fallback hits when relevance search found nothing, so
+    recency is the only signal left.
+    """
+    def _created(item: Any) -> datetime:
+        ts = _parse_timestamp(getattr(item, "created_at", None) or None)
+        return ts.replace(tzinfo=None) if ts and ts.tzinfo else (ts or datetime.min)
+
+    return sorted(items, key=_created, reverse=True)[:cap]
+
+
 # ============================================================================
 # Tool Implementations
 # ============================================================================
@@ -969,6 +986,27 @@ def tool_memory_retrieve(
                     kind=memory_item_kind,
                     include_revision_metadata=include_revision_metadata,
                 ))
+            # The deep search variant (include_revision_metadata=True) can
+            # return zero results on some deployments even when the plain
+            # item search matches (observed in production: every deep query
+            # returned 0 while the same query without revision metadata
+            # returned 100).  Retry shallow before giving up — falling
+            # through to the pattern fallback instead costs 1-2 RPCs per
+            # item in the project.
+            if not search_results and include_revision_metadata:
+                for ctx in contexts:
+                    search_results.extend(kumiho.search(
+                        combined_query,
+                        context=ctx,
+                        kind=memory_item_kind,
+                        include_revision_metadata=False,
+                    ))
+                if search_results:
+                    logger.warning(
+                        "tool_memory_retrieve: deep search returned 0 results "
+                        "but shallow retry matched %d — deep search may be "
+                        "broken on this server", len(search_results),
+                    )
             # Sort by score descending after merging contexts
             search_results.sort(key=lambda sr: sr.score, reverse=True)
             for sr in search_results[:limit * 2]:  # Get extra for filtering
@@ -1023,6 +1061,11 @@ def tool_memory_retrieve(
                         bundle = kumiho.get_bundle(bundle_item.kref.uri)
                         members = bundle.get_members()
                         for member in members:
+                            # Bounded: each member costs 2-3 RPCs and only
+                            # `limit` results survive — large auto-collected
+                            # bundles must not turn into an RPC storm.
+                            if len(results) >= limit * 2:
+                                break
                             if member.item_kref.uri not in [r[0] for r in results]:
                                 item = kumiho.get_item(member.item_kref.uri)
                                 rev = item.get_revision_by_tag("published") or item.get_revision_by_tag("latest")
@@ -1047,7 +1090,10 @@ def tool_memory_retrieve(
             )
             if items:
                 spaces_used.append(context)
-            for item in items:
+            # Bounded: resolving published/latest costs 1-2 RPCs per item,
+            # and only `limit` results survive — never resolve the whole
+            # project (see _most_recent_items).
+            for item in _most_recent_items(items, limit * 2):
                 try:
                     rev = item.get_revision_by_tag("published") or item.get_revision_by_tag("latest")
                     if rev:
@@ -1068,7 +1114,7 @@ def tool_memory_retrieve(
             )
             if items:
                 spaces_used.append(project_name)
-            for item in items:
+            for item in _most_recent_items(items, limit * 2):
                 try:
                     rev = item.get_revision_by_tag("published") or item.get_revision_by_tag("latest")
                     if rev:

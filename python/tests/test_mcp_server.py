@@ -272,5 +272,128 @@ class TestToolDefinitions:
                 f"Tool {tool['name']} should start with 'kumiho_'"
 
 
+
+
+class TestMemoryRetrieveFallbackBounds:
+    """Regression tests for the tool_memory_retrieve RPC-storm fixes.
+
+    Production incident: the deep search variant returned 0 results for
+    every query, so every recall fell into the pattern fallback, which
+    resolved published/latest revisions for EVERY item in the project
+    (457 items -> 914 serial get_revision_by_tag RPCs -> ~185s -> MCP
+    timeout).
+    """
+
+    def _make_item(self, idx: int, created_at: str):
+        item = MockItem(f"kref://CognitiveMemory/facts/note-{idx}.conversation")
+        item.kind = "conversation"
+        item.created_at = created_at
+        item.space = None
+        item.tag_calls = 0
+
+        rev = MockRevision(f"{item.kref.uri}?r=1")
+
+        def get_revision_by_tag(tag, _item=item, _rev=rev):
+            _item.tag_calls += 1
+            return _rev if tag == "latest" else None
+
+        item.get_revision_by_tag = get_revision_by_tag
+        return item
+
+    @patch('kumiho.get_project')
+    @patch('kumiho.auto_configure_from_discovery')
+    @patch('kumiho.item_search')
+    @patch('kumiho.search')
+    def test_pattern_fallback_bounds_revision_resolution(
+        self, mock_search, mock_item_search, mock_configure, mock_get_project,
+    ):
+        """457 items in the project must NOT mean 900+ tag-resolution
+        calls — the fallback resolves at most limit*2 newest items."""
+        mock_get_project.return_value = MockProject("CognitiveMemory")
+        mock_search.return_value = []  # force the pattern fallback
+        items = [
+            self._make_item(i, f"2026-05-{(i % 28) + 1:02d}T00:00:00+00:00")
+            for i in range(457)
+        ]
+        mock_item_search.return_value = items
+
+        from kumiho.mcp_server import tool_memory_retrieve
+        result = tool_memory_retrieve(
+            project="CognitiveMemory", query="no such thing", limit=5,
+        )
+
+        total_tag_calls = sum(item.tag_calls for item in items)
+        assert total_tag_calls <= 5 * 2 * 2, (
+            f"fallback made {total_tag_calls} tag-resolution calls; "
+            "must be bounded by limit*2 items x 2 calls each"
+        )
+        assert len(result["revision_krefs"]) == 5
+
+    @patch('kumiho.get_project')
+    @patch('kumiho.auto_configure_from_discovery')
+    @patch('kumiho.item_search')
+    @patch('kumiho.search')
+    def test_pattern_fallback_prefers_newest_items(
+        self, mock_search, mock_item_search, mock_configure, mock_get_project,
+    ):
+        mock_get_project.return_value = MockProject("CognitiveMemory")
+        mock_search.return_value = []
+        old = self._make_item(0, "2026-01-01T00:00:00+00:00")
+        new = self._make_item(1, "2026-06-30T00:00:00+00:00")
+        mock_item_search.return_value = [old] + [
+            self._make_item(i, "2026-03-01T00:00:00+00:00") for i in range(2, 30)
+        ] + [new]
+
+        from kumiho.mcp_server import tool_memory_retrieve
+        result = tool_memory_retrieve(
+            project="CognitiveMemory", query="no such thing", limit=5,
+        )
+
+        assert new.kref.uri in result["item_krefs"]
+        assert old.kref.uri not in result["item_krefs"]
+
+    @patch('kumiho.get_project')
+    @patch('kumiho.auto_configure_from_discovery')
+    @patch('kumiho.item_search')
+    @patch('kumiho.search')
+    def test_deep_search_zero_results_retries_shallow(
+        self, mock_search, mock_item_search, mock_configure, mock_get_project,
+    ):
+        """include_revision_metadata=True returning 0 must retry with
+        False before falling into the expensive pattern fallback."""
+        mock_get_project.return_value = MockProject("CognitiveMemory")
+        # A retry regression must fail fast here, not fall through to the
+        # pattern fallback and issue real RPCs against a live server.
+        mock_item_search.return_value = []
+        deep_calls = []
+        shallow_item = MockItem("kref://CognitiveMemory/facts/hit.conversation")
+        shallow_item.kind = "conversation"
+        shallow_item.space = None
+        rev = MockRevision(f"{shallow_item.kref.uri}?r=1")
+        shallow_item.get_revision_by_tag = lambda tag: rev if tag == "latest" else None
+
+        hit = MagicMock()
+        hit.item = shallow_item
+        hit.score = 0.9
+
+        def search_side_effect(query, **kwargs):
+            deep_calls.append(kwargs.get("include_revision_metadata"))
+            if kwargs.get("include_revision_metadata"):
+                return []  # deep variant broken (production behavior)
+            return [hit]
+
+        mock_search.side_effect = search_side_effect
+
+        from kumiho.mcp_server import tool_memory_retrieve
+        result = tool_memory_retrieve(
+            project="CognitiveMemory", query="anything", limit=5,
+        )
+
+        assert True in deep_calls and False in deep_calls, (
+            f"expected deep-then-shallow retry, got calls: {deep_calls}"
+        )
+        assert result["revision_krefs"] == [rev.kref.uri]
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
