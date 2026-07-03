@@ -40,6 +40,7 @@ Note:
 import logging
 import os
 import random
+import sys
 import time
 from typing import Any, Dict, Iterator, List, Optional, Sequence, Tuple, Union, TYPE_CHECKING
 from urllib.parse import urlparse
@@ -2268,23 +2269,40 @@ class _CorrelationIdInterceptor(
         return continuation(updated, request_iterator)
 
 
+def _interactive_login_allowed() -> bool:
+    """Interactive login prompts are only safe on a real terminal.
+
+    Inside headless processes (MCP stdio servers, CI, pipelines) stdin is
+    a protocol pipe — an input() prompt blocks the process forever.
+    """
+    if os.environ.get("KUMIHO_NO_INTERACTIVE_LOGIN"):
+        return False
+    try:
+        return sys.stdin is not None and sys.stdin.isatty()
+    except Exception:
+        return False
+
+
 class _AutoLoginInterceptor(
     grpc.UnaryUnaryClientInterceptor,
     grpc.UnaryStreamClientInterceptor,
 ):
-    """Client interceptor that automatically prompts for login on auth failures."""
+    """Client interceptor that automatically refreshes credentials on auth failures."""
 
     def intercept_unary_unary(self, continuation, client_call_details, request):
         response = continuation(client_call_details, request)
-        
+
         # Check if this is an auth error
         try:
             # Force the response to be evaluated
             if hasattr(response, 'code'):
                 code = response.code()
                 should_refresh = False
-                
-                if code in (grpc.StatusCode.UNAUTHENTICATED, grpc.StatusCode.PERMISSION_DENIED):
+
+                # PERMISSION_DENIED is deliberately NOT a trigger: the server
+                # uses it for authorization/immutability rejections (e.g.
+                # tagging a published-frozen revision), not for bad tokens.
+                if code == grpc.StatusCode.UNAUTHENTICATED:
                     should_refresh = True
                 elif code == grpc.StatusCode.UNAVAILABLE:
                     # Handle JWKS errors which often manifest as UNAVAILABLE
@@ -2293,10 +2311,15 @@ class _AutoLoginInterceptor(
                         should_refresh = True
 
                 if should_refresh:
-                    _LOGGER.info("Authentication error detected, prompting for login...")
+                    interactive = _interactive_login_allowed()
+                    _LOGGER.info(
+                        "Authentication error detected, %s...",
+                        "prompting for login" if interactive else
+                        "attempting silent credential refresh",
+                    )
                     try:
                         from . import auth_cli
-                        new_token, _ = auth_cli.ensure_token(interactive=True, force_refresh=True)
+                        new_token, _ = auth_cli.ensure_token(interactive=interactive, force_refresh=True)
                         
                         # Update the authorization header with the new token
                         existing_metadata: List[Tuple[str, str]] = []
