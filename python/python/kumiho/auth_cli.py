@@ -178,7 +178,7 @@ def _exchange_for_control_plane_token(firebase_token: str) -> Tuple[Optional[str
     except requests.RequestException as exc:
         # Fallback: if CP exchange fails, we just return empty (client will use Firebase token)
         # But we should log it.
-        print(f"[kumiho-auth] Warning: Failed to exchange for Control Plane JWT: {exc}")
+        print(f"[kumiho-auth] Warning: Failed to exchange for Control Plane JWT: {exc}", file=sys.stderr)
         return None, None
 
 
@@ -269,7 +269,8 @@ def ensure_token(
             _log_token(updated.id_token, "refreshed")
             return updated.control_plane_token or updated.id_token, "refreshed credentials"
         except requests.HTTPError as exc:
-            print(f"[kumiho-auth] Refresh failed: {exc}")
+            # stderr: in headless MCP servers stdout is the JSON-RPC channel.
+            print(f"[kumiho-auth] Refresh failed: {exc}", file=sys.stderr)
 
     if not interactive:
         raise TokenAcquisitionError("No KumihoClouds token available and interactive mode disabled")

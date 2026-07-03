@@ -166,13 +166,19 @@ def _serialize_item(item: Item) -> Dict[str, Any]:
 
 def _serialize_revision(revision: Revision) -> Dict[str, Any]:
     """Serialize a Revision to a JSON-friendly dict."""
+    metadata = dict(revision.metadata) if revision.metadata else {}
+    # The server reserves the "type" metadata key and strips it from reads;
+    # newer writes mirror it as "memory_type". Alias it back so legacy
+    # consumers reading metadata["type"] keep working.
+    if "memory_type" in metadata and "type" not in metadata:
+        metadata["type"] = metadata["memory_type"]
     return {
         "kref": revision.kref.uri,
         "item_kref": revision.item_kref.uri,
         "number": revision.number,
         "latest": revision.latest,
         "tags": list(revision._cached_tags),
-        "metadata": dict(revision.metadata) if revision.metadata else {},
+        "metadata": metadata,
         "created_at": revision.created_at,
         "author": revision.author,
         "username": revision.username,
@@ -461,6 +467,21 @@ def _most_recent_items(items: List[Any], cap: int) -> List[Any]:
         return ts.replace(tzinfo=None) if ts and ts.tzinfo else (ts or datetime.min)
 
     return sorted(items, key=_created, reverse=True)[:cap]
+
+
+def _matches_memory_types(rev: Any, allowed: Optional[Set[str]]) -> bool:
+    """True when the revision's memory type passes the filter.
+
+    The server reserves the "type" metadata key and strips it from reads,
+    so newer writes mirror the type as "memory_type" — check both.
+    Revisions without a readable type (anything stored before the
+    "memory_type" mirror existed) only match when no filter is set.
+    """
+    if not allowed:
+        return True
+    meta = getattr(rev, "metadata", None) or {}
+    mem_type = str(meta.get("memory_type") or meta.get("type") or "")
+    return mem_type.strip().lower() in allowed
 
 
 # ============================================================================
@@ -795,7 +816,11 @@ def tool_memory_store(
 
     base_metadata = {
         "schema": schema_version or "kumiho.agent_memory.v1",
+        # "type" is a server-reserved metadata key and is stripped from
+        # every read — "memory_type" is the readable carrier. "type" is
+        # still written for raw-database consumers.
         "type": memory_type,
+        "memory_type": memory_type,
         "title": final_title,
         "summary": final_summary,
         "space": normalized_space_path,
@@ -920,6 +945,12 @@ def tool_memory_retrieve(
     topic_list = to_list(topics)
     spaces = to_list(space_paths)
     bundles = to_list(bundle_names)
+    # Normalized memory-type filter (see _matches_memory_types). Only
+    # revisions stored with the "memory_type" metadata mirror are
+    # matchable — older revisions have no readable type.
+    allowed_types: Optional[Set[str]] = {
+        t.strip().lower() for t in to_list(memory_types) if t.strip()
+    } or None
 
     query_text = (query or "").strip()
     query_lower = query_text.lower()
@@ -952,15 +983,23 @@ def tool_memory_retrieve(
             name_filter="",
             kind_filter=memory_item_kind,
         )
-        if not items:
-            return {"item_krefs": [], "revision_krefs": [], "spaces_used": []}
-        earliest = min(items, key=lambda item: _parse_timestamp(item.created_at) or datetime.max)
-        rev = earliest.get_revision_by_tag("published") or earliest.get_revision_by_tag("latest")
-        return {
-            "item_krefs": [earliest.kref.uri],
-            "revision_krefs": [rev.kref.uri] if rev else [],
-            "spaces_used": [project_name],
-        }
+        # Oldest-first, returning the first item whose revision passes the
+        # memory_types filter — min() alone would ignore the filter.
+        for item in sorted(
+            items, key=lambda item: _parse_timestamp(item.created_at) or datetime.max,
+        ):
+            try:
+                rev = item.get_revision_by_tag("published") or item.get_revision_by_tag("latest")
+            except Exception:
+                continue
+            if rev and not _matches_memory_types(rev, allowed_types):
+                continue
+            return {
+                "item_krefs": [item.kref.uri],
+                "revision_krefs": [rev.kref.uri] if rev else [],
+                "spaces_used": [project_name],
+            }
+        return {"item_krefs": [], "revision_krefs": [], "spaces_used": []}
 
     # Build search query from query + keywords + topics
     search_terms = []
@@ -1017,6 +1056,8 @@ def tool_memory_retrieve(
                         revisions = sr.item.get_revisions()
                         if revisions and len(revisions) > 1:
                             for rev in revisions:
+                                if not _matches_memory_types(rev, allowed_types):
+                                    continue
                                 results.append((
                                     sr.item.kref.uri, rev.kref.uri,
                                     sr.score,
@@ -1032,7 +1073,7 @@ def tool_memory_retrieve(
                         sr.item.get_revision_by_tag("published")
                         or sr.item.get_revision_by_tag("latest")
                     )
-                    if rev:
+                    if rev and _matches_memory_types(rev, allowed_types):
                         results.append((sr.item.kref.uri, rev.kref.uri, sr.score))
                         if sr.item.space:
                             spaces_used.append(sr.item.space.path)
@@ -1069,7 +1110,7 @@ def tool_memory_retrieve(
                             if member.item_kref.uri not in [r[0] for r in results]:
                                 item = kumiho.get_item(member.item_kref.uri)
                                 rev = item.get_revision_by_tag("published") or item.get_revision_by_tag("latest")
-                                if rev:
+                                if rev and _matches_memory_types(rev, allowed_types):
                                     results.append((member.item_kref.uri, rev.kref.uri, 0.5))
                     except Exception:
                         continue
@@ -1096,7 +1137,7 @@ def tool_memory_retrieve(
             for item in _most_recent_items(items, limit * 2):
                 try:
                     rev = item.get_revision_by_tag("published") or item.get_revision_by_tag("latest")
-                    if rev:
+                    if rev and _matches_memory_types(rev, allowed_types):
                         results.append((item.kref.uri, rev.kref.uri, 0.0))
                 except Exception:
                     continue
@@ -1117,7 +1158,7 @@ def tool_memory_retrieve(
             for item in _most_recent_items(items, limit * 2):
                 try:
                     rev = item.get_revision_by_tag("published") or item.get_revision_by_tag("latest")
-                    if rev:
+                    if rev and _matches_memory_types(rev, allowed_types):
                         results.append((item.kref.uri, rev.kref.uri, 0.0))
                 except Exception:
                     continue

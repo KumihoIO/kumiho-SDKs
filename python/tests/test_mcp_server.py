@@ -395,5 +395,185 @@ class TestMemoryRetrieveFallbackBounds:
         assert result["revision_krefs"] == [rev.kref.uri]
 
 
+class TestMemoryTypeRoundTrip:
+    """Regression tests for issue #21: the server reserves the "type"
+    metadata key and strips it from every read, so the memory type must
+    travel as "memory_type" and alias back to "type" for legacy readers."""
+
+    def test_serialize_revision_aliases_memory_type(self):
+        from kumiho.mcp_server import _serialize_revision
+        rev = MockRevision("kref://p/s/i.conversation?r=1")
+        rev.metadata = {"memory_type": "decision", "title": "t"}
+
+        data = _serialize_revision(rev)
+
+        assert data["metadata"]["type"] == "decision"
+        assert data["metadata"]["memory_type"] == "decision"
+
+    def test_serialize_revision_keeps_explicit_type(self):
+        from kumiho.mcp_server import _serialize_revision
+        rev = MockRevision("kref://p/s/i.conversation?r=1")
+        rev.metadata = {"memory_type": "decision", "type": "fact"}
+
+        data = _serialize_revision(rev)
+
+        assert data["metadata"]["type"] == "fact"
+
+    def test_matches_memory_types(self):
+        from kumiho.mcp_server import _matches_memory_types
+        rev = MockRevision("kref://p/s/i.conversation?r=1")
+
+        rev.metadata = {"memory_type": "Decision"}
+        assert _matches_memory_types(rev, {"decision"})
+        assert not _matches_memory_types(rev, {"fact"})
+
+        rev.metadata = {"type": "fact"}  # legacy key still honoured
+        assert _matches_memory_types(rev, {"fact"})
+
+        rev.metadata = {}  # untyped legacy revision
+        assert not _matches_memory_types(rev, {"fact"})
+        assert _matches_memory_types(rev, None)  # no filter -> everything
+
+    @patch('kumiho.mcp_server._write_memory_artifact', return_value="")
+    @patch('kumiho.mcp_server._get_or_create_item')
+    @patch('kumiho.mcp_server._find_similar_item', return_value=None)
+    @patch('kumiho.mcp_server._ensure_space_path', return_value="facts")
+    @patch('kumiho.get_project')
+    @patch('kumiho.auto_configure_from_discovery')
+    def test_store_stamps_memory_type_metadata(
+        self, mock_configure, mock_get_project, mock_ensure_space,
+        mock_find_similar, mock_get_item, mock_artifact,
+    ):
+        mock_get_project.return_value = MockProject("CognitiveMemory")
+        captured = {}
+
+        item = MockItem("kref://CognitiveMemory/facts/note.conversation")
+        rev = MockRevision(f"{item.kref.uri}?r=1")
+        rev.tag = lambda tag: None
+
+        def create_revision(metadata=None):
+            captured.update(metadata or {})
+            return rev
+
+        item.create_revision = create_revision
+        mock_get_item.return_value = item
+
+        from kumiho.mcp_server import tool_memory_store
+        result = tool_memory_store(
+            project="CognitiveMemory",
+            space_path="facts",
+            memory_type="decision",
+            title="t",
+            summary="s",
+            user_text="u",
+        )
+
+        assert "error" not in result
+        assert captured["memory_type"] == "decision"
+        assert captured["type"] == "decision"
+
+    @patch('kumiho.get_project')
+    @patch('kumiho.auto_configure_from_discovery')
+    @patch('kumiho.item_search')
+    @patch('kumiho.search')
+    def test_retrieve_filters_by_memory_types(
+        self, mock_search, mock_item_search, mock_configure, mock_get_project,
+    ):
+        """memory_types must actually filter (it was dead code)."""
+        mock_get_project.return_value = MockProject("CognitiveMemory")
+        mock_search.return_value = []  # force the pattern fallback
+
+        def typed_item(idx, mem_type):
+            item = MockItem(f"kref://CognitiveMemory/facts/note-{idx}.conversation")
+            item.kind = "conversation"
+            item.created_at = "2026-06-01T00:00:00+00:00"
+            item.space = None
+            rev = MockRevision(f"{item.kref.uri}?r=1")
+            rev.metadata = {"memory_type": mem_type}
+            item.get_revision_by_tag = lambda tag, _rev=rev: _rev if tag == "latest" else None
+            return item
+
+        decisions = [typed_item(i, "decision") for i in range(2)]
+        facts = [typed_item(i + 10, "fact") for i in range(3)]
+        mock_item_search.return_value = decisions + facts
+
+        from kumiho.mcp_server import tool_memory_retrieve
+        result = tool_memory_retrieve(
+            project="CognitiveMemory", query="no such thing", limit=5,
+            memory_types=["decision"],
+        )
+
+        assert sorted(result["item_krefs"]) == sorted(d.kref.uri for d in decisions)
+
+    @patch('kumiho.get_project')
+    @patch('kumiho.auto_configure_from_discovery')
+    @patch('kumiho.search')
+    def test_search_path_filters_by_memory_types(
+        self, mock_search, mock_configure, mock_get_project,
+    ):
+        """The primary search path must apply the filter too — not just
+        the pattern fallback."""
+        mock_get_project.return_value = MockProject("CognitiveMemory")
+
+        def typed_hit(idx, mem_type, score):
+            item = MockItem(f"kref://CognitiveMemory/facts/hit-{idx}.conversation")
+            item.kind = "conversation"
+            item.space = None
+            rev = MockRevision(f"{item.kref.uri}?r=1")
+            rev.metadata = {"memory_type": mem_type}
+            item.get_revision_by_tag = lambda tag, _rev=rev: _rev if tag == "latest" else None
+            hit = MagicMock()
+            hit.item = item
+            hit.score = score
+            return hit
+
+        decision_hit = typed_hit(1, "decision", 0.9)
+        fact_hit = typed_hit(2, "fact", 0.8)
+        mock_search.return_value = [decision_hit, fact_hit]
+
+        from kumiho.mcp_server import tool_memory_retrieve
+        result = tool_memory_retrieve(
+            project="CognitiveMemory", query="anything", limit=5,
+            memory_types=["decision"],
+        )
+
+        assert result["item_krefs"] == [decision_hit.item.kref.uri]
+
+    @patch('kumiho.get_project')
+    @patch('kumiho.auto_configure_from_discovery')
+    @patch('kumiho.item_search')
+    def test_first_mode_respects_memory_types(
+        self, mock_item_search, mock_configure, mock_get_project,
+    ):
+        """mode="first" must return the oldest MATCHING item, not the
+        oldest item outright."""
+        mock_get_project.return_value = MockProject("CognitiveMemory")
+
+        def typed_item(idx, mem_type, created_at):
+            item = MockItem(f"kref://CognitiveMemory/facts/note-{idx}.conversation")
+            item.kind = "conversation"
+            item.created_at = created_at
+            item.space = None
+            rev = MockRevision(f"{item.kref.uri}?r=1")
+            rev.metadata = {"memory_type": mem_type}
+            item.get_revision_by_tag = lambda tag, _rev=rev: _rev if tag == "latest" else None
+            return item
+
+        oldest_fact = typed_item(1, "fact", "2026-01-01T00:00:00+00:00")
+        older_decision = typed_item(2, "decision", "2026-02-01T00:00:00+00:00")
+        newer_decision = typed_item(3, "decision", "2026-03-01T00:00:00+00:00")
+        mock_item_search.return_value = [newer_decision, oldest_fact, older_decision]
+
+        from kumiho.mcp_server import tool_memory_retrieve
+        result = tool_memory_retrieve(
+            project="CognitiveMemory", mode="first", memory_types=["decision"],
+        )
+        assert result["item_krefs"] == [older_decision.kref.uri]
+
+        # Without a filter the oldest item wins, as before.
+        result = tool_memory_retrieve(project="CognitiveMemory", mode="first")
+        assert result["item_krefs"] == [oldest_fact.kref.uri]
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
