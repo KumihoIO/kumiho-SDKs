@@ -221,3 +221,19 @@ def test_llm_reranker_failure_is_a_noop():
     cfg = RerankConfig(cross_encoder_enabled=True, mmr_enabled=False, recency_enabled=False)
     out = rerank("q", [a, b], config=cfg, reranker=rr, now=NOW)
     assert [m["title"] for m in out] == ["a", "b"]  # unchanged
+
+
+def test_default_reranker_model_is_a_known_fastembed_id():
+    # Guards against a model-name typo silently disabling the cross-encoder
+    # (try_fastembed_reranker swallows the load error and returns None).
+    import inspect
+
+    from kumiho_memory.recall_rerank import try_fastembed_reranker
+
+    default = inspect.signature(try_fastembed_reranker).parameters["model_name"].default
+    assert default in {
+        "BAAI/bge-reranker-base",
+        "jinaai/jina-reranker-v2-base-multilingual",
+        "Xenova/ms-marco-MiniLM-L-6-v2",
+        "Xenova/ms-marco-MiniLM-L-12-v2",
+    }, f"default reranker model not a supported fastembed id: {default}"
