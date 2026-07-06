@@ -815,10 +815,32 @@ class UniversalMemoryManager:
                     redacted_summary
                 )
 
+        # Weave the extracted atomic facts into the embedded summary so that
+        # DIRECT-fact queries (single-hop attribute questions) surface the
+        # fact-bearing memory into the recall candidate set. Facts are
+        # otherwise stored only as fulltext metadata and EXCLUDED from the
+        # embedding (server SEMANTIC_KEYS = title/summary/description), so a
+        # semantic query like "what kind of people does the agency support?"
+        # never matches the "…supports LGBTQ+ individuals" fact and the right
+        # memory is missed at recall — no amount of sibling re-ranking can
+        # recover a candidate that was never retrieved. Mirrors the
+        # implications block above (which is embedded for the same reason).
+        if facts:
+            _fact_claims = [f.get("claim", "") for f in facts if f.get("claim")]
+            if _fact_claims:
+                redacted_summary += "\n\nFacts:\n" + "\n".join(
+                    f"- {c}" for c in _fact_claims
+                )
+                redacted_summary = self.pii_redactor.anonymize_summary(
+                    redacted_summary
+                )
+
         # --- Extract structured metadata for separate storage ---
-        # These become individual Revision node properties in Neo4j,
-        # included in SEMANTIC_KEYS for embedding and available for
-        # score_fields-based focused scoring.
+        # These become individual Revision node properties in Neo4j.
+        # Facts/entities/events remain here too for fulltext (PROSPECT_KEYS)
+        # and score_fields-based focused sibling scoring; the fact claims are
+        # additionally folded into the embedded summary above so they drive
+        # candidate retrieval, not just re-ranking.
         structured_metadata: Dict[str, str] = {}
 
         entities_list = summary_result.get("classification", {}).get("entities", [])
