@@ -395,3 +395,56 @@ def test_no_hook_configured_is_fine():
     gr = _gr(cfg, adapter=_UsageAdapter())
     out = asyncio.run(gr.recall("trigger", limit=2))
     assert out
+
+
+# ---------------------------------------------------------------------------
+# Reformulation: conditional fact-decomposition + cognitive angles
+# ---------------------------------------------------------------------------
+
+class _CannedAdapter:
+    def __init__(self, response):
+        self.response = response
+        self.last_system = ""
+
+    async def chat(self, *, messages, model, system=None, max_tokens=1024,
+                   json_mode=False):
+        self.last_system = system or ""
+        return self.response
+
+
+def _gr_reform(adapter):
+    async def recall_fn(query, *, limit, space_paths=None, memory_types=None):
+        return []
+
+    return GraphAugmentedRecall(
+        recall_fn=recall_fn, adapter=adapter, model="light",
+        config=GraphAugmentationConfig(reformulate_queries=True, max_hops=0),
+    )
+
+
+def test_reformulation_prompt_covers_decomposition_and_none():
+    adapter = _CannedAdapter("sub query")
+    gr = _gr_reform(adapter)
+    asyncio.run(gr._reformulate_query("who did Alice meet before the trip Bob planned?"))
+    sys_prompt = adapter.last_system
+    assert "PER fact" in sys_prompt          # fact decomposition instruction
+    assert "'none'" in sys_prompt            # conditional escape hatch
+    assert "INDIRECTLY" in sys_prompt        # cognitive angles preserved
+
+
+def test_reformulation_none_returns_empty():
+    gr = _gr_reform(_CannedAdapter("none"))
+    out = asyncio.run(gr._reformulate_query("what is Alice's job?"))
+    assert out == []
+
+
+def test_reformulation_caps_at_four():
+    gr = _gr_reform(_CannedAdapter("q1\nq2\nq3\nq4\nq5\nq6"))
+    out = asyncio.run(gr._reformulate_query("complex multi part question"))
+    assert out == ["q1", "q2", "q3", "q4"]
+
+
+def test_reformulation_strips_numbering():
+    gr = _gr_reform(_CannedAdapter("1. first query\n2) second query"))
+    out = asyncio.run(gr._reformulate_query("q"))
+    assert out == ["first query", "second query"]

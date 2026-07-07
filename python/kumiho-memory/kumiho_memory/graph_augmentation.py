@@ -514,15 +514,45 @@ class GraphAugmentedRecall:
     # ------------------------------------------------------------------
 
     async def _reformulate_query(self, query: str) -> List[str]:
-        """Generate 2-3 alternative search queries via the LLM adapter."""
+        """Generate 0-4 alternative search queries via the LLM adapter.
+
+        Two kinds of angle, matched to the two ways a message relates to
+        stored memories:
+
+        * **Fact decomposition** — a question that needs MULTIPLE distinct
+          facts combined (multi-hop / multi-condition) yields one
+          self-contained sub-query per fact.  Each sub-query then runs its
+          own first-stage recall and per-angle rerank, so the evidence for
+          every hop survives into the merge (stage-aware decomposition:
+          decompose-and-union at retrieval + rerank per sub-condition;
+          sub-queries must keep entity names explicit to avoid semantic
+          drift).
+        * **Cognitive angles** — an indirect or emotional reference yields
+          queries for the underlying emotion, causal event, or consequence
+          (semantic-inversion bridging).
+
+        Decomposition is CONDITIONAL: a simple, direct question about one
+        fact may return fewer queries or none — fragmenting a
+        single-condition query only adds retrieval noise.  The original
+        query always runs regardless, so reformulation can only ever add
+        candidates (union merge).
+        """
         system = (
-            "You generate alternative memory search queries. "
-            "Given a conversational message, produce 2-3 short search queries "
-            "that capture different semantic angles of what this person might "
-            "be referring to from their past. Focus on:\n"
-            "- The underlying emotion or concern\n"
-            "- A possible causal event that led to this behavior\n"
-            "- Related situations or consequences\n"
+            "You generate alternative memory search queries. Given a "
+            "conversational message, produce UP TO 4 short search queries "
+            "that would surface the stored memories needed to respond.\n\n"
+            "Choose the right kind of queries:\n"
+            "- If the message asks something that requires COMBINING several "
+            "distinct facts or events (multiple people, times, or "
+            "conditions), write one self-contained sub-query PER fact "
+            "needed. Repeat the relevant person/place/thing names in each "
+            "sub-query — a sub-query must make sense on its own.\n"
+            "- If the message refers to the past INDIRECTLY, add queries "
+            "for the underlying emotion or concern, a possible causal "
+            "event, or related consequences.\n"
+            "- If the message is a simple, direct question about one fact, "
+            "return just one focused rewording — or the word 'none' if no "
+            "rewording would help.\n\n"
             "Return ONLY the queries, one per line, no numbering or bullets."
         )
         try:
@@ -530,7 +560,7 @@ class GraphAugmentedRecall:
                 messages=[{"role": "user", "content": query}],
                 model=self.model,
                 system=system,
-                max_tokens=100,
+                max_tokens=140,
             )
             self._report_llm_usage("recall_reformulation")
             queries = [
@@ -538,11 +568,13 @@ class GraphAugmentedRecall:
                 for line in raw.splitlines()
                 if line.strip()
             ]
+            if len(queries) == 1 and queries[0].strip().lower() == "none":
+                queries = []
             logger.info(
                 "Multi-query reformulation: %d queries from trigger",
                 len(queries),
             )
-            return queries[:3]
+            return queries[:4]
         except Exception as e:
             logger.warning("Query reformulation failed: %s", e)
             return []
