@@ -245,17 +245,6 @@ def test_llm_success_selection_untouched_by_fallback_floor():
     assert [s["kref"] for s in out] == ["p"]
     assert out[0]["_score"] == 1.0  # legacy ordinal, floor unused
 
-    mgr_anchor = _make_manager(
-        _SummarizerWithAdapter(_RerankAdapter(response="2")),
-        sibling_anchor_scores=True,
-    )
-    out_anchor = asyncio.run(
-        mgr_anchor._filter_siblings_by_server_search(
-            sibs, "philosophy of mind", "item", "p", primary_score=0.9,
-        )
-    )
-    assert out_anchor[0]["_score"] == 0.9  # opt-in: anchor * 1.0, not a floor
-
 
 def test_fallback_end_to_end_multihop_item_survives_context():
     # Regression scenario in miniature: item A's siblings carry LLM-style
@@ -434,7 +423,8 @@ def test_anchoring_default_off_keeps_ordinal_scores():
 
 def test_union_sibling_capped_below_anchored_picks():
     # LLM picks the weak sibling; the strong lexical match is unioned in but
-    # must rank below the pick on the item-anchored axis.
+    # must rank STRICTLY below every pick on the item-anchored axis (cap is
+    # one decay step past the last pick, not a fixed constant).
     mgr = _make_manager(
         _SummarizerWithAdapter(_RerankAdapter(response="2")),
         sibling_anchor_scores=True,
@@ -447,7 +437,8 @@ def test_union_sibling_capped_below_anchored_picks():
     )
     assert [s["kref"] for s in out] == ["b", "a"]
     assert out[0]["_score"] == 0.5
-    assert out[1]["_score"] <= 0.45 + 1e-9             # <= anchor * 0.9
+    assert out[1]["_score"] < out[0]["_score"]         # strictly below the pick
+    assert out[1]["_score"] <= 0.475 + 1e-9            # <= anchor * (1 - 0.05)
 
 
 def test_anchoring_end_to_end_items_compete_on_item_axis():
@@ -476,3 +467,128 @@ def test_anchoring_end_to_end_items_compete_on_item_axis():
     parts = ctx.split("\n\n")
     assert parts[0] == "B: the direct answer"          # item axis wins
     assert len(parts) == 2
+
+
+# --------------------------------------------------------------------------
+# Review hardening: parser dedup/cap, derived union cap, bounded + isolated
+# concurrent enrichment
+# --------------------------------------------------------------------------
+
+def _many_weak(n):
+    return [_weak(f"s{i}") for i in range(n)]
+
+
+def test_parser_dedups_repeated_indices():
+    # "1, 1, 1" must not enter the same revision three times.
+    mgr = _make_manager(_SummarizerWithAdapter(_RerankAdapter(response="1, 1, 1")))
+    out = asyncio.run(
+        mgr._filter_siblings_by_server_search(
+            _many_weak(3), "philosophy of mind", "item",
+        )
+    )
+    assert [s["kref"] for s in out] == ["s0"]
+    assert out[0]["_score"] == 1.0
+
+
+def test_parser_caps_pick_count():
+    from kumiho_memory.memory_manager import _SIBLING_MAX_LLM_PICKS
+
+    response = ", ".join(str(i) for i in range(1, 13))  # 12 picks
+    mgr = _make_manager(_SummarizerWithAdapter(_RerankAdapter(response=response)))
+    out = asyncio.run(
+        mgr._filter_siblings_by_server_search(
+            _many_weak(12), "philosophy of mind", "item",
+        )
+    )
+    assert len(out) == _SIBLING_MAX_LLM_PICKS
+    assert all(s["_score"] >= 0.0 for s in out)  # decay never goes negative
+
+
+def test_union_ranks_strictly_below_last_pick_at_four_picks():
+    # The repro'd inversion: with a fixed 0.9 cap, the un-picked union entry
+    # tied pick #3 and beat pick #4.  The cap must derive from the LAST pick.
+    mgr = _make_manager(
+        _SummarizerWithAdapter(_RerankAdapter(response="2, 3, 4, 5")),
+        sibling_anchor_scores=True,
+    )
+    sibs = [_strong()] + _many_weak(4)  # strong at index 1 (unpicked)
+    out = asyncio.run(
+        mgr._filter_siblings_by_server_search(
+            sibs, QUERY, "item", primary_score=0.5,
+        )
+    )
+    assert [s["kref"] for s in out][-1] == "a"      # union appended last
+    pick_scores = [s["_score"] for s in out[:-1]]
+    union_score = out[-1]["_score"]
+    assert union_score < min(pick_scores)           # strictly below EVERY pick
+
+
+# --------------------------------------------------------------------------
+# _enrich_with_siblings: failure isolation + bounded concurrency
+# --------------------------------------------------------------------------
+
+def _mems(n):
+    return [
+        {"kref": f"kref://rev{i}", "_item_kref": f"kref://item{i}",
+         "title": f"m{i}", "summary": "s", "score": 0.5}
+        for i in range(n)
+    ]
+
+
+def test_enrich_isolates_per_item_failures(caplog):
+    mgr = _make_manager(_SummarizerNoAdapter())
+
+    async def fake_fetch(item_kref, current_rev_kref, query="",
+                         load_artifacts=True, alt_queries=None,
+                         primary_score=0.0):
+        if item_kref == "kref://item1":
+            raise KeyError("malformed mem")  # escapes inner blanket handlers
+        return [{"kref": f"{item_kref}?r=1", "title": "t", "summary": "s",
+                 "_score": 0.4}]
+
+    mgr._fetch_sibling_revision_summaries = fake_fetch
+    memories = _mems(3)
+    import logging as _logging
+    with caplog.at_level(_logging.WARNING):
+        out = asyncio.run(mgr._enrich_with_siblings(memories, "q"))
+    # The failing item degrades alone; the rest are enriched.
+    assert "sibling_revisions" in out[0] and "sibling_revisions" in out[2]
+    assert "sibling_revisions" not in out[1]
+    # And the warning names the failed item's kref.
+    assert any("kref://item1" in r.message for r in caplog.records)
+
+
+def test_enrich_concurrency_is_bounded():
+    mgr = _make_manager(_SummarizerNoAdapter(), sibling_enrich_concurrency=2)
+    state = {"active": 0, "peak": 0}
+
+    async def fake_fetch(item_kref, current_rev_kref, query="",
+                         load_artifacts=True, alt_queries=None,
+                         primary_score=0.0):
+        state["active"] += 1
+        state["peak"] = max(state["peak"], state["active"])
+        await asyncio.sleep(0.01)
+        state["active"] -= 1
+        return []
+
+    mgr._fetch_sibling_revision_summaries = fake_fetch
+    asyncio.run(mgr._enrich_with_siblings(_mems(8), "q"))
+    assert state["peak"] <= 2
+
+
+def test_enrich_logs_cancelled_error(caplog):
+    mgr = _make_manager(_SummarizerNoAdapter())
+
+    async def fake_fetch(item_kref, current_rev_kref, query="",
+                         load_artifacts=True, alt_queries=None,
+                         primary_score=0.0):
+        if item_kref == "kref://item0":
+            raise asyncio.CancelledError()
+        return []
+
+    mgr._fetch_sibling_revision_summaries = fake_fetch
+    import logging as _logging
+    with caplog.at_level(_logging.WARNING):
+        asyncio.run(mgr._enrich_with_siblings(_mems(2), "q"))
+    # BaseException filter: the cancellation is logged, not swallowed.
+    assert any("kref://item0" in r.message for r in caplog.records)

@@ -207,12 +207,19 @@ def _get_manager():
     except Exception as exc:
         logger.warning("Post-recall rerank setup failed: %s", exc)
 
+    # Opt-in experiment knob (measured net-negative on LoCoMo single/multi-hop,
+    # slightly positive on temporal — see memory_manager.sibling_anchor_scores).
+    anchor_scores = os.environ.get(
+        "KUMIHO_SIBLING_ANCHOR_SCORES", "",
+    ).strip().lower() in ("1", "true", "yes")
+
     buffer = RedisMemoryBuffer()
     _manager = UniversalMemoryManager(
         redis_buffer=buffer,
         summarizer=summarizer,
         pii_redactor=PIIRedactor(),
         graph_augmentation=graph_config,
+        sibling_anchor_scores=anchor_scores,
         sibling_similarity_threshold=sibling_threshold,
         embedding_adapter=embedding_adapter,
         auto_assess_fn=auto_assess_fn,

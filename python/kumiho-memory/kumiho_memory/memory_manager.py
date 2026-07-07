@@ -108,6 +108,22 @@ _SIBLING_CHAR_BUDGET = 20_000
 # fall back to char-budget mode which keeps all siblings that fit.
 _SIBLING_STRONG_SCORE = 0.40
 
+# Max LLM sibling picks honored per item.  The reranker prompt asks for 1-3;
+# this caps a runaway/duplicated response so rank-decayed scores stay
+# positive and one item cannot flood the context pool.
+_SIBLING_MAX_LLM_PICKS = 8
+
+# Rank-decay step for item-anchored sibling scores (opt-in
+# ``sibling_anchor_scores``): pick #k scores ``anchor * (1 - k*step)``, and
+# the union entry is capped one step below the LAST pick.
+_SIBLING_ANCHOR_DECAY = 0.05
+
+# Concurrent per-item sibling enrichments (each = ~2 server round-trips +
+# one LLM call).  Bounds the burst so provider rate limits and the shared
+# thread pool aren't hammered — a 429 here silently downgrades the item to
+# the deterministic fallback, which is a quality loss, not just latency.
+_SIBLING_ENRICH_CONCURRENCY = 4
+
 # A stored event_date must be a clean ISO-8601 calendar date (YYYY, YYYY-MM, or
 # YYYY-MM-DD). Guards against the summarizer emitting prose ("last week") into the
 # structured event_date field despite the prompt asking for normalized ISO.
@@ -198,6 +214,7 @@ class UniversalMemoryManager:
         reranker: Optional[Any] = None,
         recall_candidate_multiplier: float = 1.0,
         sibling_anchor_scores: bool = False,
+        sibling_enrich_concurrency: int = _SIBLING_ENRICH_CONCURRENCY,
     ) -> None:
         self.project = project
         self.consolidation_threshold = consolidation_threshold
@@ -304,6 +321,10 @@ class UniversalMemoryManager:
         # Kept as a knob for gated experiments (e.g. temporal-leaning
         # workloads, where anchoring measured positive).
         self.sibling_anchor_scores = bool(sibling_anchor_scores)
+        try:
+            self.sibling_enrich_concurrency = max(1, int(sibling_enrich_concurrency))
+        except (TypeError, ValueError):
+            self.sibling_enrich_concurrency = _SIBLING_ENRICH_CONCURRENCY
         # Background memory assessor (model-agnostic, optional)
         self.auto_assess_fn: Optional[AutoAssessFn] = auto_assess_fn
         self.auto_assess_min_messages = auto_assess_min_messages
@@ -1531,41 +1552,47 @@ class UniversalMemoryManager:
         """
         _load_arts = self.recall_mode == "full"
 
+        # Bounded concurrency: each item costs ~2 server round-trips (on the
+        # shared default thread pool) + one LLM call.  Unbounded fan-out
+        # bursts the LLM provider — and a swallowed 429 silently downgrades
+        # that item to the deterministic fallback ranking, a QUALITY loss.
+        sem = asyncio.Semaphore(max(1, self.sibling_enrich_concurrency))
+
         async def _enrich_one(mem: Dict[str, Any], item_kref: str) -> None:
-            # Load artifact for the primary revision if in full mode.
-            if _load_arts and "content" not in mem:
-                kref = mem.get("kref", "")
-                if kref:
-                    try:
-                        enriched_meta = await self._fetch_revision_metadata(
-                            kref, load_artifacts=True,
-                        )
-                        if "content" in enriched_meta:
-                            mem["content"] = enriched_meta["content"]
-                            mem["artifact_name"] = enriched_meta.get("artifact_name", "")
-                            mem["artifact_location"] = enriched_meta.get("artifact_location", "")
-                    except Exception:
-                        pass
+            async with sem:
+                # Load artifact for the primary revision if in full mode.
+                if _load_arts and "content" not in mem:
+                    kref = mem.get("kref", "")
+                    if kref:
+                        try:
+                            enriched_meta = await self._fetch_revision_metadata(
+                                kref, load_artifacts=True,
+                            )
+                            if "content" in enriched_meta:
+                                mem["content"] = enriched_meta["content"]
+                                mem["artifact_name"] = enriched_meta.get("artifact_name", "")
+                                mem["artifact_location"] = enriched_meta.get("artifact_location", "")
+                        except Exception:
+                            pass
 
-            primary_score = mem.get("score", 0.0)
-            if isinstance(primary_score, bool) or not isinstance(
-                primary_score, (int, float)
-            ):
-                primary_score = 0.0
+                from kumiho_memory.context_compose import _score_of
 
-            siblings = await self._fetch_sibling_revision_summaries(
-                item_kref, mem.get("kref", ""), query=query,
-                load_artifacts=_load_arts,
-                alt_queries=alt_queries,
-                primary_score=float(primary_score),
-            )
-            if siblings:
-                mem["sibling_revisions"] = siblings
+                primary_score = _score_of(mem.get("score", 0.0))
 
-        # Per-item enrichment is independent (server round-trips + one LLM
-        # sibling call each) — run concurrently.  Failures degrade that one
-        # item to no-siblings instead of aborting the batch.
+                siblings = await self._fetch_sibling_revision_summaries(
+                    item_kref, mem.get("kref", ""), query=query,
+                    load_artifacts=_load_arts,
+                    alt_queries=alt_queries,
+                    primary_score=primary_score,
+                )
+                if siblings:
+                    mem["sibling_revisions"] = siblings
+
+        # Per-item enrichment is independent — run concurrently (bounded).
+        # Failures degrade that one item to no-siblings instead of aborting
+        # the batch.
         tasks: List[Any] = []
+        task_krefs: List[str] = []
         for mem in memories:
             item_kref = mem.pop("_item_kref", "")
             if not item_kref:
@@ -1573,12 +1600,18 @@ class UniversalMemoryManager:
                 # have _item_kref — skip sibling enrichment for them.
                 continue
             tasks.append(_enrich_one(mem, item_kref))
+            task_krefs.append(item_kref)
 
         if tasks:
             results = await asyncio.gather(*tasks, return_exceptions=True)
-            for res in results:
-                if isinstance(res, Exception):
-                    logger.warning("Sibling enrichment failed for an item: %s", res)
+            for kref, res in zip(task_krefs, results):
+                # BaseException, not Exception: CancelledError stopped being
+                # an Exception in Python 3.8 and would otherwise vanish
+                # without a log line (matches every other gather site here).
+                if isinstance(res, BaseException):
+                    logger.warning(
+                        "Sibling enrichment failed for item %s: %s", kref, res,
+                    )
 
         return memories
 
@@ -2093,14 +2126,21 @@ class UniversalMemoryManager:
             if "none" in text:
                 return None
 
-            # Parse comma-separated numbers.
+            # Parse comma-separated numbers.  Dedup (a repeated index would
+            # enter the same revision multiple times, wasting context slots
+            # on copies) and cap (so rank-decayed scores stay positive and a
+            # runaway response can't flood the pool).
             selected_indices: List[int] = []
+            seen_indices: set = set()
             for token in text.replace(",", " ").split():
                 token = token.strip().rstrip(".")
                 if token.isdigit():
                     idx = int(token) - 1  # 1-indexed → 0-indexed
-                    if 0 <= idx < len(siblings):
+                    if 0 <= idx < len(siblings) and idx not in seen_indices:
+                        seen_indices.add(idx)
                         selected_indices.append(idx)
+                        if len(selected_indices) >= _SIBLING_MAX_LLM_PICKS:
+                            break
 
             if not selected_indices:
                 return None
@@ -2108,7 +2148,7 @@ class UniversalMemoryManager:
             # Assign descending scores so first-picked ranks highest.
             result: List[Dict[str, Any]] = []
             for rank, idx in enumerate(selected_indices):
-                score = 1.0 - rank * 0.1  # 1.0, 0.9, 0.8, ...
+                score = max(0.0, 1.0 - rank * 0.1)  # 1.0, 0.9, 0.8, ...
                 result.append({**siblings[idx], "_score": score})
 
             return result
@@ -2273,8 +2313,9 @@ class UniversalMemoryManager:
         )
         if llm_result:
             # Opt-in calibrated axis (default OFF): anchor pick magnitudes
-            # to the item's recall score, rank-decayed 5% steps — the LLM
-            # decides membership/order, the item decides magnitude.
+            # to the item's recall score, rank-decayed by
+            # _SIBLING_ANCHOR_DECAY steps — the LLM decides
+            # membership/order, the item decides magnitude.
             # Measured on LoCoMo: the default absolute ordinals
             # (1.0/0.9/0.8) WIN on single/multi-hop — an LLM pick is a
             # verified-content verdict on the revision itself and
@@ -2282,11 +2323,28 @@ class UniversalMemoryManager:
             # while anchoring gains slightly on temporal.  When the item's
             # score is unknown (<= 0) the legacy absolute scores are kept
             # — never zero out the LLM's selection.
-            if self.sibling_anchor_scores and primary_score > 0.0:
+            #
+            # Known limitation (opt-in × opt-in): with
+            # ``sibling_seeded_traversal`` enrichment runs BEFORE the
+            # manager's final prior pass (recency/event-proximity), so the
+            # anchor reflects the pre-prior item score while the item
+            # competes downstream at its post-prior score — the axes drift
+            # by up to the priors' boosts (~0.12).  Acceptable for the
+            # experiment; re-anchoring after the final rerank is the fix
+            # if this knob ever graduates.
+            anchoring_active = self.sibling_anchor_scores and primary_score > 0.0
+            if anchoring_active:
+                # In-place would be safe (the reranker returns fresh dicts);
+                # copies are kept for symmetry-proofing against the union
+                # branch below, where the copy IS load-bearing.
                 anchored: List[Dict[str, Any]] = []
                 for rank, sib in enumerate(llm_result):
                     anchored.append(
-                        {**sib, "_score": primary_score * (1.0 - 0.05 * rank)}
+                        {
+                            **sib,
+                            "_score": primary_score
+                            * max(0.0, 1.0 - _SIBLING_ANCHOR_DECAY * rank),
+                        }
                     )
                 llm_result = anchored
             # Bounded union: recover one strong lexical match the LLM missed.
@@ -2302,14 +2360,22 @@ class UniversalMemoryManager:
                     and float(top.get("_score", 0.0)) >= self.sibling_strong_score
                 ):
                     union_sib = top
-                    if self.sibling_anchor_scores and primary_score > 0.0:
-                        # The union entry ranks below the LLM's picks on the
-                        # same item-anchored axis.
+                    if anchoring_active:
+                        # The union entry ranks strictly below the LAST
+                        # LLM pick: one decay step past rank len-1.  (A
+                        # fixed one-step cap inverted the ordering at >=4
+                        # picks — the un-picked union tied pick #3 and beat
+                        # pick #4.)  The copy is REQUIRED: ``top`` aliases
+                        # the caller's sibling dicts (the deterministic
+                        # ranker scores in place); mutating it would
+                        # corrupt the caller's originals.
+                        union_cap = primary_score * max(
+                            0.0, 1.0 - _SIBLING_ANCHOR_DECAY * len(llm_result),
+                        )
                         union_sib = {
                             **top,
                             "_score": min(
-                                float(top.get("_score", 0.0)),
-                                primary_score * 0.9,
+                                float(top.get("_score", 0.0)), union_cap,
                             ),
                         }
                     llm_result = llm_result + [union_sib]
