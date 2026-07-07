@@ -592,3 +592,25 @@ def test_enrich_logs_cancelled_error(caplog):
         asyncio.run(mgr._enrich_with_siblings(_mems(2), "q"))
     # BaseException filter: the cancellation is logged, not swallowed.
     assert any("kref://item0" in r.message for r in caplog.records)
+
+
+def test_enrich_default_is_sequential_champion_equivalent():
+    # DEFAULT concurrency must be 1 (strictly sequential): concurrent
+    # enrichment through a rate-limiting proxy silently drops siblings —
+    # bench-measured multi-hop 0.397 → 0.187.  Parallelism is opt-in.
+    mgr = _make_manager(_SummarizerNoAdapter())
+    assert mgr.sibling_enrich_concurrency == 1
+    state = {"active": 0, "peak": 0}
+
+    async def fake_fetch(item_kref, current_rev_kref, query="",
+                         load_artifacts=True, alt_queries=None,
+                         primary_score=0.0):
+        state["active"] += 1
+        state["peak"] = max(state["peak"], state["active"])
+        await asyncio.sleep(0.005)
+        state["active"] -= 1
+        return []
+
+    mgr._fetch_sibling_revision_summaries = fake_fetch
+    asyncio.run(mgr._enrich_with_siblings(_mems(6), "q"))
+    assert state["peak"] == 1

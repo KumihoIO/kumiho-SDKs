@@ -119,10 +119,14 @@ _SIBLING_MAX_LLM_PICKS = 8
 _SIBLING_ANCHOR_DECAY = 0.05
 
 # Concurrent per-item sibling enrichments (each = ~2 server round-trips +
-# one LLM call).  Bounds the burst so provider rate limits and the shared
-# thread pool aren't hammered — a 429 here silently downgrades the item to
-# the deterministic fallback, which is a quality loss, not just latency.
-_SIBLING_ENRICH_CONCURRENCY = 4
+# one LLM call).  DEFAULT 1 = strictly sequential, the measured-champion
+# behavior.  Concurrent enrichment through a rate-limiting LLM proxy or a
+# non-thread-safe client turns into silently MISSING sibling_revisions
+# (bench-measured: multi-hop 0.397 -> 0.187 on conv-26 with concurrency on
+# and anchoring off).  Raise only on infrastructure verified to handle
+# parallel chat + kumiho SDK calls; failures here degrade recall QUALITY,
+# not just latency.
+_SIBLING_ENRICH_CONCURRENCY = 1
 
 # A stored event_date must be a clean ISO-8601 calendar date (YYYY, YYYY-MM, or
 # YYYY-MM-DD). Guards against the summarizer emitting prose ("last week") into the
@@ -2627,7 +2631,7 @@ class UniversalMemoryManager:
 
             return siblings
         except Exception as exc:
-            logger.debug(
+            logger.warning(
                 "Failed to fetch sibling revisions for %s: %s",
                 item_kref, exc,
             )
