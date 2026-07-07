@@ -197,7 +197,7 @@ class UniversalMemoryManager:
         rerank: Optional[Any] = None,
         reranker: Optional[Any] = None,
         recall_candidate_multiplier: float = 1.0,
-        sibling_anchor_scores: bool = True,
+        sibling_anchor_scores: bool = False,
     ) -> None:
         self.project = project
         self.consolidation_threshold = consolidation_threshold
@@ -292,10 +292,17 @@ class UniversalMemoryManager:
             self.recall_candidate_multiplier = max(1.0, float(recall_candidate_multiplier))
         except (TypeError, ValueError):
             self.recall_candidate_multiplier = 1.0
-        # Calibrated sibling relevance: LLM picks are anchored to the item's
-        # recall score (membership/order from the LLM, magnitude from the
-        # item) instead of absolute 1.0/0.9/0.8 ordinals.  Kill switch for
-        # A/B benchmarking.
+        # Calibrated sibling relevance (opt-in, default OFF — measured
+        # net-negative on LoCoMo conv-26: single-hop −0.070, multi-hop
+        # −0.135 vs unanchored, temporal +0.020).  When enabled, LLM picks
+        # are anchored to the item's recall score (membership/order from
+        # the LLM, magnitude from the item) instead of absolute
+        # 1.0/0.9/0.8 ordinals.  The absolute ordinals turn out to carry
+        # real signal: an LLM pick is a verified-content relevance verdict
+        # on the revision itself, which empirically outranks the item-level
+        # relevance estimate for direct-fact and cross-hop questions.
+        # Kept as a knob for gated experiments (e.g. temporal-leaning
+        # workloads, where anchoring measured positive).
         self.sibling_anchor_scores = bool(sibling_anchor_scores)
         # Background memory assessor (model-agnostic, optional)
         self.auto_assess_fn: Optional[AutoAssessFn] = auto_assess_fn
@@ -2265,16 +2272,16 @@ class UniversalMemoryManager:
             siblings, query, alt_queries=alt_queries,
         )
         if llm_result:
-            # Calibrated relevance axis: the LLM decides MEMBERSHIP and
-            # ORDER; the item's own recall relevance decides MAGNITUDE.
-            # Raw ordinal scores (1.0/0.9/0.8) let one item's revisions
-            # crush every other item's standing in the global context pool
-            # regardless of how relevant that item actually was — anchoring
-            # scales the picks to the item's score (rank-decayed 5% steps)
-            # so cross-item competition happens on the item-relevance axis
-            # and the LLM only orders revisions WITHIN its item.  When the
-            # item's score is unknown (<= 0) the legacy absolute scores are
-            # kept — never zero out the LLM's selection.
+            # Opt-in calibrated axis (default OFF): anchor pick magnitudes
+            # to the item's recall score, rank-decayed 5% steps — the LLM
+            # decides membership/order, the item decides magnitude.
+            # Measured on LoCoMo: the default absolute ordinals
+            # (1.0/0.9/0.8) WIN on single/multi-hop — an LLM pick is a
+            # verified-content verdict on the revision itself and
+            # legitimately outranks item-level relevance estimates —
+            # while anchoring gains slightly on temporal.  When the item's
+            # score is unknown (<= 0) the legacy absolute scores are kept
+            # — never zero out the LLM's selection.
             if self.sibling_anchor_scores and primary_score > 0.0:
                 anchored: List[Dict[str, Any]] = []
                 for rank, sib in enumerate(llm_result):
