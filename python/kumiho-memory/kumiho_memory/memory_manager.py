@@ -197,6 +197,7 @@ class UniversalMemoryManager:
         rerank: Optional[Any] = None,
         reranker: Optional[Any] = None,
         recall_candidate_multiplier: float = 1.0,
+        sibling_anchor_scores: bool = True,
     ) -> None:
         self.project = project
         self.consolidation_threshold = consolidation_threshold
@@ -291,6 +292,11 @@ class UniversalMemoryManager:
             self.recall_candidate_multiplier = max(1.0, float(recall_candidate_multiplier))
         except (TypeError, ValueError):
             self.recall_candidate_multiplier = 1.0
+        # Calibrated sibling relevance: LLM picks are anchored to the item's
+        # recall score (membership/order from the LLM, magnitude from the
+        # item) instead of absolute 1.0/0.9/0.8 ordinals.  Kill switch for
+        # A/B benchmarking.
+        self.sibling_anchor_scores = bool(sibling_anchor_scores)
         # Background memory assessor (model-agnostic, optional)
         self.auto_assess_fn: Optional[AutoAssessFn] = auto_assess_fn
         self.auto_assess_min_messages = auto_assess_min_messages
@@ -1518,13 +1524,7 @@ class UniversalMemoryManager:
         """
         _load_arts = self.recall_mode == "full"
 
-        for mem in memories:
-            item_kref = mem.pop("_item_kref", "")
-            if not item_kref:
-                # Graph-augmented results from edge traversal don't
-                # have _item_kref — skip sibling enrichment for them.
-                continue
-
+        async def _enrich_one(mem: Dict[str, Any], item_kref: str) -> None:
             # Load artifact for the primary revision if in full mode.
             if _load_arts and "content" not in mem:
                 kref = mem.get("kref", "")
@@ -1554,6 +1554,24 @@ class UniversalMemoryManager:
             )
             if siblings:
                 mem["sibling_revisions"] = siblings
+
+        # Per-item enrichment is independent (server round-trips + one LLM
+        # sibling call each) — run concurrently.  Failures degrade that one
+        # item to no-siblings instead of aborting the batch.
+        tasks: List[Any] = []
+        for mem in memories:
+            item_kref = mem.pop("_item_kref", "")
+            if not item_kref:
+                # Graph-augmented results from edge traversal don't
+                # have _item_kref — skip sibling enrichment for them.
+                continue
+            tasks.append(_enrich_one(mem, item_kref))
+
+        if tasks:
+            results = await asyncio.gather(*tasks, return_exceptions=True)
+            for res in results:
+                if isinstance(res, Exception):
+                    logger.warning("Sibling enrichment failed for an item: %s", res)
 
         return memories
 
@@ -2247,6 +2265,23 @@ class UniversalMemoryManager:
             siblings, query, alt_queries=alt_queries,
         )
         if llm_result:
+            # Calibrated relevance axis: the LLM decides MEMBERSHIP and
+            # ORDER; the item's own recall relevance decides MAGNITUDE.
+            # Raw ordinal scores (1.0/0.9/0.8) let one item's revisions
+            # crush every other item's standing in the global context pool
+            # regardless of how relevant that item actually was — anchoring
+            # scales the picks to the item's score (rank-decayed 5% steps)
+            # so cross-item competition happens on the item-relevance axis
+            # and the LLM only orders revisions WITHIN its item.  When the
+            # item's score is unknown (<= 0) the legacy absolute scores are
+            # kept — never zero out the LLM's selection.
+            if self.sibling_anchor_scores and primary_score > 0.0:
+                anchored: List[Dict[str, Any]] = []
+                for rank, sib in enumerate(llm_result):
+                    anchored.append(
+                        {**sib, "_score": primary_score * (1.0 - 0.05 * rank)}
+                    )
+                llm_result = anchored
             # Bounded union: recover one strong lexical match the LLM missed.
             ranked = self._rank_siblings_deterministic(
                 list(siblings), query, current_rev_kref,
@@ -2259,7 +2294,18 @@ class UniversalMemoryManager:
                     top.get("kref") not in picked
                     and float(top.get("_score", 0.0)) >= self.sibling_strong_score
                 ):
-                    llm_result = llm_result + [top]
+                    union_sib = top
+                    if self.sibling_anchor_scores and primary_score > 0.0:
+                        # The union entry ranks below the LLM's picks on the
+                        # same item-anchored axis.
+                        union_sib = {
+                            **top,
+                            "_score": min(
+                                float(top.get("_score", 0.0)),
+                                primary_score * 0.9,
+                            ),
+                        }
+                    llm_result = llm_result + [union_sib]
             logger.info(
                 "LLM sibling reranker: %d/%d selected (query: %.60s)",
                 len(llm_result), len(siblings), query,

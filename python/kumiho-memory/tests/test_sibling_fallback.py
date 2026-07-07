@@ -230,9 +230,11 @@ def test_fallback_no_floor_when_primary_unknown_or_scoreless():
     assert all(s.get("_score", 0.0) < 0.5 for s in out)
 
 
-def test_llm_success_never_floored():
-    # LoCoMo-Plus protection: on LLM success the selection (and its scores)
-    # are untouched — the floor applies only to the deterministic fallback.
+def test_llm_success_selection_untouched_by_fallback_floor():
+    # LoCoMo-Plus protection: on LLM success the selection MEMBERSHIP and
+    # ORDER are untouched — the fallback floor path never runs.  Magnitude
+    # is the item-anchored score (rank 0 → anchor * 1.0), not a floor
+    # side-effect: with anchoring disabled it stays the legacy ordinal.
     mgr = _make_manager(_SummarizerWithAdapter(_RerankAdapter(response="2")))
     primary = _weak("p")
     sibs = [_weak("b"), primary]
@@ -242,7 +244,18 @@ def test_llm_success_never_floored():
         )
     )
     assert [s["kref"] for s in out] == ["p"]
-    assert out[0]["_score"] == 1.0  # LLM-assigned, not the 0.9 floor
+    assert out[0]["_score"] == 0.9  # anchor * 1.0 (rank-0 pick)
+
+    mgr_off = _make_manager(
+        _SummarizerWithAdapter(_RerankAdapter(response="2")),
+        sibling_anchor_scores=False,
+    )
+    out_off = asyncio.run(
+        mgr_off._filter_siblings_by_server_search(
+            sibs, "philosophy of mind", "item", "p", primary_score=0.9,
+        )
+    )
+    assert out_off[0]["_score"] == 1.0  # legacy ordinal, floor still unused
 
 
 def test_fallback_end_to_end_multihop_item_survives_context():
@@ -370,3 +383,85 @@ def test_rank_embedding_mode_used_when_adapter_present():
     weak = _sib("b", "Cooking", "made pasta")                # embeds to [0,1]
     out = mgr._rank_siblings_deterministic([strong, weak], QUERY)
     assert [s["kref"] for s in out] == ["a"]  # only the above-threshold sibling
+
+
+# --------------------------------------------------------------------------
+# Calibrated relevance: LLM picks anchored to the item's recall score
+# (membership/order from the LLM, magnitude from the item)
+# --------------------------------------------------------------------------
+
+def test_llm_picks_anchored_to_item_score():
+    mgr = _make_manager(_SummarizerWithAdapter(_RerankAdapter(response="1, 2")))
+    sibs = [_weak("b"), _weak("c")]
+    out = asyncio.run(
+        mgr._filter_siblings_by_server_search(
+            sibs, "philosophy of mind", "item", primary_score=0.6,
+        )
+    )
+    assert [s["kref"] for s in out] == ["b", "c"]      # LLM order kept
+    assert out[0]["_score"] == 0.6                     # anchor * 1.00
+    assert abs(out[1]["_score"] - 0.57) < 1e-9         # anchor * 0.95
+
+
+def test_llm_picks_keep_legacy_scores_without_item_score():
+    # Unknown item relevance (score <= 0) — never zero out the selection.
+    mgr = _make_manager(_SummarizerWithAdapter(_RerankAdapter(response="1")))
+    out = asyncio.run(
+        mgr._filter_siblings_by_server_search(
+            [_weak("b")], "philosophy of mind", "item",
+        )
+    )
+    assert out[0]["_score"] == 1.0
+
+
+def test_anchor_kill_switch_restores_ordinal_scores():
+    mgr = _make_manager(
+        _SummarizerWithAdapter(_RerankAdapter(response="1")),
+        sibling_anchor_scores=False,
+    )
+    out = asyncio.run(
+        mgr._filter_siblings_by_server_search(
+            [_weak("b")], "philosophy of mind", "item", primary_score=0.6,
+        )
+    )
+    assert out[0]["_score"] == 1.0  # legacy absolute ordinal
+
+
+def test_union_sibling_capped_below_anchored_picks():
+    # LLM picks the weak sibling; the strong lexical match is unioned in but
+    # must rank below the pick on the item-anchored axis.
+    mgr = _make_manager(_SummarizerWithAdapter(_RerankAdapter(response="2")))
+    sibs = [_strong(), _weak("b")]
+    out = asyncio.run(
+        mgr._filter_siblings_by_server_search(
+            sibs, QUERY, "item", primary_score=0.5,
+        )
+    )
+    assert [s["kref"] for s in out] == ["b", "a"]
+    assert out[0]["_score"] == 0.5
+    assert out[1]["_score"] <= 0.45 + 1e-9             # <= anchor * 0.9
+
+
+def test_anchoring_end_to_end_items_compete_on_item_axis():
+    # Item A is weakly relevant (0.3) with LLM-picked siblings; item B is a
+    # strongly relevant (0.9) sibling-less memory.  Pre-anchoring, A's picks
+    # (1.0/0.9) would bury B; anchored, B leads the composed context.
+    from kumiho_memory.context_compose import compose_context
+
+    mgr = _make_manager(_SummarizerWithAdapter(_RerankAdapter(response="1, 2")))
+    a_sibs = asyncio.run(
+        mgr._filter_siblings_by_server_search(
+            [_weak("a1"), _weak("a2")], "philosophy of mind", "item-a",
+            primary_score=0.3,
+        )
+    )
+    memories = [
+        {"kref": "a", "title": "A", "summary": "sa", "score": 0.3,
+         "sibling_revisions": a_sibs},
+        {"kref": "b", "title": "B", "summary": "the direct answer",
+         "score": 0.9},
+    ]
+    ctx = compose_context(memories, "q", top_k=2)
+    parts = ctx.split("\n\n")
+    assert parts[0] == "B: the direct answer"          # item axis wins
+    assert len(parts) == 2
