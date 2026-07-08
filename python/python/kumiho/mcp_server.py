@@ -908,7 +908,22 @@ def tool_memory_store(
     # existing callers/policies that already use other kinds. (Use `is None`
     # so a policy setting memory_kinds: [] is honored, not silently ignored.)
     policy_kinds = policy.get("memory_kinds")
-    allowed_kinds = DEFAULT_MEMORY_KINDS if policy_kinds is None else policy_kinds
+    if policy_kinds is None:
+        allowed_kinds = DEFAULT_MEMORY_KINDS
+    elif isinstance(policy_kinds, list) and all(isinstance(k, str) for k in policy_kinds):
+        allowed_kinds = policy_kinds  # a well-formed override (incl. [] to warn on all)
+    else:
+        # A non-list override (e.g. the string "conversation,entity") would
+        # silently degrade `not in` into a *substring* test — "con", "tity",
+        # even "," wrongly accepted and baked into the kref identity — and the
+        # reject message would iterate char-by-char. Reject the malformed
+        # override and fall back to the closed default vocabulary.
+        logger.warning(
+            "policy 'memory_kinds' must be a list of strings, got %s; "
+            "ignoring the override and using the default vocabulary.",
+            type(policy_kinds).__name__,
+        )
+        allowed_kinds = DEFAULT_MEMORY_KINDS
     if memory_kind not in allowed_kinds:
         logger.warning(
             "memory_item_kind %r is outside the recommended vocabulary (%s); "

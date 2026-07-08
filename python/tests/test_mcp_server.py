@@ -725,6 +725,44 @@ class TestMemoryKindVocabulary:
         assert "Unknown memory_item_kind" not in str(result.get("error", ""))
         assert any("recommended vocabulary" in r.message for r in caplog.records)
 
+    @patch('kumiho.mcp_server._write_memory_artifact', return_value="")
+    @patch('kumiho.mcp_server._get_or_create_item')
+    @patch('kumiho.mcp_server._find_similar_item', return_value=None)
+    @patch('kumiho.mcp_server._ensure_space_path', return_value="facts")
+    @patch("kumiho.get_revision")
+    @patch("kumiho.get_project")
+    @patch("kumiho.auto_configure_from_discovery")
+    def test_string_memory_kinds_policy_rejected_not_substring_matched(
+        self, mock_configure, mock_get_project, mock_get_revision,
+        mock_ensure_space, mock_find_similar, mock_get_item, mock_artifact, caplog,
+    ):
+        # A string (not list) `memory_kinds` policy must be rejected, not left to
+        # degrade `kind not in allowed_kinds` into a substring test that would
+        # wrongly accept "con" as a member of "conversation,entity".
+        import json
+        import logging
+        mock_get_project.return_value = MockProject("CognitiveMemory")
+        item = MockItem("kref://CognitiveMemory/facts/note.con")
+        rev = MockRevision(f"{item.kref.uri}?r=1")
+        rev.tag = lambda tag: None
+        item.create_revision = lambda metadata=None: rev
+        mock_get_item.return_value = item
+        policy_rev = MockRevision("kref://CognitiveMemory/policies/p.policy?r=1")
+        policy_rev.metadata = {"policy": json.dumps({"memory_kinds": "conversation,entity"})}
+        mock_get_revision.return_value = policy_rev
+
+        from kumiho.mcp_server import tool_memory_store
+        with caplog.at_level(logging.WARNING):
+            result = tool_memory_store(
+                project="CognitiveMemory", space_path="facts", user_text="hi",
+                memory_item_kind="con",  # a substring of the malformed policy string
+                policy_kref="kref://CognitiveMemory/policies/p.policy?r=1",
+            )
+        msgs = " ".join(r.message for r in caplog.records)
+        assert "must be a list of strings" in msgs   # malformed override rejected
+        assert "recommended vocabulary" in msgs       # "con" no longer substring-accepted
+        assert "Failed to load policy_kref" not in str(result.get("error", ""))
+
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
