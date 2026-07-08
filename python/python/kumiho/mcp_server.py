@@ -47,6 +47,7 @@ import logging
 import os
 import re
 import sys
+import threading
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -212,7 +213,6 @@ def _serialize_edge(edge: Edge) -> Dict[str, Any]:
     }
 
 
-_SLUG_PATTERN = re.compile(r"[^a-z0-9]+")
 
 
 def _parse_json_object(value: Any) -> Dict[str, Any]:
@@ -244,11 +244,11 @@ def _stringify_metadata(metadata: Optional[Dict[str, Any]]) -> Dict[str, str]:
 
 
 def _slugify(value: str, max_len: int = 48) -> str:
-    base = value.lower().strip()
-    base = _SLUG_PATTERN.sub("-", base).strip("-")
-    if not base:
-        return ""
-    return base[:max_len].strip("-")
+    # Delegates to the canonical Unicode-aware slug so non-Latin space/item
+    # hints (Korean, CJK) no longer collapse to an empty slug.
+    from kumiho._text import slugify
+
+    return slugify(value, max_len)
 
 
 def _short_hash(value: str) -> str:
@@ -371,7 +371,7 @@ def _ensure_space_path(project: Project, space_path: str) -> str:
     # against it (otherwise back-to-back stores wouldn't see each other's
     # freshly-created spaces within the cache TTL).
     if created_any:
-        _space_registry_cache.pop(project.name, None)
+        _invalidate_space_registry(project.name)
     return normalized
 
 
@@ -385,15 +385,15 @@ def _get_or_create_item(project: Project, space_path: str, item_name: str, kind:
 
 
 # ---------------------------------------------------------------------------
-# Memory kinds — the closed write-time taxonomy
+# Memory kinds — the recommended write-time taxonomy
 # ---------------------------------------------------------------------------
 
-# The kinds tool_memory_store accepts. A policy item can widen this via a
-# "memory_kinds" list in its policy JSON; without one, unknown kinds are
-# rejected so the calling LLM cannot mint ad-hoc taxonomies. "decision" is
-# reserved for decision promotion (follow-up); "skill" and "space-profile"
-# are written by kumiho-memory through its own paths but belong to the
-# same vocabulary.
+# The kinds tool_memory_store recommends. A policy item can widen this via a
+# "memory_kinds" list in its policy JSON; an out-of-vocabulary kind is warned
+# (not rejected) so the calling LLM is nudged away from ad-hoc taxonomies
+# without breaking existing callers. "decision" is reserved for decision
+# promotion (follow-up); "skill" and "space-profile" are written by
+# kumiho-memory through its own paths but belong to the same vocabulary.
 DEFAULT_MEMORY_KINDS: Tuple[str, ...] = (
     "conversation",
     "skill",
@@ -407,28 +407,38 @@ DEFAULT_MEMORY_KINDS: Tuple[str, ...] = (
 # Space registry — resolve a hint against existing spaces before creating
 # ---------------------------------------------------------------------------
 
-# Freeform space hints drift: "benchmark" / "benchmarks" / "benchmarking"
-# arrive across sessions and would each mint a distinct Space, fragmenting
-# both scoped recall and fulltext term statistics. Before creating a space
-# from a *hint* (never an explicit space_path), the leaf segment is matched
-# against existing sibling spaces — exact, then stem-normalized (plural /
-# gerund). A unified variant is recorded on the canonical space's
-# "memory_aliases" attribute for auditability.
+# Freeform space hints drift: "AI Memory" / "ai memory" arrive across
+# sessions and would each mint a distinct Space, fragmenting both scoped
+# recall and fulltext term statistics. Before creating a space from a *hint*
+# (never an explicit space_path), the leaf segment is matched against
+# existing sibling spaces — exact by default (which already unifies
+# case/spacing via slugging). Opt-in stem matching (plural/gerund) also
+# unifies "benchmarks"/"benchmarking" but risks false-merges
+# ("meeting"->"meet"), so it stays behind an env flag until measured. A
+# unified variant is recorded on the canonical space's "memory_aliases"
+# attribute for auditability.
 
 _SPACE_REGISTRY_TTL_SECONDS = 60.0
 
-# project name -> (fetched_at_monotonic, {normalized space paths})
+# project name -> (fetched_at_monotonic, {normalized space paths}). Guarded
+# by _space_registry_lock since stores can run concurrently.
 _space_registry_cache: Dict[str, Tuple[float, Set[str]]] = {}
+_space_registry_lock = threading.Lock()
 
 
 def _space_registry_enabled() -> bool:
     return os.environ.get("KUMIHO_MEMORY_SPACE_REGISTRY", "1").strip() != "0"
 
 
+def _space_stem_match_enabled() -> bool:
+    return os.environ.get("KUMIHO_MEMORY_SPACE_STEM_MATCH", "0").strip() == "1"
+
+
 def _stem_slug(segment: str) -> str:
     """Conservative stem for slug comparison: strips a plural/gerund suffix
-    only when a reasonable stem length remains. Failing to unify is safe
-    (a new space is created); wrongly unifying is not, so no fancier rules."""
+    only when a reasonable stem length remains. Lexical and English-only —
+    used only when stem matching is explicitly enabled, since it can
+    false-merge distinct words ("meeting"->"meet")."""
     for suffix in ("ing", "es", "s"):
         if segment.endswith(suffix) and len(segment) - len(suffix) >= 4:
             return segment[: -len(suffix)]
@@ -438,12 +448,20 @@ def _stem_slug(segment: str) -> str:
 def _existing_space_paths(project: Project) -> Set[str]:
     """All space paths in *project*, cached briefly per process."""
     now = time.monotonic()
-    cached = _space_registry_cache.get(project.name)
-    if cached and now - cached[0] < _SPACE_REGISTRY_TTL_SECONDS:
-        return cached[1]
+    with _space_registry_lock:
+        cached = _space_registry_cache.get(project.name)
+        if cached and now - cached[0] < _SPACE_REGISTRY_TTL_SECONDS:
+            return cached[1]
+    # List outside the lock (network call); last writer wins on the cache.
     paths = {space.path for space in project.get_spaces(recursive=True)}
-    _space_registry_cache[project.name] = (now, paths)
+    with _space_registry_lock:
+        _space_registry_cache[project.name] = (now, paths)
     return paths
+
+
+def _invalidate_space_registry(project_name: str) -> None:
+    with _space_registry_lock:
+        _space_registry_cache.pop(project_name, None)
 
 
 def _record_space_alias(project: Project, canonical_path: str, alias_slug: str) -> None:
@@ -475,6 +493,11 @@ def _resolve_space_hint_path(project: Project, space_path: str) -> str:
         return normalized
 
     if normalized in existing:
+        return normalized
+
+    # Stem matching is opt-in — it can false-merge distinct spaces, which is
+    # worse than drift because a memory then lands in the wrong space.
+    if not _space_stem_match_enabled():
         return normalized
 
     parent, _, leaf = normalized.rpartition("/")
@@ -878,18 +901,20 @@ def tool_memory_store(
 
     memory_kind = memory_item_kind or policy.get("memory_item_kind", "conversation")
 
-    # Closed kind vocabulary: a policy may widen it via a "memory_kinds"
-    # list; otherwise unknown kinds are rejected rather than minting an
-    # ad-hoc taxonomy (kind is baked into the kref identity, so drift here
-    # is permanent).
-    allowed_kinds = policy.get("memory_kinds") or DEFAULT_MEMORY_KINDS
+    # Recommended kind vocabulary: a policy may widen it with an explicit
+    # "memory_kinds" list. An out-of-vocabulary kind is *warned, not
+    # rejected* — kind is part of the kref identity, so nudging toward a
+    # closed set curbs drift, but hard-rejecting on day one would break
+    # existing callers/policies that already use other kinds. (Use `is None`
+    # so a policy setting memory_kinds: [] is honored, not silently ignored.)
+    policy_kinds = policy.get("memory_kinds")
+    allowed_kinds = DEFAULT_MEMORY_KINDS if policy_kinds is None else policy_kinds
     if memory_kind not in allowed_kinds:
-        return {
-            "error": (
-                f"Unknown memory_item_kind '{memory_kind}'. "
-                f"Allowed kinds: {', '.join(allowed_kinds)}."
-            )
-        }
+        logger.warning(
+            "memory_item_kind %r is outside the recommended vocabulary (%s); "
+            "accepting, but ad-hoc kinds fragment the taxonomy.",
+            memory_kind, ", ".join(allowed_kinds),
+        )
 
     space_root = policy.get("space_root", "/")
 
@@ -2255,10 +2280,11 @@ TOOLS: List[Dict[str, Any]] = [
                 "memory_item_kind": {
                     "type": "string",
                     "description": (
-                        "Item kind for memory entries. Closed vocabulary — a "
-                        "policy_kref may widen it via a 'memory_kinds' list."
+                        "Item kind for memory entries. Recommended vocabulary: "
+                        + ", ".join(DEFAULT_MEMORY_KINDS)
+                        + " (a policy_kref may widen it via a 'memory_kinds' "
+                        "list, so this is not enforced as a strict enum)."
                     ),
-                    "enum": list(DEFAULT_MEMORY_KINDS),
                     "default": "conversation",
                 },
                 "bundle_name": {

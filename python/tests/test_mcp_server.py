@@ -622,7 +622,17 @@ class TestSpaceRegistry:
         resolved = _resolve_space_hint_path(project, "benchmark")
         assert resolved == "/CognitiveMemory/benchmark"
 
-    def test_stem_match_unifies_and_records_alias(self):
+    def test_stem_match_off_by_default_does_not_unify(self, monkeypatch):
+        # Without the opt-in flag, only exact matches unify — stem matching
+        # is too false-merge-prone to be a default.
+        monkeypatch.delenv("KUMIHO_MEMORY_SPACE_STEM_MATCH", raising=False)
+        from kumiho.mcp_server import _resolve_space_hint_path
+        project = self._FakeProject(["/CognitiveMemory/benchmark"])
+        resolved = _resolve_space_hint_path(project, "benchmarking")
+        assert resolved == "/CognitiveMemory/benchmarking"
+
+    def test_stem_match_unifies_and_records_alias_when_enabled(self, monkeypatch):
+        monkeypatch.setenv("KUMIHO_MEMORY_SPACE_STEM_MATCH", "1")
         from kumiho.mcp_server import _resolve_space_hint_path
         project = self._FakeProject(["/CognitiveMemory/benchmark"])
         resolved = _resolve_space_hint_path(project, "benchmarking")
@@ -636,7 +646,8 @@ class TestSpaceRegistry:
         resolved = _resolve_space_hint_path(project, "quantum-computing")
         assert resolved == "/CognitiveMemory/quantum-computing"
 
-    def test_different_parents_do_not_unify(self):
+    def test_different_parents_do_not_unify(self, monkeypatch):
+        monkeypatch.setenv("KUMIHO_MEMORY_SPACE_STEM_MATCH", "1")
         from kumiho.mcp_server import _resolve_space_hint_path
         project = self._FakeProject(["/CognitiveMemory/work/benchmark"])
         resolved = _resolve_space_hint_path(project, "benchmarks")
@@ -676,23 +687,43 @@ class TestMemoryKindVocabulary:
             "conversation", "skill", "space-profile", "entity", "decision",
         )
 
-    def test_store_schema_exposes_kind_enum(self):
+    def test_store_schema_advertises_kinds_without_strict_enum(self):
+        # No `enum`: policies can widen the vocabulary at runtime, so a
+        # strict MCP client must not be blocked from sending a widened kind.
         from kumiho.mcp_server import TOOLS, DEFAULT_MEMORY_KINDS
         store_tool = next(t for t in TOOLS if t["name"] == "kumiho_memory_store")
         prop = store_tool["inputSchema"]["properties"]["memory_item_kind"]
-        assert prop["enum"] == list(DEFAULT_MEMORY_KINDS)
+        assert "enum" not in prop
+        for kind in DEFAULT_MEMORY_KINDS:
+            assert kind in prop["description"]
 
+    @patch('kumiho.mcp_server._write_memory_artifact', return_value="")
+    @patch('kumiho.mcp_server._get_or_create_item')
+    @patch('kumiho.mcp_server._find_similar_item', return_value=None)
+    @patch('kumiho.mcp_server._ensure_space_path', return_value="facts")
     @patch("kumiho.get_project")
     @patch("kumiho.auto_configure_from_discovery")
-    def test_unknown_kind_is_rejected(self, mock_configure, mock_get_project):
+    def test_unknown_kind_warns_but_accepts(
+        self, mock_configure, mock_get_project, mock_ensure_space,
+        mock_find_similar, mock_get_item, mock_artifact, caplog,
+    ):
+        import logging
+        mock_get_project.return_value = MockProject("CognitiveMemory")
+        item = MockItem("kref://CognitiveMemory/facts/note.vibes")
+        rev = MockRevision(f"{item.kref.uri}?r=1")
+        rev.tag = lambda tag: None
+        item.create_revision = lambda metadata=None: rev
+        mock_get_item.return_value = item
+
         from kumiho.mcp_server import tool_memory_store
-        result = tool_memory_store(
-            user_text="hello",
-            memory_item_kind="vibes",
-        )
-        assert "error" in result
-        assert "vibes" in result["error"]
-        assert "conversation" in result["error"]
+        with caplog.at_level(logging.WARNING):
+            result = tool_memory_store(
+                project="CognitiveMemory", space_path="facts",
+                user_text="hello", memory_item_kind="vibes",
+            )
+        # Accepted (no kind error), but a drift warning was logged.
+        assert "Unknown memory_item_kind" not in str(result.get("error", ""))
+        assert any("recommended vocabulary" in r.message for r in caplog.records)
 
 
 if __name__ == "__main__":
