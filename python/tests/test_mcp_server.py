@@ -575,5 +575,125 @@ class TestMemoryTypeRoundTrip:
         assert result["item_krefs"] == [oldest_fact.kref.uri]
 
 
+
+
+class TestSpaceRegistry:
+    """Resolve-or-create: hint-derived spaces unify with existing ones."""
+
+    def setup_method(self):
+        from kumiho import mcp_server
+        mcp_server._space_registry_cache.clear()
+
+    class _FakeSpace:
+        def __init__(self, path):
+            self.path = path
+            self.attributes = {}
+
+        def get_attribute(self, key):
+            return self.attributes.get(key)
+
+        def set_attribute(self, key, value):
+            self.attributes[key] = value
+            return True
+
+    class _FakeProject:
+        name = "CognitiveMemory"
+
+        def __init__(self, paths):
+            self.spaces = {p: TestSpaceRegistry._FakeSpace(p) for p in paths}
+
+        def get_spaces(self, recursive=False):
+            return list(self.spaces.values())
+
+        def get_space(self, path):
+            return self.spaces[path]
+
+    def test_stem_slug_unifies_plural_and_gerund(self):
+        from kumiho.mcp_server import _stem_slug
+        assert _stem_slug("benchmarks") == _stem_slug("benchmarking") == "benchmark"
+        assert _stem_slug("notes") == "note"
+        # Short stems are left alone — failing to unify is the safe direction.
+        assert _stem_slug("as") == "as"
+        assert _stem_slug("ing") == "ing"
+
+    def test_exact_match_returns_existing(self):
+        from kumiho.mcp_server import _resolve_space_hint_path
+        project = self._FakeProject(["/CognitiveMemory/benchmark"])
+        resolved = _resolve_space_hint_path(project, "benchmark")
+        assert resolved == "/CognitiveMemory/benchmark"
+
+    def test_stem_match_unifies_and_records_alias(self):
+        from kumiho.mcp_server import _resolve_space_hint_path
+        project = self._FakeProject(["/CognitiveMemory/benchmark"])
+        resolved = _resolve_space_hint_path(project, "benchmarking")
+        assert resolved == "/CognitiveMemory/benchmark"
+        aliases = project.spaces["/CognitiveMemory/benchmark"].attributes
+        assert "benchmarking" in aliases.get("memory_aliases", "")
+
+    def test_no_match_returns_normalized_input(self):
+        from kumiho.mcp_server import _resolve_space_hint_path
+        project = self._FakeProject(["/CognitiveMemory/travel"])
+        resolved = _resolve_space_hint_path(project, "quantum-computing")
+        assert resolved == "/CognitiveMemory/quantum-computing"
+
+    def test_different_parents_do_not_unify(self):
+        from kumiho.mcp_server import _resolve_space_hint_path
+        project = self._FakeProject(["/CognitiveMemory/work/benchmark"])
+        resolved = _resolve_space_hint_path(project, "benchmarks")
+        assert resolved == "/CognitiveMemory/benchmarks"
+
+    def test_kill_switch_env(self, monkeypatch):
+        from kumiho.mcp_server import _space_registry_enabled
+        monkeypatch.setenv("KUMIHO_MEMORY_SPACE_REGISTRY", "0")
+        assert not _space_registry_enabled()
+        monkeypatch.setenv("KUMIHO_MEMORY_SPACE_REGISTRY", "1")
+        assert _space_registry_enabled()
+
+    def test_listing_failure_falls_back_to_input(self):
+        from kumiho.mcp_server import _resolve_space_hint_path
+
+        class _Broken:
+            name = "CognitiveMemory"
+
+            def get_spaces(self, recursive=False):
+                raise RuntimeError("registry down")
+
+        resolved = _resolve_space_hint_path(_Broken(), "benchmarks")
+        assert resolved == "/CognitiveMemory/benchmarks"
+
+
+class TestMemoryKindVocabulary:
+    """The store tool enforces the closed memory-kind vocabulary."""
+
+    def setup_method(self):
+        from kumiho import mcp_server
+        mcp_server._project_cache.clear()
+        mcp_server._space_registry_cache.clear()
+
+    def test_default_kinds_are_the_agreed_vocabulary(self):
+        from kumiho.mcp_server import DEFAULT_MEMORY_KINDS
+        assert DEFAULT_MEMORY_KINDS == (
+            "conversation", "skill", "space-profile", "entity", "decision",
+        )
+
+    def test_store_schema_exposes_kind_enum(self):
+        from kumiho.mcp_server import TOOLS, DEFAULT_MEMORY_KINDS
+        store_tool = next(t for t in TOOLS if t["name"] == "kumiho_memory_store")
+        prop = store_tool["inputSchema"]["properties"]["memory_item_kind"]
+        assert prop["enum"] == list(DEFAULT_MEMORY_KINDS)
+
+    @patch("kumiho.get_project")
+    @patch("kumiho.auto_configure_from_discovery")
+    def test_unknown_kind_is_rejected(self, mock_configure, mock_get_project):
+        from kumiho.mcp_server import tool_memory_store
+        result = tool_memory_store(
+            user_text="hello",
+            memory_item_kind="vibes",
+        )
+        assert "error" in result
+        assert "vibes" in result["error"]
+        assert "conversation" in result["error"]
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

@@ -47,6 +47,7 @@ import logging
 import os
 import re
 import sys
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence, Set, Tuple
@@ -356,14 +357,21 @@ def _ensure_space_path(project: Project, space_path: str) -> str:
         return normalized
     parts = normalized.strip("/").split("/")
     parent = f"/{parts[0]}"
+    created_any = False
     for segment in parts[1:]:
         try:
             project.create_space(segment, parent_path=parent)
+            created_any = True
         except grpc.RpcError as exc:
             if exc.code() != grpc.StatusCode.ALREADY_EXISTS:
                 raise
         parent = f"{parent.rstrip('/')}/{segment}"
     _known_spaces.add(normalized)
+    # A new space invalidates the registry listing so the next hint resolves
+    # against it (otherwise back-to-back stores wouldn't see each other's
+    # freshly-created spaces within the cache TTL).
+    if created_any:
+        _space_registry_cache.pop(project.name, None)
     return normalized
 
 
@@ -374,6 +382,116 @@ def _get_or_create_item(project: Project, space_path: str, item_name: str, kind:
         if exc.code() == grpc.StatusCode.ALREADY_EXISTS:
             return project.get_item(item_name, kind, parent_path=space_path)
         raise
+
+
+# ---------------------------------------------------------------------------
+# Memory kinds — the closed write-time taxonomy
+# ---------------------------------------------------------------------------
+
+# The kinds tool_memory_store accepts. A policy item can widen this via a
+# "memory_kinds" list in its policy JSON; without one, unknown kinds are
+# rejected so the calling LLM cannot mint ad-hoc taxonomies. "decision" is
+# reserved for decision promotion (follow-up); "skill" and "space-profile"
+# are written by kumiho-memory through its own paths but belong to the
+# same vocabulary.
+DEFAULT_MEMORY_KINDS: Tuple[str, ...] = (
+    "conversation",
+    "skill",
+    "space-profile",
+    "entity",
+    "decision",
+)
+
+
+# ---------------------------------------------------------------------------
+# Space registry — resolve a hint against existing spaces before creating
+# ---------------------------------------------------------------------------
+
+# Freeform space hints drift: "benchmark" / "benchmarks" / "benchmarking"
+# arrive across sessions and would each mint a distinct Space, fragmenting
+# both scoped recall and fulltext term statistics. Before creating a space
+# from a *hint* (never an explicit space_path), the leaf segment is matched
+# against existing sibling spaces — exact, then stem-normalized (plural /
+# gerund). A unified variant is recorded on the canonical space's
+# "memory_aliases" attribute for auditability.
+
+_SPACE_REGISTRY_TTL_SECONDS = 60.0
+
+# project name -> (fetched_at_monotonic, {normalized space paths})
+_space_registry_cache: Dict[str, Tuple[float, Set[str]]] = {}
+
+
+def _space_registry_enabled() -> bool:
+    return os.environ.get("KUMIHO_MEMORY_SPACE_REGISTRY", "1").strip() != "0"
+
+
+def _stem_slug(segment: str) -> str:
+    """Conservative stem for slug comparison: strips a plural/gerund suffix
+    only when a reasonable stem length remains. Failing to unify is safe
+    (a new space is created); wrongly unifying is not, so no fancier rules."""
+    for suffix in ("ing", "es", "s"):
+        if segment.endswith(suffix) and len(segment) - len(suffix) >= 4:
+            return segment[: -len(suffix)]
+    return segment
+
+
+def _existing_space_paths(project: Project) -> Set[str]:
+    """All space paths in *project*, cached briefly per process."""
+    now = time.monotonic()
+    cached = _space_registry_cache.get(project.name)
+    if cached and now - cached[0] < _SPACE_REGISTRY_TTL_SECONDS:
+        return cached[1]
+    paths = {space.path for space in project.get_spaces(recursive=True)}
+    _space_registry_cache[project.name] = (now, paths)
+    return paths
+
+
+def _record_space_alias(project: Project, canonical_path: str, alias_slug: str) -> None:
+    """Best-effort: append *alias_slug* to the canonical space's
+    "memory_aliases" attribute so unifications stay auditable server-side."""
+    try:
+        space = project.get_space(canonical_path)
+        existing = space.get_attribute("memory_aliases") or ""
+        aliases = [a for a in (s.strip() for s in existing.split(",")) if a]
+        if alias_slug not in aliases:
+            aliases.append(alias_slug)
+            space.set_attribute("memory_aliases", ",".join(aliases))
+    except Exception:  # noqa: BLE001 - alias bookkeeping must never fail a store
+        logger.debug("Failed to record space alias %s -> %s", alias_slug, canonical_path)
+
+
+def _resolve_space_hint_path(project: Project, space_path: str) -> str:
+    """Resolve a hint-derived space path against existing spaces.
+
+    Returns a (normalized) path of an existing space when the leaf segment
+    matches a sibling exactly or by stem; otherwise returns the normalized
+    input unchanged for the caller to create.
+    """
+    normalized = _normalize_space_path(project.name, space_path)
+    try:
+        existing = _existing_space_paths(project)
+    except Exception:  # noqa: BLE001 - registry is best-effort, never block a store
+        logger.debug("Space registry listing failed; storing to %s as-is", normalized)
+        return normalized
+
+    if normalized in existing:
+        return normalized
+
+    parent, _, leaf = normalized.rpartition("/")
+    if not leaf:
+        return normalized
+    leaf_stem = _stem_slug(leaf)
+    for candidate in sorted(existing):
+        cand_parent, _, cand_leaf = candidate.rpartition("/")
+        if cand_parent != parent or not cand_leaf:
+            continue
+        if _stem_slug(cand_leaf) == leaf_stem:
+            logger.info(
+                "Space registry: unifying hint space %r into existing %r", normalized, candidate
+            )
+            _record_space_alias(project, candidate, leaf)
+            return candidate
+    return normalized
 
 
 # ---------------------------------------------------------------------------
@@ -759,20 +877,42 @@ def tool_memory_store(
             return {"error": f"Failed to load policy_kref: {exc}"}
 
     memory_kind = memory_item_kind or policy.get("memory_item_kind", "conversation")
+
+    # Closed kind vocabulary: a policy may widen it via a "memory_kinds"
+    # list; otherwise unknown kinds are rejected rather than minting an
+    # ad-hoc taxonomy (kind is baked into the kref identity, so drift here
+    # is permanent).
+    allowed_kinds = policy.get("memory_kinds") or DEFAULT_MEMORY_KINDS
+    if memory_kind not in allowed_kinds:
+        return {
+            "error": (
+                f"Unknown memory_item_kind '{memory_kind}'. "
+                f"Allowed kinds: {', '.join(allowed_kinds)}."
+            )
+        }
+
     space_root = policy.get("space_root", "/")
 
+    space_from_hint = False
     if not space_path:
         hint = space_hint.strip()
         if hint:
             segments = [seg for seg in hint.split("/") if seg]
             slugged = [_slugify(seg) or seg for seg in segments]
             space_path = "/".join(slugged)
+            space_from_hint = bool(space_path)
     if space_root and space_root != "/":
         base_root = space_root.strip("/")
         if space_path:
             space_path = f"{base_root}/{space_path}"
         else:
             space_path = base_root
+
+    # Hint-derived paths are resolved against existing spaces (exact/stem)
+    # before creation so topic variants converge on one space. An explicit
+    # space_path is honored verbatim, as before.
+    if space_from_hint and space_path and _space_registry_enabled():
+        space_path = _resolve_space_hint_path(project_obj, space_path)
 
     normalized_space_path = _ensure_space_path(project_obj, space_path)
 
@@ -2114,7 +2254,11 @@ TOOLS: List[Dict[str, Any]] = [
                 },
                 "memory_item_kind": {
                     "type": "string",
-                    "description": "Item kind for memory entries (default: conversation)",
+                    "description": (
+                        "Item kind for memory entries. Closed vocabulary — a "
+                        "policy_kref may widen it via a 'memory_kinds' list."
+                    ),
+                    "enum": list(DEFAULT_MEMORY_KINDS),
                     "default": "conversation",
                 },
                 "bundle_name": {
