@@ -223,6 +223,14 @@ class UniversalMemoryManager:
         )
         self.retry_queue = retry_queue
         self.store_max_retries = store_max_retries
+        # Graph-augmented recall: pass a GraphAugmentationConfig for full
+        # control, or simply ``True`` for the default config — no boilerplate.
+        # Falsy values (None/False/0) read naturally as "disabled".
+        if graph_augmentation is True:
+            from kumiho_memory.graph_augmentation import GraphAugmentationConfig
+            graph_augmentation = GraphAugmentationConfig()
+        elif not graph_augmentation:
+            graph_augmentation = None
         self.graph_augmentation_config = graph_augmentation
         self._graph_recall: Optional[Any] = None  # lazy GraphAugmentedRecall
         self.recall_mode = recall_mode
@@ -258,9 +266,13 @@ class UniversalMemoryManager:
             # reranker wiring the MCP server does.  With NO env vars set this
             # is exactly RerankConfig() + reranker=None — behavior unchanged.
             rerank = RerankConfig.from_env()
-            adapter = getattr(self.summarizer, "adapter", None)
-            model = getattr(self.summarizer, "light_model", "") or ""
-            reranker = resolve_reranker_from_env(adapter=adapter, model=model)
+            # Lazy factory: the summarizer's ``adapter`` property builds (and
+            # may fail to build, e.g. no API key) a real LLM client — only
+            # touch it if KUMIHO_RERANK_LLM actually requests the LLM path.
+            reranker = resolve_reranker_from_env(
+                adapter_factory=lambda: getattr(self.summarizer, "adapter", None),
+                model=getattr(self.summarizer, "light_model", "") or "",
+            )
             if reranker is not None:
                 rerank.cross_encoder_enabled = True
         elif rerank is None:
@@ -1314,7 +1326,7 @@ class UniversalMemoryManager:
             (:attr:`RerankConfig.event_proximity_enabled`).  Pass it ONLY for
             queries with a temporal intent; leaving it ``None`` (the default)
             keeps that prior fully dormant, so general recall is unchanged.
-            Applies to the plain (non-graph) recall path.
+            Applies to both the plain and the graph-augmented recall path.
         """
         if graph_augmented and self.graph_augmentation_config is not None:
             gr = self._get_graph_recall()
@@ -1323,18 +1335,100 @@ class UniversalMemoryManager:
                 # artifacts) internally so reformulated queries don't
                 # duplicate expensive work.  Sibling enrichment runs once
                 # on the final merged set.
+                #
+                # Rerank placement (measured, not aesthetic): the
+                # cross-encoder and retrieve-wide-then-trim run PER
+                # SUB-QUERY inside graph recall (see _graph_base_recall,
+                # wired as gr's recall_fn) — each reformulated angle trims
+                # its own candidates by relevance TO THAT ANGLE.  Applying
+                # them here instead, against the original query on the
+                # merged set, evicts multi-hop evidence: a second hop's
+                # memory scores low against the full multi-topic question,
+                # so a post-merge cross-encoder trim removes exactly what
+                # the answer needs (measured: multi-hop 0.299 per-angle vs
+                # 0.194 post-merge on the same data and levers).
                 memories = await gr.recall(
                     query,
                     limit=limit,
                     space_paths=space_paths,
                     memory_types=memory_types,
                 )
+                # Final pass over the merged set: deterministic priors only
+                # — evidence (recomputed from base_score, so per-angle
+                # weighting is never double-counted), recency,
+                # event-proximity (temporal queries), MMR diversity.  The
+                # cross-encoder is deliberately EXCLUDED here: per-angle
+                # relevance was already measured above, and re-scoring
+                # against the original query would reintroduce the
+                # multi-hop eviction this pipeline just avoided.
+                from dataclasses import replace as _dc_replace
+                from kumiho_memory.recall_rerank import rerank
+                target = self.graph_augmentation_config.max_total or (limit * 3)
+                final_cfg = _dc_replace(
+                    self.rerank_config, cross_encoder_enabled=False,
+                )
+                memories = rerank(
+                    query,
+                    memories,
+                    evidence_config=self.evidence_rank_config,
+                    config=final_cfg,
+                    reranker=None,
+                    limit=target,
+                    query_time=query_time,
+                )
+                if len(memories) > target:
+                    memories = memories[:target]
                 return await self._enrich_with_siblings(memories, query)
 
         return await self._base_recall(
             query, limit=limit, space_paths=space_paths,
             memory_types=memory_types, query_time=query_time,
         )
+
+    async def _graph_base_recall(
+        self,
+        query: str,
+        *,
+        limit: int = 5,
+        space_paths: Optional[List[str]] = None,
+        memory_types: Optional[List[str]] = None,
+    ) -> List[Dict[str, Any]]:
+        """Per-sub-query recall for graph augmentation: widen → rerank → trim.
+
+        The inner ``recall_fn`` for :class:`GraphAugmentedRecall`.  Each
+        reformulated angle gets its own retrieve-wide-then-trim and rerank
+        stack (cross-encoder included) scored against *that angle's* query —
+        so the candidates that survive per-angle trimming are the ones
+        relevant to each hop of a multi-topic question.  Running these
+        levers once on the merged set against the original query instead
+        measurably evicts multi-hop evidence (the second hop scores low
+        against the full question).
+
+        No sibling enrichment, no artifacts — the merged set is enriched
+        exactly once downstream.
+        """
+        multiplier = self.recall_candidate_multiplier
+        fetch_limit = (
+            math.ceil(limit * multiplier) if multiplier > 1.0 else limit
+        )
+        memories = await self._lightweight_recall(
+            query, limit=fetch_limit, space_paths=space_paths,
+            memory_types=memory_types,
+        )
+        if not memories:
+            return memories
+        from kumiho_memory.recall_rerank import rerank
+        memories = rerank(
+            query,
+            memories,
+            evidence_config=self.evidence_rank_config,
+            config=self.rerank_config,
+            reranker=self.reranker,
+            limit=limit,
+        )
+        if len(memories) > limit:
+            memories = memories[:limit]
+        return memories
 
     async def _lightweight_recall(
         self,
@@ -1407,12 +1501,20 @@ class UniversalMemoryManager:
         self,
         memories: List[Dict[str, Any]],
         query: str,
+        alt_queries: Optional[List[str]] = None,
     ) -> List[Dict[str, Any]]:
         """Add sibling revisions and artifact content to pre-recalled memories.
 
         Runs once on the final merged set after graph augmentation has
         deduplicated results, so sibling enrichment and LLM reranking
         happen exactly once per unique item.
+
+        ``alt_queries`` carries the reformulated angles of a multi-query
+        recall (graph-augmented path).  Sibling selection sees every angle,
+        so an item recalled via a reformulation keeps the revisions relevant
+        to *that* angle — with only the original query, a multi-topic
+        question (multi-hop) selects siblings for its dominant topic and
+        drops the other hop's evidence.
         """
         _load_arts = self.recall_mode == "full"
 
@@ -1438,9 +1540,17 @@ class UniversalMemoryManager:
                     except Exception:
                         pass
 
+            primary_score = mem.get("score", 0.0)
+            if isinstance(primary_score, bool) or not isinstance(
+                primary_score, (int, float)
+            ):
+                primary_score = 0.0
+
             siblings = await self._fetch_sibling_revision_summaries(
                 item_kref, mem.get("kref", ""), query=query,
                 load_artifacts=_load_arts,
+                alt_queries=alt_queries,
+                primary_score=float(primary_score),
             )
             if siblings:
                 mem["sibling_revisions"] = siblings
@@ -1523,14 +1633,29 @@ class UniversalMemoryManager:
 
             from kumiho_memory.evidence_rank import apply_evidence_weights
 
+            # Opt-in: seed edge traversal from top-scored sibling revisions.
+            # The enrichment runs once inside GraphAugmentedRecall (it pops
+            # _item_kref), so the manager's post-recall enrichment pass
+            # skips those entries instead of re-doing the work.
+            sibling_fetch_fn = (
+                self._enrich_with_siblings
+                if getattr(
+                    self.graph_augmentation_config,
+                    "sibling_seeded_traversal",
+                    False,
+                )
+                else None
+            )
+
             self._graph_recall = GraphAugmentedRecall(
                 adapter=adapter,
                 model=model,
-                recall_fn=self._lightweight_recall,
+                recall_fn=self._graph_base_recall,
                 config=self.graph_augmentation_config,
                 evidence_rerank_fn=lambda mems: apply_evidence_weights(
                     mems, self.evidence_rank_config,
                 ),
+                sibling_fetch_fn=sibling_fetch_fn,
             )
             return self._graph_recall
         except Exception as e:
@@ -1644,6 +1769,62 @@ class UniversalMemoryManager:
                             )
 
         return "\n\n".join(texts) if texts else ""
+
+    def compose_context(
+        self,
+        memories: List[Dict[str, Any]],
+        query: str = "",
+        *,
+        mode: Optional[str] = None,
+        top_k: Optional[int] = None,
+        char_limit: int = 8000,
+    ) -> str:
+        """Revision-centric context assembly (see :mod:`kumiho_memory.context_compose`).
+
+        Flattens primary + ``sibling_revisions`` from every recalled memory
+        (skipping the primary shell when siblings exist — they contain all
+        revisions), ranks the pool globally by ``_score``, caps it at
+        *top_k*, and renders ``"full"`` (raw content) or ``"summarized"``
+        (title+summary) text.
+
+        Complements :meth:`build_recalled_context` (item-centric, with
+        evidence badges/facts/event dates): use ``compose_context`` when the
+        best revisions should compete globally regardless of which item they
+        belong to — e.g. heavily stacked items.
+
+        *mode* defaults to the manager's ``recall_mode``; *top_k* ``None``
+        uses :data:`kumiho_memory.context_compose.DEFAULT_CONTEXT_TOP_K`
+        (pass ``0`` for unlimited).
+        """
+        from kumiho_memory.context_compose import compose_context
+
+        return compose_context(
+            memories,
+            query,
+            mode=mode or self.recall_mode,
+            top_k=top_k,
+            char_limit=char_limit,
+        )
+
+    def rerank_memories(
+        self,
+        memories: List[Dict[str, Any]],
+        query: str,
+    ) -> List[Dict[str, Any]]:
+        """Two-pass focused rerank of recalled memories and their siblings.
+
+        Re-scores every memory (``score``) and every ``sibling_revisions``
+        entry (``_score``) with the configured ``embedding_adapter`` over
+        **title+summary text only**, replacing the server scores so the most
+        directly relevant revisions rank highest in
+        :meth:`compose_context`'s global pool.  Safe no-op (input returned
+        unchanged) when no embedding adapter is configured, *query* is
+        empty, or embedding fails — see
+        :func:`kumiho_memory.recall_rerank.two_pass_rerank`.
+        """
+        from kumiho_memory.recall_rerank import two_pass_rerank
+
+        return two_pass_rerank(query, memories, self.embedding_adapter)
 
     async def _fetch_revision_metadata(
         self, kref: str, load_artifacts: bool = True,
@@ -1778,6 +1959,7 @@ class UniversalMemoryManager:
         self,
         siblings: List[Dict[str, Any]],
         query: str,
+        alt_queries: Optional[List[str]] = None,
     ) -> Optional[List[Dict[str, Any]]]:
         """Use the LLM to select the most relevant siblings.
 
@@ -1841,8 +2023,22 @@ class UniversalMemoryManager:
             "separated by commas. If none are clearly relevant, return 'none'."
         )
 
+        # Reformulated angles (multi-query recall): show the LLM every angle
+        # so it selects summaries covering EACH aspect of a multi-topic
+        # question, not just its dominant one.
+        angles_text = ""
+        if alt_queries:
+            angle_lines = "\n".join(f"- {a}" for a in alt_queries if a)
+            if angle_lines:
+                angles_text = (
+                    "\nThe message may also be understood from these angles "
+                    "(pick summaries relevant to ANY of them):\n"
+                    f"{angle_lines}\n"
+                )
+
         user_msg = (
-            f"User's message:\n{query}\n\n"
+            f"User's message:\n{query}\n"
+            f"{angles_text}\n"
             f"Stored conversation summaries:\n{summaries_text}"
         )
 
@@ -1901,6 +2097,7 @@ class UniversalMemoryManager:
         siblings: List[Dict[str, Any]],
         query: str,
         current_rev_kref: str = "",
+        alt_queries: Optional[List[str]] = None,
     ) -> List[Dict[str, Any]]:
         """Rank siblings by a local, in-process relevance signal.
 
@@ -1937,11 +2134,19 @@ class UniversalMemoryManager:
                 )
 
         # BM25-light keyword overlap (same scoring as the default Mode 3 path).
-        query_tokens = _tokenize(query)
+        # With reformulated angles present, a sibling scores as its BEST match
+        # across the original query and every angle — a multi-hop question's
+        # second hop matches its reformulation even when it barely overlaps
+        # the original phrasing.
+        angle_tokens = [_tokenize(query)] + [
+            _tokenize(a) for a in (alt_queries or []) if a
+        ]
+        angle_tokens = [t for t in angle_tokens if t]
         for sib in siblings:
             text = f"{sib.get('title', '')} {sib.get('summary', '')}"
-            sib["_score"] = (
-                _token_overlap_score(query_tokens, text) if query_tokens else 0.0
+            sib["_score"] = max(
+                (_token_overlap_score(t, text) for t in angle_tokens),
+                default=0.0,
             )
 
         best_score = max((s["_score"] for s in siblings), default=0.0)
@@ -2005,6 +2210,8 @@ class UniversalMemoryManager:
         query: str,
         item_kref: str,
         current_rev_kref: str = "",
+        alt_queries: Optional[List[str]] = None,
+        primary_score: float = 0.0,
     ) -> List[Dict[str, Any]]:
         """Select relevant siblings: LLM reranker primary, deterministic fallback.
 
@@ -2036,11 +2243,14 @@ class UniversalMemoryManager:
             return siblings
 
         # --- Primary: LLM reranking (semantic inversion) ---
-        llm_result = await self._rerank_siblings_with_llm(siblings, query)
+        llm_result = await self._rerank_siblings_with_llm(
+            siblings, query, alt_queries=alt_queries,
+        )
         if llm_result:
             # Bounded union: recover one strong lexical match the LLM missed.
             ranked = self._rank_siblings_deterministic(
                 list(siblings), query, current_rev_kref,
+                alt_queries=alt_queries,
             )
             if ranked:
                 top = ranked[0]
@@ -2059,7 +2269,31 @@ class UniversalMemoryManager:
         # --- Fallback: deterministic ranking (LLM None / error / unavailable) ---
         ranked = self._rank_siblings_deterministic(
             siblings, query, current_rev_kref,
+            alt_queries=alt_queries,
         )
+        # Parity guard: without the LLM's judgment, the published revision
+        # must compete at the item's own recall score.  The downstream
+        # context builder skips the primary item entry whenever the sibling
+        # list is non-empty — so a fallback list that carries the primary at
+        # a near-zero keyword score silently DEMOTES the whole item relative
+        # to the pre-fallback behavior (empty list -> primary entry ranked at
+        # the item's recall score).  That demotion is what halved multi-hop:
+        # the second hop's item usually fails the LLM pick (weak lexical
+        # overlap with a multi-topic question) and then vanished from the
+        # composed context.  Floor the primary revision's _score at the
+        # item's recall score to restore the old ranking exactly; extra
+        # fallback siblings keep their own scores and can only add below it.
+        if ranked and current_rev_kref and primary_score > 0.0:
+            for sib in ranked:
+                if sib.get("kref") == current_rev_kref:
+                    if float(sib.get("_score", 0.0) or 0.0) < primary_score:
+                        sib["_score"] = primary_score
+                        ranked = sorted(
+                            ranked,
+                            key=lambda s: float(s.get("_score", 0.0) or 0.0),
+                            reverse=True,
+                        )
+                    break
         logger.info(
             "LLM sibling reranker returned None; deterministic fallback kept "
             "%d/%d siblings (query: %.60s)",
@@ -2073,6 +2307,8 @@ class UniversalMemoryManager:
         current_rev_kref: str,
         query: str = "",
         load_artifacts: bool = True,
+        alt_queries: Optional[List[str]] = None,
+        primary_score: float = 0.0,
     ) -> List[Dict[str, str]]:
         """Fetch title+summary from sibling revisions of a stacked item.
 
@@ -2149,6 +2385,8 @@ class UniversalMemoryManager:
                     # fallback (no external API, no ScoreRevisions RPC).
                     siblings = await self._filter_siblings_by_server_search(
                         siblings, query, item_kref, current_rev_kref,
+                        alt_queries=alt_queries,
+                        primary_score=primary_score,
                     )
 
                 # Clean up internal keys before loading artifacts.
