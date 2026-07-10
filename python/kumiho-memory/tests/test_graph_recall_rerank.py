@@ -124,7 +124,11 @@ def test_graph_path_runs_rerank_stack_with_query_time():
     assert [m["title"] for m in out_dormant] == ["far", "near"]
 
 
-def test_graph_path_trims_merged_set_to_max_total():
+def test_graph_path_trims_merged_set_to_max_total(monkeypatch):
+    # Legacy trim contract: with the ontology opted out, no reserve slots
+    # extend the target. (Ontology-on defaults grow the target by the
+    # entity/fact reserves — covered by the reserve tests below.)
+    monkeypatch.setenv("KUMIHO_MEMORY_ONTOLOGY", "0")
     pool = [
         {"kref": f"kref://m{i}", "title": f"m{i}", "summary": "",
          "score": 0.4 + 0.1 * i}
@@ -395,3 +399,658 @@ def test_no_hook_configured_is_fine():
     gr = _gr(cfg, adapter=_UsageAdapter())
     out = asyncio.run(gr.recall("trigger", limit=2))
     assert out
+
+
+# ---------------------------------------------------------------------------
+# Entity-mediated 2-hop reader (ontology-lite)
+# ---------------------------------------------------------------------------
+
+class _FakeKref:
+    def __init__(self, uri):
+        self.uri = uri
+
+
+class _FakeEdge:
+    def __init__(self, source, target, edge_type):
+        self.source_kref = _FakeKref(source)
+        self.target_kref = _FakeKref(target)
+        self.edge_type = edge_type
+
+
+class _FakeRev:
+    def __init__(self, kref, metadata, edges):
+        self.kref = _FakeKref(kref)
+        self.metadata = metadata
+        self._edges = edges
+
+    def get_edges(self, direction=None):
+        return self._edges
+
+
+def _install_entity_graph(monkeypatch):
+    """memory M1 --ABOUT--> anchor A <--ABOUT-- sibling memory M2."""
+    import sys
+    import types
+
+    M1 = "kref://p/notes/m1.conversation?r=1"
+    A = "kref://p/entities/acme.entity?r=1"
+    M2 = "kref://p/notes/m2.conversation?r=1"
+
+    graph = {
+        M1: _FakeRev(M1, {"title": "M1", "summary": "seed"},
+                     [_FakeEdge(M1, A, "ABOUT")]),
+        A: _FakeRev(A, {"display_name": "Acme"},  # anchor: no content
+                    [_FakeEdge(M1, A, "ABOUT"), _FakeEdge(M2, A, "ABOUT")]),
+        M2: _FakeRev(M2, {"title": "M2", "summary": "sibling about acme"}, []),
+    }
+    fake = types.ModuleType("kumiho")
+    fake.BOTH = "BOTH"
+    fake.get_revision = lambda kref: graph[kref]
+    monkeypatch.setitem(sys.modules, "kumiho", fake)
+    return M1, A, M2
+
+
+def test_entity_reader_surfaces_sibling_and_skips_anchor(monkeypatch):
+    M1, A, M2 = _install_entity_graph(monkeypatch)
+    gr = GraphAugmentedRecall(config=GraphAugmentationConfig(entity_recall=True))
+
+    augmented = []
+    seen = {M1}
+    found = asyncio.run(gr._traverse_entity_neighbors([M1], seen, augmented))
+
+    krefs = [m["kref"] for m in augmented]
+    assert found == 1
+    assert M2 in krefs                      # sibling memory reached via the entity
+    assert A not in krefs                   # anchor is a waypoint, never a result
+    entry = next(m for m in augmented if m["kref"] == M2)
+    assert entry["via_entity"] == A
+    assert entry["hop"] == 2
+    assert entry["summary"] == "sibling about acme"  # real content, not an empty stub
+
+
+def test_entity_reader_noop_when_disabled(monkeypatch):
+    M1, A, M2 = _install_entity_graph(monkeypatch)
+    gr = GraphAugmentedRecall(config=GraphAugmentationConfig(entity_recall=False))
+    # The disabled flag is enforced in recall(); the method itself still works,
+    # so assert the *config* gate is what recall() checks.
+    assert gr.config.entity_recall is False
+
+
+def _install_graph(monkeypatch, graph, on_get=None):
+    import sys
+    import types
+
+    def _get(kref):
+        if on_get is not None:
+            on_get(kref)
+        return graph[kref]
+
+    fake = types.ModuleType("kumiho")
+    fake.BOTH = "BOTH"
+    fake.get_revision = _get
+    monkeypatch.setitem(sys.modules, "kumiho", fake)
+
+
+def test_entity_sibling_is_scoreless_and_follows_involves(monkeypatch):
+    # Siblings must be score-less placeholders so recall_rerank never evidence-
+    # boosts them into evicting a genuine hit; and hop-2 must follow INVOLVES so
+    # event nodes (which carry event_date) about the entity are reachable.
+    M1 = "kref://p/notes/m1.conversation?r=1"
+    A = "kref://p/entities/acme.entity?r=1"
+    M2 = "kref://p/notes/m2.conversation?r=1"
+    E = "kref://p/events/launch.event?r=1"
+    _install_graph(monkeypatch, {
+        M1: _FakeRev(M1, {"title": "M1", "summary": "seed"}, [_FakeEdge(M1, A, "ABOUT")]),
+        A: _FakeRev(A, {"display_name": "Acme"}, [
+            _FakeEdge(M1, A, "ABOUT"), _FakeEdge(M2, A, "ABOUT"),
+            _FakeEdge(E, A, "INVOLVES"),
+        ]),
+        M2: _FakeRev(M2, {"title": "M2", "summary": "sib",
+                          "evidence_level": "official", "source": "wiki"}, []),
+        E: _FakeRev(E, {"title": "Launch", "summary": "launched",
+                        "event_date": "2026-01-01"}, []),
+    })
+    gr = GraphAugmentedRecall(config=GraphAugmentationConfig(entity_recall=True))
+    augmented = []
+    found = asyncio.run(gr._traverse_entity_neighbors([M1], {M1}, augmented))
+
+    krefs = {m["kref"] for m in augmented}
+    assert found == 2
+    assert M2 in krefs and E in krefs            # ABOUT sibling + INVOLVES event
+    for entry in augmented:
+        assert entry.get("score") is None        # score-less: not evidence-reweighted
+        assert "evidence_level" not in entry     # hub neighbour's grade not copied
+        assert "source" not in entry
+    assert next(m for m in augmented if m["kref"] == E)["edge_type"] == "INVOLVES"
+
+
+def test_entity_walk_dedups_shared_anchor_across_seeds(monkeypatch):
+    # A hub shared by two seeds is expanded once, not per seed (fan-out guard).
+    M1 = "kref://p/notes/m1.conversation?r=1"
+    M3 = "kref://p/notes/m3.conversation?r=1"
+    A = "kref://p/entities/acme.entity?r=1"
+    M2 = "kref://p/notes/m2.conversation?r=1"
+    a_fetches = {"n": 0}
+    _install_graph(monkeypatch, {
+        M1: _FakeRev(M1, {"title": "M1"}, [_FakeEdge(M1, A, "ABOUT")]),
+        M3: _FakeRev(M3, {"title": "M3"}, [_FakeEdge(M3, A, "ABOUT")]),
+        A: _FakeRev(A, {"display_name": "Acme"}, [
+            _FakeEdge(M1, A, "ABOUT"), _FakeEdge(M3, A, "ABOUT"),
+            _FakeEdge(M2, A, "ABOUT"),
+        ]),
+        M2: _FakeRev(M2, {"title": "M2", "summary": "sib"}, []),
+    }, on_get=lambda kref: a_fetches.__setitem__("n", a_fetches["n"] + (kref == A)))
+
+    gr = GraphAugmentedRecall(config=GraphAugmentationConfig(entity_recall=True))
+    augmented = []
+    asyncio.run(gr._traverse_entity_neighbors([M1, M3], {M1, M3}, augmented))
+    assert a_fetches["n"] == 1                    # shared hub expanded exactly once
+
+
+def test_entity_siblings_ordered_by_query_relevance(monkeypatch):
+    # The cap's sibling reserve keeps ``sib[:reserve]``; walk arrival order is
+    # seed × anchor × edge order — arbitrary w.r.t. the question — so siblings
+    # must be sorted by lexical overlap with the query before being appended,
+    # or the reserve keeps arbitrary ones and the relevant sibling is trimmed.
+    M1 = "kref://p/notes/m1.conversation?r=1"
+    A = "kref://p/entities/acme.entity?r=1"
+    S_off = "kref://p/notes/offtopic.conversation?r=1"
+    S_hit = "kref://p/notes/hit.conversation?r=1"
+    _install_graph(monkeypatch, {
+        M1: _FakeRev(M1, {"title": "M1"}, [_FakeEdge(M1, A, "ABOUT")]),
+        A: _FakeRev(A, {"display_name": "Acme"}, [
+            _FakeEdge(M1, A, "ABOUT"),
+            _FakeEdge(S_off, A, "ABOUT"),   # arrives FIRST, irrelevant
+            _FakeEdge(S_hit, A, "ABOUT"),   # arrives second, matches the query
+        ]),
+        S_off: _FakeRev(S_off, {"title": "Gardening",
+                                "summary": "tomato plants and soil"}, []),
+        S_hit: _FakeRev(S_hit, {"title": "Acme funding",
+                                "summary": "acme raised a funding round"}, []),
+    })
+    gr = GraphAugmentedRecall(config=GraphAugmentationConfig(entity_recall=True))
+    augmented = []
+    asyncio.run(gr._traverse_entity_neighbors(
+        [M1], {M1}, augmented, query="when did acme raise its funding round?",
+    ))
+    assert [m["kref"] for m in augmented] == [S_hit, S_off]  # relevance first
+    # Ordering only — entries stay score-less (evidence-inversion fix intact).
+    assert all(m.get("score") is None for m in augmented)
+
+
+def test_entity_bridge_joins_angles_and_scores_connecting_fact(monkeypatch):
+    # Multi-hop = a JOIN: angle-0's hit and angle-1's hit share entity X, so
+    # X's fact node is the connecting evidence. It must surface with a REAL
+    # inherited score (factor x the WEAKER angle) — first-class, not trailing.
+    M1 = "kref://p/notes/m1.conversation?r=1"
+    M2 = "kref://p/notes/m2.conversation?r=1"
+    X = "kref://p/entities/max.entity?r=1"
+    F = "kref://p/facts/works-at-acme.fact?r=1"
+    _install_graph(monkeypatch, {
+        M1: _FakeRev(M1, {"title": "M1"}, [_FakeEdge(M1, X, "ABOUT")]),
+        M2: _FakeRev(M2, {"title": "M2"}, [_FakeEdge(M2, X, "ABOUT")]),
+        X: _FakeRev(X, {"display_name": "Max"}, [
+            _FakeEdge(M1, X, "ABOUT"), _FakeEdge(M2, X, "ABOUT"),
+            _FakeEdge(F, X, "ABOUT"),
+        ]),
+        F: _FakeRev(F, {"title": "Works at Acme",
+                        "summary": "Max works at Acme"}, []),
+    })
+    gr = GraphAugmentedRecall(config=GraphAugmentationConfig(entity_recall=True))
+    augmented = []
+    found = asyncio.run(gr._entity_bridge_join(
+        [[(M1, 0.8)], [(M2, 0.6)]], {M1, M2}, augmented,
+    ))
+    assert found == 1
+    entry = augmented[0]
+    assert entry["kref"] == F and entry["bridge"] is True
+    assert abs(entry["score"] - 0.6 * 0.9) < 1e-6   # weaker angle x factor
+    assert entry["via_entity"] == X
+
+
+def test_single_angle_entity_is_not_a_bridge(monkeypatch):
+    # Entities reached from only ONE angle carry no join signal — the bridge
+    # pass must surface nothing (the generic score-less walk covers them).
+    M1 = "kref://p/notes/m1.conversation?r=1"
+    M2 = "kref://p/notes/m2.conversation?r=1"
+    X = "kref://p/entities/x.entity?r=1"
+    Y = "kref://p/entities/y.entity?r=1"
+    F = "kref://p/facts/f.fact?r=1"
+    _install_graph(monkeypatch, {
+        M1: _FakeRev(M1, {"title": "M1"}, [_FakeEdge(M1, X, "ABOUT")]),
+        M2: _FakeRev(M2, {"title": "M2"}, [_FakeEdge(M2, Y, "ABOUT")]),
+        X: _FakeRev(X, {"display_name": "X"}, [
+            _FakeEdge(M1, X, "ABOUT"), _FakeEdge(F, X, "ABOUT"),
+        ]),
+        Y: _FakeRev(Y, {"display_name": "Y"}, [_FakeEdge(M2, Y, "ABOUT")]),
+        F: _FakeRev(F, {"title": "F", "summary": "fact"}, []),
+    })
+    gr = GraphAugmentedRecall(config=GraphAugmentationConfig(entity_recall=True))
+    augmented = []
+    found = asyncio.run(gr._entity_bridge_join(
+        [[(M1, 0.8)], [(M2, 0.6)]], {M1, M2}, augmented,
+    ))
+    assert found == 0 and augmented == []
+
+
+def test_bridge_prefers_fact_nodes_over_conversations(monkeypatch):
+    # A bridge surfaces the terse atomic claim (fact/event) before a whole
+    # conversation — that's the evidence a multi-hop answer actually needs.
+    M1 = "kref://p/notes/m1.conversation?r=1"
+    M2 = "kref://p/notes/m2.conversation?r=1"
+    X = "kref://p/entities/x.entity?r=1"
+    C = "kref://p/notes/other.conversation?r=1"
+    F = "kref://p/facts/claim.fact?r=1"
+    _install_graph(monkeypatch, {
+        M1: _FakeRev(M1, {"title": "M1"}, [_FakeEdge(M1, X, "ABOUT")]),
+        M2: _FakeRev(M2, {"title": "M2"}, [_FakeEdge(M2, X, "ABOUT")]),
+        X: _FakeRev(X, {"display_name": "X"}, [
+            _FakeEdge(M1, X, "ABOUT"), _FakeEdge(M2, X, "ABOUT"),
+            _FakeEdge(C, X, "ABOUT"),   # conversation arrives FIRST
+            _FakeEdge(F, X, "ABOUT"),   # fact arrives second
+        ]),
+        C: _FakeRev(C, {"title": "Chat", "summary": "long chat"}, []),
+        F: _FakeRev(F, {"title": "Claim", "summary": "atomic claim"}, []),
+    })
+    gr = GraphAugmentedRecall(config=GraphAugmentationConfig(
+        entity_recall=True, entity_bridge_max_results=1,
+    ))
+    augmented = []
+    found = asyncio.run(gr._entity_bridge_join(
+        [[(M1, 0.8)], [(M2, 0.6)]], {M1, M2}, augmented,
+    ))
+    assert found == 1
+    assert augmented[0]["kref"] == F   # fact beats conversation
+
+
+def test_bridge_skips_hub_entities(monkeypatch):
+    # A speaker-style entity is ABOUT-linked from nearly every memory, so it
+    # "bridges" every angle pair with generic facts. Anchors above the hub
+    # degree cap are skipped; the discriminative low-degree bridge survives.
+    M1 = "kref://p/notes/m1.conversation?r=1"
+    M2 = "kref://p/notes/m2.conversation?r=1"
+    H = "kref://p/entities/speaker.entity?r=1"     # hub (6 incoming > cap 5)
+    X = "kref://p/entities/topic.entity?r=1"       # discriminative (3 incoming)
+    F_hub = "kref://p/facts/generic.fact?r=1"
+    F_x = "kref://p/facts/specific.fact?r=1"
+    extra = [f"kref://p/notes/x{i}.conversation?r=1" for i in range(4)]
+    hub_edges = [_FakeEdge(M1, H, "ABOUT"), _FakeEdge(M2, H, "ABOUT"),
+                 _FakeEdge(F_hub, H, "ABOUT")] + [
+                 _FakeEdge(e, H, "ABOUT") for e in extra]     # 7 incoming
+    graph = {
+        M1: _FakeRev(M1, {"title": "M1"}, [
+            _FakeEdge(M1, H, "ABOUT"), _FakeEdge(M1, X, "ABOUT")]),
+        M2: _FakeRev(M2, {"title": "M2"}, [
+            _FakeEdge(M2, H, "ABOUT"), _FakeEdge(M2, X, "ABOUT")]),
+        H: _FakeRev(H, {"display_name": "Speaker"}, hub_edges),
+        X: _FakeRev(X, {"display_name": "Topic"}, [
+            _FakeEdge(M1, X, "ABOUT"), _FakeEdge(M2, X, "ABOUT"),
+            _FakeEdge(F_x, X, "ABOUT")]),
+        F_hub: _FakeRev(F_hub, {"title": "Generic", "summary": "generic"}, []),
+        F_x: _FakeRev(F_x, {"title": "Specific", "summary": "specific"}, []),
+    }
+    for e in extra:
+        graph[e] = _FakeRev(e, {"title": "x"}, [])
+    _install_graph(monkeypatch, graph)
+
+    gr = GraphAugmentedRecall(config=GraphAugmentationConfig(
+        entity_recall=True, entity_bridge_hub_degree_max=5,
+        entity_bridge_max_results=1,
+    ))
+    augmented = []
+    found = asyncio.run(gr._entity_bridge_join(
+        [[(M1, 0.8)], [(M2, 0.6)]], {M1, M2}, augmented,
+    ))
+    krefs = [m["kref"] for m in augmented]
+    # With budget 1 the discriminative bridge wins the slot; the hub is
+    # deferred (preference, not a hard skip) and the budget is spent first.
+    assert krefs == [F_x]
+    assert found == 1
+
+
+def test_hub_fallback_when_no_discriminative_bridge(monkeypatch):
+    # In a 2-speaker corpus the speaker hub IS the join key (a hard skip
+    # measured multi-hop -0.078 on conv-26). When no low-degree bridge
+    # exists, deferred hubs must fill the budget.
+    M1 = "kref://p/notes/m1.conversation?r=1"
+    M2 = "kref://p/notes/m2.conversation?r=1"
+    H = "kref://p/entities/speaker.entity?r=1"
+    F_hub = "kref://p/facts/speaker-fact.fact?r=1"
+    extra = [f"kref://p/notes/y{i}.conversation?r=1" for i in range(5)]
+    hub_edges = [_FakeEdge(M1, H, "ABOUT"), _FakeEdge(M2, H, "ABOUT"),
+                 _FakeEdge(F_hub, H, "ABOUT")] + [
+                 _FakeEdge(e, H, "ABOUT") for e in extra]     # 8 incoming
+    graph = {
+        M1: _FakeRev(M1, {"title": "M1"}, [_FakeEdge(M1, H, "ABOUT")]),
+        M2: _FakeRev(M2, {"title": "M2"}, [_FakeEdge(M2, H, "ABOUT")]),
+        H: _FakeRev(H, {"display_name": "Speaker"}, hub_edges),
+        F_hub: _FakeRev(F_hub, {"title": "Speaker fact",
+                                "summary": "speaker did a thing"}, []),
+    }
+    for e in extra:
+        graph[e] = _FakeRev(e, {"title": "y"}, [])
+    _install_graph(monkeypatch, graph)
+
+    gr = GraphAugmentedRecall(config=GraphAugmentationConfig(
+        entity_recall=True, entity_bridge_hub_degree_max=5,
+        entity_bridge_max_results=1,
+    ))
+    augmented = []
+    found = asyncio.run(gr._entity_bridge_join(
+        [[(M1, 0.8)], [(M2, 0.6)]], {M1, M2}, augmented,
+    ))
+    assert found == 1
+    assert augmented[0]["kref"] == F_hub    # hub used as fallback, not lost
+
+
+def test_sibling_reserve_rides_on_top_and_never_evicts_edges(monkeypatch):
+    # Old in-cap reserve: base(6) + keep_sib(3) left room=0 for edge entries at
+    # cap=9 — ON traded the proven edge-traversal payload (the a3c multi-hop
+    # weapon) for unproven siblings. New behavior: edges keep exactly their
+    # OFF-equivalent room (cap - base) and the sibling reserve rides ON TOP,
+    # so the ON output is a strict superset of the OFF output.
+    base_krefs = [f"kref://p/notes/b{i}.conversation?r=1" for i in range(6)]
+    edge_krefs = [f"kref://p/notes/e{i}.conversation?r=1" for i in range(3)]
+    A = "kref://p/entities/acme.entity?r=1"
+    sib_krefs = [f"kref://p/notes/s{i}.conversation?r=1" for i in range(2)]
+
+    graph = {}
+    for i, b in enumerate(base_krefs):
+        edges = []
+        if i < 3:  # first three seeds each have one structural edge
+            edges.append(_FakeEdge(b, edge_krefs[i], "DERIVED_FROM"))
+        if i == 0:  # first seed also links the entity anchor
+            edges.append(_FakeEdge(b, A, "ABOUT"))
+        graph[b] = _FakeRev(b, {"title": f"B{i}", "summary": "base"}, edges)
+    for i, e in enumerate(edge_krefs):
+        graph[e] = _FakeRev(e, {"title": f"E{i}", "summary": "edge hit"}, [])
+    graph[A] = _FakeRev(A, {"display_name": "Acme"}, [
+        _FakeEdge(base_krefs[0], A, "ABOUT"),
+        _FakeEdge(sib_krefs[0], A, "ABOUT"),
+        _FakeEdge(sib_krefs[1], A, "ABOUT"),
+    ])
+    for i, s in enumerate(sib_krefs):
+        graph[s] = _FakeRev(s, {"title": f"S{i}", "summary": "sibling"}, [])
+    _install_graph(monkeypatch, graph)
+
+    async def recall_fn(query, *, limit, space_paths=None, memory_types=None):
+        return [{"kref": b, "title": f"B{i}", "summary": "base",
+                 "score": 0.9 - i * 0.1} for i, b in enumerate(base_krefs)]
+
+    gr = GraphAugmentedRecall(
+        recall_fn=recall_fn,
+        config=GraphAugmentationConfig(entity_recall=True),
+    )
+    out = asyncio.run(gr.recall("acme question", limit=3))  # cap = 9
+
+    krefs = [m["kref"] for m in out]
+    assert all(e in krefs for e in edge_krefs)     # edges NOT evicted (old bug)
+    assert all(s in krefs for s in sib_krefs)      # siblings ride on top
+    assert len(out) == 6 + 3 + 2                   # base + edges + reserve-capped sibs
+    assert krefs[:6] == base_krefs                 # scored base hits stay first
+
+# ---------------------------------------------------------------------------
+# Fact-recall leg (typed facts as first-class semantic candidates)
+# ---------------------------------------------------------------------------
+
+
+class _FakeSearchItem:
+    def __init__(self, rev):
+        self._rev = rev
+
+    def get_latest_revision(self):
+        return self._rev
+
+
+class _FakeSearchResult:
+    def __init__(self, rev, score):
+        self.item = _FakeSearchItem(rev)
+        self.score = score
+
+
+def _install_fact_search(monkeypatch, graph, fact_hits, calls=None):
+    """Fake kumiho with BOTH the edge graph and a fact-space search."""
+    import sys
+    import types
+
+    def _get(kref):
+        return graph[kref]
+
+    def _search(query, **kwargs):
+        if calls is not None:
+            calls.append((query, kwargs))
+        return [_FakeSearchResult(rev, score) for rev, score in fact_hits]
+
+    fake = types.ModuleType("kumiho")
+    fake.BOTH = "BOTH"
+    fake.get_revision = _get
+    fake.search = _search
+    monkeypatch.setitem(sys.modules, "kumiho", fake)
+
+
+def test_fact_recall_surfaces_fact_with_scoped_search(monkeypatch):
+    # One direct kumiho.search with the ORIGINAL query, scoped to the
+    # project's facts space — NOT the retrieve tool (typed nodes are tag-less
+    # and the tool silently drops untagged items).
+    F = "kref://p/facts/max-adopted-dog.fact?r=1"
+    frev = _FakeRev(F, {"title": "Max adopted a dog",
+                        "summary": "Max adopted a golden retriever in May",
+                        "claim": "Max adopted a golden retriever in May"}, [])
+    calls = []
+    _install_fact_search(monkeypatch, {}, [(frev, 2.0)], calls)
+    gr = GraphAugmentedRecall(config=GraphAugmentationConfig(fact_recall=True))
+    M1 = "kref://p/notes/m1.conversation?r=1"
+    augmented = [{"kref": M1, "title": "M1", "score": 0.9}]
+    seen = {M1}
+    found = asyncio.run(gr._fact_recall_leg("did max adopt a pet?", seen, augmented))
+
+    assert found == 1
+    entry = augmented[-1]
+    assert entry["kref"] == F
+    assert entry["fact_recall"] is True and entry["graph_augmented"] is True
+    # Axis-relative score: factor x the WEAKEST base hit (0.9), NOT the raw
+    # server score (2.0) — a cross-encoder rerank rewrites base scores onto
+    # a different scale, and facts must trail conversations on ANY axis.
+    assert abs(entry["score"] - 0.9 * 0.9) < 1e-6
+    assert entry["content"] == "Max adopted a golden retriever in May"
+    assert F in seen
+    q, kw = calls[0]
+    assert q == "did max adopt a pet?"               # original query, unreformulated
+    assert kw["context"] == "p/facts" and kw["kind"] == "fact"
+    assert kw["include_revision_metadata"] is True
+
+
+def test_fact_recall_dedups_and_respects_budget(monkeypatch):
+    # A fact already surfaced (e.g. by the bridge join) is skipped, and at
+    # most ``fact_recall_max_results`` entries are appended.
+    revs = []
+    for i in range(3):
+        k = f"kref://p/facts/f{i}.fact?r=1"
+        revs.append(_FakeRev(k, {"title": f"F{i}", "summary": f"claim {i}"}, []))
+    _install_fact_search(monkeypatch, {}, [(r, 2.0 - i * 0.1) for i, r in enumerate(revs)])
+    gr = GraphAugmentedRecall(config=GraphAugmentationConfig(fact_recall=True))
+    M1 = "kref://p/notes/m1.conversation?r=1"
+    seen = {M1, revs[0].kref.uri}                    # f0 claimed by a bridge
+    augmented = [{"kref": M1, "title": "M1", "score": 0.9}]
+    found = asyncio.run(gr._fact_recall_leg("q", seen, augmented))
+
+    assert found == 2                                # f0 deduped, budget kept
+    assert [m["kref"] for m in augmented[1:]] == [revs[1].kref.uri, revs[2].kref.uri]
+
+
+def test_fact_recall_noop_without_project_scope(monkeypatch):
+    # No recalled memories -> no project to scope to -> no search issued.
+    calls = []
+    _install_fact_search(monkeypatch, {}, [], calls)
+    gr = GraphAugmentedRecall(config=GraphAugmentationConfig(fact_recall=True))
+    found = asyncio.run(gr._fact_recall_leg("q", set(), []))
+    assert found == 0 and calls == []
+
+
+def test_fact_entries_ride_on_top_of_cap_without_evicting_edges(monkeypatch):
+    # Same discipline as the sibling reserve and bridge evidence: base +
+    # edge entries keep exactly their slots; fact entries are appended on
+    # top with their own budget, never competing for the room.
+    base_krefs = [f"kref://p/notes/b{i}.conversation?r=1" for i in range(6)]
+    edge_krefs = [f"kref://p/notes/e{i}.conversation?r=1" for i in range(3)]
+    F = "kref://p/facts/f0.fact?r=1"
+
+    graph = {}
+    for i, b in enumerate(base_krefs):
+        edges = []
+        if i < 3:
+            edges.append(_FakeEdge(b, edge_krefs[i], "DERIVED_FROM"))
+        graph[b] = _FakeRev(b, {"title": f"B{i}", "summary": "base"}, edges)
+    for i, e in enumerate(edge_krefs):
+        graph[e] = _FakeRev(e, {"title": f"E{i}", "summary": "edge hit"}, [])
+    frev = _FakeRev(F, {"title": "F0", "summary": "atomic claim"}, [])
+    _install_fact_search(monkeypatch, graph, [(frev, 2.0)])
+
+    async def recall_fn(query, *, limit, space_paths=None, memory_types=None):
+        return [{"kref": b, "title": f"B{i}", "summary": "base",
+                 "score": 0.9 - i * 0.1} for i, b in enumerate(base_krefs)]
+
+    gr = GraphAugmentedRecall(
+        recall_fn=recall_fn,
+        config=GraphAugmentationConfig(fact_recall=True),
+    )
+    out = asyncio.run(gr.recall("q", limit=3))       # cap = 9, filled by base+edges
+
+    krefs = [m["kref"] for m in out]
+    assert krefs[:6] == base_krefs                   # base slots untouched
+    assert all(e in krefs for e in edge_krefs)       # edges NOT evicted
+    assert F in krefs and len(out) == 6 + 3 + 1      # fact rides on top
+    assert next(m for m in out if m["kref"] == F)["fact_recall"] is True
+
+
+def test_fact_recall_off_is_inert(monkeypatch):
+    # Default config: no fact search issued, output identical to before.
+    base_krefs = [f"kref://p/notes/b{i}.conversation?r=1" for i in range(3)]
+    graph = {b: _FakeRev(b, {"title": f"B{i}", "summary": "base"}, [])
+             for i, b in enumerate(base_krefs)}
+    calls = []
+    _install_fact_search(monkeypatch, graph, [(None, 0.0)], calls)
+
+    async def recall_fn(query, *, limit, space_paths=None, memory_types=None):
+        return [{"kref": b, "title": f"B{i}", "summary": "base",
+                 "score": 0.9 - i * 0.1} for i, b in enumerate(base_krefs)]
+
+    gr = GraphAugmentedRecall(recall_fn=recall_fn,
+                              config=GraphAugmentationConfig())
+    out = asyncio.run(gr.recall("q", limit=3))
+    assert calls == []                               # leg never ran
+    assert [m["kref"] for m in out] == base_krefs
+
+
+def test_fact_recall_space_scoped_call_stays_in_project(monkeypatch):
+    # space_paths must NOT disable the leg (the LoCoMo harness scopes every
+    # recall) — it derives the project from the scope and searches THAT
+    # project's facts space. Cross-project isolation holds.
+    base_krefs = [f"kref://p/notes/b{i}.conversation?r=1" for i in range(3)]
+    graph = {b: _FakeRev(b, {"title": f"B{i}", "summary": "base"}, [])
+             for i, b in enumerate(base_krefs)}
+    F = "kref://p/facts/f0.fact?r=1"
+    SRC = "kref://p/team-shared/mem.conversation?r=1"
+    frev = _FakeRev(F, {"title": "F0", "summary": "claim"},
+                    [_FakeEdge(F, SRC, "DERIVED_FROM")])
+    calls = []
+    _install_fact_search(monkeypatch, graph, [(frev, 2.0)], calls)
+
+    async def recall_fn(query, *, limit, space_paths=None, memory_types=None):
+        return [{"kref": b, "title": f"B{i}", "summary": "base",
+                 "score": 0.9 - i * 0.1} for i, b in enumerate(base_krefs)]
+
+    gr = GraphAugmentedRecall(recall_fn=recall_fn,
+                              config=GraphAugmentationConfig(fact_recall=True))
+    out = asyncio.run(gr.recall("q", limit=3, space_paths=["p/team-shared"]))
+    assert len(calls) == 1                           # leg ran, scoped to p
+    assert calls[0][1]["context"] == "p/facts"
+    assert any(m.get("fact_recall") for m in out)
+
+
+def test_fact_recall_skipped_for_type_filtered_recalls(monkeypatch):
+    # memory_types filters by revision memory_type; fact nodes carry none,
+    # so a type-filtered call must not surface them.
+    base_krefs = [f"kref://p/notes/b{i}.conversation?r=1" for i in range(3)]
+    graph = {b: _FakeRev(b, {"title": f"B{i}", "summary": "base"}, [])
+             for i, b in enumerate(base_krefs)}
+    frev = _FakeRev("kref://p/facts/f0.fact?r=1",
+                    {"title": "F0", "summary": "claim"}, [])
+    calls = []
+    _install_fact_search(monkeypatch, graph, [(frev, 2.0)], calls)
+
+    async def recall_fn(query, *, limit, space_paths=None, memory_types=None):
+        return [{"kref": b, "title": f"B{i}", "summary": "base",
+                 "score": 0.9 - i * 0.1} for i, b in enumerate(base_krefs)]
+
+    gr = GraphAugmentedRecall(recall_fn=recall_fn,
+                              config=GraphAugmentationConfig(fact_recall=True))
+    out = asyncio.run(gr.recall("q", limit=3, memory_types=["decision"]))
+    assert calls == []                               # leg never searched
+    assert all(not m.get("fact_recall") for m in out)
+
+
+def test_fact_score_trails_weakest_base_hit(monkeypatch):
+    # Both facts share factor x min(base) — one trailing score, stable sorts
+    # keep their search order, and no axis can rank them above conversations.
+    revs = [_FakeRev(f"kref://p/facts/f{i}.fact?r=1",
+                     {"title": f"F{i}", "summary": f"claim {i}"}, [])
+            for i in range(2)]
+    _install_fact_search(monkeypatch, {}, [(r, 5.0 + i) for i, r in enumerate(revs)])
+    gr = GraphAugmentedRecall(config=GraphAugmentationConfig(fact_recall=True))
+    M1 = "kref://p/notes/m1.conversation?r=1"
+    M2 = "kref://p/notes/m2.conversation?r=1"
+    augmented = [{"kref": M1, "title": "M1", "score": 0.8},
+                 {"kref": M2, "title": "M2", "score": 0.4}]
+    asyncio.run(gr._fact_recall_leg("q", {M1, M2}, augmented))
+    fact_entries = [m for m in augmented if m.get("fact_recall")]
+    assert len(fact_entries) == 2
+    assert all(abs(m["score"] - 0.4 * 0.9) < 1e-6 for m in fact_entries)
+    assert [m["kref"] for m in fact_entries] == [r.kref.uri for r in revs]
+
+
+def test_fact_recall_provenance_filter_rejects_cross_space_facts(monkeypatch):
+    # The project facts space is SHARED across source spaces; a space-scoped
+    # call must only admit facts whose DERIVED_FROM source conversation lives
+    # inside the caller's scope — and must scan past the top slice to find
+    # them (2026-07-10 Plus autopsy: both recall misses had their answer
+    # stored as a fact that cross-space crowding kept out of the top-3).
+    ALIEN_SRC = "kref://p/other-user/mem.conversation?r=1"
+    MY_SRC = "kref://p/team-shared/mem.conversation?r=1"
+    aliens = []
+    for i in range(5):                                # top slice all alien
+        k = f"kref://p/facts/alien{i}.fact?r=1"
+        aliens.append(_FakeRev(k, {"title": f"A{i}", "summary": f"alien {i}"},
+                               [_FakeEdge(k, ALIEN_SRC, "DERIVED_FROM")]))
+    MINE = "kref://p/facts/mine.fact?r=1"
+    mine = _FakeRev(MINE, {"title": "Mine", "summary": "my claim"},
+                    [_FakeEdge(MINE, MY_SRC, "DERIVED_FROM")])
+    hits = [(a, 3.0 - i * 0.1) for i, a in enumerate(aliens)] + [(mine, 1.0)]
+    _install_fact_search(monkeypatch, {}, hits)
+
+    gr = GraphAugmentedRecall(config=GraphAugmentationConfig(fact_recall=True))
+    M1 = "kref://p/team-shared/m1.conversation?r=1"
+    augmented = [{"kref": M1, "title": "M1", "score": 0.9}]
+    found = asyncio.run(gr._fact_recall_leg(
+        "q", {M1}, augmented, space_paths=["p/team-shared"],
+    ))
+    assert found == 1
+    entries = [m for m in augmented if m.get("fact_recall")]
+    assert [m["kref"] for m in entries] == [MINE]     # aliens all rejected
+
+
+def test_fact_recall_unscoped_keeps_top_slice_semantics(monkeypatch):
+    # Without space_paths there is no provenance filter and only the top
+    # ``fact_recall_limit`` hits compete — the historical behavior.
+    revs = []
+    for i in range(5):
+        k = f"kref://p/facts/f{i}.fact?r=1"
+        revs.append(_FakeRev(k, {"title": f"F{i}", "summary": f"c{i}"}, []))
+    _install_fact_search(monkeypatch, {}, [(r, 2.0) for r in revs])
+    gr = GraphAugmentedRecall(config=GraphAugmentationConfig(fact_recall=True))
+    M1 = "kref://p/notes/m1.conversation?r=1"
+    augmented = [{"kref": M1, "title": "M1", "score": 0.9}]
+    found = asyncio.run(gr._fact_recall_leg("q", {M1}, augmented))
+    assert found == 2                                  # max_results, from top-3
+    entries = [m["kref"] for m in augmented if m.get("fact_recall")]
+    assert entries == [revs[0].kref.uri, revs[1].kref.uri]

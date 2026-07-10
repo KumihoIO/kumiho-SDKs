@@ -34,6 +34,21 @@ def _json_schema_mode(name: str, schema: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
+def _decision_item_schema() -> Dict[str, Any]:
+    # Deliberately byte-identical in BOTH ontology modes. An ontology-gated
+    # `based_on` field was tried and measured: `_strict_object_schema` makes
+    # every property required, so emitting it forced a different structured
+    # output (hence different summaries/embeddings and weaker base recall)
+    # for every ontology-on consolidation. decision--DEPENDS_ON-->fact is
+    # now derived post-hoc by token overlap in ontology.py instead, so the
+    # summarizer schema + prompt never vary with the ontology switch.
+    props: Dict[str, Any] = {
+        "decision": {"type": "string"},
+        "reason": {"type": "string"},
+    }
+    return _strict_object_schema(props)
+
+
 def build_string_array_wrapper_schema(name: str, field_name: str) -> Dict[str, Any]:
     return _json_schema_mode(
         name,
@@ -76,10 +91,7 @@ def build_summary_schema_mode() -> Dict[str, Any]:
                 },
                 "decisions": {
                     "type": "array",
-                    "items": _strict_object_schema({
-                        "decision": {"type": "string"},
-                        "reason": {"type": "string"},
-                    }),
+                    "items": _decision_item_schema(),
                 },
                 "actions": {
                     "type": "array",

@@ -11,8 +11,6 @@ import mimetypes
 import os
 import re
 import shutil
-import threading
-import time
 from collections import Counter
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -183,6 +181,7 @@ class UniversalMemoryManager:
         retry_queue: Optional[RetryQueue] = None,
         store_max_retries: int = 3,
         graph_augmentation: Optional[Any] = None,
+        entity_promotion: Optional[Any] = True,
         recall_mode: str = "summarized",
         sibling_strong_score: float = _SIBLING_STRONG_SCORE,
         sibling_char_budget: int = _SIBLING_CHAR_BUDGET,
@@ -232,6 +231,58 @@ class UniversalMemoryManager:
         elif not graph_augmentation:
             graph_augmentation = None
         self.graph_augmentation_config = graph_augmentation
+
+        # Ontology (write-time typed decomposition + structure-aware recall)
+        # is ON by default — opt OUT with KUMIHO_MEMORY_ONTOLOGY=0. The flip
+        # from opt-in was decided 2026-07-10 on paired same-corpus evidence:
+        # the ontology read stack contributes +0.042 overall and the
+        # fact-recall leg +0.054 (all five LoCoMo categories up, 23W/4L),
+        # with the write side measured byte-identical on the base summary.
+        # The switch still controls BOTH the write (decomposition) and the
+        # read (entity/fact recall) together, so the graph is only built
+        # when something reads it and vice versa.
+        ontology_on = os.getenv("KUMIHO_MEMORY_ONTOLOGY", "1").strip() != "0"
+
+        # entity_promotion: the True default sentinel follows the ontology
+        # switch; KUMIHO_MEMORY_ENTITY_PROMOTION=1/0 forces it on/off
+        # independently; an explicit config/False always overrides.
+        ep_env = os.getenv("KUMIHO_MEMORY_ENTITY_PROMOTION", "").strip()
+        if ep_env == "0":
+            entity_promotion = None
+        elif entity_promotion is True:
+            from kumiho_memory.entity_promotion import EntityPromotionConfig
+            entity_promotion = (
+                EntityPromotionConfig() if (ontology_on or ep_env == "1") else None
+            )
+        elif not entity_promotion:
+            entity_promotion = None
+        self.entity_promotion_config = entity_promotion
+
+        # Light up the entity-mediated reader when ontology is on (only
+        # meaningful when graph augmentation itself is active).
+        if self.graph_augmentation_config is not None and ontology_on:
+            self.graph_augmentation_config.entity_recall = True
+            # Fact-recall leg rides the same switch (facts are the ontology's
+            # payload); KUMIHO_MEMORY_FACT_RECALL=0 is the measurement
+            # kill-switch for A/B isolation on top of ontology-on.
+            if os.getenv("KUMIHO_MEMORY_FACT_RECALL", "").strip() != "0":
+                self.graph_augmentation_config.fact_recall = True
+
+        # Multi-draw reformulation override (angle-union harvesting for
+        # oblique triggers). Applies whenever graph augmentation is active.
+        draws_env = os.getenv("KUMIHO_MEMORY_REFORMULATE_DRAWS", "").strip()
+        if draws_env.isdigit() and self.graph_augmentation_config is not None:
+            draws = max(1, int(draws_env))
+            self.graph_augmentation_config.reformulate_draws = draws
+            self.graph_augmentation_config.reformulate_max_angles = max(
+                self.graph_augmentation_config.reformulate_max_angles,
+                2 * draws + 1,
+            )
+
+        # When ontology is on, consolidation decomposes the whole conversation
+        # into a typed graph (entities + facts + decisions + events + ...),
+        # which subsumes plain entity promotion.
+        self.ontology_enabled = ontology_on
         self._graph_recall: Optional[Any] = None  # lazy GraphAugmentedRecall
         self.recall_mode = recall_mode
         self.sibling_strong_score = sibling_strong_score
@@ -537,11 +588,12 @@ class UniversalMemoryManager:
         evidence chains are an enrichment, never a store blocker.  Returns
         the number of edges created.
 
-        The synchronous gRPC calls can hang indefinitely on Windows (see
-        graph_augmentation.py edge creation), so they run in a daemon
-        thread polled against a deadline instead of ``asyncio.to_thread``
-        — a hung RPC must not strand a shared executor thread.
+        Runs the synchronous gRPC calls in a bounded daemon thread (see
+        ``_bounded.run_bounded_in_thread``): a hung RPC must not strand a
+        shared executor thread.
         """
+        from kumiho_memory._bounded import run_bounded_in_thread
+
         def _sync_create() -> int:
             import kumiho
 
@@ -563,34 +615,13 @@ class UniversalMemoryManager:
                     )
             return created
 
-        result: List[int] = []
-        done_event = threading.Event()
-
-        def _worker() -> None:
-            try:
-                result.append(_sync_create())
-            except Exception as exc:
-                logger.debug(
-                    "SUPPORTS edge creation failed for %s: %s",
-                    revision_kref, exc,
-                )
-            finally:
-                done_event.set()
-
-        t = threading.Thread(target=_worker, daemon=True)
-        t.start()
-
-        deadline = time.monotonic() + timeout
-        while not done_event.is_set():
-            if time.monotonic() >= deadline:
-                logger.debug(
-                    "SUPPORTS edge creation timed out after %.0fs for %s",
-                    timeout, revision_kref,
-                )
-                return 0
-            await asyncio.sleep(0.05)
-
-        created = result[0] if result else 0
+        created = await run_bounded_in_thread(
+            _sync_create,
+            timeout=timeout,
+            label=f"SUPPORTS edges ({revision_kref})",
+            on_timeout=0,
+            on_error=0,
+        ) or 0
         if created:
             logger.debug(
                 "Created %d SUPPORTS edge(s) from %s", created, revision_kref,
@@ -976,6 +1007,41 @@ class UniversalMemoryManager:
                 payload["stack_revisions"] = stack_revisions
 
             store_result = await self._store_with_retry(**payload)
+
+            # Promote extracted entities to first-class `entity` Items with
+            # ABOUT edges from the stored revision. Requires the revision
+            # kref, so queued-for-retry stores are skipped (like SUPPORTS
+            # edges above, replay has no enrichment mechanism).
+            stored_kref = (store_result or {}).get("revision_kref", "")
+            # Write-time graph enrichment. This is `await`ed, not fired off with
+            # create_task: the MCP runtime dispatches consolidation via
+            # asyncio.run (mcp_tools.tool_memory_consolidate), a one-shot loop
+            # that cancels pending tasks on teardown — so a detached task's graph
+            # writes would land nondeterministically or not at all. Both calls
+            # are internally bounded (run_bounded_in_thread) and best-effort, and
+            # both branches are reached ONLY on the opt-in path (ontology on, or
+            # entity promotion explicitly configured), so the default store pays
+            # nothing and only the opt-in path takes the bounded latency.
+            if stored_kref and self.ontology_enabled:
+                # Full schema-driven decomposition: entities + facts + decisions
+                # + events + actions + questions, wired by typed edges. Subsumes
+                # plain entity promotion.
+                from kumiho_memory.ontology import decompose_and_link
+
+                await decompose_and_link(
+                    stored_kref, summary_result, project_name=self.project,
+                )
+            elif stored_kref and entities_list and self.entity_promotion_config:
+                # Lighter entity-only mode: identity-keyed dedup + direct
+                # kind="entity" search value, even without full decomposition.
+                from kumiho_memory.entity_promotion import promote_entities
+
+                await promote_entities(
+                    stored_kref,
+                    [str(e) for e in entities_list],
+                    project_name=self.project,
+                    config=self.entity_promotion_config,
+                )
 
         await self.redis_buffer.clear_session(self.project, session_id)
 
@@ -1364,6 +1430,24 @@ class UniversalMemoryManager:
                 from dataclasses import replace as _dc_replace
                 from kumiho_memory.recall_rerank import rerank
                 target = self.graph_augmentation_config.max_total or (limit * 3)
+                if getattr(self.graph_augmentation_config, "entity_recall", False):
+                    # The recall stage appends up to ``entity_recall_reserve``
+                    # score-less entity siblings ON TOP of its cap; mirror that
+                    # here so the trailing siblings survive this trim too
+                    # (rerank keeps unscored entries last, so without the
+                    # extension this [:target] slice would delete exactly
+                    # them).
+                    target += getattr(
+                        self.graph_augmentation_config, "entity_recall_reserve", 0,
+                    )
+                if getattr(self.graph_augmentation_config, "fact_recall", False):
+                    # Same on-top mirroring for the fact-recall entries: the
+                    # recall stage appends up to ``fact_recall_max_results``
+                    # after its cap, so the trim target must grow by the same
+                    # amount or this slice would delete exactly them.
+                    target += getattr(
+                        self.graph_augmentation_config, "fact_recall_max_results", 0,
+                    )
                 final_cfg = _dc_replace(
                     self.rerank_config, cross_encoder_enabled=False,
                 )
@@ -1798,12 +1882,20 @@ class UniversalMemoryManager:
         """
         from kumiho_memory.context_compose import compose_context
 
+        fact_budget = 2
+        if self.graph_augmentation_config is not None and getattr(
+            self.graph_augmentation_config, "fact_recall", False,
+        ):
+            fact_budget = getattr(
+                self.graph_augmentation_config, "fact_recall_max_results", 2,
+            )
         return compose_context(
             memories,
             query,
             mode=mode or self.recall_mode,
             top_k=top_k,
             char_limit=char_limit,
+            fact_budget=fact_budget,
         )
 
     def rerank_memories(
@@ -1914,6 +2006,13 @@ class UniversalMemoryManager:
             # profile-style retrieval that direct single-hop / temporal
             # questions need.
             f = sib.get("facts", "")
+            imp = sib.get("implications", "")
+            if isinstance(imp, list):
+                imp = "; ".join(str(x) for x in imp)
+            if imp:
+                # Prospective-indexing parity: implications are the write-time
+                # answers to oblique future triggers — score on them too.
+                f = f"{f}; {imp}" if f else imp
             if isinstance(f, (list, tuple)):
                 f = "; ".join(
                     x.get("claim", str(x)) if isinstance(x, dict) else str(x)
@@ -2143,7 +2242,16 @@ class UniversalMemoryManager:
         ]
         angle_tokens = [t for t in angle_tokens if t]
         for sib in siblings:
-            text = f"{sib.get('title', '')} {sib.get('summary', '')}"
+            # Facts parity with the embedding/LLM rankers: a revision whose
+            # title/summary is off-topic but whose extracted facts hold the
+            # answer must rank on its facts here too.
+            facts = sib.get("facts", "")
+            if isinstance(facts, list):
+                facts = "; ".join(str(x) for x in facts)
+            imp = sib.get("implications", "")
+            if isinstance(imp, list):
+                imp = "; ".join(str(x) for x in imp)
+            text = f"{sib.get('title', '')} {sib.get('summary', '')} {facts} {imp}"
             sib["_score"] = max(
                 (_token_overlap_score(t, text) for t in angle_tokens),
                 default=0.0,

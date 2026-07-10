@@ -89,6 +89,7 @@ def compose_context(
     mode: str = "summarized",
     top_k: Optional[int] = None,
     char_limit: int = DEFAULT_REVISION_CHAR_LIMIT,
+    fact_budget: int = 2,
 ) -> str:
     """Build answering-LLM context text from recalled memories.
 
@@ -144,6 +145,11 @@ def compose_context(
                 "summary": mem.get("summary", ""),
                 "content": mem.get("content", ""),
                 "_score": _score_of(mem.get("score", 0.0)),
+                # Entity-bridge join evidence (graph_augmentation) — kept so
+                # the top-K cut below can treat it as additive context.
+                "bridge": bool(mem.get("bridge")),
+                # Fact-recall leg entries get the same additive treatment.
+                "fact_recall": bool(mem.get("fact_recall")),
             })
 
     # --- Global ranking by score (best revisions first) ---
@@ -154,9 +160,33 @@ def compose_context(
         all_revisions.sort(key=lambda r: r.get("_score", 0.0), reverse=True)
 
     # --- Apply global top-K cap (0 = unlimited) ---
+    # Entity-bridge join evidence rides ON TOP of the cap (max +2): a bridge
+    # fact is *additive* multi-hop evidence and must never displace the top-K
+    # base revisions a direct answer needs (measured on conv-26: scored
+    # bridge facts displacing base hits cost open-domain −0.107). Without
+    # bridges this is the exact historical head-slice.
     effective_top_k = DEFAULT_CONTEXT_TOP_K if top_k is None else top_k
-    if effective_top_k > 0 and len(all_revisions) > effective_top_k:
-        all_revisions = all_revisions[:effective_top_k]
+    # Additive partition runs UNCONDITIONALLY: conversations own the head of
+    # the context; bridge and fact evidence is appended after, never
+    # interleaved. This used to run only when the top-K cut fired — with
+    # top_k=0 (unlimited) the global score sort let bridge/fact one-liners
+    # outrank whole conversations and push the grounding session out of the
+    # answering model's attention (measured: LoCoMo-Plus 500-char contexts
+    # led by typed one-liners while the answer's session block trailed).
+    bridge_revs = [r for r in all_revisions if r.get("bridge")]
+    # Fact-recall evidence is additive on the same terms as bridges (its
+    # own budget, ``fact_budget`` = the caller's fact_recall_max_results):
+    # an answer-shaped claim augments the context, it must never evict
+    # the conversations that ground it.
+    fact_revs = [r for r in all_revisions
+                 if r.get("fact_recall") and not r.get("bridge")]
+    regular_revs = [r for r in all_revisions
+                    if not r.get("bridge") and not r.get("fact_recall")]
+    if effective_top_k > 0:
+        regular_revs = regular_revs[:effective_top_k]
+        bridge_revs = bridge_revs[:2]
+        fact_revs = fact_revs[:fact_budget]
+    all_revisions = regular_revs + bridge_revs + fact_revs
 
     # --- Build text from surviving revisions ---
     texts: List[str] = []

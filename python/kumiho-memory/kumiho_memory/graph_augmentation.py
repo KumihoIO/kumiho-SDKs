@@ -25,8 +25,9 @@ import re
 import threading
 import time
 from dataclasses import dataclass, field
-from typing import Any, Callable, Coroutine, Dict, List, Optional, Union
+from typing import Any, Callable, Coroutine, Dict, List, Optional, Tuple, Union
 
+from kumiho_memory._bounded import run_bounded_in_thread
 from kumiho_memory.summarization import (
     LLMAdapter,
     build_string_array_wrapper_schema,
@@ -54,9 +55,94 @@ class GraphAugmentationConfig:
         "DERIVED_FROM", "DEPENDS_ON", "REFERENCED",
         "CONTAINS", "CREATED_FROM", "SUPERSEDES", "SUPPORTS",
     ])
+    # NOTE: "ABOUT" (memory -> entity anchor, from entity_promotion.py) is
+    # deliberately NOT in the generic single-hop `edge_types`. Entity anchors
+    # carry no content, so a single ABOUT hop dead-ends at an empty stub.
+    # Entity recall is instead a dedicated 2-hop walk (memory -> anchor
+    # waypoint -> sibling memories) below, gated by `entity_recall`.
     top_k_for_traversal: int = 5
+
+    #: Enable the entity-mediated 2-hop reader: from each recalled memory,
+    #: hop through its entity anchors (ABOUT) to *other* memories about the
+    #: same entities — relational recall vector similarity can't reach. The
+    #: anchors are waypoints only (never returned as results, since they hold
+    #: no content). False at the dataclass level (standalone users opt in
+    #: explicitly); the manager turns it on together with entity promotion
+    #: whenever the ontology is active — which is the DEFAULT since
+    #: 2026-07-10 (opt out with KUMIHO_MEMORY_ONTOLOGY=0), based on paired
+    #: same-corpus measurements showing the ontology read stack at +0.042.
+    entity_recall: bool = False
+    #: Cap on entity anchors followed per seed memory (fan-out guard).
+    entity_recall_max_entities: int = 6
+    #: Cap on sibling memories pulled in per entity anchor (fan-out guard).
+    entity_recall_max_siblings: int = 5
+    #: Global budget on anchor expansions across ALL seeds (a shared hub is
+    #: expanded once, not per seed) so a dense graph can't blow up the walk.
+    entity_recall_max_anchor_fetches: int = 24
+    #: Cap slots reserved for the (score-less) 2-hop siblings when the merged
+    #: result set overflows, so the walk's payload isn't always trimmed first.
+    entity_recall_reserve: int = 3
+    #: Entity-bridge join (multi-hop): when two or more reformulated angles
+    #: have hits ABOUT the same entity, that entity is a *bridge* and its
+    #: fact/event nodes are surfaced with a REAL inherited score
+    #: (``factor x`` the weaker linking angle's score) — the typed-graph JOIN
+    #: that vector recall cannot express. Unlike the one-sided score-less
+    #: siblings of the generic walk, a bridge's relevance is vouched for by
+    #: BOTH measured angles, so it competes for context like a first-class
+    #: hit and survives tight context budgets. Active with ``entity_recall``.
+    entity_bridge_max_results: int = 4
+    entity_bridge_score_factor: float = 0.9
+    #: Skip hub entities in the bridge join: an anchor with more than this
+    #: many incoming ABOUT/INVOLVES edges is a ubiquitous entity (e.g. the
+    #: conversation's speakers, linked from nearly every memory) — every
+    #: angle reaches it, so it "bridges" everything and its facts are
+    #: generic, diluting the join. The discriminative low-degree bridges are
+    #: the ones that actually connect a multi-hop question's sub-facts.
+    #: (Measured: conv-26 bridge join fired on 105/105 questions before this
+    #: filter — the two speaker entities bridged every angle pair.)
+    entity_bridge_hub_degree_max: int = 12
+    #: Fact-recall leg: retrieve typed ``fact`` nodes as first-class recall
+    #: candidates alongside conversations. Facts are answer-shaped atomic
+    #: claims, so a single semantic hit often IS the answer a single-hop or
+    #: temporal question needs. Searched once with the ORIGINAL query (not
+    #: the reformulations) via a direct ``kumiho.search`` scoped to the
+    #: project's facts space — the retrieve tool is bypassed on purpose:
+    #: typed nodes carry no published/latest tag, so it would drop them all.
+    #: On servers with the derived-kind fulltext exclusion (kumiho-server#35)
+    #: this reach is vector-only — facts stay out of the lexical corpus but
+    #: remain semantically recallable, exactly the intended division. Entries
+    #: are additive: they ride on top of the recall cap and the context
+    #: top-K (never displacing conversation hits), mirroring the measured
+    #: bridge-evidence policy. Rides the ontology switch (default ON;
+    #: opt out with KUMIHO_MEMORY_ONTOLOGY=0);
+    #: KUMIHO_MEMORY_FACT_RECALL=0 is the measurement kill-switch.
+    fact_recall: bool = False
+    #: Search hits examined per query (top slice of the fact search).
+    fact_recall_limit: int = 3
+    #: Deeper scan window for space-scoped calls: the shared facts space
+    #: mixes every source space's facts, so provenance filtering needs to
+    #: look past the top slice to find in-scope candidates (still admits at
+    #: most ``fact_recall_limit`` accepted facts).
+    fact_recall_scan_limit: int = 24
+    #: Entries appended per recall — also the on-top budget mirrored by the
+    #: manager trim and the context composer.
+    fact_recall_max_results: int = 2
+    #: Fact entries score this × the WEAKEST base hit (axis-relative, not
+    #: the server's raw fused score — a cross-encoder rerank rewrites base
+    #: scores onto a different scale), so a fact never outranks any
+    #: conversation on any score axis.
+    fact_recall_score_factor: float = 0.9
     max_total: Optional[int] = None  # Defaults to base_limit * 3
     reformulate_queries: bool = True
+    #: Number of independent angle-generation draws per recall. Oblique
+    #: triggers make single-draw reformulation a per-run coin flip (three
+    #: identical LoCoMo-Plus runs: 21/24/23 of 30; union of draws: 27/30) —
+    #: extra draws harvest the union for one small-model call each.
+    #: KUMIHO_MEMORY_REFORMULATE_DRAWS overrides via the manager wiring.
+    reformulate_draws: int = 1
+    #: Cap on total distinct angles kept across draws (each angle costs one
+    #: recall RPC, so this bounds latency).
+    reformulate_max_angles: int = 3
     traversal_timeout: int = 30  # seconds; daemon thread timeout for gRPC edge traversal
     edge_creation_timeout: int = 60  # seconds; daemon thread timeout for edge creation
 
@@ -228,6 +314,17 @@ class GraphAugmentedRecall:
                 ),
             )
 
+        # Per-angle top hits for the entity-bridge join (Stage 3c): angle
+        # attribution must be captured here — the merge above collapses it.
+        angle_hits: List[List[Tuple[str, float]]] = []
+        for result in recall_results:
+            if isinstance(result, BaseException):
+                continue
+            hits = [(m.get("kref", ""), float(m.get("score") or 0.0))
+                    for m in result[:3] if m.get("kref")]
+            if hits:
+                angle_hits.append(hits)
+
         if not memories:
             return memories
 
@@ -281,7 +378,58 @@ class GraphAugmentedRecall:
             edge_types=effective_edge_types,
         )
 
-        # --- Stage 4: Semantic fallback (when no edges found) ---
+        # --- Stage 3b: Entity-bridge join (opt-in, multi-hop) ---
+        # The JOIN the typed graph enables: an entity reached (ABOUT) from two
+        # or more angles' top hits connects the question's sub-facts. Its
+        # fact/event nodes carry a real inherited score, so they land at the
+        # top of context — this runs BEFORE the generic walk so bridges also
+        # claim seen_krefs first.
+        if self.config.entity_recall and len(angle_hits) >= 2:
+            bridge_found = await self._entity_bridge_join(
+                angle_hits, seen_krefs, augmented,
+            )
+            if bridge_found:
+                logger.info(
+                    "Entity bridge join surfaced %d connecting node(s)",
+                    bridge_found,
+                )
+
+        # --- Stage 3c: Fact-recall leg (opt-in, first-class facts) ---
+        # Semantic retrieval of typed fact nodes with the ORIGINAL query.
+        # Runs after the bridge join so bridges claim seen_krefs first (their
+        # two-angle evidence outranks a single-query match on the same node),
+        # and before the score-less 2-hop walk for the same reason.
+        # space_paths does NOT disable the leg — facts are project-level
+        # distillations, so a space-scoped call still augments from the SAME
+        # project's facts space (derived from the scope; cross-project
+        # isolation holds). memory_types does disable it: fact nodes carry
+        # no memory_type, so a type-filtered call must not surface them.
+        if self.config.fact_recall and not memory_types:
+            fact_found = await self._fact_recall_leg(
+                query, seen_krefs, augmented, space_paths=space_paths,
+            )
+            if fact_found:
+                logger.info(
+                    "Fact recall surfaced %d fact node(s)", fact_found,
+                )
+
+        # --- Stage 3d: Entity-mediated 2-hop reader (opt-in) ---
+        # Reaches memories that share an entity but not vocabulary/embedding
+        # neighborhood — the relational-recall payoff of entity promotion.
+        entity_found = 0
+        if self.config.entity_recall:
+            entity_found = await self._traverse_entity_neighbors(
+                seed_krefs, seen_krefs, augmented, query=query,
+            )
+            if entity_found:
+                logger.debug("entity recall surfaced %d sibling node(s)", entity_found)
+
+        # --- Stage 4: Semantic fallback (when no real edges found) ---
+        # Gate on graph_found ONLY. entity_found must NOT suppress this: the
+        # 2-hop siblings are score-less placeholders that trail and get trimmed
+        # first, so counting them as "found" would drop the real, scored
+        # fallback hits and leave strictly fewer/worse results than with the
+        # feature off (a non-monotonic regression).
         if graph_found == 0 and effective_max_hops >= 1:
             logger.debug("No graph edges found, falling back to multi-hop semantic recall")
             from kumiho_memory.context_compose import collect_top_revisions
@@ -339,7 +487,42 @@ class GraphAugmentedRecall:
         cap = max_total or self.config.max_total or (base_limit * 3)
         if len(augmented) > cap:
             logger.info("Capping augmented memories from %d to %d", len(augmented), cap)
-            augmented = augmented[:cap]
+            reserve = self.config.entity_recall_reserve if self.config.entity_recall else 0
+            fact_max = (
+                self.config.fact_recall_max_results if self.config.fact_recall else 0
+            )
+            if reserve > 0 or fact_max > 0:
+                # The sibling reserve rides ON TOP of the cap instead of inside
+                # it: base + edge-traversal entries keep exactly the slots they
+                # get with entity recall off (edges are the measured multi-hop
+                # signal — LoCoMo conv-26 showed the old in-cap reserve evicted
+                # ALL edge entries whenever base filled, trading the proven
+                # edge payload for unproven siblings), and up to ``reserve``
+                # score-less siblings are appended after. ON output is a strict
+                # superset of the OFF output by construction; the manager-side
+                # trim extends its target by the same reserve (memory_manager).
+                # Default path (entity_recall off) keeps the exact head-slice.
+                base = [m for m in augmented if not m.get("graph_augmented")]
+                sib = [m for m in augmented
+                       if m.get("graph_augmented") and m.get("score") is None]
+                # Fact-recall entries get their own on-top budget: they carry
+                # real scores but must neither displace edges/bridges from
+                # the room nor be displaced by them (both are additive
+                # payloads with independently measured policies).
+                facts = [m for m in augmented
+                         if m.get("graph_augmented") and m.get("score") is not None
+                         and m.get("fact_recall")]
+                edges = [m for m in augmented
+                         if m.get("graph_augmented") and m.get("score") is not None
+                         and not m.get("fact_recall")]
+                # Bridges carry a real inherited score; plain traversal entries
+                # are 0.0 placeholders. Stable sort keeps the 0.0 group in
+                # arrival order while bridges jump ahead of it in the room.
+                edges.sort(key=lambda m: m.get("score") or 0.0, reverse=True)
+                room = max(0, cap - len(base))
+                augmented = base + edges[:room] + facts[:fact_max] + sib[:reserve]
+            else:
+                augmented = augmented[:cap]
 
         return augmented
 
@@ -514,7 +697,16 @@ class GraphAugmentedRecall:
     # ------------------------------------------------------------------
 
     async def _reformulate_query(self, query: str) -> List[str]:
-        """Generate 2-3 alternative search queries via the LLM adapter."""
+        """Generate alternative search queries via the LLM adapter.
+
+        With ``reformulate_draws`` > 1 the generation runs multiple times and
+        the union of angles (deduped, capped at ``reformulate_max_angles``)
+        is used. Measured motive (LoCoMo-Plus, 2026-07-10): for obliquely
+        phrased triggers, single-draw angle generation is a per-run coin
+        flip — three identical runs oscillated 21/24/23 of 30, while the
+        UNION of their draws passed 27/30. Multi-draw harvests that union
+        inside one run at the cost of one extra small-model call per draw.
+        """
         system = (
             "You generate alternative memory search queries. "
             "Given a conversational message, produce 2-3 short search queries "
@@ -525,27 +717,38 @@ class GraphAugmentedRecall:
             "- Related situations or consequences\n"
             "Return ONLY the queries, one per line, no numbering or bullets."
         )
-        try:
-            raw = await self.adapter.chat(
-                messages=[{"role": "user", "content": query}],
-                model=self.model,
-                system=system,
-                max_tokens=100,
-            )
-            self._report_llm_usage("recall_reformulation")
-            queries = [
-                line.strip().lstrip("0123456789.-) ")
-                for line in raw.splitlines()
-                if line.strip()
-            ]
-            logger.info(
-                "Multi-query reformulation: %d queries from trigger",
-                len(queries),
-            )
-            return queries[:3]
-        except Exception as e:
-            logger.warning("Query reformulation failed: %s", e)
-            return []
+        draws = max(1, int(getattr(self.config, "reformulate_draws", 1)))
+        max_angles = int(getattr(self.config, "reformulate_max_angles", 3))
+        seen: set = set()
+        queries: List[str] = []
+        for _draw in range(draws):
+            try:
+                raw = await self.adapter.chat(
+                    messages=[{"role": "user", "content": query}],
+                    model=self.model,
+                    system=system,
+                    max_tokens=100,
+                )
+                self._report_llm_usage("recall_reformulation")
+            except Exception as e:
+                logger.warning("Query reformulation failed: %s", e)
+                continue
+            for line in raw.splitlines():
+                q = line.strip().lstrip("0123456789.-) ")
+                if not q:
+                    continue
+                key = " ".join(q.lower().split())
+                if key in seen:
+                    continue
+                seen.add(key)
+                queries.append(q)
+            if len(queries) >= max_angles:
+                break
+        logger.info(
+            "Multi-query reformulation: %d queries from trigger (%d draw%s)",
+            min(len(queries), max_angles), draws, "s" if draws > 1 else "",
+        )
+        return queries[:max_angles]
 
     async def _generate_implication_queries(
         self,
@@ -742,6 +945,458 @@ class GraphAugmentedRecall:
             timeout,
         )
         return 0
+
+    async def _entity_bridge_join(
+        self,
+        angle_hits: List[List[Tuple[str, float]]],
+        seen_krefs: set,
+        augmented: List[Dict[str, Any]],
+    ) -> int:
+        """Typed-graph JOIN for multi-hop: surface the nodes that CONNECT angles.
+
+        A multi-hop question decomposes into angles; the evidence that answers
+        it is the pair of facts linked by a shared entity ("who adopted the
+        dog" ⋈ "where does that person work" join on the person). For every
+        entity anchor reached via ``ABOUT`` from the top hits of two or more
+        DIFFERENT angles, surface that anchor's fact/event nodes with a real
+        inherited score (``entity_bridge_score_factor`` × the weaker linking
+        angle's score). The bridge's relevance is vouched for by both measured
+        angles — unlike the generic walk's one-sided score-less siblings — so
+        these entries compete for context as first-class hits and survive
+        tight context budgets. Fact/event nodes are preferred over whole
+        conversations: they are the terse atomic claims a multi-hop answer
+        actually needs.
+        """
+        try:
+            import kumiho
+        except ImportError:
+            logger.debug("kumiho SDK not available, skipping entity bridge")
+            return 0
+
+        factor = self.config.entity_bridge_score_factor
+        max_results = self.config.entity_bridge_max_results
+        hub_max = self.config.entity_bridge_hub_degree_max
+        results: List[Dict[str, Any]] = []
+
+        def _kind(kref: str) -> str:
+            head = kref.split("?", 1)[0]
+            return head.rsplit(".", 1)[-1] if "." in head else ""
+
+        # Terse atomic claims first; whole conversations are the fallback.
+        kind_priority = {"fact": 0, "event": 1, "decision": 2}
+
+        def _sync_join() -> int:
+            # anchor kref -> {angle index: best linking score}
+            anchor_angles: Dict[str, Dict[int, float]] = {}
+            for ai, hits in enumerate(angle_hits):
+                for kref_str, score in hits:
+                    if not kref_str:
+                        continue
+                    try:
+                        rev = kumiho.get_revision(kref_str)
+                        for edge in rev.get_edges(direction=kumiho.BOTH):
+                            if edge.edge_type != "ABOUT":
+                                continue
+                            if edge.source_kref.uri != kref_str:
+                                continue  # only outgoing memory -> anchor
+                            anchor = edge.target_kref.uri
+                            best = anchor_angles.setdefault(anchor, {})
+                            if score > best.get(ai, 0.0):
+                                best[ai] = score
+                    except Exception as exc:
+                        logger.debug(
+                            "entity bridge: edges for %s failed: %s", kref_str, exc,
+                        )
+
+            # A bridge = an anchor linked from >=2 distinct angles. Rank by
+            # the WEAKER of its two best angle scores: both sides must be
+            # genuinely relevant for the join to mean anything.
+            bridges: List[Tuple[float, str]] = []
+            for anchor, per_angle in anchor_angles.items():
+                if len(per_angle) < 2:
+                    continue
+                top2 = sorted(per_angle.values(), reverse=True)[:2]
+                bridges.append((top2[1], anchor))
+            bridges.sort(reverse=True)
+
+            found = 0
+
+            def _surface(link_score: float, anchor: str,
+                         candidates: List[Tuple[int, str, str]]) -> None:
+                nonlocal found
+                candidates.sort(key=lambda c: c[0])
+                for _prio, src, etype in candidates[:2]:  # <=2 nodes/bridge
+                    if found >= max_results:
+                        return
+                    seen_krefs.add(src)
+                    try:
+                        src_rev = kumiho.get_revision(src)
+                        results.append({
+                            "kref": src,
+                            "title": src_rev.metadata.get("title", ""),
+                            "summary": src_rev.metadata.get("summary", ""),
+                            "content": src_rev.metadata.get("content", ""),
+                            # Real score, inherited from the weaker angle:
+                            # this is measured relevance by proxy, not the
+                            # unmeasured placeholder of the generic walk.
+                            "score": round(link_score * factor, 6),
+                            "graph_augmented": True,
+                            "bridge": True,
+                            "edge_type": etype,
+                            "via_entity": anchor,
+                            "hop": 2,
+                        })
+                        found += 1
+                    except Exception as exc:
+                        logger.debug(
+                            "entity bridge: node %s failed: %s", src, exc,
+                        )
+
+            # Discriminative (low-degree) bridges surface first; hub anchors
+            # are DEFERRED, not dropped. In a speaker-centric corpus (a
+            # 2-person chat) the hub IS the join key — a hard skip cost
+            # multi-hop −0.078 on conv-26, while in multi-entity corpora the
+            # discriminative bridges are the signal. Preference covers both.
+            deferred: List[Tuple[float, str, List[Tuple[int, str, str]]]] = []
+            for link_score, anchor in bridges[:8]:
+                if found >= max_results:
+                    break
+                try:
+                    anchor_rev = kumiho.get_revision(anchor)
+                    incoming = 0
+                    candidates: List[Tuple[int, str, str]] = []
+                    for edge in anchor_rev.get_edges(direction=kumiho.BOTH):
+                        if edge.edge_type not in ("ABOUT", "INVOLVES"):
+                            continue
+                        if edge.target_kref.uri != anchor:
+                            continue  # only incoming node -> anchor
+                        incoming += 1
+                        src = edge.source_kref.uri
+                        if not src or src in seen_krefs:
+                            continue
+                        candidates.append(
+                            (kind_priority.get(_kind(src), 3), src, edge.edge_type),
+                        )
+                    if incoming > hub_max:
+                        deferred.append((link_score, anchor, candidates))
+                        continue
+                    _surface(link_score, anchor, candidates)
+                except Exception as exc:
+                    logger.debug(
+                        "entity bridge: anchor %s failed: %s", anchor, exc,
+                    )
+            # Hub fallback: fill any remaining budget from the deferred hubs
+            # (edge candidates were already collected during the degree scan).
+            for link_score, anchor, candidates in deferred:
+                if found >= max_results:
+                    break
+                _surface(link_score, anchor, candidates)
+            return found
+
+        found = await run_bounded_in_thread(
+            _sync_join,
+            timeout=self.config.traversal_timeout,
+            label="entity bridge",
+            on_timeout=0,
+            on_error=0,
+        ) or 0
+        if found:
+            augmented.extend(results)
+        return found
+
+    async def _fact_recall_leg(
+        self,
+        query: str,
+        seen_krefs: set,
+        augmented: List[Dict[str, Any]],
+        space_paths: Optional[List[str]] = None,
+    ) -> int:
+        """Surface typed ``fact`` nodes as first-class semantic candidates.
+
+        One direct ``kumiho.search`` with the original query, scoped to the
+        project's facts space and kind-filtered to ``fact``. Direct search —
+        not the retrieve tool — because typed nodes carry no published/latest
+        tag and the tool silently drops untagged items. Entries score
+        ``fact_recall_score_factor`` × the WEAKEST base hit — relative to
+        the base axis, not the server's, because a cross-encoder rerank
+        rewrites base scores onto a different scale and a raw fused score
+        would then sort every fact above every conversation. Facts share one
+        trailing score (stable sorts keep their search order) and are
+        flagged ``fact_recall`` so the cap here and the context composer
+        keep them additive (they never evict or outrank conversation hits).
+        """
+        try:
+            import kumiho
+        except ImportError:
+            logger.debug("kumiho SDK not available, skipping fact recall")
+            return 0
+
+        # Scope: fact nodes live in the project's dedicated facts space
+        # (ontology.py). Derive the project from the caller's space_paths
+        # when given (a scoped call stays inside its own project), else from
+        # the recalled memories themselves.
+        project = ""
+        for sp in space_paths or []:
+            head = sp.lstrip("/").split("/", 1)[0].strip()
+            if head:
+                project = head
+                break
+        if not project:
+            for m in augmented:
+                kref = m.get("kref", "")
+                if kref.startswith("kref://"):
+                    project = kref[len("kref://"):].split("/", 1)[0]
+                    break
+        if not project:
+            return 0
+
+        base_scores = [
+            m.get("score") or 0.0
+            for m in augmented if not m.get("graph_augmented")
+        ]
+        floor = min(base_scores) if base_scores else 0.0
+        fact_score = round(floor * self.config.fact_recall_score_factor, 6)
+        max_results = self.config.fact_recall_max_results
+        limit = self.config.fact_recall_limit
+        # Provenance scope: the project's facts space is SHARED across every
+        # source space (multi-user projects, multi-corpus benchmarks — a
+        # LoCoMo-Plus project measured 2,511 mixed facts), so a space-scoped
+        # call must only accept facts whose DERIVED_FROM source conversation
+        # lives inside the caller's space_paths. Without this, the top-slice
+        # is diluted by other spaces' facts: both misses in the 2026-07-10
+        # Plus regression check had their exact answer stored as a fact that
+        # cross-space crowding kept out of the slice.
+        space_prefixes = tuple(
+            "kref://" + sp.strip().lstrip("/").rstrip("/") + "/"
+            for sp in (space_paths or []) if sp and sp.strip("/")
+        )
+        scan_limit = limit if not space_prefixes else max(
+            limit, self.config.fact_recall_scan_limit,
+        )
+        # Snapshot for the worker thread: it must not read or mutate the
+        # shared set — a timed-out search would otherwise keep claiming
+        # krefs that never get emitted (poisoning the 2-hop walk after us).
+        known = set(seen_krefs)
+        results: List[Dict[str, Any]] = []
+
+        def _from_caller_space(rev) -> bool:
+            """True when the fact's source conversation is inside the scope."""
+            if not space_prefixes:
+                return True
+            try:
+                for edge in rev.get_edges(direction=kumiho.BOTH):
+                    if edge.edge_type != "DERIVED_FROM":
+                        continue
+                    src = getattr(getattr(edge, "source_kref", None), "uri", "")
+                    if src != getattr(getattr(rev, "kref", None), "uri", ""):
+                        continue  # only the fact's own outgoing provenance
+                    target = getattr(getattr(edge, "target_kref", None), "uri", "")
+                    if target.startswith(space_prefixes):
+                        return True
+            except Exception as exc:  # noqa: BLE001
+                logger.debug("fact provenance check failed: %s", exc)
+            return False
+
+        def _sync_search() -> int:
+            try:
+                hits = kumiho.search(
+                    query,
+                    context=f"{project}/facts",
+                    kind="fact",
+                    include_revision_metadata=True,
+                )
+            except Exception as exc:
+                logger.debug("fact recall search failed: %s", exc)
+                return 0
+            found = 0
+            accepted_in_slice = 0
+            for r in (hits or [])[:scan_limit]:
+                if found >= max_results:
+                    break
+                # Keep the historical semantics for unscoped calls: only the
+                # top ``limit`` hits compete. Scoped calls scan deeper, but
+                # still admit at most ``limit`` provenance-accepted facts.
+                if accepted_in_slice >= limit:
+                    break
+                item = getattr(r, "item", None)
+                if item is None:
+                    continue
+                try:
+                    rev = item.get_latest_revision()
+                except Exception:
+                    continue
+                if rev is None:
+                    continue
+                if not _from_caller_space(rev):
+                    continue
+                accepted_in_slice += 1
+                kref = getattr(getattr(rev, "kref", None), "uri", "") or ""
+                if not kref or kref in known:
+                    continue
+                meta = getattr(rev, "metadata", {}) or {}
+                known.add(kref)
+                results.append({
+                    "kref": kref,
+                    "title": meta.get("title", ""),
+                    "summary": meta.get("summary", "") or meta.get("claim", ""),
+                    "content": meta.get("claim", ""),
+                    "score": fact_score,
+                    "graph_augmented": True,
+                    "fact_recall": True,
+                    "hop": 1,
+                })
+                found += 1
+            return found
+
+        found = await run_bounded_in_thread(
+            _sync_search,
+            timeout=self.config.traversal_timeout,
+            label="fact recall",
+            on_timeout=0,
+            on_error=0,
+        ) or 0
+        if found:
+            # Claim krefs only for entries that actually get emitted — after
+            # the bounded wait, never from the abandonable worker thread.
+            seen_krefs.update(e["kref"] for e in results)
+            augmented.extend(results)
+        return found
+
+    async def _traverse_entity_neighbors(
+        self,
+        seed_krefs: List[str],
+        seen_krefs: set,
+        augmented: List[Dict[str, Any]],
+        query: str = "",
+    ) -> int:
+        """Entity-mediated 2-hop walk: memory → entity anchor → sibling memory.
+
+        Hop 1 follows ``ABOUT`` from each seed memory to its entity anchors;
+        hop 2 follows ``ABOUT`` *into* each anchor to reach the other memories
+        about that entity. Anchors are pure waypoints — they are never
+        appended to results (they carry only ``display_name``), so recall
+        context is enriched with sibling *memories*, never empty stubs. That
+        is the crucial difference from putting ``ABOUT`` in the generic
+        single-hop set, which would surface the anchor itself.
+        """
+        try:
+            import kumiho
+        except ImportError:
+            logger.debug("kumiho SDK not available, skipping entity recall")
+            return 0
+
+        max_entities = self.config.entity_recall_max_entities
+        max_siblings = self.config.entity_recall_max_siblings
+        max_anchor_fetches = self.config.entity_recall_max_anchor_fetches
+        results: List[Dict[str, Any]] = []
+
+        def _sync_entity_walk() -> int:
+            found = 0
+            visited_anchors: set = set()  # a shared hub is expanded once, not per seed
+            anchor_fetches = 0            # global fan-out budget across all seeds
+            for kref_str in seed_krefs:
+                if not kref_str:
+                    continue
+                if anchor_fetches >= max_anchor_fetches:
+                    break
+                try:
+                    rev = kumiho.get_revision(kref_str)
+                    # Hop 1: this memory -> entity anchors (memory is source).
+                    anchor_uris: List[str] = []
+                    for edge in rev.get_edges(direction=kumiho.BOTH):
+                        if edge.edge_type != "ABOUT":
+                            continue
+                        if edge.source_kref.uri == kref_str:
+                            anchor_uris.append(edge.target_kref.uri)
+                        if len(anchor_uris) >= max_entities:
+                            break
+                except Exception as exc:
+                    logger.debug("entity recall: edges for %s failed: %s", kref_str, exc)
+                    continue
+
+                # Hop 2: each anchor -> sibling nodes (anchor is target).
+                for anchor_uri in anchor_uris:
+                    if not anchor_uri or anchor_uri in visited_anchors:
+                        continue  # dedup shared hubs across seeds
+                    visited_anchors.add(anchor_uri)
+                    if anchor_fetches >= max_anchor_fetches:
+                        break
+                    anchor_fetches += 1
+                    try:
+                        anchor_rev = kumiho.get_revision(anchor_uri)
+                        siblings = 0
+                        for edge in anchor_rev.get_edges(direction=kumiho.BOTH):
+                            # Reach siblings via ABOUT (memories, facts, decisions,
+                            # actions) AND INVOLVES (event nodes, which carry the
+                            # distilled event_date) — both point *into* the anchor.
+                            if edge.edge_type not in ("ABOUT", "INVOLVES"):
+                                continue
+                            if edge.target_kref.uri != anchor_uri:
+                                continue  # only incoming node -> anchor
+                            sib_uri = edge.source_kref.uri
+                            if not sib_uri or sib_uri in seen_krefs:
+                                continue
+                            seen_krefs.add(sib_uri)
+                            try:
+                                sib_rev = kumiho.get_revision(sib_uri)
+                                # Score-less placeholder: this node's relevance to
+                                # the actual query was never measured. Omitting
+                                # `score` (not score=0.0) makes recall_rerank treat
+                                # it as unscored, so it trails the scored hits and
+                                # is never evidence-reweighted into evicting one.
+                                # For the same reason no evidence_level/source is
+                                # copied — that belongs to a matched hit, not a hub
+                                # neighbour.
+                                entry = {
+                                    "kref": sib_uri,
+                                    "title": sib_rev.metadata.get("title", ""),
+                                    "summary": sib_rev.metadata.get("summary", ""),
+                                    "content": sib_rev.metadata.get("content", ""),
+                                    "graph_augmented": True,
+                                    "edge_type": edge.edge_type,
+                                    "via_entity": anchor_uri,
+                                    "from_kref": kref_str,
+                                    "hop": 2,
+                                }
+                                results.append(entry)
+                                found += 1
+                                siblings += 1
+                            except Exception as exc:
+                                logger.debug("entity recall: sibling %s failed: %s", sib_uri, exc)
+                            if siblings >= max_siblings:
+                                break
+                    except Exception as exc:
+                        logger.debug("entity recall: anchor %s failed: %s", anchor_uri, exc)
+            return found
+
+        found = await run_bounded_in_thread(
+            _sync_entity_walk,
+            timeout=self.config.traversal_timeout,
+            label="entity recall",
+            on_timeout=0,
+            on_error=0,
+        ) or 0
+        if found:
+            # Order siblings by lexical overlap with the query so the cap's
+            # sibling reserve keeps the MOST relevant ones — walk order is
+            # seed × anchor × edge arrival, arbitrary w.r.t. the question.
+            # Ordering only: the entries stay score-less, so they still trail
+            # scored hits and are never evidence-reweighted (see the
+            # placeholder note above).
+            if query:
+                from kumiho_memory.recall_rerank import _jaccard, _tokens
+
+                q_tokens = _tokens(query)
+                results.sort(
+                    key=lambda m: _jaccard(
+                        q_tokens,
+                        _tokens(f"{m.get('title', '')} {m.get('summary', '')}"),
+                    ),
+                    reverse=True,
+                )
+            augmented.extend(results)
+            logger.info("Entity recall: +%d sibling memories via entity anchors", found)
+        return found
 
 
 # ---------------------------------------------------------------------------
