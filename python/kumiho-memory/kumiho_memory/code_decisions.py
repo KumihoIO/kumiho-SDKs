@@ -34,7 +34,7 @@ import os
 import threading
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Any, Dict, Optional
+from typing import Any, Callable, Dict, Iterable, Optional, Tuple
 
 from kumiho._text import slugify
 
@@ -53,6 +53,7 @@ KIND_DECISION = "code_decision"
 KIND_ANCHOR = "code_anchor"
 KIND_COMMIT = "code_commit"
 KIND_EVIDENCE = "code_evidence"
+KIND_SESSION = "code_session"
 
 #: Edge types.  ``create_edge`` accepts free-form UPPERCASE strings
 #: (``kumiho/edge.py::validate_edge_type``) — no server changes involved.
@@ -60,16 +61,20 @@ KIND_EVIDENCE = "code_evidence"
 #: traversal defaults already know.
 EDGE_IMPLEMENTED_IN = "IMPLEMENTED_IN"   # code_decision -> code_anchor
 EDGE_MOTIVATED_BY = "MOTIVATED_BY"       # code_decision -> code_evidence
-EDGE_DERIVED_FROM = "DERIVED_FROM"       # code_decision -> code_commit
+EDGE_DERIVED_FROM = "DERIVED_FROM"       # code_decision -> code_commit | code_session
 EDGE_SUPERSEDES = "SUPERSEDES"           # newer decision -> older decision
+EDGE_DISCUSSED_IN = "DISCUSSED_IN"       # code_decision -> conversation revision (kref)
 
 #: Evidence taxonomy (``code_evidence.evidence_kind``).
+#: ``rejected_alternative`` is session mining's unique cargo — the option
+#: that was considered and turned down, with the verbatim rejection sentence.
 EVIDENCE_KINDS = (
     "measurement",
     "review_finding",
     "incident",
     "benchmark",
     "constraint",
+    "rejected_alternative",
 )
 
 
@@ -95,6 +100,7 @@ class CodeMemoryConfig:
     anchors_space: str = "anchors"
     commits_space: str = "commits"
     evidence_space: str = "evidence"
+    sessions_space: str = "sessions"
 
     # --- capture budgets (consumed by code_capture) ---
     llm_batch_size: int = 6
@@ -131,6 +137,38 @@ class CodeMemoryConfig:
     #: happens to share title+date, and the new one gets a ``-2`` suffix.
     slug_collision_jaccard: float = 0.3
 
+    # --- session mining budgets (consumed by code_session, §4.5) ---
+    session_salience_min: int = 2
+    session_per_message_chars: int = 800
+    session_chunk_chars: int = 18000
+    session_max_chunks: int = 6
+    session_max_decisions: int = 8
+    session_max_evidence_per_decision: int = 4
+    session_max_alternatives_per_decision: int = 4
+    #: Near-duplicate cut: a session evidence atom whose statement shares
+    #: this token-Jaccard with one already MOTIVATED_BY the target decision
+    #: is a rephrasing, not new information — skip it.
+    evidence_dup_jaccard: float = 0.8
+    #: Relaxed verbatim match: token containment floor when the exact
+    #: normalized-substring check fails (multi-message paraphrase slack).
+    evidence_containment: float = 0.6
+    # --- correlation thresholds (§3.3: conjunction, biased to split) ---
+    #: Live-dogfood calibrated: honest same-decision session/commit pairs
+    #: measured ~0.26 over the FULL prose (title+decision+rationale+why),
+    #: misquoted-sha negatives ~0.1 — 0.20 splits them with margin while
+    #: the sha remains the structural witness.
+    correlate_jaccard_sha: float = 0.20
+    #: Same measured basis as the sha floor: when lex moved to FULL prose
+    #: (honest pairs ~0.26), the anchored floor had to move with it — at the
+    #: draft's 0.35 an honest pair could never enrich via the anchor path
+    #: (dead zone).  The structural signal here is the shared anchor file
+    #: plus the symbol-overlap/blind conjunction below, not the floor.
+    correlate_jaccard_anchored: float = 0.20
+    correlate_jaccard_blind: float = 0.50
+    correlate_window_days: int = 14
+    #: Re-mine a marked session when this many new messages arrived since.
+    session_remine_message_delta: int = 10
+
 
 def config_from_env(base: Optional[CodeMemoryConfig] = None) -> CodeMemoryConfig:
     """Overlay ``KUMIHO_MEMORY_CODE_*`` env vars onto *base* (or defaults)."""
@@ -154,6 +192,15 @@ def code_memory_enabled() -> bool:
     return os.getenv("KUMIHO_MEMORY_CODE", "").strip().casefold() in (
         "1", "true", "yes", "on",
     )
+
+
+def code_automine_enabled() -> bool:
+    """Double opt-in for the consolidation chain (§2.2c): the master gate
+    AND ``KUMIHO_MEMORY_CODE_AUTOMINE`` must both be on.  Chaining an LLM
+    pass onto consolidation latency is an explicit consent matter."""
+    return code_memory_enabled() and os.getenv(
+        "KUMIHO_MEMORY_CODE_AUTOMINE", "",
+    ).strip().casefold() in ("1", "true", "yes", "on")
 
 
 def resolve_project_name(memory_project: str, config: CodeMemoryConfig) -> str:
@@ -266,6 +313,12 @@ def commit_slug(repo: str, commit_hash: str) -> str:
 def evidence_slug(statement: str) -> str:
     """Evidence identity = the verbatim statement (re-mining converges)."""
     return slugify(statement, hash_on_truncate=True)
+
+
+def session_slug(repo: str, session_id: str) -> str:
+    """Session marker identity — repo-qualified so the same session_id
+    reused against a different repo can never false-skip the marker."""
+    return slugify(f"{repo}-session-{session_id}", hash_on_truncate=True)
 
 
 def _author_day(author_date: Any) -> str:
@@ -418,3 +471,104 @@ def get_or_create_decision_item(
                 title, author_date, slug,
             )
             return get_or_create_item(project, slug, KIND_DECISION, space_path)
+
+
+# ---------------------------------------------------------------------------
+# Marker & force machinery — shared by commit capture and session mining
+# ---------------------------------------------------------------------------
+
+def edge_source_uri(edge: Any) -> str:
+    """kref URI of an edge's source revision; '' when absent."""
+    return getattr(getattr(edge, "source_kref", None), "uri", "") or ""
+
+
+def edge_target_uri(edge: Any) -> str:
+    """kref URI of an edge's target revision; '' when absent."""
+    return getattr(getattr(edge, "target_kref", None), "uri", "") or ""
+
+
+def undeprecate_item(item: Any) -> None:
+    """Restore an item a force re-capture converged on.
+
+    ``--force`` deprecates the old generation up front; when the fresh
+    extraction converges on the same slug, the item must come back active
+    (the new revision carries the new content)."""
+    if not getattr(item, "deprecated", False):
+        return
+    try:
+        item.set_deprecated(False)
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("code memory: un-deprecate failed: %s", exc)
+
+
+def marker_provenance_complete(
+    item: Any, expected_fields: Iterable[str],
+) -> Tuple[bool, Optional[Any]]:
+    """Marker completeness = revision exists AND carries at least the
+    promised number of incoming DERIVED_FROM edges.
+
+    The marker revision is written before its provenance edges (edges need
+    the revision as a target), so a crash in that window would leave a
+    marker that silently loses provenance forever — verifying the edge
+    count against the metadata promise (the summed *expected_fields*) turns
+    that window into a retry.  Returns ``(complete, marker_rev)``.
+    """
+    import kumiho
+
+    if item is None:
+        return False, None
+    try:
+        rev = item.get_latest_revision()
+        if rev is None:
+            return False, None
+        meta = getattr(rev, "metadata", {}) or {}
+        expected = sum(int(meta.get(k, "0") or 0) for k in expected_fields)
+        if expected <= 0:
+            return True, rev
+        edges = rev.get_edges(edge_type_filter=EDGE_DERIVED_FROM,
+                              direction=kumiho.INCOMING)
+        return len(edges or []) >= expected, rev
+    except Exception:  # noqa: BLE001
+        return False, None
+
+
+def deprecate_marker_decisions(
+    marker_rev: Any,
+    stats: Any,
+    skip: Optional[Callable[[Dict[str, str]], bool]] = None,
+) -> None:
+    """--force pre-pass core: deprecate the marker's decision sources.
+
+    Walks the marker's INCOMING ``DERIVED_FROM`` sources; evidence atoms
+    (no ``decision`` in metadata) are shared assets and never touched, and
+    a caller-supplied *skip* predicate narrows which decisions are this
+    force's to retire (the session flavor must not deprecate commit-origin
+    decisions it merely enriched).  ``stats`` is duck-typed on
+    ``.deprecated`` (IngestStats | SessionMineStats).
+    """
+    import kumiho
+
+    if marker_rev is None:
+        return
+    try:
+        edges = marker_rev.get_edges(edge_type_filter=EDGE_DERIVED_FROM,
+                                     direction=kumiho.INCOMING)
+    except Exception:  # noqa: BLE001
+        return
+    for edge in edges or []:
+        src = edge_source_uri(edge)
+        if not src:
+            continue
+        try:
+            rev = kumiho.get_revision(src)
+            meta = getattr(rev, "metadata", {}) or {}
+            if "decision" not in meta:
+                continue  # evidence atom — shared, never deprecated here
+            if skip is not None and skip(meta):
+                continue
+            rev.set_attribute("status", "deprecated")
+            rev.get_item().set_deprecated(True)
+            stats.deprecated += 1
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("code memory: force deprecation failed for %s: %s",
+                         src, exc)

@@ -40,6 +40,7 @@ from kumiho_memory._bounded import run_bounded_in_thread
 from kumiho_memory.code_decisions import (
     CodeMemoryConfig,
     EDGE_DERIVED_FROM,
+    EDGE_DISCUSSED_IN,
     EDGE_IMPLEMENTED_IN,
     EDGE_MOTIVATED_BY,
     EDGE_SUPERSEDES,
@@ -287,12 +288,19 @@ def _sync_evidence_bridge_leg(
 # Evidence-chain expansion (§5.3 — after the limit cut)
 # ---------------------------------------------------------------------------
 
+def _empty_chain() -> Dict[str, Any]:
+    """The chain shape every answer carries, even when expansion fails —
+    single source so the fallback literal can never drift from the walker."""
+    return {
+        "evidence": [], "commits": [], "sessions": [], "supersedes": [],
+        "superseded_by": None, "conversation": None,
+    }
+
+
 def _sync_expand_chain(kref: str, max_fetch: int) -> Dict[str, Any]:
     import kumiho
 
-    chain: Dict[str, Any] = {
-        "evidence": [], "commits": [], "supersedes": [], "superseded_by": None,
-    }
+    chain = _empty_chain()
     try:
         rev = kumiho.get_revision(kref)
         edges = rev.get_edges(direction=kumiho.BOTH)
@@ -306,15 +314,31 @@ def _sync_expand_chain(kref: str, max_fetch: int) -> Dict[str, Any]:
     def _prio(e: Any) -> int:
         return 0 if getattr(e, "edge_type", "") == EDGE_SUPERSEDES else 1
 
-    scan = sorted((edges or [])[:MAX_EDGES_PER_DECISION], key=_prio)
+    # Sort BEFORE the cap, not after: session enrichment can grow a decision
+    # past MAX_EDGES_PER_DECISION MOTIVATED_BY edges, and slicing the raw
+    # edge list first would drop a SUPERSEDES edge sitting past the cap
+    # before the priority sort could pull it to the front — silently losing
+    # superseded_by (the exact hard-requirement-5 violation the sort exists
+    # to prevent).
+    scan = sorted(edges or [], key=_prio)[:MAX_EDGES_PER_DECISION]
     fetched = 0
     me = kref
     for edge in scan:
-        if fetched >= max_fetch:
-            break
         etype = getattr(edge, "edge_type", "")
         src = getattr(getattr(edge, "source_kref", None), "uri", "")
         dst = getattr(getattr(edge, "target_kref", None), "uri", "")
+        if etype == EDGE_DISCUSSED_IN and src == me:
+            # Bridge to the consolidated conversation — the kref itself is
+            # the payload; no revision fetch, so it neither consumes nor is
+            # gated by the chain budget (cross-project reads stay out).
+            chain["conversation"] = {
+                "kref": dst,
+                "session_id": str((getattr(edge, "metadata", {}) or {})
+                                  .get("session_id", "")),
+            }
+            continue
+        if fetched >= max_fetch:
+            break
         try:
             if etype == EDGE_MOTIVATED_BY and src == me:
                 ev = kumiho.get_revision(dst); fetched += 1
@@ -327,11 +351,23 @@ def _sync_expand_chain(kref: str, max_fetch: int) -> Dict[str, Any]:
             elif etype == EDGE_DERIVED_FROM and src == me:
                 cm = kumiho.get_revision(dst); fetched += 1
                 m = getattr(cm, "metadata", {}) or {}
-                chain["commits"].append({
-                    "sha": m.get("hash", ""),
-                    "subject": m.get("subject", ""),
-                    "date": m.get("committed_at", ""),
-                })
+                # Route by marker type: session markers always carry
+                # session_id, commit markers never do.  Without this a
+                # session-derived decision leaks a {"sha": ""} ghost into
+                # commits, polluting the [D_n] header and the fetch budget
+                # (judged-and-confirmed defect in the Phase-2 design pass).
+                if m.get("session_id"):
+                    chain["sessions"].append({
+                        "session_id": m.get("session_id", ""),
+                        "mined_at": m.get("mined_at", ""),
+                        "source": m.get("source", ""),
+                    })
+                else:
+                    chain["commits"].append({
+                        "sha": m.get("hash", ""),
+                        "subject": m.get("subject", ""),
+                        "date": m.get("committed_at", ""),
+                    })
             elif etype == EDGE_SUPERSEDES and src == me:
                 old = kumiho.get_revision(dst); fetched += 1
                 m = getattr(old, "metadata", {}) or {}
@@ -385,7 +421,7 @@ def _sort_candidates(
     """
     def key(c: Dict[str, Any]) -> Tuple:
         meta = c["meta"]
-        active = 0 if str(meta.get("status", "active")) == "superseded" else 1
+        active = 0 if str(meta.get("status", "active")) in ("superseded", "deprecated") else 1
         if ce_by_kref is not None and c["kref"] in ce_by_kref:
             prob = ce_by_kref[c["kref"]]
         else:
@@ -441,11 +477,17 @@ def _answer_from(cand: Dict[str, Any], chain: Dict[str, Any]) -> Dict[str, Any]:
         "confidence": meta.get("confidence", ""),
         "decided_at": meta.get("decided_at", ""),
         "status": meta.get("status", "active"),
+        # Session-origin passthrough: an agent must know when a decision
+        # never reached a commit ("discussed, not yet implemented").
+        "origin": meta.get("origin", "commit") or "commit",
+        "status_hint": meta.get("status_hint", ""),
         "anchors": anchors,
         "evidence": chain["evidence"],
         "commits": chain["commits"],
+        "sessions": chain.get("sessions", []),
         "supersedes": chain["supersedes"],
         "superseded_by": chain["superseded_by"],
+        "conversation": chain.get("conversation"),
         "match": match,
         "score": cand.get("_final_score", 0.0),
     }
@@ -555,7 +597,7 @@ async def why(
             functools.partial(_sync_expand_chain, cand["kref"], max_fetch),
             timeout=QUERY_TIMEOUT, label="code why chain",
             on_timeout=None, on_error=None,
-        ) or {"evidence": [], "commits": [], "supersedes": [], "superseded_by": None}
+        ) or _empty_chain()
         answers.append(_answer_from(cand, chain))
 
     result: Dict[str, Any] = {
@@ -601,7 +643,12 @@ def compose_why_context(decisions: List[Dict[str, Any]], char_limit: int = 4000)
         head = f"### [D{i}] {_flat(d['title'])}"
         if sha:
             head += f"  ({sha}{', ' + date if date else ''})"
+        elif d.get("origin") == "session":
+            head += f"  (session{', ' + date if date else ''})"
         lines = [head]
+        if d.get("origin") == "session":
+            hint = _flat(d.get("status_hint", "")) or "uncommitted"
+            lines.append(f"origin: session ({hint}) — not yet tied to a commit")
         if d["anchors"]:
             files = ", ".join(
                 _flat(a["file"]) + (f":{_flat(a['lines'])}" if a["lines"] else "")
@@ -617,6 +664,13 @@ def compose_why_context(decisions: List[Dict[str, Any]], char_limit: int = 4000)
             for ev in d["evidence"]:
                 ref = f"  [{_flat(ev['source_ref'])}]" if ev["source_ref"] else ""
                 lines.append(f"- ({_flat(ev['kind'])}) \"{_flat(ev['statement'])}\"{ref}")
+        conv = d.get("conversation") or {}
+        if conv.get("kref"):
+            sid = _flat(conv.get("session_id", ""))
+            lines.append(
+                f"discussed in: {_flat(conv['kref'])}"
+                + (f" (session {sid})" if sid else "")
+            )
         sup = _flat(", ".join(s["title"] or s["kref"] for s in d["supersedes"])) or "none"
         sup_by = _flat(
             (d["superseded_by"] or {}).get("title")
