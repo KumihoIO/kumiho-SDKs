@@ -6,7 +6,9 @@
 //! `get_edges` over the newest revisions, all under bounded concurrency.
 
 use crate::config::Config;
-use crate::model::{item_uri, DetailLink, DetailOut, GraphStore, NodeSeed, TenantOut};
+use crate::model::{
+    item_uri, DetailLink, DetailOut, GraphStore, NodeSeed, RevisionMeta, RevisionOut, TenantOut,
+};
 use futures::stream::{self, StreamExt};
 use kumiho::{Client, EdgeDirection, Item, Revision};
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -193,6 +195,19 @@ pub async fn load_snapshot(
         node_limit: t.node_limit,
         tenant_id: t.tenant_id,
     });
+    // The SDK bootstrap silently falls back to a loopback CE server when the
+    // stored cloud token can't be loaded (e.g. expired) — make sure looking
+    // at the wrong brain never goes unnoticed.
+    if let Some(t) = &tenant {
+        if t.tenant_id == "self-hosted-ce" && cloud_credentials_present() {
+            tracing::warn!(
+                "connected to a LOCAL self-hosted CE server even though ~/.kumiho cloud \
+                 credentials exist — the stored token may be expired or unreadable \
+                 (run `kumiho-cli login` to restore it). This dashboard is NOT showing \
+                 your cloud brain."
+            );
+        }
+    }
 
     // 4. Apply atomically: nodes first, then edges (endpoints must exist).
     let mut g = store.write().await;
@@ -302,5 +317,80 @@ pub async fn fetch_detail(
         tags,
         links,
         revisions,
+    })
+}
+
+/// Whether a cloud credentials file exists (same location the SDK reads).
+fn cloud_credentials_present() -> bool {
+    let dir = std::env::var("KUMIHO_CONFIG_DIR")
+        .ok()
+        .filter(|d| !d.is_empty())
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|| {
+            std::env::var_os("HOME")
+                .map(std::path::PathBuf::from)
+                .unwrap_or_default()
+                .join(".kumiho")
+        });
+    dir.join("kumiho_authentication.json").is_file()
+}
+
+/// The node's item kref, if it exists and is live.
+async fn node_kref(store: &Arc<RwLock<GraphStore>>, id: u32) -> Option<String> {
+    let g = store.read().await;
+    let n = g.nodes.get(id as usize)?;
+    (!n.dead).then(|| n.kref.clone())
+}
+
+/// Revision lineage, newest first — the time-travel index (#65).
+pub async fn fetch_revisions(
+    client: &Client,
+    store: &Arc<RwLock<GraphStore>>,
+    id: u32,
+) -> Option<Vec<RevisionMeta>> {
+    let uri = node_kref(store, id).await?;
+    let kref = kumiho::Kref::unchecked(uri);
+    let mut revs = client.get_revisions(&kref).await.ok()?;
+    revs.sort_unstable_by_key(|r| std::cmp::Reverse(r.number));
+    Some(
+        revs.iter()
+            .map(|r| RevisionMeta {
+                n: r.number,
+                title: meta(r, "title").to_string(),
+                created_at: r.created_at.clone().unwrap_or_default(),
+                latest: r.latest,
+            })
+            .collect(),
+    )
+}
+
+/// One historical revision's content ("what did I used to think?").
+pub async fn fetch_revision(
+    client: &Client,
+    store: &Arc<RwLock<GraphStore>>,
+    id: u32,
+    number: i32,
+) -> Option<RevisionOut> {
+    let uri = node_kref(store, id).await?;
+    let rev = client
+        .get_revision(&format!("{uri}?r={number}"))
+        .await
+        .ok()?;
+    let summary = {
+        let s = meta(&rev, "summary");
+        if s.is_empty() {
+            meta(&rev, "embedding_text")
+        } else {
+            s
+        }
+        .to_string()
+    };
+    Some(RevisionOut {
+        n: rev.number,
+        title: meta(&rev, "title").to_string(),
+        summary,
+        memory_type: meta(&rev, "memory_type").to_string(),
+        tags: rev.tags.clone(),
+        created_at: rev.created_at.clone().unwrap_or_default(),
     })
 }
