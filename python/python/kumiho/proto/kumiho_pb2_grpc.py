@@ -150,6 +150,11 @@ class KumihoServiceStub(object):
                 request_serializer=kumiho__pb2.BatchGetRevisionsRequest.SerializeToString,
                 response_deserializer=kumiho__pb2.BatchGetRevisionsResponse.FromString,
                 _registered_method=True)
+        self.BatchCreateRevisions = channel.unary_unary(
+                '/kumiho.KumihoService/BatchCreateRevisions',
+                request_serializer=kumiho__pb2.BatchCreateRevisionsRequest.SerializeToString,
+                response_deserializer=kumiho__pb2.BatchCreateRevisionsResponse.FromString,
+                _registered_method=True)
         self.DeleteRevision = channel.unary_unary(
                 '/kumiho.KumihoService/DeleteRevision',
                 request_serializer=kumiho__pb2.DeleteRevisionRequest.SerializeToString,
@@ -455,6 +460,12 @@ class KumihoServiceServicer(object):
         raise NotImplementedError('Method not implemented!')
 
     def BatchGetRevisions(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def BatchCreateRevisions(self, request, context):
         """Missing associated documentation comment in .proto file."""
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
@@ -779,6 +790,11 @@ def add_KumihoServiceServicer_to_server(servicer, server):
                     servicer.BatchGetRevisions,
                     request_deserializer=kumiho__pb2.BatchGetRevisionsRequest.FromString,
                     response_serializer=kumiho__pb2.BatchGetRevisionsResponse.SerializeToString,
+            ),
+            'BatchCreateRevisions': grpc.unary_unary_rpc_method_handler(
+                    servicer.BatchCreateRevisions,
+                    request_deserializer=kumiho__pb2.BatchCreateRevisionsRequest.FromString,
+                    response_serializer=kumiho__pb2.BatchCreateRevisionsResponse.SerializeToString,
             ),
             'DeleteRevision': grpc.unary_unary_rpc_method_handler(
                     servicer.DeleteRevision,
@@ -1563,6 +1579,33 @@ class KumihoService(object):
             '/kumiho.KumihoService/BatchGetRevisions',
             kumiho__pb2.BatchGetRevisionsRequest.SerializeToString,
             kumiho__pb2.BatchGetRevisionsResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def BatchCreateRevisions(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/kumiho.KumihoService/BatchCreateRevisions',
+            kumiho__pb2.BatchCreateRevisionsRequest.SerializeToString,
+            kumiho__pb2.BatchCreateRevisionsResponse.FromString,
             options,
             channel_credentials,
             insecure,

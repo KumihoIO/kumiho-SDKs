@@ -451,6 +451,34 @@ class BatchGetRevisionsResponse(_message.Message):
     found_count: int
     def __init__(self, revisions: _Optional[_Iterable[_Union[RevisionResponse, _Mapping]]] = ..., not_found: _Optional[_Iterable[str]] = ..., requested_count: _Optional[int] = ..., found_count: _Optional[int] = ...) -> None: ...
 
+class BatchCreateRevisionsRequest(_message.Message):
+    __slots__ = ("revisions", "idempotency_prefix")
+    REVISIONS_FIELD_NUMBER: _ClassVar[int]
+    IDEMPOTENCY_PREFIX_FIELD_NUMBER: _ClassVar[int]
+    revisions: _containers.RepeatedCompositeFieldContainer[CreateRevisionRequest]
+    idempotency_prefix: str
+    def __init__(self, revisions: _Optional[_Iterable[_Union[CreateRevisionRequest, _Mapping]]] = ..., idempotency_prefix: _Optional[str] = ...) -> None: ...
+
+class BatchRevisionFailure(_message.Message):
+    __slots__ = ("index", "reason")
+    INDEX_FIELD_NUMBER: _ClassVar[int]
+    REASON_FIELD_NUMBER: _ClassVar[int]
+    index: int
+    reason: str
+    def __init__(self, index: _Optional[int] = ..., reason: _Optional[str] = ...) -> None: ...
+
+class BatchCreateRevisionsResponse(_message.Message):
+    __slots__ = ("results", "failures", "requested_count", "succeeded_count")
+    RESULTS_FIELD_NUMBER: _ClassVar[int]
+    FAILURES_FIELD_NUMBER: _ClassVar[int]
+    REQUESTED_COUNT_FIELD_NUMBER: _ClassVar[int]
+    SUCCEEDED_COUNT_FIELD_NUMBER: _ClassVar[int]
+    results: _containers.RepeatedCompositeFieldContainer[RevisionResponse]
+    failures: _containers.RepeatedCompositeFieldContainer[BatchRevisionFailure]
+    requested_count: int
+    succeeded_count: int
+    def __init__(self, results: _Optional[_Iterable[_Union[RevisionResponse, _Mapping]]] = ..., failures: _Optional[_Iterable[_Union[BatchRevisionFailure, _Mapping]]] = ..., requested_count: _Optional[int] = ..., succeeded_count: _Optional[int] = ...) -> None: ...
+
 class CreateArtifactRequest(_message.Message):
     __slots__ = ("revision_kref", "name", "location", "exists_error", "metadata")
     class MetadataEntry(_message.Message):
