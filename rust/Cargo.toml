@@ -25,6 +25,10 @@ include = [
 ]
 
 [features]
+default = ["vendored-protoc"]
+# Falls back to a prebuilt protoc when none is on PATH (see build.rs), so the
+# crate builds with zero system dependencies. Disable to require system protoc.
+vendored-protoc = ["dep:protoc-bin-vendored"]
 # Generates the gRPC *server* stubs (see build.rs) so the in-process integration
 # tests can stand up a mock KumihoService. Not needed by SDK consumers.
 mock-server = []
@@ -52,6 +56,7 @@ chrono = { version = "0.4", default-features = false, features = ["clock"] }
 
 [build-dependencies]
 tonic-build = "0.12"
+protoc-bin-vendored = { version = "3", optional = true }
 
 [dev-dependencies]
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "time", "fs"] }
