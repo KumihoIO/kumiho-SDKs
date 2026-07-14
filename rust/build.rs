@@ -44,7 +44,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 fn protoc_on_path() -> Option<std::path::PathBuf> {
-    let exe = if cfg!(windows) { "protoc.exe" } else { "protoc" };
+    let exe = if cfg!(windows) {
+        "protoc.exe"
+    } else {
+        "protoc"
+    };
     std::env::split_paths(&std::env::var_os("PATH")?)
         .map(|dir| dir.join(exe))
         .find(|p| p.is_file())
