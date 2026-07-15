@@ -1080,6 +1080,214 @@ def tool_memory_store(
     return result
 
 
+def tool_memory_store_batch(
+    captures: List[Dict[str, Any]],
+    project: str = "CognitiveMemory",
+    space_path: str = "",
+    memory_item_kind: str = "conversation",
+    source_revision_krefs: Optional[List[str]] = None,
+    edge_type: str = DERIVED_FROM,
+    stack_revisions: bool = True,
+    idempotency_prefix: str = "",
+) -> Dict[str, Any]:
+    """Bulk counterpart of :func:`tool_memory_store` — N captures, one batched write.
+
+    Collapses the per-capture ``create_item`` + ``create_revision`` + auto-artifact
+    into a single ``batch_create_revisions`` transaction. This is what backfill and
+    any other high-volume, multi-capture write should use: it removes the neo4j
+    relationship-group deadlock that naive per-capture concurrency triggers, and
+    cuts the heaviest writes from ~2N RPCs to one. Per-capture credential
+    screening, space resolution, fuzzy-stack decision, tagging, bundling and
+    DERIVED_FROM edges are preserved exactly — the server has no batch RPC for
+    tag/bundle/edge, so those remain per-item (still far lighter than the
+    create/revision writes the batch collapses).
+
+    Each capture dict mirrors the fields reflect passes to ``tool_memory_store``:
+        ``type``, ``title``, ``content`` — the memory itself.
+        ``tags``      — optional; defaults to ``["published"]``.
+        ``metadata``  — optional pre-validated dict (e.g. ``{"event_date": ...}``).
+        ``space_hint``— optional per-capture space override.
+
+    Returns ``{"results": [per-capture dict | {"error": ...}], "stored_krefs":
+    [...], "stacked": <int>}`` — ``results`` is positional (one entry per input
+    capture, ``None`` collapses to an ``error`` entry).
+    """
+    _ensure_configured()
+    source_krefs = source_revision_krefs or []
+    project_name = project or "CognitiveMemory"
+    project_obj = _get_project_cached(project_name)
+    memory_kind = memory_item_kind or "conversation"
+    redactor = PIIRedactor() if _PRIVACY_AVAILABLE else None
+
+    results: List[Optional[Dict[str, Any]]] = [None] * len(captures)
+    rows: List[Dict[str, Any]] = []
+    prep_by_row: Dict[int, Dict[str, Any]] = {}
+
+    # --- Phase 1: per-capture prep (reads / local I/O) -> batch rows ---
+    for i, cap in enumerate(captures):
+        title = (cap.get("title") or "").strip()
+        content = (cap.get("content") or "").strip()
+        if not content and not title:
+            results[i] = {"error": "empty capture (no title or content)"}
+            continue
+
+        # Credential screen before anything reaches the graph (parity §10.4.5).
+        if redactor is not None:
+            try:
+                for _v in (content, title):
+                    if _v:
+                        redactor.reject_credentials(_v)
+            except CredentialDetectedError as exc:
+                results[i] = {"error": str(exc)}
+                continue
+
+        cap_space = cap.get("space_hint", "") or space_path
+        normalized_space = _ensure_space_path(project_obj, cap_space)
+
+        final_summary = content
+        if len(final_summary) > 2000:
+            final_summary = f"{final_summary[:1997]}..."
+        final_title = title or final_summary[:120]
+        memory_type = cap.get("type", "summary")
+
+        # Fuzzy-stack: reuse a similar existing item, else mint a hash-named one
+        # (batch_create_revisions auto-creates the item from a new kref).
+        item = None
+        if stack_revisions:
+            search_query = title or final_summary[:150]
+            if search_query.strip():
+                item = _find_similar_item(
+                    project_name, normalized_space, search_query, memory_kind
+                )
+        if item is not None:
+            item_kref = item.kref.uri
+        else:
+            slug = _slugify(final_title) or "memory"
+            item_name = f"{slug}-{_short_hash(content + final_title)}"
+            if len(item_name) > 64:
+                item_name = item_name[:64].rstrip("-")
+            item_kref = f"kref://{normalized_space.strip('/')}/{item_name}.{memory_kind}"
+
+        base_metadata: Dict[str, Any] = {
+            "schema": "kumiho.agent_memory.v1",
+            "type": memory_type,
+            "memory_type": memory_type,
+            "title": final_title,
+            "summary": final_summary,
+            "space": normalized_space,
+        }
+        extra_metadata = cap.get("metadata")
+        if extra_metadata:
+            base_metadata.update(extra_metadata)
+
+        # No embedding_text override: leaving it empty makes the server
+        # auto-generate the embedding from the concatenated metadata, exactly like
+        # the single tool_memory_store path (item.create_revision, embedding_text="").
+        # Overriding it here would embed batch-written captures on a different basis
+        # than single-written ones, splitting the vector space by capture count.
+        row: Dict[str, Any] = {
+            "item_kref": item_kref,
+            "metadata": _stringify_metadata(base_metadata),
+        }
+        try:
+            location = _write_memory_artifact(
+                project=project_name,
+                space_path=normalized_space,
+                item_name=item_kref.rsplit("/", 1)[-1].rsplit(".", 1)[0],
+                title=final_title,
+                summary=final_summary,
+                user_text="",
+                assistant_text=content,
+                memory_type=memory_type,
+            )
+            if location:
+                row["artifacts"] = [
+                    {"name": "chat_io", "location": location, "default": True}
+                ]
+        except Exception as exc:  # best-effort, like the single path
+            logger.warning(f"batch auto-artifact write failed: {exc}")
+
+        prep_by_row[len(rows)] = {
+            "capture_index": i,
+            "item_obj": item,
+            "item_kref": item_kref,
+            "tags": cap.get("tags"),
+            "space": normalized_space,
+            "stacked": item is not None,
+        }
+        rows.append(row)
+
+    if not rows:
+        return {"results": results, "stored_krefs": [], "stacked": 0}
+
+    # --- Phase 2: batched write, chunked at the server's per-call row cap ---
+    # BatchCreateRevisions caps a call at 200 rows (docs/batch-create-revisions.md).
+    # A reflect/backfill batch can exceed that, so split into stable, ordered
+    # chunks; when an idempotency_prefix is given, suffix it with the chunk offset
+    # so re-submitting the same captures replays as a no-op (the doc's recommended
+    # "prefix derived from staging-file id and chunk offset").
+    _BATCH_ROW_LIMIT = 200
+    batch_results: List[Any] = []
+    failures: List[Tuple[int, str]] = []
+    for start in range(0, len(rows), _BATCH_ROW_LIMIT):
+        chunk = rows[start:start + _BATCH_ROW_LIMIT]
+        chunk_prefix = f"{idempotency_prefix}:{start}" if idempotency_prefix else ""
+        chunk_results, chunk_failures = kumiho.batch_create_revisions(
+            chunk, idempotency_prefix=chunk_prefix
+        )
+        batch_results.extend(chunk_results)
+        failures.extend((start + idx, reason) for idx, reason in chunk_failures)
+    failure_by_row = {idx: reason for idx, reason in failures}
+
+    # --- Phase 3: per-capture post (tag, bundle, edges) on created revisions ---
+    stored_krefs: List[str] = []
+    stacked_count = 0
+    for row_idx, prep in prep_by_row.items():
+        i = prep["capture_index"]
+        rev = batch_results[row_idx] if row_idx < len(batch_results) else None
+        if rev is None:
+            results[i] = {"error": failure_by_row.get(row_idx, "batch row rejected")}
+            continue
+
+        for tag in (prep["tags"] or ["published"]):
+            if tag == "latest":
+                continue
+            try:
+                rev.tag(tag)
+            except Exception:
+                continue
+
+        bundle_kref = ""
+        try:
+            bundle = _get_or_create_bundle(project_obj, prep["space"], "topic")
+            item_obj = prep["item_obj"] or kumiho.get_item(prep["item_kref"])
+            bundle.add_member(item_obj)
+            bundle_kref = bundle.kref.uri
+        except Exception:
+            bundle_kref = ""
+
+        edges_created: List[str] = []
+        for source_kref in source_krefs:
+            try:
+                edge = rev.create_edge(kumiho.get_revision(source_kref), edge_type)
+                edges_created.append(edge.target_kref.uri)
+            except Exception:
+                continue
+
+        if prep["stacked"]:
+            stacked_count += 1
+        stored_krefs.append(rev.kref.uri)
+        results[i] = {
+            "item_kref": prep["item_kref"],
+            "revision_kref": rev.kref.uri,
+            "bundle_kref": bundle_kref,
+            "edges_created": edges_created,
+            "stacked": prep["stacked"],
+        }
+
+    return {"results": results, "stored_krefs": stored_krefs, "stacked": stacked_count}
+
+
 def tool_memory_retrieve(
     project: str = "CognitiveMemory",
     query: str = "",

@@ -766,3 +766,129 @@ class TestMemoryKindVocabulary:
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
+
+
+# ---------------------------------------------------------------------------
+# Tests — tool_memory_store_batch (bulk write path)
+# ---------------------------------------------------------------------------
+
+
+def test_tool_memory_store_batch_builds_rows_and_finalizes():
+    """Resolves each capture, batches the writes, and still stamps event_date +
+    tags per row (parity with the single tool_memory_store path)."""
+    from kumiho.mcp_server import tool_memory_store_batch
+
+    captured = {}
+    tagged = []
+
+    def make_rev(i):
+        rev = MagicMock()
+        rev.kref.uri = f"kref://CognitiveMemory/work/x/mem{i}.conversation?r=1"
+        rev.tag.side_effect = lambda t, _i=i: tagged.append((_i, t))
+        return rev
+
+    def fake_batch(rows, idempotency_prefix=""):
+        captured["rows"] = rows
+        return ([make_rev(i) for i in range(len(rows))], [])
+
+    with patch("kumiho.mcp_server._ensure_configured", return_value=True), \
+            patch("kumiho.mcp_server._get_project_cached", return_value=MockProject("CognitiveMemory")), \
+            patch("kumiho.mcp_server._ensure_space_path", return_value="/CognitiveMemory/work/x"), \
+            patch("kumiho.mcp_server._find_similar_item", return_value=None), \
+            patch("kumiho.mcp_server._write_memory_artifact", return_value=""), \
+            patch("kumiho.mcp_server._get_or_create_bundle", return_value=MagicMock()), \
+            patch("kumiho.get_item", return_value=MagicMock()), \
+            patch("kumiho.batch_create_revisions", side_effect=fake_batch):
+        out = tool_memory_store_batch(
+            captures=[
+                {"type": "decision", "title": "Chose bge-m3",
+                 "content": "because keyless", "tags": ["published"],
+                 "metadata": {"event_date": "2026-03-14"}},
+                {"type": "fact", "title": "Founded 2019",
+                 "content": "founded then", "metadata": {"event_date": "2019"}},
+            ],
+            project="CognitiveMemory", space_path="work/x",
+        )
+
+    rows = captured["rows"]
+    assert len(rows) == 2
+    # New items get a hash-named kref under the resolved space, correct kind.
+    assert rows[0]["item_kref"].startswith("kref://CognitiveMemory/work/x/")
+    assert rows[0]["item_kref"].endswith(".conversation")
+    # Metadata carries the validated event_date + memory_type (stringified).
+    assert rows[0]["metadata"]["event_date"] == "2026-03-14"
+    assert rows[0]["metadata"]["memory_type"] == "decision"
+    assert rows[1]["metadata"]["event_date"] == "2019"
+    # No embedding_text override -> the server embeds from concatenated metadata,
+    # exactly like the single tool_memory_store path (parity).
+    assert "embedding_text" not in rows[0]
+    # The "published" tag is applied to every created revision.
+    assert (0, "published") in tagged and (1, "published") in tagged
+    assert len(out["stored_krefs"]) == 2
+    assert out["stacked"] == 0
+
+
+def test_tool_memory_store_batch_stacks_on_similar_item():
+    """When a similar item exists, the row targets that item's kref (stack)."""
+    from kumiho.mcp_server import tool_memory_store_batch
+
+    existing = MagicMock()
+    existing.kref.uri = "kref://CognitiveMemory/x/existing.conversation"
+
+    def fake_batch(rows, idempotency_prefix=""):
+        rev = MagicMock()
+        rev.kref.uri = "kref://CognitiveMemory/x/existing.conversation?r=2"
+        return ([rev], [])
+
+    with patch("kumiho.mcp_server._ensure_configured", return_value=True), \
+            patch("kumiho.mcp_server._get_project_cached", return_value=MockProject("CognitiveMemory")), \
+            patch("kumiho.mcp_server._ensure_space_path", return_value="/CognitiveMemory/x"), \
+            patch("kumiho.mcp_server._find_similar_item", return_value=existing), \
+            patch("kumiho.mcp_server._write_memory_artifact", return_value=""), \
+            patch("kumiho.mcp_server._get_or_create_bundle", return_value=MagicMock()), \
+            patch("kumiho.batch_create_revisions", side_effect=fake_batch) as mock_batch:
+        out = tool_memory_store_batch(
+            captures=[{"type": "fact", "title": "dup", "content": "same thing"}],
+            project="CognitiveMemory", space_path="x",
+        )
+
+    rows = mock_batch.call_args[0][0]
+    assert rows[0]["item_kref"] == "kref://CognitiveMemory/x/existing.conversation"
+    assert out["stacked"] == 1
+    assert len(out["stored_krefs"]) == 1
+
+
+def test_tool_memory_store_batch_chunks_over_200_rows():
+    """>200 captures are split into <=200-row batch calls (the server row cap),
+    with offset-suffixed idempotency prefixes and aligned results."""
+    from kumiho.mcp_server import tool_memory_store_batch
+
+    calls = []
+
+    def fake_batch(rows, idempotency_prefix=""):
+        calls.append((len(rows), idempotency_prefix))
+        revs = []
+        for i in range(len(rows)):
+            rev = MagicMock()
+            rev.kref.uri = f"kref://x/m{len(calls)}_{i}.conversation?r=1"
+            revs.append(rev)
+        return (revs, [])
+
+    caps = [{"type": "fact", "title": f"c{i}", "content": f"content {i}"} for i in range(250)]
+    with patch("kumiho.mcp_server._ensure_configured", return_value=True), \
+            patch("kumiho.mcp_server._get_project_cached", return_value=MockProject("CognitiveMemory")), \
+            patch("kumiho.mcp_server._ensure_space_path", return_value="/CognitiveMemory/x"), \
+            patch("kumiho.mcp_server._find_similar_item", return_value=None), \
+            patch("kumiho.mcp_server._write_memory_artifact", return_value=""), \
+            patch("kumiho.mcp_server._get_or_create_bundle", return_value=MagicMock()), \
+            patch("kumiho.get_item", return_value=MagicMock()), \
+            patch("kumiho.batch_create_revisions", side_effect=fake_batch):
+        out = tool_memory_store_batch(
+            captures=caps, project="CognitiveMemory",
+            space_path="x", idempotency_prefix="run0",
+        )
+
+    # Two chunks: 200 + 50, offset-suffixed prefixes, all rows accounted for.
+    assert [n for n, _ in calls] == [200, 50]
+    assert [p for _, p in calls] == ["run0:0", "run0:200"]
+    assert len(out["stored_krefs"]) == 250

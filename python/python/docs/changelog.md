@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.10.7] - 2026-07-14
+
+### Added
+- **`tool_memory_store_batch`** — the bulk counterpart of `tool_memory_store` for
+  the MCP write path. N captures land in **one `batch_create_revisions`
+  transaction** (removing the neo4j relationship-group deadlock that per-capture
+  concurrency triggers, and collapsing the heaviest create/revision writes) while
+  preserving every per-capture semantic of the single path: credential screening,
+  space resolution, fuzzy-stack, `event_date`/metadata, tags, `topic` bundle, and
+  `DERIVED_FROM` edges (tag/bundle/edge stay per-item — the server has no batch RPC
+  for them). `kumiho_memory_reflect` routes ≥2-capture writes through it; a single
+  capture keeps the byte-identical per-capture path.
+
 ## [0.10.6] - 2026-07-15
 
 ### Added
