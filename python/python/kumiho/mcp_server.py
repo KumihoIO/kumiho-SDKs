@@ -3783,12 +3783,12 @@ def _windows_parent_pid() -> Optional[int]:
         return None
 
 
-def _exit_orphaned(ppid: int) -> None:
-    # A dead parent usually means dead stderr too: the farewell message is
-    # best-effort, and os._exit must run no matter what the print does.
+def _exit_orphaned(pid: int) -> None:
+    # A dead ancestor usually means dead stderr too: the farewell message
+    # is best-effort, and os._exit must run no matter what the print does.
     try:
         print(
-            f"[kumiho-mcp] Parent process {ppid} exited; shutting down.",
+            f"[kumiho-mcp] Watched ancestor process {pid} exited; shutting down.",
             file=sys.stderr,
             flush=True,
         )
@@ -3798,22 +3798,213 @@ def _exit_orphaned(ppid: int) -> None:
         os._exit(0)
 
 
+def _select_watch_pids(
+    table: Dict[int, Tuple[int, str]],
+    own_pid: int,
+    max_depth: int = 6,
+) -> Tuple[List[int], Optional[int]]:
+    """Pick which ancestor PIDs the Windows watchdog must watch.
+
+    ``table`` maps pid -> (parent pid, lowercase exe basename) for every
+    live process (a Toolhelp snapshot). Watching only the direct parent is
+    not enough: on python.org Windows installs the venv's
+    ``Scripts\\python.exe`` is a redirecting stub that runs the base
+    interpreter as a separate child, so the real server is a *grandchild*
+    (or deeper) of the launcher::
+
+        client (claude/node)                 <- watched (last hop)
+          └─ run_kumiho_mcp.py launcher      <- watched
+               └─ venv Scripts\\python.exe   <- watched (redirector stub)
+                    └─ base python.exe -m kumiho.mcp_server   <- this process
+
+    We watch the contiguous run of python-named ancestors (stubs and
+    launcher hops — session plumbing whose death always means the session
+    is dead) plus the first non-python ancestor (the client), and stop
+    there: anything further (terminal, explorer) can die and restart
+    without invalidating the session.
+
+    Returns ``(watch_pids, broken_pid)``; a non-None ``broken_pid`` means
+    a recorded ancestor is already gone — the chain is broken and this
+    process is already orphaned.
+    """
+    watch: List[int] = []
+    seen = {own_pid}
+    child = own_pid
+    for _ in range(max_depth):
+        entry = table.get(child)
+        if entry is None:
+            break
+        ppid = entry[0]
+        if not ppid or ppid in seen:
+            break  # unknown or cyclic (recycled-PID loop): stop here
+        if ppid not in table:
+            return watch, ppid
+        watch.append(ppid)
+        seen.add(ppid)
+        exe = table[ppid][1]
+        if not exe.startswith(("python", "py.exe")):
+            break
+        child = ppid
+    return watch, None
+
+
+def _windows_process_table() -> Dict[int, Tuple[int, str]]:
+    """pid -> (parent pid, lowercase exe basename) via a Toolhelp snapshot."""
+    import ctypes
+    from ctypes import wintypes
+
+    class _PROCESSENTRY32W(ctypes.Structure):
+        _fields_ = [
+            ("dwSize", wintypes.DWORD),
+            ("cntUsage", wintypes.DWORD),
+            ("th32ProcessID", wintypes.DWORD),
+            ("th32DefaultHeapID", ctypes.c_size_t),  # ULONG_PTR
+            ("th32ModuleID", wintypes.DWORD),
+            ("cntThreads", wintypes.DWORD),
+            ("th32ParentProcessID", wintypes.DWORD),
+            ("pcPriClassBase", wintypes.LONG),
+            ("dwFlags", wintypes.DWORD),
+            ("szExeFile", wintypes.WCHAR * 260),
+        ]
+
+    table: Dict[int, Tuple[int, str]] = {}
+    try:
+        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        kernel32.CreateToolhelp32Snapshot.restype = ctypes.c_void_p
+        kernel32.CreateToolhelp32Snapshot.argtypes = [wintypes.DWORD, wintypes.DWORD]
+        kernel32.Process32FirstW.restype = wintypes.BOOL
+        kernel32.Process32FirstW.argtypes = [ctypes.c_void_p, ctypes.c_void_p]
+        kernel32.Process32NextW.restype = wintypes.BOOL
+        kernel32.Process32NextW.argtypes = [ctypes.c_void_p, ctypes.c_void_p]
+        kernel32.CloseHandle.argtypes = [ctypes.c_void_p]
+
+        TH32CS_SNAPPROCESS = 0x00000002
+        snap = kernel32.CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0)
+        if not snap or snap == ctypes.c_void_p(-1).value:
+            return {}
+        try:
+            entry = _PROCESSENTRY32W()
+            entry.dwSize = ctypes.sizeof(_PROCESSENTRY32W)
+            ok = kernel32.Process32FirstW(snap, ctypes.byref(entry))
+            while ok:
+                table[int(entry.th32ProcessID)] = (
+                    int(entry.th32ParentProcessID),
+                    entry.szExeFile.lower(),
+                )
+                ok = kernel32.Process32NextW(snap, ctypes.byref(entry))
+        finally:
+            kernel32.CloseHandle(snap)
+    except Exception:
+        return {}
+    return table
+
+
+def _start_windows_watchdog() -> None:
+    import ctypes
+    from ctypes import wintypes
+
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    kernel32.GetCurrentProcess.restype = ctypes.c_void_p
+    kernel32.OpenProcess.restype = ctypes.c_void_p
+    kernel32.OpenProcess.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
+    kernel32.WaitForMultipleObjects.restype = wintypes.DWORD
+    kernel32.WaitForMultipleObjects.argtypes = [
+        wintypes.DWORD, ctypes.POINTER(ctypes.c_void_p),
+        wintypes.BOOL, wintypes.DWORD,
+    ]
+    kernel32.GetProcessTimes.restype = wintypes.BOOL
+    kernel32.GetProcessTimes.argtypes = [ctypes.c_void_p] + (
+        [ctypes.POINTER(wintypes.FILETIME)] * 4
+    )
+    SYNCHRONIZE = 0x00100000
+    PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
+    INFINITE = 0xFFFFFFFF
+    ERROR_INVALID_PARAMETER = 87
+
+    def _creation_time(proc_handle: int) -> Optional[int]:
+        times = (wintypes.FILETIME * 4)()
+        ok = kernel32.GetProcessTimes(
+            proc_handle,
+            ctypes.byref(times[0]), ctypes.byref(times[1]),
+            ctypes.byref(times[2]), ctypes.byref(times[3]),
+        )
+        if not ok:
+            return None
+        return (times[0].dwHighDateTime << 32) | times[0].dwLowDateTime
+
+    watch_pids, broken_pid = _select_watch_pids(
+        _windows_process_table(), os.getpid()
+    )
+    if broken_pid is not None:
+        # A recorded ancestor no longer exists: the launch chain broke
+        # while this module was importing — already the orphan case.
+        _exit_orphaned(broken_pid)
+    if not watch_pids:
+        # Snapshot unavailable: fall back to watching the direct parent.
+        ppid = _windows_parent_pid()
+        if not ppid:
+            return
+        watch_pids = [ppid]
+
+    own_created = _creation_time(kernel32.GetCurrentProcess())
+    handles: List[int] = []
+    watched: List[int] = []
+    for pid in watch_pids:
+        handle = kernel32.OpenProcess(
+            SYNCHRONIZE | PROCESS_QUERY_LIMITED_INFORMATION, False, pid
+        )
+        if not handle:
+            if ctypes.get_last_error() == ERROR_INVALID_PARAMETER:
+                # No such PID: that ancestor died since the snapshot.
+                _exit_orphaned(pid)
+            continue  # unopenable (access denied, ...): skip this hop
+        created = _creation_time(handle)
+        if created and own_created and created > own_created:
+            # A real ancestor is strictly older than this process, so
+            # this PID was recycled: the actual ancestor is already gone.
+            _exit_orphaned(pid)
+        handles.append(handle)
+        watched.append(pid)
+
+    if not handles:
+        return
+    handle_array = (ctypes.c_void_p * len(handles))(*handles)
+
+    def _watch() -> None:
+        ret = kernel32.WaitForMultipleObjects(
+            len(handles), handle_array, False, INFINITE
+        )
+        if 0 <= ret < len(handles):  # WAIT_OBJECT_0 + index
+            _exit_orphaned(watched[ret])
+        # Any other result (e.g. WAIT_FAILED) is an ambiguous signal:
+        # fail open rather than ever self-killing a healthy server.
+
+    threading.Thread(
+        target=_watch, name="kumiho-orphan-watchdog", daemon=True
+    ).start()
+
+
 def _start_orphan_watchdog() -> None:
     """Exit when the parent process dies, so a dead client or launcher can
     never strand a live server.
 
     On Windows, MCP clients spawn this server behind a launcher process
-    (e.g. kumiho-plugins' ``run_kumiho_mcp.py``). ``TerminateProcess`` on
-    the launcher does not kill its children, and a pipe handle leaked by a
+    (e.g. kumiho-plugins' ``run_kumiho_mcp.py``), and a venv's
+    ``Scripts\\python.exe`` adds a further redirector-stub hop, so the
+    real server can be a grandchild or deeper. ``TerminateProcess`` on
+    any hop does not kill its children, and a pipe handle leaked by a
     still-running client suppresses the stdin EOF a well-behaved server
-    would exit on — so orphaned servers accumulate across session restarts
-    (kumiho-plugins#25). Watching the parent covers both:
+    would exit on — so orphaned servers accumulate across session
+    restarts (kumiho-plugins#25). Coverage:
 
-    - Windows: block on the parent-process handle (event-driven).
+    - Windows: block on the launching ancestor chain's process handles
+      (event-driven, ``WaitForMultipleObjects``); the chain is the
+      contiguous python-named ancestors plus the first non-python one
+      (the client) — see :func:`_select_watch_pids`.
     - POSIX: poll ``getppid()``; reparenting (to init or a subreaper)
       means the parent died.
 
-    If the parent died while this module was still importing, Windows
+    If an ancestor died while this module was still importing, Windows
     detects it at arm time (missing PID, or a recycled PID younger than
     this process) and exits immediately; POSIX cannot distinguish that
     from a legitimate init/subreaper parent, so it disarms and relies on
@@ -3826,87 +4017,29 @@ def _start_orphan_watchdog() -> None:
 
     if os.name == "nt":
         try:
-            ppid = _windows_parent_pid()
-            if not ppid:
-                return
-            import ctypes
-            from ctypes import wintypes
-
-            kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
-            kernel32.GetCurrentProcess.restype = ctypes.c_void_p
-            kernel32.OpenProcess.restype = ctypes.c_void_p
-            kernel32.OpenProcess.argtypes = [
-                wintypes.DWORD, wintypes.BOOL, wintypes.DWORD,
-            ]
-            kernel32.WaitForSingleObject.restype = wintypes.DWORD
-            kernel32.WaitForSingleObject.argtypes = [
-                ctypes.c_void_p, wintypes.DWORD,
-            ]
-            kernel32.GetProcessTimes.restype = wintypes.BOOL
-            kernel32.GetProcessTimes.argtypes = [ctypes.c_void_p] + (
-                [ctypes.POINTER(wintypes.FILETIME)] * 4
-            )
-            SYNCHRONIZE = 0x00100000
-            PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
-            INFINITE = 0xFFFFFFFF
-            WAIT_OBJECT_0 = 0
-            ERROR_INVALID_PARAMETER = 87
-
-            handle = kernel32.OpenProcess(
-                SYNCHRONIZE | PROCESS_QUERY_LIMITED_INFORMATION, False, ppid
-            )
-            if not handle:
-                if ctypes.get_last_error() == ERROR_INVALID_PARAMETER:
-                    # No such PID: the parent died while this module was
-                    # importing — that is already the orphan case.
-                    _exit_orphaned(ppid)
-                return  # unopenable (access denied, ...): keep old behavior
-
-            def _creation_time(proc_handle: int) -> Optional[int]:
-                times = (wintypes.FILETIME * 4)()
-                ok = kernel32.GetProcessTimes(
-                    proc_handle,
-                    ctypes.byref(times[0]), ctypes.byref(times[1]),
-                    ctypes.byref(times[2]), ctypes.byref(times[3]),
-                )
-                if not ok:
-                    return None
-                return (times[0].dwHighDateTime << 32) | times[0].dwLowDateTime
-
-            parent_created = _creation_time(handle)
-            own_created = _creation_time(kernel32.GetCurrentProcess())
-            if parent_created and own_created and parent_created > own_created:
-                # A real parent is strictly older than its child, so this
-                # PID was recycled: the actual parent is already gone.
-                _exit_orphaned(ppid)
-
-            def _watch() -> None:
-                if kernel32.WaitForSingleObject(handle, INFINITE) == WAIT_OBJECT_0:
-                    _exit_orphaned(ppid)
-                # Any other result (e.g. WAIT_FAILED) is an ambiguous
-                # signal: fail open rather than ever self-killing a
-                # healthy server.
+            _start_windows_watchdog()
         except Exception:
-            return
-    else:
-        initial_ppid = os.getppid()
-        if initial_ppid <= 1:
-            # Direct child of init/subreaper (e.g. a container top process):
-            # reparenting can never be observed. stdin EOF remains the
-            # shutdown signal, as before.
-            return
-        try:
-            poll = float(os.environ.get("KUMIHO_MCP_ORPHAN_WATCHDOG_POLL", "5.0"))
-        except ValueError:
-            poll = 5.0
-        if not math.isfinite(poll):
-            poll = 5.0
-        poll = min(max(poll, 0.05), 3600.0)
+            pass  # degrade to no-watchdog, never block startup
+        return
 
-        def _watch() -> None:
-            while os.getppid() == initial_ppid:
-                time.sleep(poll)
-            _exit_orphaned(initial_ppid)
+    initial_ppid = os.getppid()
+    if initial_ppid <= 1:
+        # Direct child of init/subreaper (e.g. a container top process):
+        # reparenting can never be observed. stdin EOF remains the
+        # shutdown signal, as before.
+        return
+    try:
+        poll = float(os.environ.get("KUMIHO_MCP_ORPHAN_WATCHDOG_POLL", "5.0"))
+    except ValueError:
+        poll = 5.0
+    if not math.isfinite(poll):
+        poll = 5.0
+    poll = min(max(poll, 0.05), 3600.0)
+
+    def _watch() -> None:
+        while os.getppid() == initial_ppid:
+            time.sleep(poll)
+        _exit_orphaned(initial_ppid)
 
     threading.Thread(
         target=_watch, name="kumiho-orphan-watchdog", daemon=True
