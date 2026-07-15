@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.10.6] - 2026-07-15
+
+### Added
+- **Batch revision creation** — `batch_create_revisions(revisions, idempotency_prefix=...)`
+  writes up to 200 captures (item + revision + optional artifacts) in a single
+  server transaction, returning positional `(results, failures)`. Missing items
+  are auto-created from each row's `item_kref`; rows targeting the same item
+  stack in order (last becomes `latest`); per-row artifacts can mark one
+  `"default": True` so the chain resolves straight from the item kref; a stable
+  `idempotency_prefix` makes re-submission a safe no-op. Requires
+  kumiho-server >= 1.6.3.
+
 ## [0.10.0] - 2026-06-17
 
 ### Added

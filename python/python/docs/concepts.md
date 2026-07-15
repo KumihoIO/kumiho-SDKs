@@ -239,6 +239,56 @@ for entry in history:
 - Full audit trail: who added/removed what item and when
 - Can query members at any specific revision in history
 
+## Bulk Ingest (Batch Writes)
+
+For high-volume writes — onboarding backfill, migrations, session mining — use
+`batch_create_revisions()` instead of looping over `create_item()` +
+`create_revision()`. One call writes up to 200 *captures* in a single server
+transaction and one batched embedding pass, which is both faster and safer:
+concurrent single-writes can deadlock at bulk volume, batches cannot.
+
+Each row is one capture — an item, a revision, and optionally its artifacts,
+created (or rejected) as a unit:
+
+```python
+results, failures = kumiho.batch_create_revisions(
+    [
+        # two revisions of the SAME item -> r=1, r=2 ("latest")
+        {"item_kref": "kref://proj/space/mem1.memory",
+         "metadata": {"title": "first draft"}},
+        {"item_kref": "kref://proj/space/mem1.memory",
+         "metadata": {"title": "revised"}},
+        # a different item, auto-created, with its artifact chain
+        {"item_kref": "kref://proj/space/mem2.memory",
+         "metadata": {"title": "second memory"},
+         "artifacts": [{"name": "transcript",
+                        "location": "s3://bucket/mem2.md",
+                        "default": True}]},
+    ],
+    idempotency_prefix="backfill-20260714-chunk0",
+)
+created = [r for r in results if r is not None]   # positional with the input
+```
+
+Key semantics:
+
+- **Items are auto-created** from each row's `item_kref` — there is no
+  separate batch item call. The parent *space* must already exist (create
+  spaces once, up front); a row pointing at a missing space fails
+  individually without affecting the rest.
+- **Row metadata targets the revision** (items never take metadata at
+  creation — that is `update_metadata()` territory).
+- **Same-item rows apply in list order**: consecutive numbers, the last row
+  becomes `latest`.
+- **Artifacts** attach in the same transaction; `"default": True` (at most
+  one per row) makes `get_artifact(item_kref)` and location resolution work
+  immediately after ingest.
+- **Idempotency**: with a stable `idempotency_prefix`, re-submitting the same
+  batch is a no-op that returns the already-created revisions — chunk your
+  source in a stable order and resume by simply re-sending.
+- **Failures are positional**: `failures` is `[(row_index, reason)]` for rows
+  rejected by validation; everything valid commits atomically.
+
 ## Metadata
 
 All node types support custom metadata as key-value string pairs. Metadata can be set during creation (where supported) or updated afterward.
