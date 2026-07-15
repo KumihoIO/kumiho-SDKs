@@ -1,5 +1,44 @@
 # Kumiho Python SDK - Release Notes
 
+## kumiho 0.10.6 (July 2026) — Bulk Ingest: `batch_create_revisions` 🚚
+
+Adds the missing **bulk write** operation (pairs with `kumiho-server` ≥ 1.6.3): one call writes up to **200 captures in a single server transaction and one batched embedding pass**, replacing N serial `create_item` + `create_revision` (+ `create_artifact`) calls. Built for onboarding backfill, dream state, session mining, and migrations — and safer than fanning out singles, which can deadlock at bulk volume.
+
+### ✨ `batch_create_revisions()`
+
+Each row is one **capture** — an item, a revision, and optionally its artifacts — created (or rejected) as a unit:
+
+```python
+results, failures = kumiho.batch_create_revisions(
+    [
+        # two revisions of the SAME item -> r=1, r=2 ("latest")
+        {"item_kref": "kref://proj/space/mem1.memory",
+         "metadata": {"title": "first draft"}},
+        {"item_kref": "kref://proj/space/mem1.memory",
+         "metadata": {"title": "revised"}},
+        # a different item, auto-created, with its artifact chain
+        {"item_kref": "kref://proj/space/mem2.memory",
+         "metadata": {"title": "second memory"},
+         "artifacts": [{"name": "transcript",
+                        "location": "s3://bucket/mem2.md",
+                        "default": True}]},
+    ],
+    idempotency_prefix="backfill-20260714-chunk0",
+)
+created = [r for r in results if r is not None]   # positional with the input
+```
+
+- **Items auto-created** from each row's `item_kref` — no separate batch item call needed (parent *space* must exist; a row pointing at a missing space fails individually).
+- **Same-item rows stack in order**: consecutive numbers, the last row becomes `latest`, `SUPERSEDES` chained.
+- **Artifacts attach in the same transaction**; `"default": True` (at most one per row) makes `get_artifact(item_kref)` and location resolution work immediately after ingest.
+- **Idempotent resume**: with a stable `idempotency_prefix`, each row is keyed `{prefix}:{index}` server-side — re-submitting the same batch returns the already-created revisions instead of duplicating. Chunk in a stable order and resume by re-sending.
+- **Positional failures**: `failures` is `[(row_index, reason)]` for rows rejected by validation; all valid rows commit atomically.
+
+### 📖 Docs
+
+New **Bulk Ingest** section in the SDK concepts guide, plus the server-side reference (`docs/batch-create-revisions.md` in kumiho-server) covering semantics, limits, and the recommended chunked pipeline.
+
+
 ## kumiho 0.10.0 (June 2026) — Self-Hosted Community Edition Fallback 🦊
 
 Adds first-class support for the self-hosted **Community Edition (CE)** server (`kumiho-server` CE v1.3.0). When the SDK has **no auth token and no explicit target**, it auto-discovers a local CE server and connects tokenlessly — so local, single-user development works with no login.
