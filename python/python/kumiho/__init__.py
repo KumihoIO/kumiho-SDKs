@@ -857,7 +857,10 @@ def batch_create_revisions(
 
     Args:
         revisions: One dict per revision: {"item_kref": str | Kref (required),
-            "metadata": dict, "embedding_text": str}.
+            "metadata": dict, "embedding_text": str, "artifacts": [{"name",
+            "location", "metadata", "default"}]}. Artifacts attach to the
+            created revision in the same transaction; "default": True (at
+            most one per row) makes the chain resolvable from the item kref.
         idempotency_prefix: Stable prefix for per-row idempotency keys
             ("{prefix}:{index}"). Empty disables idempotency.
 
@@ -868,7 +871,10 @@ def batch_create_revisions(
     Example:
         >>> results, failures = kumiho.batch_create_revisions(
         ...     [{"item_kref": "kref://proj/space/mem.memory",
-        ...       "metadata": {"title": "backfilled memory"}}],
+        ...       "metadata": {"title": "backfilled memory"},
+        ...       "artifacts": [{"name": "transcript",
+        ...                      "location": "s3://bucket/mem.md",
+        ...                      "default": True}]}],
         ...     idempotency_prefix="backfill-20260714",
         ... )
     """

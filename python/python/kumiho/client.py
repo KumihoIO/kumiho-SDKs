@@ -1165,6 +1165,12 @@ class _Client:
                 - "metadata" (dict, optional): revision metadata.
                 - "embedding_text" (str, optional): override for the
                   server-side embedding text (same as create_revision).
+                - "artifacts" (list of dicts, optional): artifacts to attach
+                  to the created revision, each {"name" (kref-safe, unique
+                  within the row), "location", "metadata" (optional),
+                  "default" (bool, optional - at most one per row; makes the
+                  artifact resolvable straight from the item kref)}. An
+                  invalid artifact spec fails its whole row.
                 Rows targeting the same item are applied in list order
                 (consecutive numbers; the last row becomes "latest").
             idempotency_prefix: When non-empty, each row is recorded under
@@ -1189,11 +1195,18 @@ class _Client:
         Example:
             >>> results, failures = client.batch_create_revisions(
             ...     [
+            ...         # two revisions of the SAME item -> r=1, r=2 ("latest")
             ...         {"item_kref": "kref://proj/space/mem1.memory",
-            ...          "metadata": {"title": "first"}},
+            ...          "metadata": {"title": "first draft"}},
+            ...         {"item_kref": "kref://proj/space/mem1.memory",
+            ...          "metadata": {"title": "revised"}},
+            ...         # a different item, with its artifact chain attached
             ...         {"item_kref": "kref://proj/space/mem2.memory",
-            ...          "metadata": {"title": "second"},
-            ...          "embedding_text": "second memory"},
+            ...          "metadata": {"title": "second memory"},
+            ...          "embedding_text": "second memory",
+            ...          "artifacts": [{"name": "transcript",
+            ...                         "location": "s3://bucket/mem2.md",
+            ...                         "default": True}]},
             ...     ],
             ...     idempotency_prefix="backfill-20260714",
             ... )
@@ -1205,11 +1218,23 @@ class _Client:
             if item_kref is None:
                 raise ValueError(f"revisions[{index}] is missing 'item_kref'")
             uri = item_kref.uri if isinstance(item_kref, Kref) else str(item_kref)
+            artifacts = [
+                kumiho_pb2.BatchArtifactInput(
+                    name=artifact.get("name", ""),
+                    location=artifact.get("location", ""),
+                    metadata=artifact.get("metadata") or {},
+                    is_default=bool(artifact.get("default", False)),
+                )
+                for artifact in spec.get("artifacts") or []
+            ]
             rows.append(
-                CreateRevisionRequest(
-                    item_kref=kumiho_pb2.Kref(uri=uri),
-                    metadata=spec.get("metadata") or {},
-                    embedding_text=spec.get("embedding_text", ""),
+                kumiho_pb2.BatchRevisionRow(
+                    revision=CreateRevisionRequest(
+                        item_kref=kumiho_pb2.Kref(uri=uri),
+                        metadata=spec.get("metadata") or {},
+                        embedding_text=spec.get("embedding_text", ""),
+                    ),
+                    artifacts=artifacts,
                 )
             )
 

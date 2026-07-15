@@ -1015,7 +1015,12 @@ def test_batch_create_revisions(mock_client):
 
     results, failures = kumiho.batch_create_revisions(
         [
-            {"item_kref": "kref://p/s/a.memory", "metadata": {"title": "one"}},
+            {"item_kref": "kref://p/s/a.memory", "metadata": {"title": "one"},
+             "artifacts": [
+                 {"name": "transcript", "location": "s3://b/t.md", "default": True,
+                  "metadata": {"mime": "text/markdown"}},
+                 {"name": "raw.json", "location": "s3://b/r.json"},
+             ]},
             {"item_kref": "kref://p/nope/x.memory"},
             {"item_kref": "kref://p/s/b.memory", "embedding_text": "focused"},
         ],
@@ -1025,9 +1030,15 @@ def test_batch_create_revisions(mock_client):
     request = mock_stub.BatchCreateRevisions.call_args[0][0]
     assert request.idempotency_prefix == "test-batch"
     assert len(request.revisions) == 3
-    assert request.revisions[0].item_kref.uri == "kref://p/s/a.memory"
-    assert request.revisions[0].metadata["title"] == "one"
-    assert request.revisions[2].embedding_text == "focused"
+    assert request.revisions[0].revision.item_kref.uri == "kref://p/s/a.memory"
+    assert request.revisions[0].revision.metadata["title"] == "one"
+    assert request.revisions[2].revision.embedding_text == "focused"
+    artifacts = request.revisions[0].artifacts
+    assert [a.name for a in artifacts] == ["transcript", "raw.json"]
+    assert artifacts[0].is_default and not artifacts[1].is_default
+    assert artifacts[0].location == "s3://b/t.md"
+    assert artifacts[0].metadata["mime"] == "text/markdown"
+    assert len(request.revisions[1].artifacts) == 0
 
     assert [r.number if r is not None else None for r in results] == [1, None, 4]
     assert failures == [(1, "Parent space not found: /p/nope")]

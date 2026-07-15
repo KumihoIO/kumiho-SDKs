@@ -451,13 +451,40 @@ class BatchGetRevisionsResponse(_message.Message):
     found_count: int
     def __init__(self, revisions: _Optional[_Iterable[_Union[RevisionResponse, _Mapping]]] = ..., not_found: _Optional[_Iterable[str]] = ..., requested_count: _Optional[int] = ..., found_count: _Optional[int] = ...) -> None: ...
 
+class BatchArtifactInput(_message.Message):
+    __slots__ = ("name", "location", "metadata", "is_default")
+    class MetadataEntry(_message.Message):
+        __slots__ = ("key", "value")
+        KEY_FIELD_NUMBER: _ClassVar[int]
+        VALUE_FIELD_NUMBER: _ClassVar[int]
+        key: str
+        value: str
+        def __init__(self, key: _Optional[str] = ..., value: _Optional[str] = ...) -> None: ...
+    NAME_FIELD_NUMBER: _ClassVar[int]
+    LOCATION_FIELD_NUMBER: _ClassVar[int]
+    METADATA_FIELD_NUMBER: _ClassVar[int]
+    IS_DEFAULT_FIELD_NUMBER: _ClassVar[int]
+    name: str
+    location: str
+    metadata: _containers.ScalarMap[str, str]
+    is_default: bool
+    def __init__(self, name: _Optional[str] = ..., location: _Optional[str] = ..., metadata: _Optional[_Mapping[str, str]] = ..., is_default: bool = ...) -> None: ...
+
+class BatchRevisionRow(_message.Message):
+    __slots__ = ("revision", "artifacts")
+    REVISION_FIELD_NUMBER: _ClassVar[int]
+    ARTIFACTS_FIELD_NUMBER: _ClassVar[int]
+    revision: CreateRevisionRequest
+    artifacts: _containers.RepeatedCompositeFieldContainer[BatchArtifactInput]
+    def __init__(self, revision: _Optional[_Union[CreateRevisionRequest, _Mapping]] = ..., artifacts: _Optional[_Iterable[_Union[BatchArtifactInput, _Mapping]]] = ...) -> None: ...
+
 class BatchCreateRevisionsRequest(_message.Message):
     __slots__ = ("revisions", "idempotency_prefix")
     REVISIONS_FIELD_NUMBER: _ClassVar[int]
     IDEMPOTENCY_PREFIX_FIELD_NUMBER: _ClassVar[int]
-    revisions: _containers.RepeatedCompositeFieldContainer[CreateRevisionRequest]
+    revisions: _containers.RepeatedCompositeFieldContainer[BatchRevisionRow]
     idempotency_prefix: str
-    def __init__(self, revisions: _Optional[_Iterable[_Union[CreateRevisionRequest, _Mapping]]] = ..., idempotency_prefix: _Optional[str] = ...) -> None: ...
+    def __init__(self, revisions: _Optional[_Iterable[_Union[BatchRevisionRow, _Mapping]]] = ..., idempotency_prefix: _Optional[str] = ...) -> None: ...
 
 class BatchRevisionFailure(_message.Message):
     __slots__ = ("index", "reason")
