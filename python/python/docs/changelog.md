@@ -5,6 +5,24 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.10.8] - 2026-07-15
+
+### Fixed
+- **MCP server orphan hardening** — `kumiho.mcp_server` now exits when its
+  launching ancestor chain dies: event-driven on Windows (a watchdog thread
+  blocks on the ancestor process handles via `WaitForMultipleObjects`),
+  ppid-reparent polling on POSIX. On Windows, MCP clients restart sessions
+  by terminating the launcher process, which does **not** kill its children
+  — and because a venv's `Scripts\python.exe` is a redirector stub that runs
+  the base interpreter as a separate child, the real server is a grandchild
+  or deeper, so the whole contiguous python-named ancestor chain plus the
+  client is watched, not just the direct parent. The stranded
+  `python -m kumiho.mcp_server` processes previously accumulated without
+  bound (KumihoIO/kumiho-plugins#25). Additionally, `main()` now hard-exits
+  once the stdio transport closes, so lingering non-daemon threads (thread
+  pools, gRPC channels) can never keep a dead server alive. Opt out with
+  `KUMIHO_MCP_DISABLE_ORPHAN_WATCHDOG=1`.
+
 ## [0.10.7] - 2026-07-14
 
 ### Added
