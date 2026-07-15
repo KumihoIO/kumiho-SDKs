@@ -57,6 +57,7 @@ from .event import Event
 from .space import Space
 from .kref import Kref
 from .proto.kumiho_pb2 import (
+    BatchCreateRevisionsRequest,
     BatchGetRevisionsRequest,
     CreateSpaceRequest,
     CreateEdgeRequest,
@@ -1142,6 +1143,114 @@ class _Client:
         not_found = list(resp.not_found)
 
         return revisions, not_found
+
+
+    def batch_create_revisions(
+        self,
+        revisions: List[Dict[str, Any]],
+        idempotency_prefix: str = "",
+    ) -> Tuple[List[Optional[Revision]], List[Tuple[int, str]]]:
+        """Create many revisions in a single call (one server transaction).
+
+        The bulk-write counterpart of create_revision(): N revisions (and any
+        missing parent items, derived from each row's item_kref) land in one
+        server transaction and one batched embedding pass instead of N serial
+        writes. Use it for backfill and other high-volume ingest.
+
+        Args:
+            revisions: One dict per revision to create, in order:
+                - "item_kref" (str or Kref, required): the parent item.
+                  Missing items are auto-created; the parent space must
+                  already exist or the row fails.
+                - "metadata" (dict, optional): revision metadata.
+                - "embedding_text" (str, optional): override for the
+                  server-side embedding text (same as create_revision).
+                - "artifacts" (list of dicts, optional): artifacts to attach
+                  to the created revision, each {"name" (kref-safe, unique
+                  within the row), "location", "metadata" (optional),
+                  "default" (bool, optional - at most one per row; makes the
+                  artifact resolvable straight from the item kref)}. An
+                  invalid artifact spec fails its whole row.
+                Rows targeting the same item are applied in list order
+                (consecutive numbers; the last row becomes "latest").
+            idempotency_prefix: When non-empty, each row is recorded under
+                the key "{prefix}:{index}" server-side, so re-submitting the
+                same batch returns the already-created revisions instead of
+                writing duplicates. Keep it stable across retries of the
+                same batch.
+
+        Returns:
+            A tuple of (results, failures):
+            - results: positional, one entry per input row - the created
+              (or idempotently replayed) Revision, or None for rows the
+              server rejected.
+            - failures: (row_index, reason) for each rejected row. All
+              valid rows commit atomically; any other failure raises.
+
+        Raises:
+            ValueError: If a row is missing "item_kref" (client-side).
+            grpc.RpcError: On whole-batch failures (batch too large, quota,
+                server errors). The server caps batches at 200 rows.
+
+        Example:
+            >>> results, failures = client.batch_create_revisions(
+            ...     [
+            ...         # two revisions of the SAME item -> r=1, r=2 ("latest")
+            ...         {"item_kref": "kref://proj/space/mem1.memory",
+            ...          "metadata": {"title": "first draft"}},
+            ...         {"item_kref": "kref://proj/space/mem1.memory",
+            ...          "metadata": {"title": "revised"}},
+            ...         # a different item, with its artifact chain attached
+            ...         {"item_kref": "kref://proj/space/mem2.memory",
+            ...          "metadata": {"title": "second memory"},
+            ...          "embedding_text": "second memory",
+            ...          "artifacts": [{"name": "transcript",
+            ...                         "location": "s3://bucket/mem2.md",
+            ...                         "default": True}]},
+            ...     ],
+            ...     idempotency_prefix="backfill-20260714",
+            ... )
+            >>> created = [r for r in results if r is not None]
+        """
+        rows = []
+        for index, spec in enumerate(revisions):
+            item_kref = spec.get("item_kref")
+            if item_kref is None:
+                raise ValueError(f"revisions[{index}] is missing 'item_kref'")
+            uri = item_kref.uri if isinstance(item_kref, Kref) else str(item_kref)
+            artifacts = [
+                kumiho_pb2.BatchArtifactInput(
+                    name=artifact.get("name", ""),
+                    location=artifact.get("location", ""),
+                    metadata=artifact.get("metadata") or {},
+                    is_default=bool(artifact.get("default", False)),
+                )
+                for artifact in spec.get("artifacts") or []
+            ]
+            rows.append(
+                kumiho_pb2.BatchRevisionRow(
+                    revision=CreateRevisionRequest(
+                        item_kref=kumiho_pb2.Kref(uri=uri),
+                        metadata=spec.get("metadata") or {},
+                        embedding_text=spec.get("embedding_text", ""),
+                    ),
+                    artifacts=artifacts,
+                )
+            )
+
+        req = BatchCreateRevisionsRequest(
+            revisions=rows,
+            idempotency_prefix=idempotency_prefix,
+        )
+        resp = self.stub.BatchCreateRevisions(req)
+
+        failed_indices = {failure.index for failure in resp.failures}
+        results: List[Optional[Revision]] = [
+            None if index in failed_indices else Revision(pb, self)
+            for index, pb in enumerate(resp.results)
+        ]
+        failures = [(failure.index, failure.reason) for failure in resp.failures]
+        return results, failures
 
     def delete_revision(self, kref: Kref, force: bool) -> None:
         """Delete a revision.

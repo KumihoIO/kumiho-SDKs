@@ -110,7 +110,7 @@ Attributes:
     PUBLISHED_TAG (str): Standard tag name for published revisions.
 """
 
-__version__ = "0.10.5"
+__version__ = "0.10.6"
 
 import contextvars
 from typing import Any, Dict, List, Optional, Iterator, Tuple
@@ -840,6 +840,47 @@ def batch_get_revisions(
         item_krefs=item_krefs,
         tag=tag,
         allow_partial=allow_partial,
+    )
+
+
+def batch_create_revisions(
+    revisions: List[Dict[str, Any]],
+    idempotency_prefix: str = "",
+) -> Tuple[List[Optional[Revision]], List[Tuple[int, str]]]:
+    """Create many revisions in a single gRPC call (one server transaction).
+
+    The bulk-write counterpart of create_revision(): use it for backfill and
+    other high-volume ingest. Missing parent items are auto-created from each
+    row's item_kref (the parent space must exist); rows targeting the same
+    item are applied in list order; with an idempotency_prefix, re-submitting
+    the same batch is a no-op that returns the already-created revisions.
+
+    Args:
+        revisions: One dict per revision: {"item_kref": str | Kref (required),
+            "metadata": dict, "embedding_text": str, "artifacts": [{"name",
+            "location", "metadata", "default"}]}. Artifacts attach to the
+            created revision in the same transaction; "default": True (at
+            most one per row) makes the chain resolvable from the item kref.
+        idempotency_prefix: Stable prefix for per-row idempotency keys
+            ("{prefix}:{index}"). Empty disables idempotency.
+
+    Returns:
+        Tuple[List[Optional[Revision]], List[Tuple[int, str]]]: positional
+        results (None where a row was rejected) and (index, reason) failures.
+
+    Example:
+        >>> results, failures = kumiho.batch_create_revisions(
+        ...     [{"item_kref": "kref://proj/space/mem.memory",
+        ...       "metadata": {"title": "backfilled memory"},
+        ...       "artifacts": [{"name": "transcript",
+        ...                      "location": "s3://bucket/mem.md",
+        ...                      "default": True}]}],
+        ...     idempotency_prefix="backfill-20260714",
+        ... )
+    """
+    return get_client().batch_create_revisions(
+        revisions=revisions,
+        idempotency_prefix=idempotency_prefix,
     )
 
 

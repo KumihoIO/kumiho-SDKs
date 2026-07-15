@@ -995,3 +995,57 @@ def test_janus_parity_features(live_client, cleanup_test_data):
     assert len(both_v1) > 0
     both_v2 = v2.get_edges(direction=kumiho.BOTH)
     assert len(both_v2) > 0
+
+
+def test_batch_create_revisions(mock_client):
+    client, mock_stub = mock_client
+    created_a = mock_helpers.mock_revision_response(
+        "kref://p/s/a.memory?r=1", "kref://p/s/a.memory", number=1, latest=True
+    )
+    created_b = mock_helpers.mock_revision_response(
+        "kref://p/s/b.memory?r=4", "kref://p/s/b.memory", number=4, latest=True
+    )
+    failed_stub = mock_helpers.mock_revision_response("", "", number=0, latest=False)
+    mock_stub.BatchCreateRevisions.return_value = (
+        mock_helpers.mock_batch_create_revisions_response(
+            results=[created_a, failed_stub, created_b],
+            failures=[(1, "Parent space not found: /p/nope")],
+        )
+    )
+
+    results, failures = kumiho.batch_create_revisions(
+        [
+            {"item_kref": "kref://p/s/a.memory", "metadata": {"title": "one"},
+             "artifacts": [
+                 {"name": "transcript", "location": "s3://b/t.md", "default": True,
+                  "metadata": {"mime": "text/markdown"}},
+                 {"name": "raw.json", "location": "s3://b/r.json"},
+             ]},
+            {"item_kref": "kref://p/nope/x.memory"},
+            {"item_kref": "kref://p/s/b.memory", "embedding_text": "focused"},
+        ],
+        idempotency_prefix="test-batch",
+    )
+
+    request = mock_stub.BatchCreateRevisions.call_args[0][0]
+    assert request.idempotency_prefix == "test-batch"
+    assert len(request.revisions) == 3
+    assert request.revisions[0].revision.item_kref.uri == "kref://p/s/a.memory"
+    assert request.revisions[0].revision.metadata["title"] == "one"
+    assert request.revisions[2].revision.embedding_text == "focused"
+    artifacts = request.revisions[0].artifacts
+    assert [a.name for a in artifacts] == ["transcript", "raw.json"]
+    assert artifacts[0].is_default and not artifacts[1].is_default
+    assert artifacts[0].location == "s3://b/t.md"
+    assert artifacts[0].metadata["mime"] == "text/markdown"
+    assert len(request.revisions[1].artifacts) == 0
+
+    assert [r.number if r is not None else None for r in results] == [1, None, 4]
+    assert failures == [(1, "Parent space not found: /p/nope")]
+
+
+def test_batch_create_revisions_requires_item_kref(mock_client):
+    client, mock_stub = mock_client
+    with pytest.raises(ValueError, match="revisions\\[0\\] is missing 'item_kref'"):
+        kumiho.batch_create_revisions([{"metadata": {"title": "no kref"}}])
+    mock_stub.BatchCreateRevisions.assert_not_called()

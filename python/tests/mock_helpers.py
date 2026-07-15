@@ -241,3 +241,19 @@ def mock_search_request(
         include_revision_metadata=include_revision_metadata,
         include_artifact_metadata=include_artifact_metadata
     )
+
+def mock_batch_create_revisions_response(results=None, failures=None):
+    """Build a BatchCreateRevisionsResponse: `results` are RevisionResponse
+    protos positional with the request (failed rows = empty stubs), `failures`
+    are (index, reason) pairs."""
+    results = results or []
+    failures = failures or []
+    return kumiho_pb2.BatchCreateRevisionsResponse(
+        results=results,
+        failures=[
+            kumiho_pb2.BatchRevisionFailure(index=index, reason=reason)
+            for index, reason in failures
+        ],
+        requested_count=len(results),
+        succeeded_count=len(results) - len(failures),
+    )
