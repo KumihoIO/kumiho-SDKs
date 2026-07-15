@@ -49,6 +49,7 @@ import re
 import sys
 import threading
 import time
+import traceback
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence, Set, Tuple
@@ -3736,6 +3737,126 @@ Use kumiho_search_items to find matching assets and summarize the results."""
     return server
 
 
+# ============================================================================
+# Process lifecycle hardening
+# ============================================================================
+
+def _windows_parent_pid() -> Optional[int]:
+    """Return the parent PID via NtQueryInformationProcess (Windows only)."""
+    import ctypes
+    from ctypes import wintypes
+
+    class _PROCESS_BASIC_INFORMATION(ctypes.Structure):
+        _fields_ = [
+            ("Reserved1", ctypes.c_void_p),
+            ("PebBaseAddress", ctypes.c_void_p),
+            ("Reserved2", ctypes.c_void_p * 2),
+            ("UniqueProcessId", ctypes.c_void_p),
+            ("InheritedFromUniqueProcessId", ctypes.c_void_p),
+        ]
+
+    try:
+        ntdll = ctypes.WinDLL("ntdll")
+        kernel32 = ctypes.WinDLL("kernel32")
+        kernel32.GetCurrentProcess.restype = ctypes.c_void_p
+        ntdll.NtQueryInformationProcess.argtypes = [
+            ctypes.c_void_p,
+            ctypes.c_int,
+            ctypes.c_void_p,
+            wintypes.ULONG,
+            ctypes.POINTER(wintypes.ULONG),
+        ]
+        pbi = _PROCESS_BASIC_INFORMATION()
+        ret_len = wintypes.ULONG()
+        status = ntdll.NtQueryInformationProcess(
+            kernel32.GetCurrentProcess(),
+            0,  # ProcessBasicInformation
+            ctypes.byref(pbi),
+            ctypes.sizeof(pbi),
+            ctypes.byref(ret_len),
+        )
+        if status != 0 or not pbi.InheritedFromUniqueProcessId:
+            return None
+        return int(pbi.InheritedFromUniqueProcessId)
+    except Exception:
+        return None
+
+
+def _exit_orphaned(ppid: int) -> None:
+    print(
+        f"[kumiho-mcp] Parent process {ppid} exited; shutting down.",
+        file=sys.stderr,
+        flush=True,
+    )
+    os._exit(0)
+
+
+def _start_orphan_watchdog() -> None:
+    """Exit when the parent process dies, so a dead client or launcher can
+    never strand a live server.
+
+    On Windows, MCP clients spawn this server behind a launcher process
+    (e.g. kumiho-plugins' ``run_kumiho_mcp.py``). ``TerminateProcess`` on
+    the launcher does not kill its children, and a pipe handle leaked by a
+    still-running client suppresses the stdin EOF a well-behaved server
+    would exit on — so orphaned servers accumulate across session restarts
+    (kumiho-plugins#25). Watching the parent covers both:
+
+    - Windows: block on the parent-process handle (event-driven).
+    - POSIX: poll ``getppid()``; reparenting (to init or a subreaper)
+      means the parent died.
+
+    If the parent is already gone (or is init) when the watchdog arms,
+    there is nothing to observe and today's behavior is kept. Disable
+    with ``KUMIHO_MCP_DISABLE_ORPHAN_WATCHDOG=1``.
+    """
+    disable = os.environ.get("KUMIHO_MCP_DISABLE_ORPHAN_WATCHDOG", "")
+    if disable.strip().lower() in ("1", "true", "yes"):
+        return
+
+    if os.name == "nt":
+        ppid = _windows_parent_pid()
+        if not ppid:
+            return
+        import ctypes
+        from ctypes import wintypes
+
+        kernel32 = ctypes.WinDLL("kernel32")
+        kernel32.OpenProcess.restype = ctypes.c_void_p
+        kernel32.OpenProcess.argtypes = [
+            wintypes.DWORD, wintypes.BOOL, wintypes.DWORD,
+        ]
+        kernel32.WaitForSingleObject.restype = wintypes.DWORD
+        kernel32.WaitForSingleObject.argtypes = [ctypes.c_void_p, wintypes.DWORD]
+        SYNCHRONIZE = 0x00100000
+        INFINITE = 0xFFFFFFFF
+        handle = kernel32.OpenProcess(SYNCHRONIZE, False, ppid)
+        if not handle:
+            return
+
+        def _watch() -> None:
+            kernel32.WaitForSingleObject(handle, INFINITE)
+            _exit_orphaned(ppid)
+    else:
+        initial_ppid = os.getppid()
+        if initial_ppid <= 1:
+            return
+        try:
+            poll = float(os.environ.get("KUMIHO_MCP_ORPHAN_WATCHDOG_POLL", "5.0"))
+        except ValueError:
+            poll = 5.0
+        poll = max(poll, 0.05)
+
+        def _watch() -> None:
+            while os.getppid() == initial_ppid:
+                time.sleep(poll)
+            _exit_orphaned(initial_ppid)
+
+    threading.Thread(
+        target=_watch, name="kumiho-orphan-watchdog", daemon=True
+    ).start()
+
+
 async def run_server() -> None:
     """Run the MCP server."""
     if not MCP_AVAILABLE:
@@ -3758,8 +3879,35 @@ async def run_server() -> None:
 
 
 def main() -> None:
-    """Entry point for the MCP server CLI."""
-    asyncio.run(run_server())
+    """Entry point for the MCP server CLI.
+
+    Ends with ``os._exit``: once the stdio transport is gone there is
+    nothing left for this process to do, and lingering non-daemon threads
+    (thread pools, gRPC channels) must never keep a dead server alive —
+    orphaned servers accumulate across client restarts (kumiho-plugins#25).
+    """
+    _start_orphan_watchdog()
+    exit_code = 0
+    try:
+        asyncio.run(run_server())
+    except SystemExit as exc:
+        if isinstance(exc.code, int):
+            exit_code = exc.code
+        elif exc.code is not None:
+            exit_code = 1
+    except KeyboardInterrupt:
+        exit_code = 130
+    except BaseException:
+        traceback.print_exc()
+        exit_code = 1
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.flush()
+        except Exception:
+            # The mcp stdio transport closes the real stdio on shutdown
+            # (modelcontextprotocol/python-sdk#1933).
+            pass
+    os._exit(exit_code)
 
 
 if __name__ == "__main__":
