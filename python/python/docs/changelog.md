@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.10.7] - 2026-07-15
+
+### Added
+- **Bulk memory store** — `mcp_server.tool_memory_store_batch(captures,
+  idempotency_prefix=...)`, the batch counterpart of `tool_memory_store`:
+  per-capture space resolution, revision stacking, local auto-artifact, tags,
+  topic bundle, and DERIVED_FROM edges, with the item / revision / artifact
+  writes landing through one `batch_create_revisions` transaction and one
+  chunked embedding pass. Per-capture failures (credential screen, space
+  resolution, rejected rows) return as positionally-aligned
+  `{"error": reason}` entries instead of failing the batch. Consumed by
+  kumiho-memory's batch-aware reflect (kumiho-SDKs#71).
+
 ## [0.10.6] - 2026-07-15
 
 ### Added

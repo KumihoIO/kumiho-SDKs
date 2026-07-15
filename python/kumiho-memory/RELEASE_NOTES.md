@@ -1,5 +1,26 @@
 # Release Notes — kumiho-memory
 
+## v0.17.0
+
+**Release Date:** 2026-07-15
+
+**Batch-aware reflect — bulk captures land in one transaction (#71).**
+`kumiho_memory_reflect` gains an optional `idempotency_prefix`: when set (and
+more than one capture is passed), the per-capture store loop is replaced by a
+single `tool_memory_store_batch` call, which lands every item / revision /
+local-artifact write through the server's `BatchCreateRevisions` in one
+transaction and one chunked embedding pass — the serial fan-out that deadlocks
+at bulk volume (kumiho-server#43) is gone from the bulk path. Re-submitting
+the same captures in the same order under the same prefix replays committed
+rows as server-side no-ops, which is the resume contract History Backfill
+builds on. The result now always includes `capture_results`, positionally 1:1
+with the request's captures (`{"revision_kref"}` or `{"error"}`), so bulk
+replayers can mark per-capture progress exactly. Live conversational reflects
+(no prefix) keep the per-capture loop byte-identical — behavior, tests, and
+`event_date` semantics from 0.16.2 are unchanged there. Requires
+`kumiho>=0.10.7` (ships `tool_memory_store_batch`); on older cores reflect
+silently falls back to the loop.
+
 ## v0.16.2
 
 **Release Date:** 2026-07-14

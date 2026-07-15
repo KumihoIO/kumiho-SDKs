@@ -599,54 +599,106 @@ def tool_memory_reflect(args: Dict[str, Any]) -> Dict[str, Any]:
     source_krefs = args.get("source_krefs") or []
     space_path = args.get("space_path", "")
     do_edges = args.get("discover_edges", True)
+    idempotency_prefix = str(args.get("idempotency_prefix", "") or "")
     stored_krefs: List[str] = []
+    capture_results: List[Dict[str, str]] = []
     edges_total = 0
     dropped_event_dates: List[Dict[str, str]] = []
 
     if captures:
         from kumiho.mcp_server import tool_memory_store
 
+        # Batch write path (kumiho-SDKs#71): when the core SDK exposes the
+        # bulk store, N captures land in ONE BatchCreateRevisions transaction
+        # (single embedding pass, no serial-write deadlocks) — semantics per
+        # capture are unchanged. Fall back to the per-capture loop on older
+        # kumiho versions.
+        try:
+            from kumiho.mcp_server import tool_memory_store_batch
+        except ImportError:
+            tool_memory_store_batch = None
+
         # Canonical valid-time validator, shared with the summarizer path so
         # keyless (reflect) and LLM (consolidation) writes agree on shape.
         from kumiho_memory.memory_manager import _ISO_EVENT_DATE_RE
 
-        for cap in captures:
-            cap_space = cap.get("space_hint", "") or space_path
-
+        def _validated_event_date(cap: Dict[str, Any]) -> Optional[Dict[str, str]]:
             # Valid-time: stamp a validated ISO event_date onto the revision
             # metadata so temporal recall anchors on when the event actually
             # happened, separate from the server-set created_at. A malformed
             # or relative date is dropped and reported — reflect must never
             # fail the loop over a bad date.
-            cap_metadata: Optional[Dict[str, str]] = None
             raw_event_date = str(cap.get("event_date", "") or "").strip()
-            if raw_event_date:
-                if _ISO_EVENT_DATE_RE.match(raw_event_date):
-                    cap_metadata = {"event_date": raw_event_date}
-                else:
-                    dropped_event_dates.append({
-                        "title": cap.get("title", ""),
-                        "event_date": raw_event_date,
-                    })
+            if not raw_event_date:
+                return None
+            if _ISO_EVENT_DATE_RE.match(raw_event_date):
+                return {"event_date": raw_event_date}
+            dropped_event_dates.append({
+                "title": cap.get("title", ""),
+                "event_date": raw_event_date,
+            })
+            return None
 
-            store_result = tool_memory_store(
+        per_capture_krefs: List[str] = []
+        # Batch is opt-in via idempotency_prefix: bulk replayers always pass
+        # one (it is their resume contract), while live reflect keeps the
+        # loop — small capture counts don't need a transaction and existing
+        # callers keep byte-identical behavior.
+        if (tool_memory_store_batch is not None and idempotency_prefix
+                and len(captures) > 1):
+            batch_caps = []
+            for cap in captures:
+                batch_caps.append({
+                    "space_path": cap.get("space_hint", "") or space_path,
+                    "memory_type": cap.get("type", "summary"),
+                    "title": cap.get("title", ""),
+                    "summary": cap.get("content", ""),
+                    "assistant_text": cap.get("content", ""),
+                    "tags": cap.get("tags"),
+                    "metadata": _validated_event_date(cap),
+                })
+            batch_result = tool_memory_store_batch(
+                captures=batch_caps,
                 project=manager.project,
-                space_path=cap_space,
-                memory_type=cap.get("type", "summary"),
-                title=cap.get("title", ""),
-                summary=cap.get("content", ""),
-                assistant_text=cap.get("content", ""),
                 source_revision_krefs=source_krefs if source_krefs else None,
                 edge_type="DERIVED_FROM",
-                tags=cap.get("tags"),
-                metadata=cap_metadata,
                 stack_revisions=True,
+                idempotency_prefix=idempotency_prefix,
             )
-            rev_kref = store_result.get("revision_kref", "")
+            for row in batch_result.get("results") or []:
+                rev_kref = row.get("revision_kref", "")
+                per_capture_krefs.append(rev_kref)
+                if rev_kref:
+                    capture_results.append({"revision_kref": rev_kref})
+                else:
+                    capture_results.append({"error": row.get("error", "store failed")})
+        else:
+            for cap in captures:
+                store_result = tool_memory_store(
+                    project=manager.project,
+                    space_path=cap.get("space_hint", "") or space_path,
+                    memory_type=cap.get("type", "summary"),
+                    title=cap.get("title", ""),
+                    summary=cap.get("content", ""),
+                    assistant_text=cap.get("content", ""),
+                    source_revision_krefs=source_krefs if source_krefs else None,
+                    edge_type="DERIVED_FROM",
+                    tags=cap.get("tags"),
+                    metadata=_validated_event_date(cap),
+                    stack_revisions=True,
+                )
+                rev_kref = store_result.get("revision_kref", "")
+                per_capture_krefs.append(rev_kref)
+                if rev_kref:
+                    capture_results.append({"revision_kref": rev_kref})
+                else:
+                    capture_results.append(
+                        {"error": store_result.get("error", "store failed")})
+
+        # 3. Edge discovery (best-effort, skipped if no server-side LLM)
+        for cap, rev_kref in zip(captures, per_capture_krefs):
             if rev_kref:
                 stored_krefs.append(rev_kref)
-
-            # 3. Edge discovery (best-effort, skipped if no server-side LLM)
             if do_edges and rev_kref and cap.get("type") in (
                 "decision", "architecture", "implementation",
                 "synthesis", "reflection",
@@ -667,6 +719,9 @@ def tool_memory_reflect(args: Dict[str, Any]) -> Dict[str, Any]:
         "captures_stored": len(stored_krefs),
         "edges_discovered": edges_total,
         "stored_krefs": stored_krefs,
+        # Positionally 1:1 with the request's captures — callers doing bulk
+        # replay (History Backfill) mark per-capture progress off this.
+        "capture_results": capture_results,
     }
     if dropped_event_dates:
         result["dropped_event_dates"] = dropped_event_dates
@@ -1235,6 +1290,18 @@ MEMORY_TOOLS: List[Dict[str, Any]] = [
                     "description": (
                         "Run edge discovery on stored captures. "
                         "Gracefully skipped if no server-side LLM."
+                    ),
+                },
+                "idempotency_prefix": {
+                    "type": "string",
+                    "description": (
+                        "Bulk-replay contract: when set (and >1 capture), "
+                        "captures land via one BatchCreateRevisions "
+                        "transaction and re-submitting the same captures in "
+                        "the same order under the same prefix is a no-op. "
+                        "Keep it stable per logical batch (e.g. "
+                        "'backfill:<session-id>'). Leave empty for live "
+                        "conversational reflects."
                     ),
                 },
             },

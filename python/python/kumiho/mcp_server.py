@@ -1080,6 +1080,232 @@ def tool_memory_store(
     return result
 
 
+def _item_kref_for(project_name: str, normalized_space_path: str,
+                   item_name: str, kind: str) -> str:
+    """Kref for an item that may not exist yet (BatchCreateRevisions
+    auto-creates missing items from the row's kref)."""
+    stripped = normalized_space_path.strip("/")
+    if not stripped:
+        stripped = project_name
+    elif stripped != project_name and not stripped.startswith(f"{project_name}/"):
+        stripped = f"{project_name}/{stripped}"
+    return f"kref://{stripped}/{item_name}.{kind}"
+
+
+def tool_memory_store_batch(
+    captures: List[Dict[str, Any]],
+    project: str = "CognitiveMemory",
+    space_path: str = "",
+    source_revision_krefs: Optional[List[str]] = None,
+    edge_type: str = DERIVED_FROM,
+    stack_revisions: bool = True,
+    idempotency_prefix: str = "",
+) -> Dict[str, Any]:
+    """Bulk counterpart of tool_memory_store — N captures, one transaction.
+
+    Per-capture semantics match the single store (space resolution, revision
+    stacking via similar-item search, local auto-artifact, tags, topic
+    bundle, DERIVED_FROM edges), but the item / revision / artifact writes
+    land through ``BatchCreateRevisions``: one server transaction and one
+    chunked embedding pass instead of N serial writes that deadlock at bulk
+    volume (kumiho-server#43).
+
+    Differences, both deliberate:
+
+    * **Per-capture failure isolation** — a capture that fails screening or
+      resolution gets an ``{"error": ...}`` entry; the rest of the batch
+      proceeds (bulk callers must never lose a whole session to one row).
+    * **Idempotent resubmits** — with ``idempotency_prefix``, the server
+      records each row under ``{prefix}:{row_index}``; re-submitting the same
+      captures in the same order replays committed rows as no-ops. Keep the
+      prefix and capture order stable across retries.
+
+    Each capture dict accepts: ``memory_type``, ``title``, ``summary``,
+    ``user_text``, ``assistant_text``, ``tags``, ``metadata``,
+    ``space_hint``, ``memory_item_kind``.
+
+    Returns ``{"results": [...], "succeeded": int}`` — ``results`` is
+    positionally 1:1 with ``captures``; each entry mirrors the single-store
+    result shape or is ``{"error": reason}``.
+    """
+    _ensure_configured()
+    if not captures:
+        return {"results": [], "succeeded": 0}
+
+    project_name = project or "CognitiveMemory"
+    project_obj = _get_project_cached(project_name)
+    redactor = PIIRedactor() if _PRIVACY_AVAILABLE else None
+
+    rows: List[Dict[str, Any]] = []
+    plan: List[Dict[str, Any]] = []  # 1:1 with captures; error rows carry "error"
+    for cap in captures:
+        title = str(cap.get("title", "") or "")
+        summary = str(cap.get("summary", "") or "")
+        user_text = str(cap.get("user_text", "") or "")
+        assistant_text = str(cap.get("assistant_text", "") or "")
+        memory_type = str(cap.get("memory_type", "") or "summary")
+        if not user_text and not assistant_text:
+            plan.append({"error": "user_text or assistant_text must be provided"})
+            continue
+        if redactor is not None:
+            try:
+                for field_value in (user_text, assistant_text, summary, title):
+                    if field_value:
+                        redactor.reject_credentials(field_value)
+            except CredentialDetectedError as exc:
+                plan.append({"error": str(exc)})
+                continue
+
+        cap_space = str(cap.get("space_path", "") or space_path or "")
+        if not cap_space:
+            hint = str(cap.get("space_hint", "") or "").strip()
+            if hint:
+                segments = [seg for seg in hint.split("/") if seg]
+                cap_space = "/".join(_slugify(seg) or seg for seg in segments)
+        try:
+            normalized_space_path = _ensure_space_path(project_obj, cap_space)
+        except Exception as exc:  # space resolution is per-capture fatal
+            plan.append({"error": f"space resolution failed: {exc}"})
+            continue
+
+        memory_kind = str(cap.get("memory_item_kind", "") or "conversation")
+        base_text = title or summary or user_text or assistant_text or "memory"
+        item = None
+        stacked = False
+        if stack_revisions:
+            search_query = title or summary or (user_text or "")[:150]
+            if search_query.strip():
+                item = _find_similar_item(
+                    project_name, normalized_space_path, search_query, memory_kind,
+                )
+                stacked = item is not None
+        if item is not None:
+            item_kref = item.kref.uri
+        else:
+            slug = _slugify(base_text) or "memory"
+            item_name = f"{slug}-{_short_hash(user_text + assistant_text + base_text)}"
+            if len(item_name) > 64:
+                item_name = item_name[:64].rstrip("-")
+            item_kref = _item_kref_for(
+                project_name, normalized_space_path, item_name, memory_kind,
+            )
+
+        final_summary = summary.strip() if summary else (assistant_text or user_text).strip()
+        if len(final_summary) > 2000:
+            final_summary = f"{final_summary[:1997]}..."
+        final_title = title.strip() if title else final_summary[:120]
+
+        base_metadata = {
+            "schema": "kumiho.agent_memory.v1",
+            "type": memory_type,
+            "memory_type": memory_type,
+            "title": final_title,
+            "summary": final_summary,
+            "space": normalized_space_path,
+        }
+        cap_metadata = cap.get("metadata")
+        if cap_metadata:
+            base_metadata.update(cap_metadata)
+
+        artifacts: List[Dict[str, Any]] = []
+        try:
+            item_name_for_artifact = item.item_name if item is not None else item_kref.rsplit(
+                "/", 1)[-1].rsplit(".", 1)[0]
+            location = _write_memory_artifact(
+                project=project_name,
+                space_path=normalized_space_path,
+                item_name=item_name_for_artifact,
+                title=final_title,
+                summary=final_summary,
+                user_text=user_text,
+                assistant_text=assistant_text,
+                memory_type=memory_type,
+            )
+            artifacts = [{"name": "chat_io", "location": location, "default": True}]
+        except Exception as exc:
+            logger.warning(f"Auto-artifact write failed for batch row: {exc}")
+
+        rows.append({
+            "item_kref": item_kref,
+            "metadata": _stringify_metadata(base_metadata),
+            "embedding_text": f"{final_title}\n{final_summary}"[:2000],
+            "artifacts": artifacts,
+        })
+        plan.append({
+            "row_index": len(rows) - 1,
+            "item_kref": item_kref,
+            "space_path": normalized_space_path,
+            "summary": final_summary,
+            "stacked": stacked,
+            "tags": cap.get("tags"),
+            "space_hint": str(cap.get("space_hint", "") or ""),
+        })
+
+    row_results: List[Any] = []
+    if rows:
+        row_results, failures = kumiho.batch_create_revisions(
+            rows, idempotency_prefix=idempotency_prefix,
+        )
+        failure_reasons = {index: reason for index, reason in failures}
+    else:
+        failure_reasons = {}
+
+    results: List[Dict[str, Any]] = []
+    succeeded = 0
+    for entry in plan:
+        if "error" in entry:
+            results.append({"error": entry["error"]})
+            continue
+        revision = row_results[entry["row_index"]] if row_results else None
+        if revision is None:
+            reason = failure_reasons.get(entry["row_index"], "batch row rejected")
+            results.append({"error": reason})
+            continue
+
+        tag_list = entry["tags"] or ["published"]
+        for tag in tag_list:
+            if tag == "latest":
+                continue
+            try:
+                revision.tag(tag)
+            except Exception:
+                continue
+
+        bundle_kref = ""
+        bundle_slug = _slugify(entry["space_hint"]) if entry["space_hint"] else ""
+        if not bundle_slug:
+            bundle_slug = "topic"
+        try:
+            bundle = _get_or_create_bundle(project_obj, entry["space_path"], bundle_slug)
+            bundle.add_member(kumiho.get_item(entry["item_kref"]))
+            bundle_kref = bundle.kref.uri
+        except Exception:
+            bundle_kref = ""
+
+        edges_created = []
+        for source_kref in (source_revision_krefs or []):
+            try:
+                source_rev = kumiho.get_revision(source_kref)
+                edge = revision.create_edge(source_rev, edge_type)
+                edges_created.append(edge.target_kref.uri)
+            except Exception:
+                continue
+
+        results.append({
+            "space_path": entry["space_path"],
+            "item_kref": entry["item_kref"],
+            "revision_kref": revision.kref.uri,
+            "bundle_kref": bundle_kref,
+            "artifact_kref": "",
+            "summary": entry["summary"],
+            "edges_created": edges_created,
+            "stacked": entry["stacked"],
+        })
+        succeeded += 1
+
+    return {"results": results, "succeeded": succeeded}
+
+
 def tool_memory_retrieve(
     project: str = "CognitiveMemory",
     query: str = "",
