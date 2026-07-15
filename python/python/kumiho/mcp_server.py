@@ -44,6 +44,7 @@ import asyncio
 import hashlib
 import json
 import logging
+import math
 import os
 import re
 import sys
@@ -3783,12 +3784,18 @@ def _windows_parent_pid() -> Optional[int]:
 
 
 def _exit_orphaned(ppid: int) -> None:
-    print(
-        f"[kumiho-mcp] Parent process {ppid} exited; shutting down.",
-        file=sys.stderr,
-        flush=True,
-    )
-    os._exit(0)
+    # A dead parent usually means dead stderr too: the farewell message is
+    # best-effort, and os._exit must run no matter what the print does.
+    try:
+        print(
+            f"[kumiho-mcp] Parent process {ppid} exited; shutting down.",
+            file=sys.stderr,
+            flush=True,
+        )
+    except BaseException:
+        pass
+    finally:
+        os._exit(0)
 
 
 def _start_orphan_watchdog() -> None:
@@ -3806,46 +3813,95 @@ def _start_orphan_watchdog() -> None:
     - POSIX: poll ``getppid()``; reparenting (to init or a subreaper)
       means the parent died.
 
-    If the parent is already gone (or is init) when the watchdog arms,
-    there is nothing to observe and today's behavior is kept. Disable
-    with ``KUMIHO_MCP_DISABLE_ORPHAN_WATCHDOG=1``.
+    If the parent died while this module was still importing, Windows
+    detects it at arm time (missing PID, or a recycled PID younger than
+    this process) and exits immediately; POSIX cannot distinguish that
+    from a legitimate init/subreaper parent, so it disarms and relies on
+    the stdin-EOF backstop, as before. Disable with
+    ``KUMIHO_MCP_DISABLE_ORPHAN_WATCHDOG=1``.
     """
     disable = os.environ.get("KUMIHO_MCP_DISABLE_ORPHAN_WATCHDOG", "")
     if disable.strip().lower() in ("1", "true", "yes"):
         return
 
     if os.name == "nt":
-        ppid = _windows_parent_pid()
-        if not ppid:
-            return
-        import ctypes
-        from ctypes import wintypes
+        try:
+            ppid = _windows_parent_pid()
+            if not ppid:
+                return
+            import ctypes
+            from ctypes import wintypes
 
-        kernel32 = ctypes.WinDLL("kernel32")
-        kernel32.OpenProcess.restype = ctypes.c_void_p
-        kernel32.OpenProcess.argtypes = [
-            wintypes.DWORD, wintypes.BOOL, wintypes.DWORD,
-        ]
-        kernel32.WaitForSingleObject.restype = wintypes.DWORD
-        kernel32.WaitForSingleObject.argtypes = [ctypes.c_void_p, wintypes.DWORD]
-        SYNCHRONIZE = 0x00100000
-        INFINITE = 0xFFFFFFFF
-        handle = kernel32.OpenProcess(SYNCHRONIZE, False, ppid)
-        if not handle:
-            return
+            kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+            kernel32.GetCurrentProcess.restype = ctypes.c_void_p
+            kernel32.OpenProcess.restype = ctypes.c_void_p
+            kernel32.OpenProcess.argtypes = [
+                wintypes.DWORD, wintypes.BOOL, wintypes.DWORD,
+            ]
+            kernel32.WaitForSingleObject.restype = wintypes.DWORD
+            kernel32.WaitForSingleObject.argtypes = [
+                ctypes.c_void_p, wintypes.DWORD,
+            ]
+            kernel32.GetProcessTimes.restype = wintypes.BOOL
+            kernel32.GetProcessTimes.argtypes = [ctypes.c_void_p] + (
+                [ctypes.POINTER(wintypes.FILETIME)] * 4
+            )
+            SYNCHRONIZE = 0x00100000
+            PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
+            INFINITE = 0xFFFFFFFF
+            WAIT_OBJECT_0 = 0
+            ERROR_INVALID_PARAMETER = 87
 
-        def _watch() -> None:
-            kernel32.WaitForSingleObject(handle, INFINITE)
-            _exit_orphaned(ppid)
+            handle = kernel32.OpenProcess(
+                SYNCHRONIZE | PROCESS_QUERY_LIMITED_INFORMATION, False, ppid
+            )
+            if not handle:
+                if ctypes.get_last_error() == ERROR_INVALID_PARAMETER:
+                    # No such PID: the parent died while this module was
+                    # importing — that is already the orphan case.
+                    _exit_orphaned(ppid)
+                return  # unopenable (access denied, ...): keep old behavior
+
+            def _creation_time(proc_handle: int) -> Optional[int]:
+                times = (wintypes.FILETIME * 4)()
+                ok = kernel32.GetProcessTimes(
+                    proc_handle,
+                    ctypes.byref(times[0]), ctypes.byref(times[1]),
+                    ctypes.byref(times[2]), ctypes.byref(times[3]),
+                )
+                if not ok:
+                    return None
+                return (times[0].dwHighDateTime << 32) | times[0].dwLowDateTime
+
+            parent_created = _creation_time(handle)
+            own_created = _creation_time(kernel32.GetCurrentProcess())
+            if parent_created and own_created and parent_created > own_created:
+                # A real parent is strictly older than its child, so this
+                # PID was recycled: the actual parent is already gone.
+                _exit_orphaned(ppid)
+
+            def _watch() -> None:
+                if kernel32.WaitForSingleObject(handle, INFINITE) == WAIT_OBJECT_0:
+                    _exit_orphaned(ppid)
+                # Any other result (e.g. WAIT_FAILED) is an ambiguous
+                # signal: fail open rather than ever self-killing a
+                # healthy server.
+        except Exception:
+            return
     else:
         initial_ppid = os.getppid()
         if initial_ppid <= 1:
+            # Direct child of init/subreaper (e.g. a container top process):
+            # reparenting can never be observed. stdin EOF remains the
+            # shutdown signal, as before.
             return
         try:
             poll = float(os.environ.get("KUMIHO_MCP_ORPHAN_WATCHDOG_POLL", "5.0"))
         except ValueError:
             poll = 5.0
-        poll = max(poll, 0.05)
+        if not math.isfinite(poll):
+            poll = 5.0
+        poll = min(max(poll, 0.05), 3600.0)
 
         def _watch() -> None:
             while os.getppid() == initial_ppid:
@@ -3894,6 +3950,11 @@ def main() -> None:
         if isinstance(exc.code, int):
             exit_code = exc.code
         elif exc.code is not None:
+            # Match the interpreter's behavior for sys.exit("message").
+            try:
+                print(exc.code, file=sys.stderr)
+            except Exception:
+                pass
             exit_code = 1
     except KeyboardInterrupt:
         exit_code = 130

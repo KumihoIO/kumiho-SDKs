@@ -5,8 +5,9 @@ Regression coverage for KumihoIO/kumiho-plugins#25 (orphaned
 The server process is exercised for real via subprocess; each test asserts
 one of the three exit paths:
 
-- stdin EOF (transport closed) ends the process,
-- parent death ends the process even when stdin stays open,
+- stdin EOF (transport closed) ends the process cleanly,
+- parent death ends the process even when stdin stays open — and even
+  when the dead parent's stderr pipe is broken,
 - the watchdog kill switch restores today's behavior.
 """
 
@@ -33,14 +34,26 @@ SERVER_ENV = {
 }
 
 # Wrapper that plays the part of the Windows launcher: spawn the server on
-# our stdin, report its PID, then linger long enough for the server to arm
-# its watchdog before dying.
+# our stdin and wait for its startup log line (emitted after the watchdog
+# arms), so a slow import can never outrun this handshake. Report the PID,
+# linger briefly so the test can assert boot health while the parent is
+# still alive, then die. Dying also drops the server's stderr pipe — the
+# orphan must still exit through a broken-stderr farewell.
 _WRAPPER = textwrap.dedent(
     """
     import subprocess, sys, time
-    p = subprocess.Popen([sys.executable, "-m", "kumiho.mcp_server"], stdin=0)
-    print(p.pid, flush=True)
-    time.sleep(4)
+    p = subprocess.Popen(
+        [sys.executable, "-m", "kumiho.mcp_server"],
+        stdin=0,
+        stderr=subprocess.PIPE,
+    )
+    ready = False
+    for line in p.stderr:
+        if b"Starting Kumiho MCP server" in line:
+            ready = True
+            break
+    print(p.pid if ready else "BOOTFAIL", flush=True)
+    time.sleep(0.5)
     """
 )
 
@@ -81,9 +94,15 @@ def _spawn_orphan(env: dict) -> int:
         )
     finally:
         os.close(read_fd)
-    line = wrapper.stdout.readline()
+    line = wrapper.stdout.readline().strip()
     wrapper.stdout.close()
+    if not line or line == b"BOOTFAIL":
+        wrapper.kill()
+        pytest.fail(f"server did not reach its stdio loop (wrapper said {line!r})")
     server_pid = int(line)
+    # The wrapper (parent) is still in its post-handshake linger, so the
+    # watchdog cannot have fired yet: a dead server here is a boot crash.
+    assert _alive(server_pid), "server died right after startup"
     wrapper.wait(timeout=30)
     # Deliberately leak write_fd until process exit: the open write end is
     # what proves the server exited via the watchdog, not via EOF.
@@ -103,6 +122,7 @@ def test_exits_on_stdin_eof():
     except subprocess.TimeoutExpired:
         proc.kill()
         pytest.fail("server still alive 30s after stdin EOF")
+    assert proc.returncode == 0, f"EOF shutdown exited rc={proc.returncode}"
 
 
 @pytest.mark.skipif(os.name == "nt", reason="POSIX watchdog mechanics")
