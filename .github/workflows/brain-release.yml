@@ -1,0 +1,166 @@
+# Releases Kumiho Brain (dashboard/) as prebuilt binaries on a `brain-v*` tag.
+# Cut a release with:
+#   git tag -a brain-v0.1.0 -m "Kumiho Brain v0.1.0" && git push origin brain-v0.1.0
+# Assets land on this repo's Releases (tag family `brain-v*`, never marked
+# "Latest" — that pointer belongs to no single family in this multi-package
+# repo). The one-line installers (dashboard/scripts/install.{sh,ps1}) resolve
+# the newest brain-v* release via the API and checksum-verify every download.
+name: Release Kumiho Brain binaries
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Existing release tag to publish, for example brain-v0.1.0
+        required: false
+  push:
+    tags:
+      - "brain-v*"
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build ${{ matrix.asset }}
+    runs-on: ${{ matrix.os }}
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            asset: kumiho-brain-linux-x86_64
+            exe: ""
+            archive: tar.gz
+          - os: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-gnu
+            asset: kumiho-brain-linux-aarch64
+            exe: ""
+            archive: tar.gz
+          # Intel macOS is intentionally dropped, matching kumiho-server CE:
+          # GitHub is retiring Intel runners and we target Apple Silicon.
+          - os: macos-14
+            target: aarch64-apple-darwin
+            asset: kumiho-brain-macos-aarch64
+            exe: ""
+            archive: tar.gz
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            asset: kumiho-brain-windows-x86_64
+            exe: ".exe"
+            archive: zip
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          # rust/proto is a public git submodule (kumiho-proto); the kumiho
+          # crate's build.rs needs it. No protoc setup step: the crate's
+          # default `vendored-protoc` feature supplies one on every target.
+          submodules: true
+
+      - name: Add Rust target
+        run: rustup target add ${{ matrix.target }}
+
+      - name: Build binary
+        working-directory: dashboard
+        run: cargo build --release --locked --target ${{ matrix.target }}
+
+      - name: Package binary
+        shell: pwsh
+        run: |
+          $version = "${{ inputs.version }}"
+          if ([string]::IsNullOrWhiteSpace($version)) {
+            $version = "${{ github.ref_name }}"
+          }
+          if ($version -notmatch '^brain-v[0-9]') {
+            throw "Release version must be a tag like brain-v0.1.0 (got '$version'). Pass the 'version' input when dispatching from a branch."
+          }
+          # Asset names carry the bare vX.Y.Z (kumiho-brain-linux-x86_64-v0.1.0.tar.gz).
+          $shortVersion = $version -replace '^brain-', ''
+          $assetBase = "${{ matrix.asset }}-$shortVersion"
+          $staging = Join-Path $env:RUNNER_TEMP $assetBase
+          $dist = Join-Path $pwd "dist"
+          New-Item -ItemType Directory -Force -Path $staging, $dist | Out-Null
+
+          $binaryName = "kumiho-brain${{ matrix.exe }}"
+          $binary = Join-Path "dashboard/target/${{ matrix.target }}/release" $binaryName
+          Copy-Item -LiteralPath $binary -Destination (Join-Path $staging $binaryName)
+          Copy-Item -LiteralPath "dashboard/README.md" -Destination (Join-Path $staging "README.md")
+          Copy-Item -LiteralPath "dashboard/LICENSE" -Destination (Join-Path $staging "LICENSE")
+
+          if ("${{ matrix.archive }}" -eq "zip") {
+            Compress-Archive -Path (Join-Path $staging "*") -DestinationPath (Join-Path $dist "$assetBase.zip")
+          } else {
+            tar -czf (Join-Path $dist "$assetBase.tar.gz") -C $staging .
+          }
+
+      - name: Upload package artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.asset }}
+          path: dist/*
+          if-no-files-found: error
+
+  publish:
+    name: Publish GitHub release
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download packages
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Add installer assets
+        run: |
+          cp dashboard/scripts/install.sh dist/install.sh
+          cp dashboard/scripts/install.ps1 dist/install.ps1
+
+      - name: Write checksums
+        working-directory: dist
+        run: sha256sum $(ls | grep -v '^checksums.txt$' | sort) > checksums.txt
+
+      - name: Publish release assets
+        run: |
+          version="${{ inputs.version }}"
+          if [ -z "$version" ]; then
+            version="${{ github.ref_name }}"
+          fi
+          case "$version" in
+            brain-v[0-9]*) ;;
+            *) echo "Release version must be a tag like brain-v0.1.0 (got '$version'). Pass the 'version' input when dispatching from a branch." >&2; exit 1 ;;
+          esac
+          short_version="${version#brain-}"
+
+          notes="Kumiho Brain $short_version — prebuilt dashboard binaries with SHA256 checksums.
+
+          One-line install:
+          \`\`\`sh
+          curl -fsSL https://raw.githubusercontent.com/${{ github.repository }}/main/dashboard/scripts/install.sh | sh
+          \`\`\`
+          \`\`\`powershell
+          irm https://raw.githubusercontent.com/${{ github.repository }}/main/dashboard/scripts/install.ps1 | iex
+          \`\`\`"
+
+          if ! gh release view "$version" --repo "${{ github.repository }}" >/dev/null 2>&1; then
+            # --latest=false: this repo hosts several release families
+            # (sdk-v*, memory-v*, go/v*); brain releases must not capture the
+            # repo-wide "Latest" pointer.
+            gh release create "$version" --repo "${{ github.repository }}" \
+              --verify-tag --latest=false \
+              --title "Kumiho Brain $short_version" --notes "$notes"
+          fi
+          gh release upload "$version" dist/* --repo "${{ github.repository }}" --clobber
