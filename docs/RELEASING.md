@@ -105,3 +105,11 @@ secret is needed.
 |--------|-------|---------|---------------|
 | `CARGO_REGISTRY_TOKEN` | `crates-io` environment (or repo) | `rust-publish.yml` | crates.io → API Tokens (`publish-update`) |
 | `GITHUB_TOKEN` | automatic | `go-release.yml`, all CI | provided by Actions, nothing to set |
+
+## Version surface alignment (kumiho-memory)
+
+Before tagging a kumiho-memory release, align every version surface —
+`pyproject.toml` version, `kumiho_memory/__init__.py` `__version__`, the
+README Status block (beta line + latest-release line), and the
+`[project.urls]` links — so PyPI visitors never see stale versions or dead
+links (issue #107).
