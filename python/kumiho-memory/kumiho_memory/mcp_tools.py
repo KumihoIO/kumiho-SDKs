@@ -21,6 +21,7 @@ with no active event loop — ``asyncio.run()`` is safe to use inside them.
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import logging
 import os
 import threading
@@ -386,14 +387,27 @@ _recall_recent: Dict[str, float] = {}
 
 
 def _recall_signature(args: Dict[str, Any]) -> str:
-    """Dedup key: the query plus the scope args that determine the result set."""
-    return "\x1f".join(str(x) for x in (
+    """Dedup key: a DIGEST of the query plus the scope args that determine the
+    result set.
+
+    Hashed rather than stored raw (#140).  The key lives in the process-global
+    ``_recall_recent`` dict, which is pruned only lazily — inside
+    ``_recall_is_duplicate``, i.e. only when the NEXT recall happens — so after
+    the last recall of a session a raw key would keep that query's text, PII and
+    pasted credentials included, resident in the MCP server process for its
+    remaining lifetime and present in any heap dump or crash report.  Removing
+    the raw query from the log while leaving it in memory would only be half the
+    fix.  The key is compared for equality and nothing else, so a digest costs
+    nothing.
+    """
+    raw = "\x1f".join(str(x) for x in (
         args.get("query", ""),
         args.get("space_paths") or "",
         args.get("memory_types") or "",
         args.get("recall_mode") or "",
         bool(args.get("graph_augmented", False)),
     ))
+    return hashlib.sha256(raw.encode("utf-8", "replace")).hexdigest()
 
 
 def _recall_is_duplicate(args: Dict[str, Any], now: float) -> bool:

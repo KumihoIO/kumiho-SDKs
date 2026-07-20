@@ -3,34 +3,42 @@
 #138/#139 closed the WRITE direction — nothing raw reaches the summarizer LLM
 or the stored payload.  These tests pin the READ direction: a recall query is
 screened INSIDE ``recall_memories``, above the graph branch and above every
-backend call, so it is already in descriptor form by the time it crosses any of
-the three machine boundaries recall touches (the Kumiho server, the LLM
-provider, an embedding provider).
+backend call, and again at the two remote boundaries that are re-exported at
+package top level and so can be reached without a manager at all
+(``two_pass_rerank``, ``GraphAugmentedRecall.recall``).
 
-Assertions are made at the RETRIEVER BOUNDARY wherever possible — on what the
-``memory_retrieve`` stub actually received — not on the caller's intent.  That
-is the only thing that proves the leak is closed.
+Assertions are made at the RETRIEVER / EMBEDDER BOUNDARY wherever possible —
+on what the stub actually received — not on the caller's intent.  That is the
+only thing that proves the leak is closed.
 
-THE DECISIVE TEST is ``test_clean_queries_pass_through_byte_identical``: a query
-matching no pattern is returned as the IDENTICAL object.  That makes retrieval
-impact exactly zero for the overwhelming majority of queries and is the reason
-this ships without a benchmark run.  If that test is weakened, the no-benchmark
-argument is weakened with it.
+THE DECISIVE TEST is ``test_clean_queries_pass_through_byte_identical``: a
+query matching no pattern is returned as the IDENTICAL object.  That makes
+retrieval impact exactly zero for it, and is the reason this ships without a
+benchmark run.  If that test is weakened, the no-benchmark argument is weakened
+with it.  Its corpus deliberately includes the shapes an adversarial review
+measured as FALSE POSITIVES of the write-path pattern set — four-segment
+version strings, IP literals, epoch timestamps, bare 10-digit ids, year lists,
+"Bearer" as prose.  Those are core developer-tool recall vocabulary, so a
+corpus that dodged them would prove nothing about this product's real queries.
+The query-side pattern set was narrowed until they all pass through clean; see
+``PIIRedactor.QUERY_PII_PATTERNS``.
 
 Secret-shaped strings are assembled at RUNTIME by concatenation so no literal
 credential shape ever lands in the repository.
 """
 
 import asyncio
+import logging
 import tempfile
 
 import pytest
 
-from kumiho_memory.memory_manager import (
-    UniversalMemoryManager,
-    _screen_query_for_egress,
+from kumiho_memory.memory_manager import UniversalMemoryManager
+from kumiho_memory.privacy import (
+    QUERY_SCREEN_FAILED,
+    PIIRedactor,
+    screen_query_for_egress,
 )
-from kumiho_memory.privacy import PIIRedactor
 from kumiho_memory.redis_memory import RedisMemoryBuffer
 
 from fakes import FakeRedis
@@ -40,14 +48,25 @@ from fakes import FakeRedis
 PLANTED_EMAIL = "dana.kim" + "@" + "example.com"
 PLANTED_CREDENTIAL = "sk-" + ("Q" * 12) + ("4" * 12)
 PLANTED_SSN = "123" + "-" + "45" + "-" + "6789"
+PLANTED_KR_RRN = "901231" + "-" + "1234567"
+PLANTED_KR_PHONE = "010" + "-" + "1234" + "-" + "5678"
 
 
 class RecordingRetriever:
-    """Captures every kwargs dict the retriever was called with."""
+    """Captures every kwargs dict the retriever was called with.
+
+    Defaults to a NON-EMPTY result so that ``results == []`` assertions in the
+    fail-closed tests are load-bearing: an empty list can then only come from
+    the screen short-circuiting before the backend call, never from the stub.
+    """
 
     def __init__(self, revision_krefs=None):
         self.calls = []
-        self._krefs = revision_krefs or []
+        self._krefs = (
+            ["kref://memory/item.conversation?r=1"]
+            if revision_krefs is None
+            else revision_krefs
+        )
 
     async def __call__(self, **kwargs):
         self.calls.append(dict(kwargs))
@@ -60,24 +79,25 @@ class RecordingRetriever:
         return "\n".join(str(c.get("query", "")) for c in self.calls)
 
 
-class ExplodingRedactor(PIIRedactor):
-    """Real redactor that blows up on a marked query."""
-
-    def anonymize_summary(self, summary):
-        if "BOOM" in summary:
-            raise RuntimeError("redactor exploded")
-        return super().anonymize_summary(summary)
-
-
-def _make_manager(retriever, redactor=None, **kwargs):
+def _make_manager(retriever, **kwargs):
     return UniversalMemoryManager(
         redis_buffer=RedisMemoryBuffer(
             client=FakeRedis(), redis_url="redis://test",
         ),
-        pii_redactor=redactor if redactor is not None else PIIRedactor(),
         memory_retrieve=retriever,
         **kwargs,
     )
+
+
+@pytest.fixture
+def exploding_screen(monkeypatch):
+    """Force the module-owned query redactor to raise."""
+
+    class _Boom(PIIRedactor):
+        def screen_query(self, query):
+            raise RuntimeError("redactor exploded")
+
+    monkeypatch.setattr("kumiho_memory.privacy._QUERY_REDACTOR", _Boom())
 
 
 # --------------------------------------------------------------------------
@@ -104,13 +124,32 @@ CLEAN_QUERIES = [
     # the documented api_key_generic near-miss: hyphenated dictionary prose
     "sk-learn-based-approach-is-better than the alternative",
     "should we use pk-style-naming-for-these-columns",
-    # NOTE: "Bearer token auth" as prose is deliberately NOT in this corpus —
-    # it is a known false positive of the shared ``bearer_token`` pattern and
-    # has its own test below.
     # ISO-8601 timestamps (write path already pins these match nothing)
     "what happened on 2026-07-18T09:30:00+00:00",
     "compare 2026-07-11 against 2026-02-14",
-    # version numbers and numeric runs that are NOT phone/SSN/card shapes
+    # --- shapes an adversarial review measured as write-path FALSE POSITIVES.
+    # Each one was rewritten by the write-path set and is byte-identical here.
+    # FOUR-SEGMENT VERSION STRINGS and IP LITERALS (were `[ip_address]`)
+    "the bug appears in version 1.2.3.4 of the parser",
+    "bump to 1.20.3.4",
+    "kernel 5.15.0.91 changelog",
+    "protobuf 3.21.12.1 upgrade notes",
+    "server on 127.0.0.1 port 8080",
+    "why does it only bind to 192.168.1.10",
+    # BARE 10-DIGIT RUNS: every epoch-seconds timestamp, order id, invoice
+    # number (were `[phone]`, because the write-path separators are optional)
+    "what happened at unix timestamp 1752969600",
+    "logs around 1753000000 show the crash",
+    "order number 1234567890 status",
+    "invoice 9876543210 was refunded",
+    # FOUR SPACE-SEPARATED 4-DIGIT GROUPS, i.e. a year list (was
+    # `[credit_card]`, because the write-path separator class includes \s)
+    "compare 2020 2021 2022 2023 revenue",
+    # "Bearer" AS PROSE (was `[redacted]`; the query-side pattern now demands
+    # a >=20-char unbroken alphanumeric run after the keyword)
+    "Bearer authentication scheme",
+    "what did we decide about Bearer token auth?",
+    # other version and numeric runs
     "regression between v0.19.0 and v0.20.0",
     "the 0.565 result versus the 0.521 gate",
     "issue 138 and issue 139 and issue 140",
@@ -130,11 +169,10 @@ def test_clean_queries_pass_through_byte_identical(query):
     """A query matching no pattern is the CALLER'S OWN OBJECT, unchanged.
 
     Identity (``is``), not merely equality — this is the property that makes
-    the retrieval impact of #140 provably zero for the common case, and it is
+    the retrieval impact of #140 provably zero for these queries, and it is
     what lets this ship without a paired benchmark run.
     """
-    screened = _screen_query_for_egress(PIIRedactor(), query)
-    assert screened is query
+    assert screen_query_for_egress(query) is query
 
 
 def test_clean_query_reaches_retriever_byte_identical():
@@ -148,33 +186,44 @@ def test_clean_query_reaches_retriever_byte_identical():
     assert retriever.queries() == [query]
 
 
-def test_known_false_positive_bearer_prose_degrades_gracefully():
-    """"Bearer token auth" as PROSE trips ``bearer_token``. Pinned, not fixed.
+def test_injected_redactor_does_not_rewrite_queries():
+    """``pii_redactor=`` is the SUMMARY anonymizer, not a query screen.
 
-    This is a pre-existing property of the credential regex #139 already ships:
-    the WRITE path redacts this exact string identically, so the read path
-    matching it is the *consistent* behaviour, not a new defect. Loosening the
-    pattern here would fork the policy in two directions at once — a weaker
-    credential detector AND two divergent redaction policies in one file.
-
-    It IS a real cost on the read side that has no write-side equivalent: the
-    query loses a search term it would otherwise match on. The cost is bounded
-    by exactly this test — the surrounding prose survives (span excision, not
-    line drop), nothing raises, and the query stays usable.
+    Screening runs on a module-owned :class:`PIIRedactor` instead, for two
+    reasons.  (1) Contract: an SDK consumer who injects a domain-specific
+    redactor — product-name masking, locale rules — would otherwise have it
+    silently applied to every search string with no opt-out.  (2) Provability:
+    byte-identical passthrough is the whole no-benchmark argument, and it
+    cannot be established for an arbitrary caller-supplied pattern set.
     """
+
+    class ShoutyRedactor(PIIRedactor):
+        def anonymize_summary(self, summary):
+            return summary.replace("tea", "[topic]")
+
     retriever = RecordingRetriever()
-    manager = _make_manager(retriever)
+    manager = _make_manager(retriever, pii_redactor=ShoutyRedactor())
 
-    results = asyncio.run(manager.recall_memories(
-        "what did we decide about Bearer token auth?", limit=3,
-    ))
+    asyncio.run(manager.recall_memories("tea preferences", limit=3))
 
-    assert results == []
-    sent = retriever.seen_text()
-    assert "[redacted]" in sent
-    # the retrieval-bearing prose is intact on both sides of the excised span
-    assert "what did we decide about" in sent
-    assert "auth?" in sent
+    assert retriever.queries() == ["tea preferences"]
+
+
+def test_oversized_query_is_capped_not_scanned_whole():
+    """The ONE documented exception to byte-identical passthrough.
+
+    The ``email`` pattern is quadratic in the length of an unbroken
+    ``[A-Za-z0-9._%+-]`` run, and ``handle_user_message`` feeds the screen the
+    caller's raw message with no length bound — so a pasted 32 KB log line used
+    to add ~0.6 s of blocking CPU to the turn, on a synchronous call inside an
+    ``async def``.  The cap bounds that.  Queries at or under it are untouched.
+    """
+    at_cap = "y" * PIIRedactor.QUERY_MAX_CHARS
+    assert screen_query_for_egress(at_cap) is at_cap
+
+    over = "x" * (PIIRedactor.QUERY_MAX_CHARS + 1000)
+    screened = screen_query_for_egress(over)
+    assert len(screened) == PIIRedactor.QUERY_MAX_CHARS
 
 
 # --------------------------------------------------------------------------
@@ -201,25 +250,62 @@ def test_pii_query_reaches_retriever_as_descriptors():
     assert "say about the SSN" in sent
 
 
+def test_korean_locale_pii_is_screened():
+    """The write-path pattern set is US-ASCII-shaped, so this package's own
+    primary-locale PII used to pass through byte-identical and reach the wire.
+
+    The query set adds the two Korean shapes that matter: the resident
+    registration number (YYMMDD-Gxxxxxx, month/day validated, so far more
+    precise than the US ``ssn`` shape) and the mobile number.  Both fold into
+    the EXISTING descriptor vocabulary rather than inventing read-only tokens.
+
+    Still open by design (stated, not overlooked): non-ASCII email local parts,
+    international dialling formats, and separator-less digit runs — a bare
+    ``01012345678`` is an 11-digit run indistinguishable from an identifier,
+    exactly as for the ASCII shape.
+    """
+    retriever = RecordingRetriever()
+    manager = _make_manager(retriever)
+
+    asyncio.run(manager.recall_memories(
+        f"주민번호 {PLANTED_KR_RRN} 랑 휴대폰 {PLANTED_KR_PHONE} 확인해줘", limit=3,
+    ))
+
+    sent = retriever.seen_text()
+    assert PLANTED_KR_RRN not in sent
+    assert PLANTED_KR_PHONE not in sent
+    assert "[ssn]" in sent
+    assert "[phone]" in sent
+    # the Korean prose around them survives — span excision, not line drop
+    assert "주민번호" in sent
+    assert "확인해줘" in sent
+
+
 def test_pii_query_still_retrieves_the_anonymized_memory():
     """A raw-PII query still finds the memory stored under the descriptor.
 
-    The index holds ``[email]`` (``anonymize_summary`` runs before storage), so
-    a raw query was searching for a string the index does not contain.  After
-    screening, query and index share the literal token — this test pins that
-    the screened query is the one the retrieval scoring actually sees.
+    Scope, honestly: this is a REGRESSION test, not evidence about real
+    retrieval scoring.  The stub's matching rule is lexical and of our own
+    making; what it pins is that the query the scorer sees is the SCREENED one
+    (it fails on revert, when ``q`` still holds the raw address).
+
+    The premise it illustrates — that the summary index is descriptor-form —
+    was traced end to end and holds for ``summary``.  It does NOT hold for
+    ``payload['user_text']``/``['assistant_text']``, which carry the raw turns
+    and are credential-scanned but never PII-anonymized (#139's stated known
+    boundary), nor for pre-#139 rows' ``structured_metadata``.  So the
+    vocabulary argument is a nice-to-have here, not the load-bearing one;
+    byte-identical passthrough is.
     """
     stored_summary = PIIRedactor().anonymize_summary(
         f"Dana confirmed the rollout date by mail to {PLANTED_EMAIL}."
     )
-    assert "[email]" in stored_summary  # index really is descriptor-form
+    assert "[email]" in stored_summary  # summary index really is descriptor-form
 
     matched = []
 
     async def retriever(**kwargs):
         q = kwargs.get("query", "")
-        # Crude lexical stand-in for the server's scoring: a hit requires the
-        # query and the indexed summary to share the descriptor token.
         if "[email]" in q and "[email]" in stored_summary:
             matched.append(q)
             return {"revision_krefs": ["kref://memory/item.conversation?r=1"]}
@@ -244,9 +330,10 @@ def test_credential_in_query_is_dropped_not_raised():
     query = f"does {PLANTED_CREDENTIAL} still work for staging?"
 
     # No raise: a pasted secret must not abort the caller's turn — and would
-    # abort it again on every retry, since the message is unchanged.
+    # abort it again on every retry, since the message is unchanged.  The query
+    # is still ISSUED (a drop is not a failure), so results come back.
     results = asyncio.run(manager.recall_memories(query, limit=3))
-    assert results == []
+    assert len(results) == 1
 
     sent = retriever.seen_text()
     assert PLANTED_CREDENTIAL not in sent
@@ -261,7 +348,7 @@ def test_credential_drop_is_logged_with_counts_only(caplog):
     retriever = RecordingRetriever()
     manager = _make_manager(retriever)
 
-    with caplog.at_level("WARNING", logger="kumiho_memory.memory_manager"):
+    with caplog.at_level(logging.WARNING, logger="kumiho_memory.privacy"):
         asyncio.run(manager.recall_memories(
             f"is {PLANTED_CREDENTIAL} rotated?", limit=3,
         ))
@@ -272,23 +359,76 @@ def test_credential_drop_is_logged_with_counts_only(caplog):
 
 
 # --------------------------------------------------------------------------
-# (d) fail CLOSED when the redactor itself raises
+# (d) fail CLOSED when screening itself breaks — and say so ACCURATELY
 # --------------------------------------------------------------------------
 
-def test_redactor_exception_fails_closed():
+def test_screen_failure_sends_nothing_at_all(exploding_screen):
+    """Fail-closed short-circuits BEFORE the backend call.
+
+    Not to ``"[redacted]"``: that is not an inert query, it is a live search
+    term that lexically matches exactly those memories whose own text was
+    credential-redacted — so a screening failure would have returned a ranked
+    list biased toward the most sensitive rows in the store.
+    """
     retriever = RecordingRetriever()
-    manager = _make_manager(retriever, redactor=ExplodingRedactor())
-    query = f"BOOM tell me about {PLANTED_EMAIL}"
+    manager = _make_manager(retriever)
 
-    results = asyncio.run(manager.recall_memories(query, limit=3))
+    results = asyncio.run(manager.recall_memories(
+        f"tell me about {PLANTED_EMAIL}", limit=3,
+    ))
 
-    sent = retriever.seen_text()
-    # Nothing of the original query survives — not the needle, not the prose.
-    assert PLANTED_EMAIL not in sent
-    assert "BOOM" not in sent
-    assert sent == "[redacted]"
-    # A guaranteed-empty result is the correct failure mode, not a leak.
+    assert retriever.calls == [], "a failed screen still hit the backend"
+    # Load-bearing: RecordingRetriever returns a non-empty result set, so []
+    # can only come from the short circuit.
     assert results == []
+    # The caller learns WHY the set is empty instead of inferring a miss.
+    assert "screening failed" in (manager._last_backend_error or "")
+
+
+def test_screen_failure_is_not_reported_as_a_credential_hit(
+    exploding_screen, caplog,
+):
+    """A crashed screen must not tell the operator a secret was found.
+
+    The write-path helper collapses both conditions into one counter, so a
+    redactor that merely raised logged "removed 1 credential span(s)" — a
+    signal pointing away from the real cause.  ``screen_query`` returns
+    ``failed`` separately from ``dropped`` so the two stay distinguishable.
+    """
+    manager = _make_manager(RecordingRetriever())
+
+    with caplog.at_level(logging.WARNING, logger="kumiho_memory.privacy"):
+        asyncio.run(manager.recall_memories(
+            "what did we decide about the rollout?", limit=3,
+        ))
+
+    text = caplog.text
+    assert "screening FAILED" in text
+    assert "credential span" not in text
+
+
+def test_residual_credential_after_excision_fails_closed():
+    """Stage [3], the verification pass, is a real gate — not decoration.
+
+    Credential excision runs BEFORE the PII pass, so anything the PII pass
+    introduces has never been screened.  This subclass makes that concrete with
+    a descriptor that is itself credential-shaped; only verification can catch
+    it, and it must report FAILED (not a credential drop) and yield nothing
+    usable.
+    """
+
+    class _ReintroducingRedactor(PIIRedactor):
+        QUERY_PII_PATTERNS = (
+            ("Bearer " + "A" * 25, r"\bWIDGET\b"),
+        )
+
+    screened, dropped, failed = _ReintroducingRedactor().screen_query(
+        "the WIDGET rollout",
+    )
+
+    assert failed is True
+    assert dropped == 0, "a screening failure must not be counted as a drop"
+    assert screened == "[redacted]"
 
 
 # --------------------------------------------------------------------------
@@ -324,20 +464,48 @@ def test_graph_augmented_reformulation_receives_screened_query():
     assert "[redacted]" in seen[0]
 
 
+def test_graph_recall_screens_when_driven_directly():
+    """``GraphAugmentedRecall`` is re-exported at package top level, so an
+    external harness reaches ``_reformulate_query``'s LLM call without ever
+    constructing a manager.  The screen has to be inside ``recall`` too.
+    """
+    from kumiho_memory.graph_augmentation import GraphAugmentedRecall
+
+    seen = []
+
+    async def recall_fn(query, *, limit, space_paths, memory_types):
+        seen.append(query)
+        return []
+
+    gr = GraphAugmentedRecall(recall_fn=recall_fn)
+    asyncio.run(gr.recall(f"who is {PLANTED_EMAIL}", limit=3))
+
+    assert seen, "recall leg was not exercised"
+    assert PLANTED_EMAIL not in seen[0]
+    assert "[email]" in seen[0]
+
+
 # --------------------------------------------------------------------------
-# (f) the caller's input is never mutated
+# (f) the caller's input is never shared with what goes on the wire
 # --------------------------------------------------------------------------
 
-def test_caller_query_is_not_mutated():
+def test_screened_query_is_a_distinct_object_from_the_caller_s():
+    """When screening changes the text, the retriever gets a NEW object and the
+    caller's own string is untouched.
+
+    (Asserting only ``query == original`` would be vacuous — Python strings are
+    immutable, so no implementation could fail it.)
+    """
     retriever = RecordingRetriever()
     manager = _make_manager(retriever)
     query = f"mail {PLANTED_EMAIL} now"
-    original = f"mail {PLANTED_EMAIL} now"
 
     asyncio.run(manager.recall_memories(query, limit=3))
 
-    assert query == original
-    assert PLANTED_EMAIL in query  # caller keeps the raw local copy
+    sent = retriever.queries()[0]
+    assert sent is not query
+    assert PLANTED_EMAIL in query      # caller keeps the raw local copy
+    assert PLANTED_EMAIL not in sent   # the wire does not
 
 
 # --------------------------------------------------------------------------
@@ -417,21 +585,24 @@ def test_background_assess_recall_reaches_retriever_screened():
 # (h) the choke points OUTSIDE recall_memories
 # --------------------------------------------------------------------------
 
+class _RecordingEmbedder:
+    def __init__(self):
+        self.batches = []
+
+    def embed(self, texts):
+        self.batches.append(list(texts))
+        return [[1.0, 0.0] for _ in texts]
+
+
 def test_sibling_embedding_filter_screens_the_query():
     """``build_recalled_context`` is called by ``tool_memory_engage`` with the
     tool's RAW query, independently of the recall — so a ``recall_memories``
     screen does not reach this remote embedding call.  It has its own.
     """
-    embedded = []
-
-    class _RecordingEmbedder:
-        def embed(self, texts):
-            embedded.append(list(texts))
-            return [[1.0, 0.0] for _ in texts]
-
+    embedder = _RecordingEmbedder()
     manager = _make_manager(
         RecordingRetriever(),
-        embedding_adapter=_RecordingEmbedder(),
+        embedding_adapter=embedder,
         sibling_similarity_threshold=0.1,
     )
 
@@ -444,36 +615,80 @@ def test_sibling_embedding_filter_screens_the_query():
         "full",
     )
 
-    assert embedded, "embedding leg was not exercised"
-    sent = "\n".join(embedded[0])
+    assert embedder.batches, "embedding leg was not exercised"
+    sent = "\n".join(embedder.batches[0])
     assert PLANTED_EMAIL not in sent
     assert "[email]" in sent
 
 
-def test_rerank_memories_screens_the_query():
-    """``rerank_memories`` has zero in-package callers — it is API surface for
-    external harnesses, so it never passes through ``recall_memories`` and
-    needs its own screen before ``two_pass_rerank`` embeds the query.
+def test_two_pass_rerank_screens_when_imported_directly():
+    """The screen lives in ``two_pass_rerank`` itself, not in the manager
+    method that calls it.
+
+    ``two_pass_rerank`` is re-exported at package top level, so an external
+    harness — the very consumer the manager-level screen was written for — can
+    ``from kumiho_memory import two_pass_rerank`` and reach the remote
+    embedding endpoint with a raw query, never touching the manager at all.
     """
-    embedded = []
+    from kumiho_memory import two_pass_rerank
 
-    class _RecordingEmbedder:
-        def embed(self, texts):
-            embedded.append(list(texts))
-            return [[1.0, 0.0] for _ in texts]
-
-    manager = _make_manager(
-        RecordingRetriever(), embedding_adapter=_RecordingEmbedder(),
+    embedder = _RecordingEmbedder()
+    two_pass_rerank(
+        f"who is {PLANTED_EMAIL}", [{"title": "t", "summary": "s"}], embedder,
     )
+
+    assert embedder.batches, "embedding leg was not exercised"
+    sent = "\n".join(embedder.batches[0])
+    assert PLANTED_EMAIL not in sent
+    assert "[email]" in sent
+
+
+def test_rerank_memories_delegates_to_the_screened_boundary():
+    """The manager method inherits the screen from ``two_pass_rerank``."""
+    embedder = _RecordingEmbedder()
+    manager = _make_manager(RecordingRetriever(), embedding_adapter=embedder)
 
     manager.rerank_memories(
         [{"title": "t", "summary": "s"}], f"who is {PLANTED_EMAIL}",
     )
 
-    assert embedded, "two_pass_rerank embedding leg was not exercised"
-    sent = "\n".join(embedded[0])
+    assert embedder.batches, "two_pass_rerank embedding leg was not exercised"
+    sent = "\n".join(embedder.batches[0])
     assert PLANTED_EMAIL not in sent
     assert "[email]" in sent
+
+
+def test_code_why_screens_the_question(monkeypatch):
+    """``code_query.why`` fans the question out to two direct ``kumiho.search``
+    RPCs, bypassing ``recall_memories`` entirely.
+
+    Without this test the ``code_why`` screen is the one choke point that can
+    be deleted by a refactor with the suite still green — the other three each
+    fail loudly.
+    """
+    monkeypatch.setenv("KUMIHO_MEMORY_CODE", "1")
+    manager = _make_manager(RecordingRetriever())
+    # Stubbed rather than built: the real context constructs an LLM adapter and
+    # needs live credentials.  The screen under test sits between this and the
+    # `why` call, so the stub is faithful for the property being pinned.
+    monkeypatch.setattr(
+        manager, "_code_memory_context",
+        lambda: (object(), "proj", None, "model"),
+    )
+
+    seen = []
+
+    async def _fake_why(question, **kwargs):
+        seen.append(question)
+        return {"decisions": [], "context": ""}
+
+    monkeypatch.setattr("kumiho_memory.code_query.why", _fake_why)
+
+    asyncio.run(manager.code_why(f"why did we mail {PLANTED_EMAIL}"))
+
+    assert seen, "code_why leg was not exercised"
+    assert PLANTED_EMAIL not in seen[0]
+    assert "[email]" in seen[0]
 
 
 # --------------------------------------------------------------------------
@@ -482,18 +697,40 @@ def test_rerank_memories_screens_the_query():
 
 def test_screen_is_idempotent():
     """Descriptors match no pattern, so a second pass is a byte-identical
-    no-op.  That is what keeps the second choke point free on the already-
-    screened recall path.
+    no-op.  That is what keeps the downstream choke points free on the
+    already-screened recall path.
     """
-    redactor = PIIRedactor()
-    once = _screen_query_for_egress(
-        redactor, f"mail {PLANTED_EMAIL} key {PLANTED_CREDENTIAL}",
+    once = screen_query_for_egress(
+        f"mail {PLANTED_EMAIL} key {PLANTED_CREDENTIAL}",
     )
-    twice = _screen_query_for_egress(redactor, once)
-    assert twice is once
+    assert screen_query_for_egress(once) is once
 
 
-def test_screen_tolerates_missing_redactor_and_empty_query():
-    assert _screen_query_for_egress(None, "anything") == "anything"
-    assert _screen_query_for_egress(PIIRedactor(), "") == ""
-    assert _screen_query_for_egress(PIIRedactor(), None) is None
+def test_container_queries_are_screened_not_passed_through():
+    """The MCP boundary forwards ``args["query"]`` with no type check, and the
+    package already treats message ``content`` as possibly a list of multimodal
+    blocks.  A non-``str`` query must not bypass the screen — that would make
+    "covers every caller by construction" false.
+    """
+    screened = screen_query_for_egress(["contact", PLANTED_EMAIL])
+    assert PLANTED_EMAIL not in screened
+    assert "[email]" in screened[1]
+
+    nested = screen_query_for_egress({"q": [PLANTED_EMAIL], "limit": 5})
+    assert PLANTED_EMAIL not in nested["q"][0]
+    assert nested["limit"] == 5
+
+    # ...and a clean container is still the caller's own object.
+    clean = ["what did we decide", "about the rollout"]
+    assert screen_query_for_egress(clean) is clean
+
+
+def test_screen_tolerates_empty_and_non_text_queries():
+    assert screen_query_for_egress("") == ""
+    assert screen_query_for_egress(None) is None
+    assert screen_query_for_egress(7) == 7
+
+
+def test_failed_container_element_fails_the_whole_query(exploding_screen):
+    """One unscreenable element poisons the container — no partial egress."""
+    assert screen_query_for_egress(["ok", "also ok"]) is QUERY_SCREEN_FAILED

@@ -41,6 +41,7 @@ from kumiho_memory.evidence_rank import (
     evidence_badge,
     parse_evidence,
 )
+from kumiho_memory.privacy import QUERY_SCREEN_FAILED, screen_query_for_egress
 
 logger = logging.getLogger(__name__)
 
@@ -554,6 +555,22 @@ def two_pass_rerank(
     if embedding_adapter is None:
         logger.debug(
             "two_pass_rerank: no embedding adapter configured — skipping"
+        )
+        return memories
+
+    # #140 read-direction screen, placed HERE rather than in the manager
+    # because this function is re-exported at package top level: an external
+    # harness can `from kumiho_memory import two_pass_rerank` and reach the
+    # remote embedding endpoint below without ever constructing a manager.  A
+    # screen one layer up would have been a per-caller patch that missed the
+    # boundary it was written for.  Clean queries pass through byte-identical,
+    # so this is a no-op for the in-package path (already screened in
+    # `recall_memories`) and for the overwhelming majority of external ones.
+    query = screen_query_for_egress(query)
+    if query is QUERY_SCREEN_FAILED:
+        logger.warning(
+            "two_pass_rerank: query screening failed — returning memories "
+            "unreranked rather than embedding an unscreened query"
         )
         return memories
 

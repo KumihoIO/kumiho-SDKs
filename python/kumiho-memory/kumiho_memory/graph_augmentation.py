@@ -29,6 +29,7 @@ from typing import Any, Callable, Coroutine, Dict, List, Optional, Tuple, Union
 
 from kumiho_memory._bounded import run_bounded_in_thread
 from kumiho_memory.grounding import apply_grounding_marker
+from kumiho_memory.privacy import QUERY_SCREEN_FAILED, screen_query_for_egress
 from kumiho_memory.valid_time import apply_valid_interval_marker
 from kumiho_memory.summarization import (
     LLMAdapter,
@@ -376,6 +377,19 @@ class GraphAugmentedRecall:
         overrides of the corresponding :class:`GraphAugmentationConfig`
         fields; ``None`` (the default) keeps the configured values.
         """
+        # #140 read-direction screen.  `GraphAugmentedRecall` is re-exported at
+        # package top level, so an external harness can drive this directly and
+        # hand Stage 1 a raw query to reformulate at the LLM provider.  The
+        # in-package path screens in `recall_memories` before it gets here;
+        # clean queries pass through byte-identical, so the double pass is free.
+        query = screen_query_for_egress(query)
+        if query is QUERY_SCREEN_FAILED:
+            logger.warning(
+                "graph recall: query screening failed — returning no results "
+                "rather than sending an unscreened query"
+            )
+            return []
+
         base_limit = limit
         effective_max_hops = (
             self.config.max_hops if max_hops is None else max_hops
