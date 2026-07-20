@@ -161,6 +161,27 @@ CLEAN_QUERIES = [
     "192.168 is not a full address",
     "call me at 555-1234",
     "AKIA is a prefix but not a key",
+    # --- THREE-GROUP SPACE-SEPARATED NUMERIC PROSE, i.e. `NNN NNN NNNN`.
+    # The corpus above had 4-4-4-4 ("compare 2020 2021 2022 2023") but never
+    # 3-3-4, which is exactly why three adversarial reviewers missed that the
+    # query-side phone separator class admitted a space.  It rewrote 11 of 16
+    # realistic numeric queries to `[phone]`, destroying every search term.
+    # These are the measured cases; they are the regression pin for that class.
+    "benchmark 512 256 1024 tokens per batch",
+    "took 250 500 1000 ms across runs",
+    "latency p50 p95 p99 was 120 450 3200 microseconds",
+    "memory 256 512 1024 MB tiers",
+    "grid size 100 200 3000 nodes",
+    "SELECT * FROM t WHERE id = 100 200 3000",
+    # LONG BARE DIGIT RUNS that are not payment cards.  The separator-less
+    # card shape is "13-19 digits in a row", which is also every long order id
+    # and snowflake id; these fail Luhn and so pass through.
+    "id 123456789012345 in the ledger",
+    "snowflake 1234567890123456789 lookup",
+    "invoice 12345678901234 reissued",
+    # Korean prose carrying numbers, the primary-locale equivalent
+    "한글 질의 회의 결과 정리해줘",
+    "테스트 100 200 3000 건 결과 비교",
 ]
 
 
@@ -254,10 +275,12 @@ def test_korean_locale_pii_is_screened():
     """The write-path pattern set is US-ASCII-shaped, so this package's own
     primary-locale PII used to pass through byte-identical and reach the wire.
 
-    The query set adds the two Korean shapes that matter: the resident
+    Both directions now carry the two Korean shapes that matter: the resident
     registration number (YYMMDD-Gxxxxxx, month/day validated, so far more
     precise than the US ``ssn`` shape) and the mobile number.  Both fold into
     the EXISTING descriptor vocabulary rather than inventing read-only tokens.
+    See :func:`test_query_and_index_agree_on_every_descriptor` for why they
+    must be shared with the write path and not query-only.
 
     Still open by design (stated, not overlooked): non-ASCII email local parts,
     international dialling formats, and separator-less digit runs — a bare
@@ -279,6 +302,55 @@ def test_korean_locale_pii_is_screened():
     # the Korean prose around them survives — span excision, not line drop
     assert "주민번호" in sent
     assert "확인해줘" in sent
+
+
+@pytest.mark.parametrize(
+    "raw",
+    [
+        PLANTED_KR_PHONE,
+        PLANTED_KR_RRN,
+        "555-123-4567",
+        "123-45-6789",
+        "4532-0151-1283-0366",
+    ],
+)
+def test_query_and_index_agree_on_every_descriptor(raw):
+    """The screened QUERY and the anonymized INDEX must emit the SAME token.
+
+    This is the invariant that makes screening retrieval-safe rather than
+    retrieval-destroying, and it is not automatic — it broke once already.
+    When the Korean shapes existed only on the query side, ``010-1234-5678``
+    became ``[phone]`` in the query while the index still held the raw digits:
+    a query that MATCHED before the screen existed MISSED after it.  Screening
+    had made recall worse for the package's primary locale.
+
+    The fix was to define those shapes once at module scope and share them,
+    so this test pins the symmetry rather than the individual patterns — it
+    fails for any future shape added to one direction only.
+    """
+    sentence = f"contact {raw} today"
+    assert screen_query_for_egress(sentence) == PIIRedactor().anonymize_summary(sentence)
+
+
+def test_long_digit_runs_that_are_not_cards_survive():
+    """Luhn separates a pasted card from an ordinary long identifier.
+
+    The separator-less card shape is just "13-19 digits in a row", which also
+    describes every order id, ledger entry and snowflake id.  Without a
+    checksum those were rewritten to ``[credit_card]`` — a measured
+    byte-identity violation.  A real card always satisfies Luhn; an arbitrary
+    run does so about one time in ten.
+    """
+    # a genuine (test-vector) card number still screens, in both forms
+    assert screen_query_for_egress("card 4532015112830366 charged") == "card [credit_card] charged"
+    assert screen_query_for_egress("card 4532-0151-1283-0366 x") == "card [credit_card] x"
+    # ...while non-card digit runs of card-like LENGTH pass through untouched
+    for benign in (
+        "id 123456789012345 in the ledger",
+        "snowflake 1234567890123456789 lookup",
+        "invoice 12345678901234 reissued",
+    ):
+        assert screen_query_for_egress(benign) is benign
 
 
 def test_pii_query_still_retrieves_the_anonymized_memory():

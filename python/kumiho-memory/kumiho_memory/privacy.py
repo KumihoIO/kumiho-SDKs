@@ -33,11 +33,12 @@ would close those cases but would also rewrite ordinary CJK text, which this
 package's primary corpus is full of, so the raw-string behaviour is retained
 deliberately.  This module detects accidents, not adversaries.
 
-``PATTERNS`` is likewise US-ASCII-shaped: it recognises no international phone
-format, no non-ASCII email local part, and no non-US national identifier.  The
-QUERY-side set below adds the two Korean shapes that matter most for this
-package's primary locale; the WRITE path does not have them yet (tracked
-separately).
+``PATTERNS`` is otherwise US-ASCII-shaped: it recognises no international phone
+format beyond the Korean shapes below, and no non-ASCII email local part.  The
+two Korean shapes that matter most for this package's primary locale — mobile
+numbers and resident registration numbers — are defined once at module scope
+and shared by BOTH directions, so a screened query and the stored index always
+agree on the descriptor for the same input.
 
 Query egress
 ------------
@@ -61,13 +62,57 @@ class CredentialDetectedError(ValueError):
     pass
 
 
+# Korean national shapes, defined ONCE and shared by both directions.
+#
+# They live at module scope rather than inside either pattern set because the
+# read and write paths must produce the SAME descriptor for the same input.
+# When only the query side recognised these, screening a Korean phone number
+# turned a query into ``[phone]`` while the index still held the raw digits —
+# a match before this screen existed became a miss after it, which is the
+# opposite of the intended effect.  Sharing the definition makes that class of
+# drift impossible rather than merely absent.
+#
+# Both require separators, for the same reason the ASCII phone shape does: a
+# bare ``01012345678`` is an 11-digit run and indistinguishable from an id.
+_KR_RRN = r"(?<![0-9])\d{2}(?:0[1-9]|1[0-2])(?:0[1-9]|[12]\d|3[01])-[1-8]\d{6}(?![0-9])"
+_KR_MOBILE = r"(?<![0-9])01[016789]-\d{3,4}-\d{4}(?![0-9])"
+
+
+def _luhn_ok(digits: str) -> bool:
+    """True when ``digits`` (separators allowed) satisfies the Luhn checksum.
+
+    Every real payment card does.  An arbitrary numeric run has a ~1-in-10
+    chance, so gating the bare (separator-less) card shape on this turns a
+    measured false positive — a 15/16-digit order or ledger id being rewritten
+    to ``[credit_card]`` — into a rare one, without weakening detection of an
+    actual pasted card number.
+    """
+    stripped = [c for c in digits if c.isdigit()]
+    if not 13 <= len(stripped) <= 19:
+        return False
+    total = 0
+    for index, char in enumerate(reversed(stripped)):
+        value = int(char)
+        if index % 2 == 1:
+            value *= 2
+            if value > 9:
+                value -= 9
+        total += value
+    return total % 10 == 0
+
+
 class PIIRedactor:
     """Detect and redact common PII patterns."""
 
     PATTERNS = {
         "email": r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b",
-        "phone": r"\b(?:\+?1[-.]?)?\(?([0-9]{3})\)?[-.]?([0-9]{3})[-.]?([0-9]{4})\b",
-        "ssn": r"\b\d{3}-\d{2}-\d{4}\b",
+        # Korean mobile first: the ASCII shape would otherwise consume part of
+        # it and emit a differently-bounded span.
+        "phone": (
+            rf"(?:{_KR_MOBILE}|"
+            r"\b(?:\+?1[-.]?)?\(?([0-9]{3})\)?[-.]?([0-9]{3})[-.]?([0-9]{4})\b)"
+        ),
+        "ssn": rf"(?:{_KR_RRN}|\b\d{{3}}-\d{{2}}-\d{{4}}\b)",
         "credit_card": r"\b(?:\d{4}[-\s]?\d{4}[-\s]?\d{4}[-\s]?\d{4}|\d{4}[-\s]?\d{6}[-\s]?\d{5})\b",
         "ip_address": r"\b(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\b",
     }
@@ -158,22 +203,37 @@ class PIIRedactor:
     # shapes before the looser generic ones.
     QUERY_PII_PATTERNS: Tuple[Tuple[str, str], ...] = (
         ("email", PATTERNS["email"]),
-        # Korean resident registration number, YYMMDD-Gxxxxxx.  Validating the
-        # month and day makes this far more precise than the US ``ssn`` shape,
-        # and it is invisible to every write-path pattern.
-        ("ssn", r"(?<![0-9])\d{2}(?:0[1-9]|1[0-2])(?:0[1-9]|[12]\d|3[01])-[1-8]\d{6}(?![0-9])"),
+        # Korean shapes, shared with the write path (see the module-level
+        # definitions) so both directions emit the same descriptor.
+        ("ssn", _KR_RRN),
         ("ssn", PATTERNS["ssn"]),
-        # ``credit_card`` minus the whitespace separator (see above).
+        # ``credit_card`` minus the whitespace separator (see above).  The
+        # separator-less alternative is additionally Luhn-gated — see
+        # QUERY_PII_VALIDATORS.
         ("credit_card", r"\b(?:\d{4}-?\d{4}-?\d{4}-?\d{4}|\d{4}-?\d{6}-?\d{5})\b"),
-        # Korean mobile.  Separator required, exactly as for the ASCII shape:
-        # a bare ``01012345678`` is an 11-digit run and indistinguishable from
-        # an identifier.
-        ("phone", r"(?<![0-9])01[016789]-\d{3,4}-\d{4}(?![0-9])"),
+        ("phone", _KR_MOBILE),
         # ``phone`` with a MANDATORY separator between groups.  ``(555) `` is
         # matched via the lookbehind rather than ``\b``, which does not hold
         # before ``(``.
-        ("phone", r"(?<![0-9A-Za-z])(?:\+?1[-. ])?\(?\d{3}\)?[-. ]\d{3}[-. ]\d{4}(?![0-9])"),
+        #
+        # The separator class is ``[-.]``, matching the write path EXACTLY.
+        # It must not include a space: ``NNN NNN NNNN`` is overwhelmingly
+        # ordinary numeric prose in this corpus, not a phone number.  Measured
+        # on realistic developer queries, a space in this class rewrote 11 of
+        # 16 — "benchmark 512 256 1024 tokens per batch" became
+        # "benchmark [phone] tokens per batch", destroying every search term.
+        # That is the same false-positive class this set exists to close, so
+        # admitting a space here reopened it one line below the comment saying
+        # it was fixed.
+        ("phone", r"(?<![0-9A-Za-z])(?:\+?1[-.])?\(?\d{3}\)?[-.]\d{3}[-.]\d{4}(?![0-9])"),
     )
+
+    # Descriptor -> extra predicate a candidate span must satisfy to be
+    # rewritten.  Only ``credit_card`` needs one: its separator-less form is
+    # just "13-19 digits in a row", which is also every long order id, ledger
+    # entry and snowflake id.  Luhn separates the two without weakening
+    # detection of a genuinely pasted card.
+    QUERY_PII_VALIDATORS = {"credit_card": _luhn_ok}
 
     # Credentials on the query side are the write-path set with ONE precision
     # tightening: ``bearer_token`` as shipped matches the prose "Bearer
@@ -315,7 +375,20 @@ class PIIRedactor:
 
         # [2] PII in place, into the write path's descriptor vocabulary
         for descriptor, pattern in self.QUERY_PII_PATTERNS:
-            text = re.sub(pattern, f"[{descriptor}]", text)
+            validator = self.QUERY_PII_VALIDATORS.get(descriptor)
+            if validator is None:
+                text = re.sub(pattern, f"[{descriptor}]", text)
+                continue
+
+            def _replace(
+                match: "re.Match[str]",
+                _descriptor: str = descriptor,
+                _validator: Any = validator,
+            ) -> str:
+                span = match.group(0)
+                return f"[{_descriptor}]" if _validator(span) else span
+
+            text = re.sub(pattern, _replace, text)
 
         # [3] verify: a residual match means excision did not hold
         for pattern in cred_patterns:
