@@ -415,11 +415,15 @@ def tool_memory_recall(args: Dict[str, Any]) -> Dict[str, Any]:
     with _recall_lock:
         now = time.monotonic()
         if _recall_is_duplicate(args, now):
+            # The query is deliberately NOT logged (#140).  It is raw at this
+            # layer — the screen lives inside `recall_memories`, below the
+            # dedup — so rendering it here would write the very PII/credential
+            # spans the network no longer sees straight into a log file.
+            # Screening for the wire while logging raw to disk is not a fix.
             logger.warning(
                 "kumiho_memory_recall called again with the same query within "
-                "%.1fs — returning empty (query=%r)",
+                "%.1fs — returning empty",
                 _RECALL_DEDUP_WINDOW_SECS,
-                args.get("query", ""),
             )
             return {
                 "results": [],

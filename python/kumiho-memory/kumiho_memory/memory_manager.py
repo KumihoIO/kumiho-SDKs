@@ -326,6 +326,55 @@ def _redact_messages_for_llm(
     return redacted
 
 
+def _screen_query_for_egress(redactor: Any, query: Any) -> Any:
+    """Screen a RECALL QUERY before it leaves the machine (#140).
+
+    The read-direction twin of :func:`_redact_messages_for_llm`.  #138/#139
+    closed the write direction — nothing raw reaches the summarizer or the
+    stored payload — but recall queries were still built from raw conversation
+    text and shipped verbatim: to the Kumiho server (which embeds SERVER-side,
+    so the wire carries the query STRING), to the LLM provider (graph
+    reformulation, sibling rerank, LLM reranker), and to an embedding provider
+    (client-side sibling filtering).  Three distinct machine boundaries, one
+    query.
+
+    Deliberately the SAME primitive and the SAME policy as the write path —
+    :func:`_redact_message_content`, so credentials are excised span-wise on
+    the raw text FIRST (ordering rationale there), PII is anonymized to the
+    same descriptors the stored index uses, and a residual credential match
+    fails CLOSED to ``[redacted]``.  Two divergent redaction policies in one
+    file would itself be the defect.
+
+    Credentials are DROPPED, never raised on.  A raise here would abort the
+    caller's whole turn (``handle_user_message`` awaits recall inline with no
+    ``except``) and would do so again on every retry, since the message is
+    unchanged; in ``_background_assess`` it would additionally kill the store
+    that follows, swallowed at DEBUG.  Same reasoning, same conclusion as
+    ``PIIRedactor.redact_credentials``' docstring.
+
+    THE DECISIVE PROPERTY — a query matching no pattern is returned as the
+    IDENTICAL object, so retrieval is provably unchanged for the overwhelming
+    majority of queries (pinned by test).  That, not any claim about shared
+    vocabulary, is what lets this ship without a benchmark run.
+
+    Only credential drops are logged (counts only, never the matched span or
+    the pre-screen query) — mirroring :func:`_redact_messages_for_llm`, whose
+    PII pass is likewise silent.  A fail-closed ``[redacted]`` always counts as
+    a drop, so an empty result set from a failed screen is never unattributable.
+    """
+    if redactor is None or not isinstance(query, str) or not query:
+        return query
+    screened, dropped = _redact_message_content(redactor, query)
+    if dropped:
+        logger.warning(
+            "recall query screening removed %d credential span(s) before the "
+            "query left the machine",
+            dropped,
+        )
+    # Identity, not just equality: a clean query is the caller's own object.
+    return query if screened == query else screened
+
+
 def _tokenize(text: str) -> List[str]:
     """Lowercase split + strip punctuation, filtering stopwords."""
     return [
@@ -1861,6 +1910,17 @@ class UniversalMemoryManager:
         # Clear any error signal from a previous recall so a later healthy call
         # (even an empty one) never inherits a stale backend_error.
         self._last_backend_error = None
+
+        # #140 read-direction choke point.  ONE screen here — above the graph
+        # branch, above every backend call — covers both recall legs and every
+        # caller present and future by construction: `_background_assess`'s
+        # 3-turn buffer query, `handle_user_message`'s verbatim user message,
+        # the `kumiho_memory_recall`/`kumiho_memory_engage` MCP tools, and the
+        # graph path's LLM query reformulation, which reformulates the SCREENED
+        # form because it reads this rebound local.  Per-caller patches are
+        # exactly what let this gap exist; do not add them.
+        query = _screen_query_for_egress(self.pii_redactor, query)
+
         if graph_augmented and self.graph_augmentation_config is not None:
             gr = self._get_graph_recall()
             if gr is not None:
@@ -2458,6 +2518,11 @@ class UniversalMemoryManager:
         """
         from kumiho_memory.recall_rerank import two_pass_rerank
 
+        # Third #140 choke point.  This method has zero in-package callers — it
+        # is API surface for external harnesses — so it never passes through
+        # `recall_memories`, yet `two_pass_rerank` embeds ``[query] + texts``
+        # via the remote embedding adapter.  It needs its own screen.
+        query = _screen_query_for_egress(self.pii_redactor, query)
         return two_pass_rerank(query, memories, self.embedding_adapter)
 
     _CODE_MEMORY_DISABLED = "code memory is disabled (set KUMIHO_MEMORY_CODE=1)"
@@ -2511,6 +2576,10 @@ class UniversalMemoryManager:
         from kumiho_memory.code_query import why
 
         cfg, project_name, _adapter, _model = ctx
+        # Fourth #140 choke point.  `code_query.why` fans the question out to
+        # two direct `kumiho.search` RPCs, bypassing `recall_memories` entirely.
+        # Gated behind KUMIHO_MEMORY_CODE=1, but the egress is the same wire.
+        question = _screen_query_for_egress(self.pii_redactor, question)
         return await why(
             question,
             file=file, line=line, commit=commit, repo=repo, limit=limit,
@@ -2749,6 +2818,18 @@ class UniversalMemoryManager:
         """
         if not siblings or not query or threshold <= 0 or self.embedding_adapter is None:
             return siblings
+
+        # Second #140 choke point, at the actual network boundary.  A
+        # `recall_memories` screen does NOT reach here: `build_recalled_context`
+        # is called separately by `tool_memory_engage` with the tool's RAW
+        # query, and `embedding_adapter.embed` posts to a remote
+        # OpenAI-compatible endpoint — a third-party boundary distinct from both
+        # the Kumiho server and the summarizer LLM.  Screening here also removes
+        # a ranking inconsistency: engage would otherwise score siblings against
+        # the raw query while retrieval scored against the screened one.
+        # Idempotent on the already-screened recall path (descriptors like
+        # ``[email]`` match no pattern), so that path stays byte-identical.
+        query = _screen_query_for_egress(self.pii_redactor, query)
 
         sib_texts = []
         for sib in siblings:
