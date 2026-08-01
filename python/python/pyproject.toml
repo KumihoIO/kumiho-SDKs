@@ -70,7 +70,15 @@ docs = [
     "myst-parser>=2.0.0",
 ]
 mcp = [
-    "mcp>=1.0.0",
+    # Upper-bounded on purpose. mcp 2.0.0 removed the low-level handler
+    # decorators, and an unbounded ">=1.0.0" meant every fresh install resolved
+    # to it and got a server that raised at construction (kumiho-SDKs#145).
+    # create_mcp_server() now supports both majors; the bound keeps mcp 3.0
+    # from repeating it. Raise it once CI covers the next major.
+    "mcp>=1.0.0,<3",
+    # A transitive dependency of both mcp majors, but mcp_server.py imports it
+    # directly to validate tool input on the 2.x path, so declare it.
+    "jsonschema>=4.0.0",
     "httpx>=0.27.0",
 ]
 all = [
