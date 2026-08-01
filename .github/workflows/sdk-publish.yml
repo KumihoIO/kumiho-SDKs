@@ -49,13 +49,24 @@ jobs:
           pip install build twine toml
 
       - name: Verify version matches tag
+        # Checks all three surfaces, not just pyproject. kumiho/__init__.py
+        # went unchecked and drifted: 0.10.8 shipped to PyPI while __version__
+        # still said 0.10.7, and __version__ is what the MCP server advertises
+        # as serverInfo.version. Any new place the version is written belongs
+        # here too.
         run: |
           TAG_VERSION="${GITHUB_REF#refs/tags/sdk-v}"
           PKG_VERSION=$(python -c "import toml; print(toml.load('pyproject.toml')['project']['version'])")
-          echo "Tag version: $TAG_VERSION"
-          echo "Package version: $PKG_VERSION"
+          DUNDER_VERSION=$(python -c "import re; print(re.search(r'__version__ = \"([^\"]+)\"', open('kumiho/__init__.py').read()).group(1))")
+          echo "Tag version:        $TAG_VERSION"
+          echo "pyproject.toml:     $PKG_VERSION"
+          echo "__init__.__version__: $DUNDER_VERSION"
           if [ "$TAG_VERSION" != "$PKG_VERSION" ]; then
-            echo "Version mismatch! Tag: $TAG_VERSION, Package: $PKG_VERSION"
+            echo "Version mismatch! Tag: $TAG_VERSION, pyproject.toml: $PKG_VERSION"
+            exit 1
+          fi
+          if [ "$TAG_VERSION" != "$DUNDER_VERSION" ]; then
+            echo "Version mismatch! Tag: $TAG_VERSION, kumiho/__init__.py: $DUNDER_VERSION"
             exit 1
           fi
           echo "Version verified: $PKG_VERSION"
