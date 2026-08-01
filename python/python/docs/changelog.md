@@ -5,6 +5,50 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.11.0] - 2026-08-01
+
+### Added
+- **mcp 2.x support** — `kumiho[mcp]` now runs on both mcp 1.x and mcp 2.x.
+  mcp 2.0.0 removed the low-level `Server` handler decorators and replaced them
+  with `on_*` constructor keywords; the six handlers are registered through
+  whichever shape the installed SDK provides, selected by capability detection
+  rather than a version number so editable installs, forks and vendored copies
+  resolve correctly. Capabilities, wire format and tool behavior are identical
+  on both majors.
+- **Tool input validation on the 2.x path** — mcp 1.x validated tool arguments
+  against each tool's `inputSchema` before dispatch and mcp 2.0's low-level path
+  does not, so the SDK now performs that check itself. A schema-violating call
+  is still rejected with `Input validation error: ...` rather than reaching the
+  handler.
+
+### Fixed
+- **`kumiho[mcp]` installed a server that could not start.** The `mcp` extra
+  declared `mcp>=1.0.0` with no upper bound, so once mcp 2.0.0 published, every
+  fresh install resolved to it and `create_mcp_server()` raised
+  `AttributeError: 'Server' object has no attribute 'list_tools'` at
+  construction (KumihoIO/kumiho-SDKs#145).
+- **`resources/read` had never worked**, on any version: the handler assumed a
+  `str` URI but MCP passes a pydantic `AnyUrl`, so every read raised
+  `AttributeError` on its first line (#146). Resource bodies now also keep their
+  declared `application/json` content type instead of being served as
+  `text/plain`, and the project name is percent-decoded — mcp 1.x escapes
+  non-ASCII when an `AnyUrl` is stringified and mcp 2.x does not, so without
+  decoding a Hangul or spaced project name resolved on one major only.
+- **`serverInfo.version` reported the mcp SDK's version** as kumiho's under
+  mcp 1.x, and would have reported an empty string under 2.0 (#147). It now
+  reports kumiho's own version.
+
+### Changed
+- The `mcp` extra is now bounded at **both** ends: `mcp>=1.10.0,<3`. The floor
+  is the oldest release where every assumption in the code actually holds —
+  `mcp.server.lowlevel.helper_types` landed in 1.3.0 and the `call_tool`
+  decorator's `validate_input` in 1.10.0, below which the 1.x path would
+  silently skip tool-argument validation. **Installs pinned below mcp 1.10.0
+  will be upgraded.** CI now runs the suite against the declared floor and both
+  majors, so a future major bump fails the build rather than reaching users.
+- `jsonschema` is declared directly in the `mcp` extra, since the SDK now
+  imports it rather than relying on it transitively.
+
 ## [0.10.8] - 2026-07-15
 
 ### Fixed

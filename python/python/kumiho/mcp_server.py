@@ -54,14 +54,17 @@ import traceback
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence, Set, Tuple
+from urllib.parse import unquote
 
 # MCP SDK imports
 try:
     from mcp.server import Server
     from mcp.server.stdio import stdio_server
+    from mcp.server.lowlevel.helper_types import ReadResourceContents
     from mcp.types import (
         Tool,
         TextContent,
+        TextResourceContents,
         Resource,
         ResourceTemplate,
         Prompt,
@@ -79,6 +82,28 @@ try:
     MCP_AVAILABLE = True
 except ImportError:
     MCP_AVAILABLE = False
+
+# mcp 2.0 did not delete handler registration, it moved it: the low-level
+# ``Server`` lost the six decorators this module used and gained matching
+# ``on_*`` constructor keywords (kumiho-SDKs#145). No single call shape works on
+# both, so ``create_mcp_server`` branches on this flag.
+#
+# Detect by capability, not by version. ``importlib.metadata.version("mcp")``
+# reports a number rather than a shape: it needs a version-to-shape table that
+# goes stale on every upstream move, and it lies outright for editable installs,
+# forks and vendored copies (PackageNotFoundError, no dist-info).
+_MCP_HAS_DECORATORS = MCP_AVAILABLE and hasattr(Server, "list_tools")
+
+# mcp 1.x's ``@server.call_tool()`` defaulted to validate_input=True and checked
+# arguments against each tool's inputSchema before dispatch. mcp 2.0's low-level
+# path has no equivalent, so the 2.x branch re-implements it — without this, the
+# port serves happily while silently accepting malformed arguments for every
+# tool. jsonschema is a hard dependency of both mcp majors; the guard only keeps
+# a damaged install from turning a missing validator into a failure to boot.
+try:
+    import jsonschema as _jsonschema
+except ImportError:  # pragma: no cover - jsonschema ships with mcp
+    _jsonschema = None
 
 # Kumiho imports
 import grpc
@@ -3576,17 +3601,64 @@ except Exception as _exc:
 # MCP Server Implementation
 # ============================================================================
 
+_RESOURCE_MIME_TYPE = "application/json"
+
+
+def _validate_tool_input(name: str, arguments: dict) -> Optional[str]:
+    """Check ``arguments`` against a tool's inputSchema, mcp 1.x style.
+
+    Returns the client-facing error message, or ``None`` when the arguments
+    are acceptable. Only the mcp 2.x branch calls this; on 1.x the SDK does it
+    for us (see ``_MCP_HAS_DECORATORS``) — but only from mcp 1.10.0, which is
+    why that is the declared floor in pyproject rather than a rounder number.
+
+    The schema is read from :data:`TOOLS` rather than off a constructed
+    ``Tool`` model on purpose. mcp 2.0 renamed the model fields camelCase to
+    snake_case (``inputSchema`` to ``input_schema``), so any code that *reads*
+    a field off an mcp model needs a version-agnostic accessor; reading the
+    plain dict we built the model from needs none.
+
+    Mirrors mcp 1.x on the two edge cases: a tool that isn't listed is passed
+    through unvalidated with a warning, and only the first failure is reported.
+    """
+    if _jsonschema is None:  # pragma: no cover - jsonschema ships with mcp
+        return None
+
+    schema = next((t["inputSchema"] for t in TOOLS if t["name"] == name), None)
+    if schema is None:
+        logger.warning("Tool '%s' not listed, no validation will be performed", name)
+        return None
+
+    try:
+        _jsonschema.validate(instance=arguments, schema=schema)
+    except _jsonschema.ValidationError as e:
+        return f"Input validation error: {e.message}"
+    except Exception as e:
+        # An unusable schema (SchemaError, unresolvable $ref) must not escape:
+        # mcp 1.x wrapped the whole dispatch in a try and turned this into an
+        # error result, so letting it propagate here would be a 1.x/2.x
+        # divergence — the client would get a JSON-RPC error instead of a tool
+        # result. Every schema in TOOLS is well-formed, but the kumiho-memory
+        # auto-discovery block appends third-party tools at import time.
+        logger.warning("Tool '%s' has an unusable inputSchema: %s", name, e)
+        return f"Input validation error: {e}"
+    return None
+
+
 def create_mcp_server() -> "Server":
-    """Create and configure the Kumiho MCP server."""
+    """Create and configure the Kumiho MCP server.
+
+    The six handlers are defined once, in the shapes mcp 1.x expects, and are
+    either registered through the 1.x decorators or wrapped into the
+    ``(ctx, params) -> ResultModel`` shape mcp 2.0 wants. Keeping one copy of
+    each body is what stops the two branches from drifting apart.
+    """
     if not MCP_AVAILABLE:
         raise ImportError(
             "MCP SDK not installed. Install with: pip install mcp"
         )
-    
-    server = Server("kumiho-mcp")
-    
-    @server.list_tools()
-    async def list_tools() -> list[Tool]:
+
+    async def list_tools() -> List[Tool]:
         """List all available Kumiho tools."""
         return [
             Tool(
@@ -3596,19 +3668,18 @@ def create_mcp_server() -> "Server":
             )
             for t in TOOLS
         ]
-    
-    @server.call_tool()
+
     async def call_tool(name: str, arguments: dict) -> Sequence[TextContent]:
         """Handle tool invocations."""
         logger.debug(f"Tool call: {name} with args: {arguments}")
-        
+
         handler = TOOL_HANDLERS.get(name)
         if not handler:
             return [TextContent(
                 type="text",
                 text=json.dumps({"error": f"Unknown tool: {name}"}),
             )]
-        
+
         try:
             # Run the tool handler (may be blocking gRPC call)
             # Use asyncio.to_thread to propagate contextvars (like kumiho.use_client)
@@ -3623,9 +3694,8 @@ def create_mcp_server() -> "Server":
                 type="text",
                 text=json.dumps({"error": str(e)}),
             )]
-    
-    @server.list_resources()
-    async def list_resources() -> list[Resource]:
+
+    async def list_resources() -> List[Resource]:
         """List available resources (projects as resources)."""
         try:
             _ensure_configured()
@@ -3635,27 +3705,43 @@ def create_mcp_server() -> "Server":
                     uri=f"kumiho://project/{p.name}",
                     name=p.name,
                     description=p.description or f"Kumiho project: {p.name}",
-                    mimeType="application/json",
+                    mimeType=_RESOURCE_MIME_TYPE,
                 )
                 for p in projects
             ]
         except Exception as e:
             logger.warning(f"Failed to list resources: {e}")
             return []
-    
-    @server.read_resource()
-    async def read_resource(uri: str) -> str:
-        """Read a resource by URI."""
+
+    async def read_resource(uri: Any) -> List[ReadResourceContents]:
+        """Read a resource by URI.
+
+        ``uri`` arrives as a pydantic ``AnyUrl``, not a ``str`` — both majors
+        hand over ``params.uri`` untouched, and ``AnyUrl`` has no ``.startswith``
+        (kumiho-SDKs#146). Coerce before matching.
+
+        Returning ``ReadResourceContents`` rather than a bare ``str`` keeps the
+        declared ``application/json`` mime type on the wire (a bare ``str``
+        becomes ``text/plain``) and is the non-deprecated 1.x shape.
+
+        The name is percent-decoded because the two majors stringify ``AnyUrl``
+        differently: mcp 1.x escapes non-ASCII and spaces, so a Hangul or
+        spaced project name slices out as ``%ED%95%9C...`` and never matches,
+        while mcp 2.x returns it verbatim. Decoding normalizes both.
+        """
+        uri = str(uri)
         if uri.startswith("kumiho://project/"):
-            project_name = uri[len("kumiho://project/"):]
+            project_name = unquote(uri[len("kumiho://project/"):])
             # Use asyncio.to_thread to propagate contextvars
             result = await asyncio.to_thread(tool_get_project, project_name)
-            return json.dumps(result, indent=2, default=str)
-        
+            return [ReadResourceContents(
+                content=json.dumps(result, indent=2, default=str),
+                mime_type=_RESOURCE_MIME_TYPE,
+            )]
+
         raise ValueError(f"Unknown resource URI: {uri}")
-    
-    @server.list_prompts()
-    async def list_prompts() -> list[Prompt]:
+
+    async def list_prompts() -> List[Prompt]:
         """List available prompts."""
         return [
             Prompt(
@@ -3687,7 +3773,6 @@ def create_mcp_server() -> "Server":
             ),
         ]
     
-    @server.get_prompt()
     async def get_prompt(name: str, arguments: Optional[dict] = None) -> GetPromptResult:
         """Get a prompt by name."""
         args = arguments or {}
@@ -3734,8 +3819,78 @@ Use kumiho_search_items to find matching assets and summarize the results."""
             )
         
         raise ValueError(f"Unknown prompt: {name}")
-    
-    return server
+
+    # ``version`` is kumiho's own. Passing none makes mcp 1.x advertise the mcp
+    # SDK's version as kumiho's, and mcp 2.0 advertise an empty string
+    # (kumiho-SDKs#147). Both majors accept it as a keyword.
+    if _MCP_HAS_DECORATORS:
+        server = Server("kumiho-mcp", version=kumiho.__version__)
+        server.list_tools()(list_tools)
+        server.call_tool()(call_tool)
+        server.list_resources()(list_resources)
+        server.read_resource()(read_resource)
+        server.list_prompts()(list_prompts)
+        server.get_prompt()(get_prompt)
+        return server
+
+    if _jsonschema is None:  # pragma: no cover - jsonschema ships with mcp
+        logger.warning(
+            "jsonschema is unavailable: tool input will NOT be validated. "
+            "Reinstall with: pip install 'kumiho[mcp]'"
+        )
+
+    # mcp 2.x. Every handler takes (ctx, params) and must return the full
+    # result model — the runner rejects a bare list or string with
+    # "handler returned {type}; expected BaseModel, dict, or None". ``params``
+    # is None for the un-parameterized list methods.
+    async def on_list_tools(ctx: Any, params: Any) -> "ListToolsResult":
+        return ListToolsResult(tools=await list_tools())
+
+    async def on_call_tool(ctx: Any, params: Any) -> "CallToolResult":
+        arguments = params.arguments or {}
+        error = _validate_tool_input(params.name, arguments)
+        if error is not None:
+            return CallToolResult(
+                content=[TextContent(type="text", text=error)],
+                isError=True,
+            )
+        return CallToolResult(
+            content=list(await call_tool(params.name, arguments)),
+            isError=False,
+        )
+
+    async def on_list_resources(ctx: Any, params: Any) -> "ListResourcesResult":
+        return ListResourcesResult(resources=await list_resources())
+
+    async def on_read_resource(ctx: Any, params: Any) -> "ReadResourceResult":
+        contents = await read_resource(params.uri)
+        return ReadResourceResult(contents=[
+            TextResourceContents(
+                uri=params.uri,
+                text=c.content,
+                mimeType=c.mime_type or "text/plain",
+            )
+            for c in contents
+        ])
+
+    async def on_list_prompts(ctx: Any, params: Any) -> "ListPromptsResult":
+        return ListPromptsResult(prompts=await list_prompts())
+
+    async def on_get_prompt(ctx: Any, params: Any) -> "GetPromptResult":
+        return await get_prompt(params.name, params.arguments)
+
+    # Registering all six advertises the same capabilities as the 1.x branch:
+    # get_capabilities still derives them from which methods are registered.
+    return Server(
+        "kumiho-mcp",
+        version=kumiho.__version__,
+        on_list_tools=on_list_tools,
+        on_call_tool=on_call_tool,
+        on_list_resources=on_list_resources,
+        on_read_resource=on_read_resource,
+        on_list_prompts=on_list_prompts,
+        on_get_prompt=on_get_prompt,
+    )
 
 
 # ============================================================================

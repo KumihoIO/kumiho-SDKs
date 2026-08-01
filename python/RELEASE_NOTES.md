@@ -1,5 +1,33 @@
 # Kumiho Python SDK - Release Notes
 
+## kumiho 0.11.0 (August 2026) — MCP 2.0 Support 🔌
+
+`kumiho[mcp]` now works on **both mcp 1.x and mcp 2.x**.
+
+### 🔴 If you installed `kumiho[mcp]` after mcp 2.0.0 was published, upgrade
+
+mcp 2.0.0 removed the low-level `Server` handler decorators the MCP server was built on, and `kumiho` declared `mcp>=1.0.0` with no upper bound — so a fresh install resolved to 2.0.0 and produced a server that **could not start**:
+
+```
+AttributeError: 'Server' object has no attribute 'list_tools'
+```
+
+This release supports both majors and bounds the dependency at `mcp>=1.10.0,<3`. If you pinned `mcp<2` as a workaround, you can drop the pin.
+
+The floor is bounded too, and is not a round number: `mcp.server.lowlevel.helper_types` only exists from mcp 1.3.0, and the `call_tool` decorator's `validate_input` only from 1.10.0 — below that the SDK does not validate tool arguments at all. 1.10.0 is the oldest release where everything this code relies on actually holds, and CI runs the suite against exactly that version. **If you are pinned below mcp 1.10.0, installing this release will upgrade you.**
+
+### ✨ What changed
+
+- **Dual-major MCP server.** The six handlers (`tools/list`, `tools/call`, `resources/list`, `resources/read`, `prompts/list`, `prompts/get`) are registered through the 1.x decorators or 2.0's `on_*` constructor keywords, chosen by capability detection rather than a version number — so editable installs, forks and vendored copies of `mcp` are detected correctly. Capabilities, wire format and tool behavior are identical on both.
+- **Tool input validation preserved on 2.x.** mcp 1.x validated tool arguments against each tool's `inputSchema` before dispatch; mcp 2.0's low-level path does not. The SDK now performs that check itself, so a schema-violating call is still rejected with `Input validation error: ...` rather than reaching the handler.
+- **`resources/read` fixed.** It had never worked on any version: the handler assumed a `str` URI but MCP passes a pydantic `AnyUrl`, so every read raised `AttributeError`. Resource bodies now also keep their declared `application/json` content type instead of being served as `text/plain`.
+- **`serverInfo.version` reports kumiho's version.** It previously reported the *mcp SDK's* version.
+
+### 🧪 Testing
+
+The MCP server is now covered by construction and dispatch tests that run against **both mcp majors in CI**, so a future major bump fails the build rather than reaching users.
+
+
 ## kumiho 0.10.6 (July 2026) — Bulk Ingest: `batch_create_revisions` 🚚
 
 Adds the missing **bulk write** operation (pairs with `kumiho-server` ≥ 1.6.3): one call writes up to **200 captures in a single server transaction and one batched embedding pass**, replacing N serial `create_item` + `create_revision` (+ `create_artifact`) calls. Built for onboarding backfill, dream state, session mining, and migrations — and safer than fanning out singles, which can deadlock at bulk volume.

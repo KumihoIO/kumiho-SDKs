@@ -1,6 +1,6 @@
 [project]
 name = "kumiho"
-version = "0.10.8"
+version = "0.11.0"
 description = "Python SDK for Kumiho Cloud - Graph-native creative & AI asset management"
 readme = {file = "README.md", content-type = "text/markdown"}
 license = "MIT"
@@ -70,7 +70,26 @@ docs = [
     "myst-parser>=2.0.0",
 ]
 mcp = [
-    "mcp>=1.0.0",
+    # Bounded at BOTH ends, and every bound is exercised by a CI leg.
+    #
+    # Upper: mcp 2.0.0 removed the low-level handler decorators, and an
+    # unbounded ">=1.0.0" meant every fresh install resolved to it and got a
+    # server that raised at construction (kumiho-SDKs#145). "<3" keeps mcp 3.0
+    # from repeating it; raise it only together with a CI leg for that major.
+    #
+    # Lower: 1.10.0 is the oldest release this code actually runs on, not a
+    # guess. mcp.server.lowlevel.helper_types (ReadResourceContents) landed in
+    # 1.3.0, Server(version=...) in 1.2.1, and — the binding one — the
+    # call_tool decorator's validate_input arrived in 1.10.0. Below that the
+    # 1.x branch would silently skip tool-argument validation, since it relies
+    # on the SDK to do it. The previous ">=1.0.0" claimed a range where the
+    # import block fails outright and MCP_AVAILABLE flips to False.
+    "mcp>=1.10.0,<3",
+    # A transitive dependency of both mcp majors, but mcp_server.py imports it
+    # directly to validate tool input on the 2.x path, so declare it.
+    # Matches what mcp itself requires; the code path that uses it only runs
+    # alongside mcp, so declaring anything weaker would be misleading.
+    "jsonschema>=4.20.0",
     "httpx>=0.27.0",
 ]
 all = [
