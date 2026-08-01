@@ -3633,6 +3633,15 @@ def _validate_tool_input(name: str, arguments: dict) -> Optional[str]:
         _jsonschema.validate(instance=arguments, schema=schema)
     except _jsonschema.ValidationError as e:
         return f"Input validation error: {e.message}"
+    except Exception as e:
+        # An unusable schema (SchemaError, unresolvable $ref) must not escape:
+        # mcp 1.x wrapped the whole dispatch in a try and turned this into an
+        # error result, so letting it propagate here would be a 1.x/2.x
+        # divergence — the client would get a JSON-RPC error instead of a tool
+        # result. Every schema in TOOLS is well-formed, but the kumiho-memory
+        # auto-discovery block appends third-party tools at import time.
+        logger.warning("Tool '%s' has an unusable inputSchema: %s", name, e)
+        return f"Input validation error: {e}"
     return None
 
 
@@ -3823,6 +3832,12 @@ Use kumiho_search_items to find matching assets and summarize the results."""
         server.list_prompts()(list_prompts)
         server.get_prompt()(get_prompt)
         return server
+
+    if _jsonschema is None:  # pragma: no cover - jsonschema ships with mcp
+        logger.warning(
+            "jsonschema is unavailable: tool input will NOT be validated. "
+            "Reinstall with: pip install 'kumiho[mcp]'"
+        )
 
     # mcp 2.x. Every handler takes (ctx, params) and must return the full
     # result model — the runner rejects a bare list or string with

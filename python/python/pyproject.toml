@@ -87,7 +87,9 @@ mcp = [
     "mcp>=1.10.0,<3",
     # A transitive dependency of both mcp majors, but mcp_server.py imports it
     # directly to validate tool input on the 2.x path, so declare it.
-    "jsonschema>=4.0.0",
+    # Matches what mcp itself requires; the code path that uses it only runs
+    # alongside mcp, so declaring anything weaker would be misleading.
+    "jsonschema>=4.20.0",
     "httpx>=0.27.0",
 ]
 all = [

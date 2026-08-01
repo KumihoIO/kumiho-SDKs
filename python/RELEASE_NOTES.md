@@ -12,7 +12,9 @@ mcp 2.0.0 removed the low-level `Server` handler decorators the MCP server was b
 AttributeError: 'Server' object has no attribute 'list_tools'
 ```
 
-This release supports both majors and bounds the dependency at `mcp>=1.0.0,<3`. If you pinned `mcp<2` as a workaround, you can drop the pin.
+This release supports both majors and bounds the dependency at `mcp>=1.10.0,<3`. If you pinned `mcp<2` as a workaround, you can drop the pin.
+
+The floor is bounded too, and is not a round number: `mcp.server.lowlevel.helper_types` only exists from mcp 1.3.0, and the `call_tool` decorator's `validate_input` only from 1.10.0 — below that the SDK does not validate tool arguments at all. 1.10.0 is the oldest release where everything this code relies on actually holds, and CI runs the suite against exactly that version. **If you are pinned below mcp 1.10.0, installing this release will upgrade you.**
 
 ### ✨ What changed
 

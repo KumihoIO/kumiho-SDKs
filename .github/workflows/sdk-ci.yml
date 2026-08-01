@@ -66,7 +66,7 @@ jobs:
     # create_mcp_server(), so it shipped silently. This matrix is what makes the
     # next major bump fail here instead of at a user's first launch — when the
     # mcp bound in pyproject is raised, add the new major here in the same PR.
-    name: Python (mcp ${{ matrix.mcp-major }}.x)
+    name: Python (mcp ${{ matrix.mcp-label }})
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -79,11 +79,11 @@ jobs:
           # are tested: ">=1.0.0" was declared once and turned out not to
           # import at all below 1.3.0, nor validate tool input below 1.10.0.
           # If this leg fails, the floor in pyproject.toml is wrong.
-          - mcp-major: '1.10 (floor)'
+          - mcp-label: '1.10.0 floor'
             mcp-spec: 'mcp==1.10.0'
-          - mcp-major: '1'
+          - mcp-label: '1.x'
             mcp-spec: 'mcp>=1,<2'
-          - mcp-major: '2'
+          - mcp-label: '2.x'
             mcp-spec: 'mcp>=2,<3'
     steps:
       - uses: actions/checkout@v4

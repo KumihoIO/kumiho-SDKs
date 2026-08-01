@@ -165,6 +165,28 @@ def test_call_tool_rejects_input_that_violates_the_schema(server: Any) -> None:
     assert "validation error" in result["content"][0]["text"].lower()
 
 
+def test_call_tool_survives_a_tool_with_an_unusable_schema(
+    server: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A broken inputSchema must produce an error result, not escape the handler.
+
+    Every schema in TOOLS is well-formed, but the kumiho-memory auto-discovery
+    block appends third-party tools at import time, so an unusable schema is
+    reachable. mcp 1.x wrapped the whole dispatch in a try and turned this into
+    an error result; if the 2.x branch let jsonschema's SchemaError propagate,
+    the client would get a JSON-RPC error instead — a divergence between majors.
+    """
+    monkeypatch.setattr(
+        mcp_server,
+        "TOOLS",
+        mcp_server.TOOLS
+        + [{"name": "__broken__", "description": "x", "inputSchema": {"type": "nope"}}],
+    )
+    monkeypatch.setitem(mcp_server.TOOL_HANDLERS, "__broken__", lambda args: {"ok": True})
+    result = _dispatch(server, "tools/call", name="__broken__", arguments={})
+    assert result["isError"] is True
+
+
 def test_call_tool_reports_unknown_tools(server: Any) -> None:
     result = _dispatch(server, "tools/call", name="not_a_tool", arguments={})
     assert "Unknown tool" in result["content"][0]["text"]
