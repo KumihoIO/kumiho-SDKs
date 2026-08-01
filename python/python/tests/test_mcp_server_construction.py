@@ -69,9 +69,14 @@ def _dispatch(server: Any, method: str, **params: Any) -> dict:
     else:
         entry = server.get_request_handler(method)
         assert entry is not None, f"no handler registered for {method}"
-        result = asyncio.run(
-            entry.handler(None, params_type(**params) if params_type else None)
-        )
+        # Build params exactly as mcp/server/runner.py does, rather than
+        # passing None for the list methods. The runner's contract is
+        # "absent params validate as {} ... the handler receives the model
+        # with its defaults, never None", so handing a handler None here
+        # would let a handler that dereferences params pass this suite and
+        # still fail against a real client.
+        typed_params = entry.params_type.model_validate(params, by_name=False)
+        result = asyncio.run(entry.handler(None, typed_params))
 
     # by_alias gives the camelCase wire names on both majors, so assertions
     # below never depend on which one is installed.
@@ -187,6 +192,23 @@ def test_read_resource_accepts_the_anyurl_mcp_actually_passes(server: Any) -> No
     # A bare str return would have been served as text/plain despite the
     # resource listing advertising JSON.
     assert contents["mimeType"] == "application/json"
+
+
+@pytest.mark.parametrize(
+    "project_name", ["demo", "my project", "한글프로젝트", "a+b", "50%off"]
+)
+def test_read_resource_decodes_the_project_name(server: Any, project_name: str) -> None:
+    """The two majors stringify ``AnyUrl`` differently, so the name must decode.
+
+    mcp 1.x percent-escapes spaces and non-ASCII when an ``AnyUrl`` is coerced
+    to ``str``, so a Hangul project name slices out as ``%ED%95%9C...`` and is
+    passed to the backend in that form; mcp 2.x returns it verbatim. Without
+    decoding, ``resources/read`` is wrong on 1.x and the two majors disagree —
+    the opposite of what this port claims. Kumiho project names are routinely
+    non-ASCII, so this is not a hypothetical.
+    """
+    result = _dispatch(server, "resources/read", uri=f"kumiho://project/{project_name}")
+    assert json.loads(result["contents"][0]["text"])["name"] == project_name
 
 
 def test_read_resource_rejects_an_unknown_uri(server: Any) -> None:

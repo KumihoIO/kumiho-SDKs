@@ -54,6 +54,7 @@ import traceback
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence, Set, Tuple
+from urllib.parse import unquote
 
 # MCP SDK imports
 try:
@@ -3607,8 +3608,9 @@ def _validate_tool_input(name: str, arguments: dict) -> Optional[str]:
     """Check ``arguments`` against a tool's inputSchema, mcp 1.x style.
 
     Returns the client-facing error message, or ``None`` when the arguments
-    are acceptable. Only the mcp 2.x branch calls this; on 1.x the SDK still
-    does it for us (see ``_MCP_HAS_DECORATORS``).
+    are acceptable. Only the mcp 2.x branch calls this; on 1.x the SDK does it
+    for us (see ``_MCP_HAS_DECORATORS``) — but only from mcp 1.10.0, which is
+    why that is the declared floor in pyproject rather than a rounder number.
 
     The schema is read from :data:`TOOLS` rather than off a constructed
     ``Tool`` model on purpose. mcp 2.0 renamed the model fields camelCase to
@@ -3712,10 +3714,15 @@ def create_mcp_server() -> "Server":
         Returning ``ReadResourceContents`` rather than a bare ``str`` keeps the
         declared ``application/json`` mime type on the wire (a bare ``str``
         becomes ``text/plain``) and is the non-deprecated 1.x shape.
+
+        The name is percent-decoded because the two majors stringify ``AnyUrl``
+        differently: mcp 1.x escapes non-ASCII and spaces, so a Hangul or
+        spaced project name slices out as ``%ED%95%9C...`` and never matches,
+        while mcp 2.x returns it verbatim. Decoding normalizes both.
         """
         uri = str(uri)
         if uri.startswith("kumiho://project/"):
-            project_name = uri[len("kumiho://project/"):]
+            project_name = unquote(uri[len("kumiho://project/"):])
             # Use asyncio.to_thread to propagate contextvars
             result = await asyncio.to_thread(tool_get_project, project_name)
             return [ReadResourceContents(
