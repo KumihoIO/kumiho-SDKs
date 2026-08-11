@@ -14,6 +14,18 @@ def unique_name(prefix: str) -> str:
 import mock_helpers
 
 
+def test_mcp_edge_ontology_exposes_creative_provenance_types():
+    from kumiho.mcp_server import TOOLS
+
+    schemas = {tool["name"]: tool["inputSchema"] for tool in TOOLS}
+    expected = {"CREATED_FROM", "PRODUCED_BY", "DERIVED_FROM", "MIGRATED_FROM"}
+    for tool_name in ("kumiho_create_edge", "kumiho_delete_edge"):
+        advertised = set(
+            schemas[tool_name]["properties"]["edge_type"]["enum"]
+        )
+        assert expected <= advertised
+
+
 # --- Constants ---
 PUBLISHED_TAG = "published"
 
@@ -59,8 +71,9 @@ def test_project_crud(mock_client):
 
     # Delete
     mock_stub.DeleteProject.return_value = mock_helpers.mock_status_response(success=True, message="ok")
-    resp = kumiho.delete_project(project_id="p1", force=True)
+    resp = kumiho.delete_project(project_id="p1")
     mock_stub.DeleteProject.assert_called_once()
+    assert mock_stub.DeleteProject.call_args.args[0].force is False
     assert resp.success
 
 

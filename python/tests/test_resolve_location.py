@@ -16,7 +16,10 @@ def unique_project(client):
     yield project
     # Cleanup
     try:
-        client.delete_project(project.id, force=True)
+        project = project.deprecate()
+        impact = project.analyze_deletion()
+        if not impact.blockers:
+            project.hard_delete(impact, confirmed=True)
     except Exception:
         pass
 

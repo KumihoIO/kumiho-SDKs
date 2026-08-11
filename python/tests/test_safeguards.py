@@ -22,7 +22,7 @@ def test_safeguards_lifecycle(client):
     
     # 1. Create a Project
     try:
-        client.create_project(project_name, "Test Project for Safeguards")
+        project = client.create_project(project_name, "Test Project for Safeguards")
     except KumihoError as e:
         if "already exists" not in str(e):
             raise
@@ -74,6 +74,11 @@ def test_safeguards_lifecycle(client):
     published_revision = client.get_revision(revision.kref.uri)
     assert published_revision.kref.uri == revision.kref.uri
     assert client.has_tag(revision.kref, "published")
+
+    project = project.deprecate()
+    impact = project.analyze_deletion()
+    assert not impact.blockers
+    project.hard_delete(impact, confirmed=True)
     
     # 6. (Optional) Negative Test: Invalid Token
     # We can't easily switch the client's token to an "anonymous" one that is valid

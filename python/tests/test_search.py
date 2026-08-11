@@ -130,9 +130,9 @@ class TestSearchClient:
         mock_stub.Search.assert_called_once()
         assert len(results) == 2
         assert results[0].item.name == "hero.model"
-        assert results[0].score == 0.95
+        assert results[0].score == pytest.approx(0.95)
         assert results[1].item.name == "villain.model"
-        assert results[1].score == 0.85
+        assert results[1].score == pytest.approx(0.85)
 
     def test_search_with_kind_filter(self, mock_client):
         """Test search with kind filter."""
@@ -335,9 +335,9 @@ class TestSearchClient:
         results = client.search("model")
 
         assert len(results) == 3
-        assert results[0].score == 0.99
-        assert results[1].score == 0.75
-        assert results[2].score == 0.50
+        assert results[0].score == pytest.approx(0.99)
+        assert results[1].score == pytest.approx(0.75)
+        assert results[2].score == pytest.approx(0.50)
 
 
 # --- High-Level API Tests ---

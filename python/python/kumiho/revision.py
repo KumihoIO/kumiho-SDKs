@@ -507,7 +507,8 @@ class Revision(KumihoObject):
         self,
         target_revision: 'Revision',
         edge_type: str,
-        metadata: Optional[Dict[str, str]] = None
+        metadata: Optional[Dict[str, str]] = None,
+        idempotency_key: Optional[str] = None,
     ) -> 'Edge':
         """Create an edge from this revision to another revision.
 
@@ -522,6 +523,7 @@ class Revision(KumihoObject):
                 - ``kumiho.REFERENCED``: This revision references target.
                 - ``kumiho.CONTAINS``: This revision contains target.
             metadata: Optional metadata for the edge.
+            idempotency_key: Stable tenant-scoped identity for retry-safe creation.
 
         Returns:
             Edge: The created Edge object.
@@ -539,7 +541,13 @@ class Revision(KumihoObject):
             ...     "modification": "Added details"
             ... })
         """
-        return self._client.create_edge(self, target_revision, edge_type, metadata)
+        return self._client.create_edge(
+            self,
+            target_revision,
+            edge_type,
+            metadata,
+            idempotency_key=idempotency_key,
+        )
 
     def get_edges(
         self,

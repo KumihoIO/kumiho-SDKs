@@ -71,6 +71,7 @@ from .proto.kumiho_pb2 import (
     DeleteArtifactRequest,
     DeleteRevisionRequest,
     DeleteProjectRequest,
+    ProjectDeletionImpactRequest,
     DeleteAttributeRequest,
     EventStreamRequest,
     GetAttributeRequest,
@@ -115,7 +116,7 @@ from .proto.kumiho_pb2 import (
 )
 from .edge import Edge, TraversalResult, ImpactedRevision, ShortestPathResult
 from .proto.kumiho_pb2 import ProjectResponse, StatusResponse
-from .project import Project
+from .project import Project, ProjectDeletionImpact
 from .item import Item
 from .artifact import Artifact
 from .revision import Revision
@@ -480,8 +481,17 @@ class _Client:
         return grpc.ssl_channel_credentials()
 
     # Project methods
-    def create_project(self, name: str, description: str = "") -> Project:
-        req = CreateProjectRequest(name=name, description=description)
+    def create_project(
+        self,
+        name: str,
+        description: str = "",
+        metadata: Optional[Dict[str, str]] = None,
+    ) -> Project:
+        req = CreateProjectRequest(
+            name=name,
+            description=description,
+            metadata=metadata or {},
+        )
         try:
             resp = self.stub.CreateProject(req)
         except grpc.RpcError as exc:
@@ -490,20 +500,54 @@ class _Client:
             raise
         return Project(resp, self)
 
-    def get_projects(self) -> List[Project]:
-        req = GetProjectsRequest()
+    def get_projects(self, include_deprecated: bool = False) -> List[Project]:
+        req = GetProjectsRequest(include_deprecated=include_deprecated)
         resp = self.stub.GetProjects(req)
         return [Project(pb, self) for pb in resp.projects]
 
-    def get_project(self, name: str) -> Optional[Project]:
+    def get_project(
+        self, name: str, include_deprecated: bool = False
+    ) -> Optional[Project]:
         """Return the first project matching the given name, or None if not found."""
-        for project in self.get_projects():
+        for project in self.get_projects(include_deprecated=include_deprecated):
             if project.name == name:
                 return project
         return None
 
-    def delete_project(self, project_id: str, force: bool = False) -> StatusResponse:
-        req = DeleteProjectRequest(project_id=project_id, force=force)
+    def analyze_project_deletion(self, project_id: str) -> ProjectDeletionImpact:
+        response = self.stub.AnalyzeProjectDeletion(
+            ProjectDeletionImpactRequest(project_id=project_id)
+        )
+        return ProjectDeletionImpact(
+            impact_snapshot_id=response.impact_snapshot_id,
+            impact_snapshot_hash=response.impact_snapshot_hash,
+            project_id=response.project_id,
+            project_name=response.project_name,
+            blockers=tuple(response.blockers),
+            descendants=tuple(response.descendants),
+            created_at=response.created_at,
+        )
+
+    def delete_project(
+        self,
+        project_id: str,
+        force: bool = False,
+        *,
+        impact_snapshot_id: str = "",
+        impact_snapshot_hash: str = "",
+        confirmed: bool = False,
+    ) -> StatusResponse:
+        if force and not (impact_snapshot_id and impact_snapshot_hash and confirmed):
+            raise ValueError(
+                "hard-delete requires a server impact snapshot and confirmed=True"
+            )
+        req = DeleteProjectRequest(
+            project_id=project_id,
+            force=force,
+            impact_snapshot_id=impact_snapshot_id,
+            impact_snapshot_hash=impact_snapshot_hash,
+            confirmed=confirmed,
+        )
         resp = self.stub.DeleteProject(req)
         return resp
 
@@ -511,29 +555,45 @@ class _Client:
         self,
         project_id: str,
         allow_public: Optional[bool] = None,
-        description: Optional[str] = None
+        description: Optional[str] = None,
+        metadata: Optional[Dict[str, str]] = None,
+        deprecated: Optional[bool] = None,
     ) -> Project:
         kwargs: Dict[str, Any] = {"project_id": project_id}
         if allow_public is not None:
             kwargs["allow_public"] = allow_public
         if description is not None:
             kwargs["description"] = description
+        if metadata:
+            kwargs["metadata"] = metadata
+        if deprecated is not None:
+            kwargs["deprecated"] = deprecated
         req = kumiho_pb2.UpdateProjectRequest(**kwargs)
         resp = self.stub.UpdateProject(req)
         return Project(resp, self)
 
     # Space methods
-    def create_space(self, parent_path: str, space_name: str) -> Space:
+    def create_space(
+        self,
+        parent_path: str,
+        space_name: str,
+        metadata: Optional[Dict[str, str]] = None,
+    ) -> Space:
         """Create a new space.
 
         Args:
             parent_path: The path of the parent space.
             space_name: The name of the new space.
+            metadata: Initial string metadata committed with Space creation.
 
         Returns:
             The created Space object.
         """
-        req = CreateSpaceRequest(parent_path=parent_path, space_name=space_name)
+        req = CreateSpaceRequest(
+            parent_path=parent_path,
+            space_name=space_name,
+            metadata=metadata or {},
+        )
         resp = self.stub.CreateSpace(req)
         return Space(resp, self)
 
@@ -952,7 +1012,7 @@ class _Client:
         resp = self.stub.UpdateItemMetadata(req)
         return Item(resp, self)
 
-    def create_revision(self, item_kref: Kref, metadata: Optional[Dict[str, str]] = None, number: int = 0, embedding_text: str = "") -> Revision:
+    def create_revision(self, item_kref: Kref, metadata: Optional[Dict[str, str]] = None, number: int = 0, embedding_text: str = "", idempotency_key: Optional[str] = None) -> Revision:
         """Create a new revision for an item.
 
         Args:
@@ -963,12 +1023,22 @@ class _Client:
                 the server-side embedding. When empty the server auto-generates
                 from concatenated metadata. Pass a focused string (e.g. title +
                 summary) to produce more semantically distinctive embeddings.
+            idempotency_key: Stable tenant-scoped identity for retry-safe creation.
 
         Returns:
             The created Revision object.
         """
         req = CreateRevisionRequest(item_kref=item_kref.to_pb(), metadata=metadata or {}, number=number, embedding_text=embedding_text)
-        resp = self.stub.CreateRevision(req)
+        call_metadata = (
+            (("x-idempotency-key", idempotency_key),)
+            if idempotency_key
+            else None
+        )
+        resp = (
+            self.stub.CreateRevision(req, metadata=call_metadata)
+            if call_metadata is not None
+            else self.stub.CreateRevision(req)
+        )
         return Revision(resp, self)
 
     def get_revision(self, kref_uri: str) -> Revision:
@@ -1620,7 +1690,8 @@ class _Client:
         source_revision: Revision,
         target_revision: Revision,
         edge_type: str,
-        metadata: Optional[Dict[str, str]] = None
+        metadata: Optional[Dict[str, str]] = None,
+        idempotency_key: Optional[str] = None,
     ) -> Edge:
         """Create an edge between two revisions.
 
@@ -1647,7 +1718,15 @@ class _Client:
             edge_type=edge_type,
             metadata=metadata or {}
         )
-        self.stub.CreateEdge(req)
+        call_metadata = (
+            (("x-idempotency-key", idempotency_key),)
+            if idempotency_key
+            else None
+        )
+        if call_metadata is not None:
+            self.stub.CreateEdge(req, metadata=call_metadata)
+        else:
+            self.stub.CreateEdge(req)
         # Construct Edge object client-side since RPC returns only status
         pb_edge = PbEdge(
             source_kref=source_revision.kref.to_pb(),

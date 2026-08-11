@@ -103,11 +103,16 @@ class Space(KumihoObject):
         """Return a string representation of the Space."""
         return f"<kumiho.Space path='{self.path}'>"
 
-    def create_space(self, name: str) -> 'Space':
+    def create_space(
+        self,
+        name: str,
+        metadata: Optional[Dict[str, str]] = None,
+    ) -> 'Space':
         """Create a new subspace within this space.
 
         Args:
             name: The name of the new subspace.
+            metadata: Initial string metadata committed with creation.
 
         Returns:
             Space: The newly created Space object.
@@ -117,7 +122,11 @@ class Space(KumihoObject):
             >>> models = assets.create_space("models")
             >>> textures = assets.create_space("textures")
         """
-        return self._client.create_space(parent_path=self.path, space_name=name)
+        return self._client.create_space(
+            parent_path=self.path,
+            space_name=name,
+            metadata=metadata,
+        )
 
     def get_space(self, name: str) -> 'Space':
         """Get an existing subspace by name.

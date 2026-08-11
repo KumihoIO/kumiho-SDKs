@@ -24,6 +24,7 @@ Example:
             print(space.path)
 """
 
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Dict, List, Optional
 
 from .base import KumihoObject
@@ -34,6 +35,19 @@ if TYPE_CHECKING:
     from .client import _Client
     from .bundle import Bundle
     from .item import Item
+
+
+@dataclass(frozen=True)
+class ProjectDeletionImpact:
+    """Server-issued, immutable precondition for Project hard-delete."""
+
+    impact_snapshot_id: str
+    impact_snapshot_hash: str
+    project_id: str
+    project_name: str
+    blockers: tuple[str, ...]
+    descendants: tuple[str, ...]
+    created_at: str
 
 
 class Project(KumihoObject):
@@ -100,18 +114,25 @@ class Project(KumihoObject):
         self.updated_at = pb.updated_at or None
         self.deprecated = pb.deprecated
         self.allow_public = pb.allow_public
+        self.metadata = dict(pb.metadata)
 
     def __repr__(self) -> str:
         """Return a string representation of the Project."""
         return f"<kumiho.Project id='{self.project_id}' name='{self.name}'>"
 
-    def create_space(self, name: str, parent_path: Optional[str] = None) -> Space:
+    def create_space(
+        self,
+        name: str,
+        parent_path: Optional[str] = None,
+        metadata: Optional[Dict[str, str]] = None,
+    ) -> Space:
         """Create a space within this project.
 
         Args:
             name: The name of the space to create.
             parent_path: Optional parent path. If not provided, creates
                 the space at the project root (e.g., "/project-name").
+            metadata: Initial string metadata committed with creation.
 
         Returns:
             Space: The newly created Space object.
@@ -124,7 +145,11 @@ class Project(KumihoObject):
             >>> heroes = project.create_space("heroes", parent_path="/film-2024/characters")
         """
         base_parent = parent_path or f"/{self.name}"
-        return self._client.create_space(parent_path=base_parent, space_name=name)
+        return self._client.create_space(
+            parent_path=base_parent,
+            space_name=name,
+            metadata=metadata,
+        )
 
     def create_bundle(
         self,
@@ -297,7 +322,14 @@ class Project(KumihoObject):
         kref_uri = f"kref://{base_parent.strip('/')}/{bundle_name}.bundle"
         return self._client.get_bundle_by_kref(kref_uri)
 
-    def delete(self, force: bool = False):
+    def delete(
+        self,
+        force: bool = False,
+        *,
+        impact_snapshot_id: str = "",
+        impact_snapshot_hash: str = "",
+        confirmed: bool = False,
+    ):
         """Delete or deprecate this project.
 
         Args:
@@ -318,7 +350,45 @@ class Project(KumihoObject):
             >>> # Hard delete (permanent)
             >>> project.delete(force=True)
         """
-        return self._client.delete_project(project_id=self.project_id, force=force)
+        return self._client.delete_project(
+            project_id=self.project_id,
+            force=force,
+            impact_snapshot_id=impact_snapshot_id,
+            impact_snapshot_hash=impact_snapshot_hash,
+            confirmed=confirmed,
+        )
+
+    def deprecate(self):
+        """Archive this Project without changing identity or descendants."""
+        updated = self._client.update_project(
+            project_id=self.project_id, deprecated=True
+        )
+        self.deprecated = updated.deprecated
+        return updated
+
+    def restore(self):
+        """Restore this archived Project with the same ID and canonical name."""
+        updated = self._client.update_project(
+            project_id=self.project_id, deprecated=False
+        )
+        self.deprecated = updated.deprecated
+        return updated
+
+    def analyze_deletion(self) -> ProjectDeletionImpact:
+        """Create a server-bound impact snapshot for this Project."""
+        return self._client.analyze_project_deletion(self.project_id)
+
+    def hard_delete(self, impact: ProjectDeletionImpact, *, confirmed: bool = False):
+        """Permanently delete using the current server-issued impact snapshot."""
+        if impact.project_id != self.project_id:
+            raise ValueError("impact snapshot belongs to a different Project")
+        return self._client.delete_project(
+            project_id=self.project_id,
+            force=True,
+            impact_snapshot_id=impact.impact_snapshot_id,
+            impact_snapshot_hash=impact.impact_snapshot_hash,
+            confirmed=confirmed,
+        )
 
     def set_public(self, public: bool):
         """Set whether this project allows anonymous read access.
@@ -353,13 +423,15 @@ class Project(KumihoObject):
     def update(
         self,
         description: Optional[str] = None,
-        allow_public: Optional[bool] = None
+        allow_public: Optional[bool] = None,
+        metadata: Optional[Dict[str, str]] = None,
     ):
         """Update project properties.
 
         Args:
             description: New description for the project.
             allow_public: New public access setting.
+            metadata: Metadata values to merge into the Project metadata map.
 
         Returns:
             Project: The updated Project object.
@@ -370,11 +442,19 @@ class Project(KumihoObject):
             ...     allow_public=True
             ... )
         """
+        merged_metadata = None
+        if metadata is not None:
+            merged_metadata = {**self.metadata, **metadata}
         return self._client.update_project(
             project_id=self.project_id,
             description=description,
-            allow_public=allow_public
+            allow_public=allow_public,
+            metadata=merged_metadata,
         )
+
+    def set_metadata(self, metadata: Dict[str, str]) -> 'Project':
+        """Merge string metadata values without changing Project identity."""
+        return self.update(metadata=metadata)
 
     def get_space(self, name: str, parent_path: Optional[str] = None) -> Space:
         """Get an existing space within this project.

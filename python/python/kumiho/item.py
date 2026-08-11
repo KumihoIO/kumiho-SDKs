@@ -151,7 +151,8 @@ class Item(KumihoObject):
     def create_revision(
         self,
         metadata: Optional[Dict[str, str]] = None,
-        number: int = 0
+        number: int = 0,
+        idempotency_key: Optional[str] = None,
     ) -> Revision:
         """Create a new revision of this item.
 
@@ -163,6 +164,7 @@ class Item(KumihoObject):
                 render settings, software versions).
             number: Specific revision number to use. If 0 (default), auto-assigns
                 the next available number.
+            idempotency_key: Stable tenant-scoped identity for retry-safe creation.
 
         Returns:
             Revision: The newly created Revision object.
@@ -175,7 +177,9 @@ class Item(KumihoObject):
             >>> # Specific revision number (use with caution)
             >>> v5 = item.create_revision(number=5)
         """
-        return self._client.create_revision(self.kref, metadata, number)
+        return self._client.create_revision(
+            self.kref, metadata, number, idempotency_key=idempotency_key
+        )
 
     def get_revisions(self) -> List[Revision]:
         """Get all revisions of this item.

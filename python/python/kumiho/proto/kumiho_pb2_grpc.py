@@ -50,6 +50,11 @@ class KumihoServiceStub(object):
                 request_serializer=kumiho__pb2.UpdateProjectRequest.SerializeToString,
                 response_deserializer=kumiho__pb2.ProjectResponse.FromString,
                 _registered_method=True)
+        self.AnalyzeProjectDeletion = channel.unary_unary(
+                '/kumiho.KumihoService/AnalyzeProjectDeletion',
+                request_serializer=kumiho__pb2.ProjectDeletionImpactRequest.SerializeToString,
+                response_deserializer=kumiho__pb2.ProjectDeletionImpactResponse.FromString,
+                _registered_method=True)
         self.DeleteProject = channel.unary_unary(
                 '/kumiho.KumihoService/DeleteProject',
                 request_serializer=kumiho__pb2.DeleteProjectRequest.SerializeToString,
@@ -335,6 +340,12 @@ class KumihoServiceServicer(object):
         raise NotImplementedError('Method not implemented!')
 
     def UpdateProject(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def AnalyzeProjectDeletion(self, request, context):
         """Missing associated documentation comment in .proto file."""
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
@@ -691,6 +702,11 @@ def add_KumihoServiceServicer_to_server(servicer, server):
                     request_deserializer=kumiho__pb2.UpdateProjectRequest.FromString,
                     response_serializer=kumiho__pb2.ProjectResponse.SerializeToString,
             ),
+            'AnalyzeProjectDeletion': grpc.unary_unary_rpc_method_handler(
+                    servicer.AnalyzeProjectDeletion,
+                    request_deserializer=kumiho__pb2.ProjectDeletionImpactRequest.FromString,
+                    response_serializer=kumiho__pb2.ProjectDeletionImpactResponse.SerializeToString,
+            ),
             'DeleteProject': grpc.unary_unary_rpc_method_handler(
                     servicer.DeleteProject,
                     request_deserializer=kumiho__pb2.DeleteProjectRequest.FromString,
@@ -1039,6 +1055,33 @@ class KumihoService(object):
             '/kumiho.KumihoService/UpdateProject',
             kumiho__pb2.UpdateProjectRequest.SerializeToString,
             kumiho__pb2.ProjectResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def AnalyzeProjectDeletion(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/kumiho.KumihoService/AnalyzeProjectDeletion',
+            kumiho__pb2.ProjectDeletionImpactRequest.SerializeToString,
+            kumiho__pb2.ProjectDeletionImpactResponse.FromString,
             options,
             channel_credentials,
             insecure,

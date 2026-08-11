@@ -2113,14 +2113,38 @@ def tool_create_bundle(
 # Delete Operations
 # ============================================================================
 
-def tool_delete_project(project_name: str, force: bool = False) -> Dict[str, Any]:
-    """Delete a project."""
+def tool_delete_project(
+    project_name: str,
+    force: bool = False,
+    impact_snapshot_id: str = "",
+    impact_snapshot_hash: str = "",
+    confirmed: bool = False,
+) -> Dict[str, Any]:
+    """Archive a Project, or perform a two-step snapshot-gated hard-delete."""
     _ensure_configured()
     try:
-        project = kumiho.get_project(project_name)
+        project = kumiho.get_client().get_project(
+            project_name, include_deprecated=force
+        )
         if not project:
             return {"error": f"Project '{project_name}' not found"}
-        project.delete(force=force)
+        if force and not (impact_snapshot_id and impact_snapshot_hash and confirmed):
+            impact = project.analyze_deletion()
+            return {
+                "deleted": False,
+                "requires_confirmation": True,
+                "project_name": project_name,
+                "impact_snapshot_id": impact.impact_snapshot_id,
+                "impact_snapshot_hash": impact.impact_snapshot_hash,
+                "blockers": list(impact.blockers),
+                "descendants": list(impact.descendants),
+            }
+        project.delete(
+            force=force,
+            impact_snapshot_id=impact_snapshot_id,
+            impact_snapshot_hash=impact_snapshot_hash,
+            confirmed=confirmed,
+        )
         return {
             "deleted": True,
             "project_name": project_name,
@@ -3002,7 +3026,7 @@ TOOLS: List[Dict[str, Any]] = [
     },
     {
         "name": "kumiho_create_edge",
-        "description": "Create an edge (relationship) between two revisions. Use edge types: DEPENDS_ON, DERIVED_FROM, REFERENCED, CONTAINS, CREATED_FROM.",
+        "description": "Create an edge (relationship) between two revisions. Creative provenance uses CREATED_FROM, PRODUCED_BY, DERIVED_FROM, and MIGRATED_FROM.",
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -3016,7 +3040,16 @@ TOOLS: List[Dict[str, Any]] = [
                 },
                 "edge_type": {
                     "type": "string",
-                    "enum": ["DEPENDS_ON", "DERIVED_FROM", "REFERENCED", "CONTAINS", "CREATED_FROM", "BELONGS_TO"],
+                    "enum": [
+                        "DEPENDS_ON",
+                        "DERIVED_FROM",
+                        "REFERENCED",
+                        "CONTAINS",
+                        "CREATED_FROM",
+                        "PRODUCED_BY",
+                        "MIGRATED_FROM",
+                        "BELONGS_TO",
+                    ],
                     "description": "The type of relationship",
                 },
                 "metadata": {
@@ -3150,7 +3183,7 @@ TOOLS: List[Dict[str, Any]] = [
     # Delete operations
     {
         "name": "kumiho_delete_project",
-        "description": "Delete a project. Use force=true to permanently delete with all contents.",
+        "description": "Archive a Project. With force=true, the first call returns an impact snapshot; repeat only after review with that snapshot and confirmed=true.",
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -3161,6 +3194,19 @@ TOOLS: List[Dict[str, Any]] = [
                 "force": {
                     "type": "boolean",
                     "description": "If true, permanently delete. If false, soft-delete (deprecate). Default: false",
+                    "default": False,
+                },
+                "impact_snapshot_id": {
+                    "type": "string",
+                    "description": "Server-issued UUIDv7 from the preceding force=true preview",
+                },
+                "impact_snapshot_hash": {
+                    "type": "string",
+                    "description": "Server-issued sha256 digest from the preceding force=true preview",
+                },
+                "confirmed": {
+                    "type": "boolean",
+                    "description": "Explicitly confirms the reviewed impact snapshot",
                     "default": False,
                 },
             },
@@ -3254,7 +3300,16 @@ TOOLS: List[Dict[str, Any]] = [
                 },
                 "edge_type": {
                     "type": "string",
-                    "enum": ["DEPENDS_ON", "DERIVED_FROM", "REFERENCED", "CONTAINS", "CREATED_FROM", "BELONGS_TO"],
+                    "enum": [
+                        "DEPENDS_ON",
+                        "DERIVED_FROM",
+                        "REFERENCED",
+                        "CONTAINS",
+                        "CREATED_FROM",
+                        "PRODUCED_BY",
+                        "MIGRATED_FROM",
+                        "BELONGS_TO",
+                    ],
                     "description": "The type of relationship to delete",
                 },
             },
@@ -3535,6 +3590,9 @@ TOOL_HANDLERS = {
     "kumiho_delete_project": lambda args: tool_delete_project(
         args["project_name"],
         args.get("force", False),
+        args.get("impact_snapshot_id", ""),
+        args.get("impact_snapshot_hash", ""),
+        args.get("confirmed", False),
     ),
     "kumiho_delete_space": lambda args: tool_delete_space(
         args["space_path"],
