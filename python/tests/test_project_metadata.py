@@ -89,6 +89,28 @@ def test_project_metadata_round_trips_through_create_read_and_update(
     assert updated.metadata["display_label"] == "Film One — Final"
 
 
+def test_project_metadata_update_sends_only_the_requested_patch(mock_client) -> None:
+    client, stub = mock_client
+    stale_pb = mock_helpers.mock_project_response(
+        project_id="project-1",
+        name="film-one",
+        metadata={"display_label": "Old label", "department": "VFX"},
+    )
+    stub.GetProjects.return_value = mock_helpers.mock_get_projects_response([stale_pb])
+    project = client.get_project("film-one")
+    assert project is not None
+    stub.UpdateProject.return_value = mock_helpers.mock_project_response(
+        project_id="project-1",
+        name="film-one",
+        metadata={"display_label": "New label", "department": "Animation"},
+    )
+
+    project.set_metadata({"display_label": "New label"})
+
+    request = stub.UpdateProject.call_args.args[0]
+    assert dict(request.metadata) == {"display_label": "New label"}
+
+
 def test_project_metadata_rejects_non_string_values_before_rpc(mock_client) -> None:
     _client, stub = mock_client
 

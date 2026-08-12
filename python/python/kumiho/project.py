@@ -95,8 +95,10 @@ class Project(KumihoObject):
             # Soft delete (deprecate)
             project.delete()
 
-            # Hard delete (permanent)
-            project.delete(force=True)
+            # Hard delete (permanent, after archive + impact review)
+            project.deprecate()
+            impact = project.analyze_deletion()
+            project.hard_delete(impact, confirmed=True)
     """
 
     def __init__(self, pb: ProjectResponse, client: "_Client") -> None:
@@ -347,8 +349,10 @@ class Project(KumihoObject):
             >>> project = kumiho.get_project("old-project")
             >>> # Soft delete (can be recovered)
             >>> project.delete()
-            >>> # Hard delete (permanent)
-            >>> project.delete(force=True)
+            >>> # Hard delete (permanent, after archive + impact review)
+            >>> project.deprecate()
+            >>> impact = project.analyze_deletion()
+            >>> project.hard_delete(impact, confirmed=True)
         """
         return self._client.delete_project(
             project_id=self.project_id,
@@ -442,14 +446,11 @@ class Project(KumihoObject):
             ...     allow_public=True
             ... )
         """
-        merged_metadata = None
-        if metadata is not None:
-            merged_metadata = {**self.metadata, **metadata}
         return self._client.update_project(
             project_id=self.project_id,
             description=description,
             allow_public=allow_public,
-            metadata=merged_metadata,
+            metadata=metadata,
         )
 
     def set_metadata(self, metadata: Dict[str, str]) -> 'Project':
