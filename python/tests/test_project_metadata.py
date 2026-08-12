@@ -188,9 +188,13 @@ def test_project_hard_delete_requires_and_forwards_server_impact_snapshot(
     project = client.get_project("film-one", include_deprecated=True)
     assert project is not None
 
-    with pytest.raises(ValueError, match="impact snapshot"):
-        client.delete_project("project-1", force=True)
-    stub.DeleteProject.assert_not_called()
+    stub.DeleteProject.return_value = kumiho_pb2.StatusResponse(
+        success=True, message="Project permanently deleted"
+    )
+    client.delete_project("project-1", force=True)
+    legacy_request = stub.DeleteProject.call_args.args[0]
+    assert legacy_request.project_id == "project-1"
+    assert legacy_request.force is True
 
     stub.AnalyzeProjectDeletion.return_value = (
         kumiho_pb2.ProjectDeletionImpactResponse(
@@ -202,7 +206,7 @@ def test_project_hard_delete_requires_and_forwards_server_impact_snapshot(
             created_at="2026-08-11T00:00:00Z",
         )
     )
-    stub.DeleteProject.return_value = kumiho_pb2.StatusResponse(
+    stub.HardDeleteProject.return_value = kumiho_pb2.StatusResponse(
         success=True, message="Project permanently deleted"
     )
 
@@ -210,9 +214,8 @@ def test_project_hard_delete_requires_and_forwards_server_impact_snapshot(
     response = project.hard_delete(impact, confirmed=True)
 
     analyze_request = stub.AnalyzeProjectDeletion.call_args.args[0]
-    delete_request = stub.DeleteProject.call_args.args[0]
+    delete_request = stub.HardDeleteProject.call_args.args[0]
     assert analyze_request.project_id == "project-1"
-    assert delete_request.force is True
     assert delete_request.confirmed is True
     assert delete_request.impact_snapshot_id == impact.impact_snapshot_id
     assert delete_request.impact_snapshot_hash == impact.impact_snapshot_hash

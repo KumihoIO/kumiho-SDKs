@@ -75,6 +75,11 @@ class KumihoServiceStub(object):
                 request_serializer=kumiho__pb2.DeleteProjectRequest.SerializeToString,
                 response_deserializer=kumiho__pb2.StatusResponse.FromString,
                 _registered_method=True)
+        self.HardDeleteProject = channel.unary_unary(
+                '/kumiho.KumihoService/HardDeleteProject',
+                request_serializer=kumiho__pb2.HardDeleteProjectRequest.SerializeToString,
+                response_deserializer=kumiho__pb2.StatusResponse.FromString,
+                _registered_method=True)
         self.CreateSpace = channel.unary_unary(
                 '/kumiho.KumihoService/CreateSpace',
                 request_serializer=kumiho__pb2.CreateSpaceRequest.SerializeToString,
@@ -390,6 +395,12 @@ class KumihoServiceServicer(object):
         raise NotImplementedError('Method not implemented!')
 
     def DeleteProject(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def HardDeleteProject(self, request, context):
         """Missing associated documentation comment in .proto file."""
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
@@ -769,6 +780,11 @@ def add_KumihoServiceServicer_to_server(servicer, server):
             'DeleteProject': grpc.unary_unary_rpc_method_handler(
                     servicer.DeleteProject,
                     request_deserializer=kumiho__pb2.DeleteProjectRequest.FromString,
+                    response_serializer=kumiho__pb2.StatusResponse.SerializeToString,
+            ),
+            'HardDeleteProject': grpc.unary_unary_rpc_method_handler(
+                    servicer.HardDeleteProject,
+                    request_deserializer=kumiho__pb2.HardDeleteProjectRequest.FromString,
                     response_serializer=kumiho__pb2.StatusResponse.SerializeToString,
             ),
             'CreateSpace': grpc.unary_unary_rpc_method_handler(
@@ -1253,6 +1269,33 @@ class KumihoService(object):
             target,
             '/kumiho.KumihoService/DeleteProject',
             kumiho__pb2.DeleteProjectRequest.SerializeToString,
+            kumiho__pb2.StatusResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def HardDeleteProject(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/kumiho.KumihoService/HardDeleteProject',
+            kumiho__pb2.HardDeleteProjectRequest.SerializeToString,
             kumiho__pb2.StatusResponse.FromString,
             options,
             channel_credentials,

@@ -91,21 +91,17 @@ mixin ProjectApi on KumihoClientBase {
     return stub.updateProject(request, options: callOptions);
   }
 
-  /// Archives a project. The [force] argument is retained for source
-  /// compatibility, but permanent deletion requires an analyzed snapshot.
+  /// Forwards the legacy delete/deprecate request to the connected server.
+  /// New servers require [hardDeleteProject] for permanent deletion, while
+  /// older servers can continue to honor `force: true`.
   Future<StatusResponse> deleteProject(
     String projectId, {
     bool force = false,
   }) async {
-    if (force) {
-      throw ArgumentError(
-        'force deletion requires analyzeProjectDeletion followed by hardDeleteProject',
-      );
-    }
     final request =
         DeleteProjectRequest()
           ..projectId = projectId
-          ..force = false;
+          ..force = force;
     return stub.deleteProject(request, options: callOptions);
   }
 
@@ -131,13 +127,12 @@ mixin ProjectApi on KumihoClientBase {
       );
     }
     final request =
-        DeleteProjectRequest()
+        HardDeleteProjectRequest()
           ..projectId = impact.projectId
-          ..force = true
           ..impactSnapshotId = impact.impactSnapshotId
           ..impactSnapshotHash = impact.impactSnapshotHash
           ..confirmed = confirmed;
-    return stub.deleteProject(request, options: callOptions);
+    return stub.hardDeleteProject(request, options: callOptions);
   }
 
   Future<ProjectDeletionGuardResponse> registerProjectDeletionGuard(

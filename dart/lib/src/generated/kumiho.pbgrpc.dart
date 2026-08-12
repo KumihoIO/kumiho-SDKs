@@ -95,6 +95,13 @@ class KumihoServiceClient extends $grpc.Client {
     return $createUnaryCall(_$deleteProject, request, options: options);
   }
 
+  $grpc.ResponseFuture<$0.StatusResponse> hardDeleteProject(
+    $0.HardDeleteProjectRequest request, {
+    $grpc.CallOptions? options,
+  }) {
+    return $createUnaryCall(_$hardDeleteProject, request, options: options);
+  }
+
   /// Space methods
   $grpc.ResponseFuture<$0.SpaceResponse> createSpace(
     $0.CreateSpaceRequest request, {
@@ -530,6 +537,11 @@ class KumihoServiceClient extends $grpc.Client {
           '/kumiho.KumihoService/DeleteProject',
           ($0.DeleteProjectRequest value) => value.writeToBuffer(),
           $0.StatusResponse.fromBuffer);
+  static final _$hardDeleteProject =
+      $grpc.ClientMethod<$0.HardDeleteProjectRequest, $0.StatusResponse>(
+          '/kumiho.KumihoService/HardDeleteProject',
+          ($0.HardDeleteProjectRequest value) => value.writeToBuffer(),
+          $0.StatusResponse.fromBuffer);
   static final _$createSpace =
       $grpc.ClientMethod<$0.CreateSpaceRequest, $0.SpaceResponse>(
           '/kumiho.KumihoService/CreateSpace',
@@ -871,6 +883,15 @@ abstract class KumihoServiceBase extends $grpc.Service {
         ($core.List<$core.int> value) =>
             $0.DeleteProjectRequest.fromBuffer(value),
         ($0.StatusResponse value) => value.writeToBuffer()));
+    $addMethod(
+        $grpc.ServiceMethod<$0.HardDeleteProjectRequest, $0.StatusResponse>(
+            'HardDeleteProject',
+            hardDeleteProject_Pre,
+            false,
+            false,
+            ($core.List<$core.int> value) =>
+                $0.HardDeleteProjectRequest.fromBuffer(value),
+            ($0.StatusResponse value) => value.writeToBuffer()));
     $addMethod($grpc.ServiceMethod<$0.CreateSpaceRequest, $0.SpaceResponse>(
         'CreateSpace',
         createSpace_Pre,
@@ -1377,6 +1398,15 @@ abstract class KumihoServiceBase extends $grpc.Service {
 
   $async.Future<$0.StatusResponse> deleteProject(
       $grpc.ServiceCall call, $0.DeleteProjectRequest request);
+
+  $async.Future<$0.StatusResponse> hardDeleteProject_Pre(
+      $grpc.ServiceCall $call,
+      $async.Future<$0.HardDeleteProjectRequest> $request) async {
+    return hardDeleteProject($call, await $request);
+  }
+
+  $async.Future<$0.StatusResponse> hardDeleteProject(
+      $grpc.ServiceCall call, $0.HardDeleteProjectRequest request);
 
   $async.Future<$0.SpaceResponse> createSpace_Pre($grpc.ServiceCall $call,
       $async.Future<$0.CreateSpaceRequest> $request) async {

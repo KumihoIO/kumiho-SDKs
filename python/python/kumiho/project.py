@@ -339,10 +339,6 @@ class Project(KumihoObject):
     def delete(
         self,
         force: bool = False,
-        *,
-        impact_snapshot_id: str = "",
-        impact_snapshot_hash: str = "",
-        confirmed: bool = False,
     ):
         """Delete or deprecate this project.
 
@@ -366,13 +362,7 @@ class Project(KumihoObject):
             >>> impact = project.analyze_deletion()
             >>> project.hard_delete(impact, confirmed=True)
         """
-        return self._client.delete_project(
-            project_id=self.project_id,
-            force=force,
-            impact_snapshot_id=impact_snapshot_id,
-            impact_snapshot_hash=impact_snapshot_hash,
-            confirmed=confirmed,
-        )
+        return self._client.delete_project(project_id=self.project_id, force=force)
 
     def deprecate(self):
         """Archive this Project without changing identity or descendants."""
@@ -437,9 +427,8 @@ class Project(KumihoObject):
         """Permanently delete using the current server-issued impact snapshot."""
         if impact.project_id != self.project_id:
             raise ValueError("impact snapshot belongs to a different Project")
-        return self._client.delete_project(
+        return self._client.hard_delete_project(
             project_id=self.project_id,
-            force=True,
             impact_snapshot_id=impact.impact_snapshot_id,
             impact_snapshot_hash=impact.impact_snapshot_hash,
             confirmed=confirmed,

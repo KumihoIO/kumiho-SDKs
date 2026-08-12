@@ -71,6 +71,7 @@ from .proto.kumiho_pb2 import (
     DeleteArtifactRequest,
     DeleteRevisionRequest,
     DeleteProjectRequest,
+    HardDeleteProjectRequest,
     ProjectDeletionImpactRequest,
     RegisterProjectDeletionGuardRequest,
     ResolveProjectDeletionGuardRequest,
@@ -593,24 +594,28 @@ class _Client:
         self,
         project_id: str,
         force: bool = False,
+    ) -> StatusResponse:
+        """Use the established archive/force-delete contract."""
+        req = DeleteProjectRequest(project_id=project_id, force=force)
+        resp = self.stub.DeleteProject(req)
+        return resp
+
+    def hard_delete_project(
+        self,
+        project_id: str,
+        impact_snapshot_id: str,
+        impact_snapshot_hash: str,
         *,
-        impact_snapshot_id: str = "",
-        impact_snapshot_hash: str = "",
         confirmed: bool = False,
     ) -> StatusResponse:
-        if force and not (impact_snapshot_id and impact_snapshot_hash and confirmed):
-            raise ValueError(
-                "hard-delete requires a server impact snapshot and confirmed=True"
-            )
-        req = DeleteProjectRequest(
+        """Permanently delete an archived Project using a bound snapshot."""
+        req = HardDeleteProjectRequest(
             project_id=project_id,
-            force=force,
             impact_snapshot_id=impact_snapshot_id,
             impact_snapshot_hash=impact_snapshot_hash,
             confirmed=confirmed,
         )
-        resp = self.stub.DeleteProject(req)
-        return resp
+        return self.stub.HardDeleteProject(req)
 
     def update_project(
         self,

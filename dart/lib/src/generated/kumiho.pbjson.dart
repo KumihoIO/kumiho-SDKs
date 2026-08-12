@@ -2635,30 +2635,50 @@ const DeleteProjectRequest$json = {
   '2': [
     {'1': 'project_id', '3': 1, '4': 1, '5': 9, '10': 'projectId'},
     {'1': 'force', '3': 2, '4': 1, '5': 8, '10': 'force'},
+  ],
+  '9': [
+    {'1': 3, '2': 4},
+    {'1': 4, '2': 5},
+    {'1': 5, '2': 6},
+  ],
+  '10': ['impact_snapshot_id', 'impact_snapshot_hash', 'confirmed'],
+};
+
+/// Descriptor for `DeleteProjectRequest`. Decode as a `google.protobuf.DescriptorProto`.
+final $typed_data.Uint8List deleteProjectRequestDescriptor = $convert.base64Decode(
+    'ChREZWxldGVQcm9qZWN0UmVxdWVzdBIdCgpwcm9qZWN0X2lkGAEgASgJUglwcm9qZWN0SWQSFA'
+    'oFZm9yY2UYAiABKAhSBWZvcmNlSgQIAxAESgQIBBAFSgQIBRAGUhJpbXBhY3Rfc25hcHNob3Rf'
+    'aWRSFGltcGFjdF9zbmFwc2hvdF9oYXNoUgljb25maXJtZWQ=');
+
+@$core.Deprecated('Use hardDeleteProjectRequestDescriptor instead')
+const HardDeleteProjectRequest$json = {
+  '1': 'HardDeleteProjectRequest',
+  '2': [
+    {'1': 'project_id', '3': 1, '4': 1, '5': 9, '10': 'projectId'},
     {
       '1': 'impact_snapshot_id',
-      '3': 3,
+      '3': 2,
       '4': 1,
       '5': 9,
       '10': 'impactSnapshotId'
     },
     {
       '1': 'impact_snapshot_hash',
-      '3': 4,
+      '3': 3,
       '4': 1,
       '5': 9,
       '10': 'impactSnapshotHash'
     },
-    {'1': 'confirmed', '3': 5, '4': 1, '5': 8, '10': 'confirmed'},
+    {'1': 'confirmed', '3': 4, '4': 1, '5': 8, '10': 'confirmed'},
   ],
 };
 
-/// Descriptor for `DeleteProjectRequest`. Decode as a `google.protobuf.DescriptorProto`.
-final $typed_data.Uint8List deleteProjectRequestDescriptor = $convert.base64Decode(
-    'ChREZWxldGVQcm9qZWN0UmVxdWVzdBIdCgpwcm9qZWN0X2lkGAEgASgJUglwcm9qZWN0SWQSFA'
-    'oFZm9yY2UYAiABKAhSBWZvcmNlEiwKEmltcGFjdF9zbmFwc2hvdF9pZBgDIAEoCVIQaW1wYWN0'
-    'U25hcHNob3RJZBIwChRpbXBhY3Rfc25hcHNob3RfaGFzaBgEIAEoCVISaW1wYWN0U25hcHNob3'
-    'RIYXNoEhwKCWNvbmZpcm1lZBgFIAEoCFIJY29uZmlybWVk');
+/// Descriptor for `HardDeleteProjectRequest`. Decode as a `google.protobuf.DescriptorProto`.
+final $typed_data.Uint8List hardDeleteProjectRequestDescriptor = $convert.base64Decode(
+    'ChhIYXJkRGVsZXRlUHJvamVjdFJlcXVlc3QSHQoKcHJvamVjdF9pZBgBIAEoCVIJcHJvamVjdE'
+    'lkEiwKEmltcGFjdF9zbmFwc2hvdF9pZBgCIAEoCVIQaW1wYWN0U25hcHNob3RJZBIwChRpbXBh'
+    'Y3Rfc25hcHNob3RfaGFzaBgDIAEoCVISaW1wYWN0U25hcHNob3RIYXNoEhwKCWNvbmZpcm1lZB'
+    'gEIAEoCFIJY29uZmlybWVk');
 
 @$core.Deprecated('Use projectDeletionImpactRequestDescriptor instead')
 const ProjectDeletionImpactRequest$json = {

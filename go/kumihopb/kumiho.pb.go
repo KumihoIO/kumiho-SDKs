@@ -6168,14 +6168,11 @@ func (x *GetProjectsResponse) GetProjects() []*ProjectResponse {
 type DeleteProjectRequest struct {
 	state     protoimpl.MessageState `protogen:"open.v1"`
 	ProjectId string                 `protobuf:"bytes,1,opt,name=project_id,json=projectId,proto3" json:"project_id,omitempty"`
-	// force=true requests hard-delete; owner/admin must also supply the
-	// current server-issued impact snapshot and explicit confirmation.
-	Force              bool   `protobuf:"varint,2,opt,name=force,proto3" json:"force,omitempty"`
-	ImpactSnapshotId   string `protobuf:"bytes,3,opt,name=impact_snapshot_id,json=impactSnapshotId,proto3" json:"impact_snapshot_id,omitempty"`
-	ImpactSnapshotHash string `protobuf:"bytes,4,opt,name=impact_snapshot_hash,json=impactSnapshotHash,proto3" json:"impact_snapshot_hash,omitempty"`
-	Confirmed          bool   `protobuf:"varint,5,opt,name=confirmed,proto3" json:"confirmed,omitempty"`
-	unknownFields      protoimpl.UnknownFields
-	sizeCache          protoimpl.SizeCache
+	// Legacy contract: owner/admin force=true performs immediate permanent
+	// deletion; other calls archive the Project.
+	Force         bool `protobuf:"varint,2,opt,name=force,proto3" json:"force,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *DeleteProjectRequest) Reset() {
@@ -6222,21 +6219,70 @@ func (x *DeleteProjectRequest) GetForce() bool {
 	return false
 }
 
-func (x *DeleteProjectRequest) GetImpactSnapshotId() string {
+// Snapshot-bound permanent deletion. New clients should prefer this API over
+// DeleteProject(force=true); the legacy operation remains for compatibility.
+type HardDeleteProjectRequest struct {
+	state              protoimpl.MessageState `protogen:"open.v1"`
+	ProjectId          string                 `protobuf:"bytes,1,opt,name=project_id,json=projectId,proto3" json:"project_id,omitempty"`
+	ImpactSnapshotId   string                 `protobuf:"bytes,2,opt,name=impact_snapshot_id,json=impactSnapshotId,proto3" json:"impact_snapshot_id,omitempty"`
+	ImpactSnapshotHash string                 `protobuf:"bytes,3,opt,name=impact_snapshot_hash,json=impactSnapshotHash,proto3" json:"impact_snapshot_hash,omitempty"`
+	Confirmed          bool                   `protobuf:"varint,4,opt,name=confirmed,proto3" json:"confirmed,omitempty"`
+	unknownFields      protoimpl.UnknownFields
+	sizeCache          protoimpl.SizeCache
+}
+
+func (x *HardDeleteProjectRequest) Reset() {
+	*x = HardDeleteProjectRequest{}
+	mi := &file_kumiho_proto_msgTypes[95]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *HardDeleteProjectRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*HardDeleteProjectRequest) ProtoMessage() {}
+
+func (x *HardDeleteProjectRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_kumiho_proto_msgTypes[95]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use HardDeleteProjectRequest.ProtoReflect.Descriptor instead.
+func (*HardDeleteProjectRequest) Descriptor() ([]byte, []int) {
+	return file_kumiho_proto_rawDescGZIP(), []int{95}
+}
+
+func (x *HardDeleteProjectRequest) GetProjectId() string {
+	if x != nil {
+		return x.ProjectId
+	}
+	return ""
+}
+
+func (x *HardDeleteProjectRequest) GetImpactSnapshotId() string {
 	if x != nil {
 		return x.ImpactSnapshotId
 	}
 	return ""
 }
 
-func (x *DeleteProjectRequest) GetImpactSnapshotHash() string {
+func (x *HardDeleteProjectRequest) GetImpactSnapshotHash() string {
 	if x != nil {
 		return x.ImpactSnapshotHash
 	}
 	return ""
 }
 
-func (x *DeleteProjectRequest) GetConfirmed() bool {
+func (x *HardDeleteProjectRequest) GetConfirmed() bool {
 	if x != nil {
 		return x.Confirmed
 	}
@@ -6252,7 +6298,7 @@ type ProjectDeletionImpactRequest struct {
 
 func (x *ProjectDeletionImpactRequest) Reset() {
 	*x = ProjectDeletionImpactRequest{}
-	mi := &file_kumiho_proto_msgTypes[95]
+	mi := &file_kumiho_proto_msgTypes[96]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6264,7 +6310,7 @@ func (x *ProjectDeletionImpactRequest) String() string {
 func (*ProjectDeletionImpactRequest) ProtoMessage() {}
 
 func (x *ProjectDeletionImpactRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_kumiho_proto_msgTypes[95]
+	mi := &file_kumiho_proto_msgTypes[96]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6277,7 +6323,7 @@ func (x *ProjectDeletionImpactRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ProjectDeletionImpactRequest.ProtoReflect.Descriptor instead.
 func (*ProjectDeletionImpactRequest) Descriptor() ([]byte, []int) {
-	return file_kumiho_proto_rawDescGZIP(), []int{95}
+	return file_kumiho_proto_rawDescGZIP(), []int{96}
 }
 
 func (x *ProjectDeletionImpactRequest) GetProjectId() string {
@@ -6302,7 +6348,7 @@ type ProjectDeletionImpactResponse struct {
 
 func (x *ProjectDeletionImpactResponse) Reset() {
 	*x = ProjectDeletionImpactResponse{}
-	mi := &file_kumiho_proto_msgTypes[96]
+	mi := &file_kumiho_proto_msgTypes[97]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6314,7 +6360,7 @@ func (x *ProjectDeletionImpactResponse) String() string {
 func (*ProjectDeletionImpactResponse) ProtoMessage() {}
 
 func (x *ProjectDeletionImpactResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_kumiho_proto_msgTypes[96]
+	mi := &file_kumiho_proto_msgTypes[97]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6327,7 +6373,7 @@ func (x *ProjectDeletionImpactResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ProjectDeletionImpactResponse.ProtoReflect.Descriptor instead.
 func (*ProjectDeletionImpactResponse) Descriptor() ([]byte, []int) {
-	return file_kumiho_proto_rawDescGZIP(), []int{96}
+	return file_kumiho_proto_rawDescGZIP(), []int{97}
 }
 
 func (x *ProjectDeletionImpactResponse) GetImpactSnapshotId() string {
@@ -6394,7 +6440,7 @@ type RegisterProjectDeletionGuardRequest struct {
 
 func (x *RegisterProjectDeletionGuardRequest) Reset() {
 	*x = RegisterProjectDeletionGuardRequest{}
-	mi := &file_kumiho_proto_msgTypes[97]
+	mi := &file_kumiho_proto_msgTypes[98]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6406,7 +6452,7 @@ func (x *RegisterProjectDeletionGuardRequest) String() string {
 func (*RegisterProjectDeletionGuardRequest) ProtoMessage() {}
 
 func (x *RegisterProjectDeletionGuardRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_kumiho_proto_msgTypes[97]
+	mi := &file_kumiho_proto_msgTypes[98]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6419,7 +6465,7 @@ func (x *RegisterProjectDeletionGuardRequest) ProtoReflect() protoreflect.Messag
 
 // Deprecated: Use RegisterProjectDeletionGuardRequest.ProtoReflect.Descriptor instead.
 func (*RegisterProjectDeletionGuardRequest) Descriptor() ([]byte, []int) {
-	return file_kumiho_proto_rawDescGZIP(), []int{97}
+	return file_kumiho_proto_rawDescGZIP(), []int{98}
 }
 
 func (x *RegisterProjectDeletionGuardRequest) GetProjectId() string {
@@ -6467,7 +6513,7 @@ type ResolveProjectDeletionGuardRequest struct {
 
 func (x *ResolveProjectDeletionGuardRequest) Reset() {
 	*x = ResolveProjectDeletionGuardRequest{}
-	mi := &file_kumiho_proto_msgTypes[98]
+	mi := &file_kumiho_proto_msgTypes[99]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6479,7 +6525,7 @@ func (x *ResolveProjectDeletionGuardRequest) String() string {
 func (*ResolveProjectDeletionGuardRequest) ProtoMessage() {}
 
 func (x *ResolveProjectDeletionGuardRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_kumiho_proto_msgTypes[98]
+	mi := &file_kumiho_proto_msgTypes[99]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6492,7 +6538,7 @@ func (x *ResolveProjectDeletionGuardRequest) ProtoReflect() protoreflect.Message
 
 // Deprecated: Use ResolveProjectDeletionGuardRequest.ProtoReflect.Descriptor instead.
 func (*ResolveProjectDeletionGuardRequest) Descriptor() ([]byte, []int) {
-	return file_kumiho_proto_rawDescGZIP(), []int{98}
+	return file_kumiho_proto_rawDescGZIP(), []int{99}
 }
 
 func (x *ResolveProjectDeletionGuardRequest) GetProjectId() string {
@@ -6523,7 +6569,7 @@ type ProjectDeletionGuardResponse struct {
 
 func (x *ProjectDeletionGuardResponse) Reset() {
 	*x = ProjectDeletionGuardResponse{}
-	mi := &file_kumiho_proto_msgTypes[99]
+	mi := &file_kumiho_proto_msgTypes[100]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6535,7 +6581,7 @@ func (x *ProjectDeletionGuardResponse) String() string {
 func (*ProjectDeletionGuardResponse) ProtoMessage() {}
 
 func (x *ProjectDeletionGuardResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_kumiho_proto_msgTypes[99]
+	mi := &file_kumiho_proto_msgTypes[100]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6548,7 +6594,7 @@ func (x *ProjectDeletionGuardResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ProjectDeletionGuardResponse.ProtoReflect.Descriptor instead.
 func (*ProjectDeletionGuardResponse) Descriptor() ([]byte, []int) {
-	return file_kumiho_proto_rawDescGZIP(), []int{99}
+	return file_kumiho_proto_rawDescGZIP(), []int{100}
 }
 
 func (x *ProjectDeletionGuardResponse) GetProjectId() string {
@@ -6606,7 +6652,7 @@ type MoveItemRequest struct {
 
 func (x *MoveItemRequest) Reset() {
 	*x = MoveItemRequest{}
-	mi := &file_kumiho_proto_msgTypes[100]
+	mi := &file_kumiho_proto_msgTypes[101]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6618,7 +6664,7 @@ func (x *MoveItemRequest) String() string {
 func (*MoveItemRequest) ProtoMessage() {}
 
 func (x *MoveItemRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_kumiho_proto_msgTypes[100]
+	mi := &file_kumiho_proto_msgTypes[101]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6631,7 +6677,7 @@ func (x *MoveItemRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use MoveItemRequest.ProtoReflect.Descriptor instead.
 func (*MoveItemRequest) Descriptor() ([]byte, []int) {
-	return file_kumiho_proto_rawDescGZIP(), []int{100}
+	return file_kumiho_proto_rawDescGZIP(), []int{101}
 }
 
 func (x *MoveItemRequest) GetItemKref() string {
@@ -6665,7 +6711,7 @@ type ResolveProjectReferenceRequest struct {
 
 func (x *ResolveProjectReferenceRequest) Reset() {
 	*x = ResolveProjectReferenceRequest{}
-	mi := &file_kumiho_proto_msgTypes[101]
+	mi := &file_kumiho_proto_msgTypes[102]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6677,7 +6723,7 @@ func (x *ResolveProjectReferenceRequest) String() string {
 func (*ResolveProjectReferenceRequest) ProtoMessage() {}
 
 func (x *ResolveProjectReferenceRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_kumiho_proto_msgTypes[101]
+	mi := &file_kumiho_proto_msgTypes[102]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6690,7 +6736,7 @@ func (x *ResolveProjectReferenceRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ResolveProjectReferenceRequest.ProtoReflect.Descriptor instead.
 func (*ResolveProjectReferenceRequest) Descriptor() ([]byte, []int) {
-	return file_kumiho_proto_rawDescGZIP(), []int{101}
+	return file_kumiho_proto_rawDescGZIP(), []int{102}
 }
 
 func (x *ResolveProjectReferenceRequest) GetProjectId() string {
@@ -6740,7 +6786,7 @@ type UpdateProjectRequest struct {
 	ProjectId   string                 `protobuf:"bytes,1,opt,name=project_id,json=projectId,proto3" json:"project_id,omitempty"`
 	AllowPublic *bool                  `protobuf:"varint,2,opt,name=allow_public,json=allowPublic,proto3,oneof" json:"allow_public,omitempty"`
 	Description *string                `protobuf:"bytes,3,opt,name=description,proto3,oneof" json:"description,omitempty"`
-	// Non-empty metadata replaces the complete Project metadata map.
+	// Non-empty metadata merges the supplied keys into Project metadata.
 	Metadata      map[string]string `protobuf:"bytes,4,rep,name=metadata,proto3" json:"metadata,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
 	Deprecated    *bool             `protobuf:"varint,5,opt,name=deprecated,proto3,oneof" json:"deprecated,omitempty"`
 	unknownFields protoimpl.UnknownFields
@@ -6749,7 +6795,7 @@ type UpdateProjectRequest struct {
 
 func (x *UpdateProjectRequest) Reset() {
 	*x = UpdateProjectRequest{}
-	mi := &file_kumiho_proto_msgTypes[102]
+	mi := &file_kumiho_proto_msgTypes[103]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6761,7 +6807,7 @@ func (x *UpdateProjectRequest) String() string {
 func (*UpdateProjectRequest) ProtoMessage() {}
 
 func (x *UpdateProjectRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_kumiho_proto_msgTypes[102]
+	mi := &file_kumiho_proto_msgTypes[103]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6774,7 +6820,7 @@ func (x *UpdateProjectRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UpdateProjectRequest.ProtoReflect.Descriptor instead.
 func (*UpdateProjectRequest) Descriptor() ([]byte, []int) {
-	return file_kumiho_proto_rawDescGZIP(), []int{102}
+	return file_kumiho_proto_rawDescGZIP(), []int{103}
 }
 
 func (x *UpdateProjectRequest) GetProjectId() string {
@@ -6822,7 +6868,7 @@ type SetDeprecatedRequest struct {
 
 func (x *SetDeprecatedRequest) Reset() {
 	*x = SetDeprecatedRequest{}
-	mi := &file_kumiho_proto_msgTypes[103]
+	mi := &file_kumiho_proto_msgTypes[104]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6834,7 +6880,7 @@ func (x *SetDeprecatedRequest) String() string {
 func (*SetDeprecatedRequest) ProtoMessage() {}
 
 func (x *SetDeprecatedRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_kumiho_proto_msgTypes[103]
+	mi := &file_kumiho_proto_msgTypes[104]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6847,7 +6893,7 @@ func (x *SetDeprecatedRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SetDeprecatedRequest.ProtoReflect.Descriptor instead.
 func (*SetDeprecatedRequest) Descriptor() ([]byte, []int) {
-	return file_kumiho_proto_rawDescGZIP(), []int{103}
+	return file_kumiho_proto_rawDescGZIP(), []int{104}
 }
 
 func (x *SetDeprecatedRequest) GetKref() *Kref {
@@ -6872,7 +6918,7 @@ type GetTenantUsageRequest struct {
 
 func (x *GetTenantUsageRequest) Reset() {
 	*x = GetTenantUsageRequest{}
-	mi := &file_kumiho_proto_msgTypes[104]
+	mi := &file_kumiho_proto_msgTypes[105]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6884,7 +6930,7 @@ func (x *GetTenantUsageRequest) String() string {
 func (*GetTenantUsageRequest) ProtoMessage() {}
 
 func (x *GetTenantUsageRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_kumiho_proto_msgTypes[104]
+	mi := &file_kumiho_proto_msgTypes[105]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6897,7 +6943,7 @@ func (x *GetTenantUsageRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetTenantUsageRequest.ProtoReflect.Descriptor instead.
 func (*GetTenantUsageRequest) Descriptor() ([]byte, []int) {
-	return file_kumiho_proto_rawDescGZIP(), []int{104}
+	return file_kumiho_proto_rawDescGZIP(), []int{105}
 }
 
 type TenantUsageResponse struct {
@@ -6911,7 +6957,7 @@ type TenantUsageResponse struct {
 
 func (x *TenantUsageResponse) Reset() {
 	*x = TenantUsageResponse{}
-	mi := &file_kumiho_proto_msgTypes[105]
+	mi := &file_kumiho_proto_msgTypes[106]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6923,7 +6969,7 @@ func (x *TenantUsageResponse) String() string {
 func (*TenantUsageResponse) ProtoMessage() {}
 
 func (x *TenantUsageResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_kumiho_proto_msgTypes[105]
+	mi := &file_kumiho_proto_msgTypes[106]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6936,7 +6982,7 @@ func (x *TenantUsageResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TenantUsageResponse.ProtoReflect.Descriptor instead.
 func (*TenantUsageResponse) Descriptor() ([]byte, []int) {
-	return file_kumiho_proto_rawDescGZIP(), []int{105}
+	return file_kumiho_proto_rawDescGZIP(), []int{106}
 }
 
 func (x *TenantUsageResponse) GetNodeCount() int64 {
@@ -7534,14 +7580,17 @@ const file_kumiho_proto_rawDesc = "" +
 	"\x12GetProjectsRequest\x12-\n" +
 	"\x12include_deprecated\x18\x01 \x01(\bR\x11includeDeprecated\"J\n" +
 	"\x13GetProjectsResponse\x123\n" +
-	"\bprojects\x18\x01 \x03(\v2\x17.kumiho.ProjectResponseR\bprojects\"\xc9\x01\n" +
+	"\bprojects\x18\x01 \x03(\v2\x17.kumiho.ProjectResponseR\bprojects\"\x92\x01\n" +
 	"\x14DeleteProjectRequest\x12\x1d\n" +
 	"\n" +
 	"project_id\x18\x01 \x01(\tR\tprojectId\x12\x14\n" +
-	"\x05force\x18\x02 \x01(\bR\x05force\x12,\n" +
-	"\x12impact_snapshot_id\x18\x03 \x01(\tR\x10impactSnapshotId\x120\n" +
-	"\x14impact_snapshot_hash\x18\x04 \x01(\tR\x12impactSnapshotHash\x12\x1c\n" +
-	"\tconfirmed\x18\x05 \x01(\bR\tconfirmed\"=\n" +
+	"\x05force\x18\x02 \x01(\bR\x05forceJ\x04\b\x03\x10\x04J\x04\b\x04\x10\x05J\x04\b\x05\x10\x06R\x12impact_snapshot_idR\x14impact_snapshot_hashR\tconfirmed\"\xb7\x01\n" +
+	"\x18HardDeleteProjectRequest\x12\x1d\n" +
+	"\n" +
+	"project_id\x18\x01 \x01(\tR\tprojectId\x12,\n" +
+	"\x12impact_snapshot_id\x18\x02 \x01(\tR\x10impactSnapshotId\x120\n" +
+	"\x14impact_snapshot_hash\x18\x03 \x01(\tR\x12impactSnapshotHash\x12\x1c\n" +
+	"\tconfirmed\x18\x04 \x01(\bR\tconfirmed\"=\n" +
 	"\x1cProjectDeletionImpactRequest\x12\x1d\n" +
 	"\n" +
 	"project_id\x18\x01 \x01(\tR\tprojectId\"\x9e\x02\n" +
@@ -7616,7 +7665,7 @@ const file_kumiho_proto_rawDesc = "" +
 	"\rEdgeDirection\x12\f\n" +
 	"\bOUTGOING\x10\x00\x12\f\n" +
 	"\bINCOMING\x10\x01\x12\b\n" +
-	"\x04BOTH\x10\x022\x97$\n" +
+	"\x04BOTH\x10\x022\xe6$\n" +
 	"\rKumihoService\x12F\n" +
 	"\rCreateProject\x12\x1c.kumiho.CreateProjectRequest\x1a\x17.kumiho.ProjectResponse\x12F\n" +
 	"\vGetProjects\x12\x1a.kumiho.GetProjectsRequest\x1a\x1b.kumiho.GetProjectsResponse\x12F\n" +
@@ -7625,7 +7674,8 @@ const file_kumiho_proto_rawDesc = "" +
 	"\x1cRegisterProjectDeletionGuard\x12+.kumiho.RegisterProjectDeletionGuardRequest\x1a$.kumiho.ProjectDeletionGuardResponse\x12a\n" +
 	"\x1bResolveProjectDeletionGuard\x12*.kumiho.ResolveProjectDeletionGuardRequest\x1a\x16.kumiho.StatusResponse\x12Y\n" +
 	"\x17ResolveProjectReference\x12&.kumiho.ResolveProjectReferenceRequest\x1a\x16.kumiho.StatusResponse\x12E\n" +
-	"\rDeleteProject\x12\x1c.kumiho.DeleteProjectRequest\x1a\x16.kumiho.StatusResponse\x12@\n" +
+	"\rDeleteProject\x12\x1c.kumiho.DeleteProjectRequest\x1a\x16.kumiho.StatusResponse\x12M\n" +
+	"\x11HardDeleteProject\x12 .kumiho.HardDeleteProjectRequest\x1a\x16.kumiho.StatusResponse\x12@\n" +
 	"\vCreateSpace\x12\x1a.kumiho.CreateSpaceRequest\x1a\x15.kumiho.SpaceResponse\x12:\n" +
 	"\bGetSpace\x12\x17.kumiho.GetSpaceRequest\x1a\x15.kumiho.SpaceResponse\x12O\n" +
 	"\x0eGetChildSpaces\x12\x1d.kumiho.GetChildSpacesRequest\x1a\x1e.kumiho.GetChildSpacesResponse\x12A\n" +
@@ -7698,7 +7748,7 @@ func file_kumiho_proto_rawDescGZIP() []byte {
 }
 
 var file_kumiho_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_kumiho_proto_msgTypes = make([]protoimpl.MessageInfo, 125)
+var file_kumiho_proto_msgTypes = make([]protoimpl.MessageInfo, 126)
 var file_kumiho_proto_goTypes = []any{
 	(EdgeDirection)(0),                          // 0: kumiho.EdgeDirection
 	(*Kref)(nil),                                // 1: kumiho.Kref
@@ -7796,50 +7846,51 @@ var file_kumiho_proto_goTypes = []any{
 	(*GetProjectsRequest)(nil),                  // 93: kumiho.GetProjectsRequest
 	(*GetProjectsResponse)(nil),                 // 94: kumiho.GetProjectsResponse
 	(*DeleteProjectRequest)(nil),                // 95: kumiho.DeleteProjectRequest
-	(*ProjectDeletionImpactRequest)(nil),        // 96: kumiho.ProjectDeletionImpactRequest
-	(*ProjectDeletionImpactResponse)(nil),       // 97: kumiho.ProjectDeletionImpactResponse
-	(*RegisterProjectDeletionGuardRequest)(nil), // 98: kumiho.RegisterProjectDeletionGuardRequest
-	(*ResolveProjectDeletionGuardRequest)(nil),  // 99: kumiho.ResolveProjectDeletionGuardRequest
-	(*ProjectDeletionGuardResponse)(nil),        // 100: kumiho.ProjectDeletionGuardResponse
-	(*MoveItemRequest)(nil),                     // 101: kumiho.MoveItemRequest
-	(*ResolveProjectReferenceRequest)(nil),      // 102: kumiho.ResolveProjectReferenceRequest
-	(*UpdateProjectRequest)(nil),                // 103: kumiho.UpdateProjectRequest
-	(*SetDeprecatedRequest)(nil),                // 104: kumiho.SetDeprecatedRequest
-	(*GetTenantUsageRequest)(nil),               // 105: kumiho.GetTenantUsageRequest
-	(*TenantUsageResponse)(nil),                 // 106: kumiho.TenantUsageResponse
-	nil,                                         // 107: kumiho.Edge.MetadataEntry
-	nil,                                         // 108: kumiho.CreateSpaceRequest.MetadataEntry
-	nil,                                         // 109: kumiho.SpaceResponse.MetadataEntry
-	nil,                                         // 110: kumiho.ItemResponse.MetadataEntry
-	nil,                                         // 111: kumiho.CreateRevisionRequest.MetadataEntry
-	nil,                                         // 112: kumiho.RevisionResponse.MetadataEntry
-	nil,                                         // 113: kumiho.BatchArtifactInput.MetadataEntry
-	nil,                                         // 114: kumiho.CreateArtifactRequest.MetadataEntry
-	nil,                                         // 115: kumiho.ArtifactResponse.MetadataEntry
-	nil,                                         // 116: kumiho.CreateEdgeRequest.MetadataEntry
-	nil,                                         // 117: kumiho.UpdateMetadataRequest.MetadataEntry
-	nil,                                         // 118: kumiho.CreateBundleRequest.MetadataEntry
-	nil,                                         // 119: kumiho.AddBundleMemberRequest.MetadataEntry
-	nil,                                         // 120: kumiho.RemoveBundleMemberRequest.MetadataEntry
-	nil,                                         // 121: kumiho.BundleRevisionHistory.MetadataEntry
-	nil,                                         // 122: kumiho.Event.DetailsEntry
-	nil,                                         // 123: kumiho.CreateProjectRequest.MetadataEntry
-	nil,                                         // 124: kumiho.ProjectResponse.MetadataEntry
-	nil,                                         // 125: kumiho.UpdateProjectRequest.MetadataEntry
+	(*HardDeleteProjectRequest)(nil),            // 96: kumiho.HardDeleteProjectRequest
+	(*ProjectDeletionImpactRequest)(nil),        // 97: kumiho.ProjectDeletionImpactRequest
+	(*ProjectDeletionImpactResponse)(nil),       // 98: kumiho.ProjectDeletionImpactResponse
+	(*RegisterProjectDeletionGuardRequest)(nil), // 99: kumiho.RegisterProjectDeletionGuardRequest
+	(*ResolveProjectDeletionGuardRequest)(nil),  // 100: kumiho.ResolveProjectDeletionGuardRequest
+	(*ProjectDeletionGuardResponse)(nil),        // 101: kumiho.ProjectDeletionGuardResponse
+	(*MoveItemRequest)(nil),                     // 102: kumiho.MoveItemRequest
+	(*ResolveProjectReferenceRequest)(nil),      // 103: kumiho.ResolveProjectReferenceRequest
+	(*UpdateProjectRequest)(nil),                // 104: kumiho.UpdateProjectRequest
+	(*SetDeprecatedRequest)(nil),                // 105: kumiho.SetDeprecatedRequest
+	(*GetTenantUsageRequest)(nil),               // 106: kumiho.GetTenantUsageRequest
+	(*TenantUsageResponse)(nil),                 // 107: kumiho.TenantUsageResponse
+	nil,                                         // 108: kumiho.Edge.MetadataEntry
+	nil,                                         // 109: kumiho.CreateSpaceRequest.MetadataEntry
+	nil,                                         // 110: kumiho.SpaceResponse.MetadataEntry
+	nil,                                         // 111: kumiho.ItemResponse.MetadataEntry
+	nil,                                         // 112: kumiho.CreateRevisionRequest.MetadataEntry
+	nil,                                         // 113: kumiho.RevisionResponse.MetadataEntry
+	nil,                                         // 114: kumiho.BatchArtifactInput.MetadataEntry
+	nil,                                         // 115: kumiho.CreateArtifactRequest.MetadataEntry
+	nil,                                         // 116: kumiho.ArtifactResponse.MetadataEntry
+	nil,                                         // 117: kumiho.CreateEdgeRequest.MetadataEntry
+	nil,                                         // 118: kumiho.UpdateMetadataRequest.MetadataEntry
+	nil,                                         // 119: kumiho.CreateBundleRequest.MetadataEntry
+	nil,                                         // 120: kumiho.AddBundleMemberRequest.MetadataEntry
+	nil,                                         // 121: kumiho.RemoveBundleMemberRequest.MetadataEntry
+	nil,                                         // 122: kumiho.BundleRevisionHistory.MetadataEntry
+	nil,                                         // 123: kumiho.Event.DetailsEntry
+	nil,                                         // 124: kumiho.CreateProjectRequest.MetadataEntry
+	nil,                                         // 125: kumiho.ProjectResponse.MetadataEntry
+	nil,                                         // 126: kumiho.UpdateProjectRequest.MetadataEntry
 }
 var file_kumiho_proto_depIdxs = []int32{
 	1,   // 0: kumiho.Edge.source_kref:type_name -> kumiho.Kref
 	1,   // 1: kumiho.Edge.target_kref:type_name -> kumiho.Kref
-	107, // 2: kumiho.Edge.metadata:type_name -> kumiho.Edge.MetadataEntry
+	108, // 2: kumiho.Edge.metadata:type_name -> kumiho.Edge.MetadataEntry
 	1,   // 3: kumiho.KrefRequest.kref:type_name -> kumiho.Kref
 	1,   // 4: kumiho.ResolveLocationResponse.resolved_kref:type_name -> kumiho.Kref
-	108, // 5: kumiho.CreateSpaceRequest.metadata:type_name -> kumiho.CreateSpaceRequest.MetadataEntry
-	109, // 6: kumiho.SpaceResponse.metadata:type_name -> kumiho.SpaceResponse.MetadataEntry
+	109, // 5: kumiho.CreateSpaceRequest.metadata:type_name -> kumiho.CreateSpaceRequest.MetadataEntry
+	110, // 6: kumiho.SpaceResponse.metadata:type_name -> kumiho.SpaceResponse.MetadataEntry
 	4,   // 7: kumiho.GetChildSpacesRequest.pagination:type_name -> kumiho.PaginationRequest
 	11,  // 8: kumiho.GetChildSpacesResponse.spaces:type_name -> kumiho.SpaceResponse
 	5,   // 9: kumiho.GetChildSpacesResponse.pagination:type_name -> kumiho.PaginationResponse
 	1,   // 10: kumiho.ItemResponse.kref:type_name -> kumiho.Kref
-	110, // 11: kumiho.ItemResponse.metadata:type_name -> kumiho.ItemResponse.MetadataEntry
+	111, // 11: kumiho.ItemResponse.metadata:type_name -> kumiho.ItemResponse.MetadataEntry
 	1,   // 12: kumiho.DeleteItemRequest.kref:type_name -> kumiho.Kref
 	4,   // 13: kumiho.GetItemsRequest.pagination:type_name -> kumiho.PaginationRequest
 	18,  // 14: kumiho.GetItemsResponse.items:type_name -> kumiho.ItemResponse
@@ -7853,10 +7904,10 @@ var file_kumiho_proto_depIdxs = []int32{
 	1,   // 22: kumiho.ScoredRevision.kref:type_name -> kumiho.Kref
 	27,  // 23: kumiho.ScoreRevisionsResponse.scored_revisions:type_name -> kumiho.ScoredRevision
 	1,   // 24: kumiho.CreateRevisionRequest.item_kref:type_name -> kumiho.Kref
-	111, // 25: kumiho.CreateRevisionRequest.metadata:type_name -> kumiho.CreateRevisionRequest.MetadataEntry
+	112, // 25: kumiho.CreateRevisionRequest.metadata:type_name -> kumiho.CreateRevisionRequest.MetadataEntry
 	1,   // 26: kumiho.RevisionResponse.kref:type_name -> kumiho.Kref
 	1,   // 27: kumiho.RevisionResponse.item_kref:type_name -> kumiho.Kref
-	112, // 28: kumiho.RevisionResponse.metadata:type_name -> kumiho.RevisionResponse.MetadataEntry
+	113, // 28: kumiho.RevisionResponse.metadata:type_name -> kumiho.RevisionResponse.MetadataEntry
 	1,   // 29: kumiho.DeleteRevisionRequest.kref:type_name -> kumiho.Kref
 	1,   // 30: kumiho.GetRevisionsRequest.item_kref:type_name -> kumiho.Kref
 	4,   // 31: kumiho.GetRevisionsRequest.pagination:type_name -> kumiho.PaginationRequest
@@ -7865,18 +7916,18 @@ var file_kumiho_proto_depIdxs = []int32{
 	1,   // 34: kumiho.BatchGetRevisionsRequest.revision_krefs:type_name -> kumiho.Kref
 	1,   // 35: kumiho.BatchGetRevisionsRequest.item_krefs:type_name -> kumiho.Kref
 	30,  // 36: kumiho.BatchGetRevisionsResponse.revisions:type_name -> kumiho.RevisionResponse
-	113, // 37: kumiho.BatchArtifactInput.metadata:type_name -> kumiho.BatchArtifactInput.MetadataEntry
+	114, // 37: kumiho.BatchArtifactInput.metadata:type_name -> kumiho.BatchArtifactInput.MetadataEntry
 	29,  // 38: kumiho.BatchRevisionRow.revision:type_name -> kumiho.CreateRevisionRequest
 	36,  // 39: kumiho.BatchRevisionRow.artifacts:type_name -> kumiho.BatchArtifactInput
 	37,  // 40: kumiho.BatchCreateRevisionsRequest.revisions:type_name -> kumiho.BatchRevisionRow
 	30,  // 41: kumiho.BatchCreateRevisionsResponse.results:type_name -> kumiho.RevisionResponse
 	39,  // 42: kumiho.BatchCreateRevisionsResponse.failures:type_name -> kumiho.BatchRevisionFailure
 	1,   // 43: kumiho.CreateArtifactRequest.revision_kref:type_name -> kumiho.Kref
-	114, // 44: kumiho.CreateArtifactRequest.metadata:type_name -> kumiho.CreateArtifactRequest.MetadataEntry
+	115, // 44: kumiho.CreateArtifactRequest.metadata:type_name -> kumiho.CreateArtifactRequest.MetadataEntry
 	1,   // 45: kumiho.ArtifactResponse.kref:type_name -> kumiho.Kref
 	1,   // 46: kumiho.ArtifactResponse.revision_kref:type_name -> kumiho.Kref
 	1,   // 47: kumiho.ArtifactResponse.item_kref:type_name -> kumiho.Kref
-	115, // 48: kumiho.ArtifactResponse.metadata:type_name -> kumiho.ArtifactResponse.MetadataEntry
+	116, // 48: kumiho.ArtifactResponse.metadata:type_name -> kumiho.ArtifactResponse.MetadataEntry
 	1,   // 49: kumiho.GetArtifactRequest.revision_kref:type_name -> kumiho.Kref
 	1,   // 50: kumiho.GetArtifactsRequest.revision_kref:type_name -> kumiho.Kref
 	42,  // 51: kumiho.GetArtifactsResponse.artifacts:type_name -> kumiho.ArtifactResponse
@@ -7889,9 +7940,9 @@ var file_kumiho_proto_depIdxs = []int32{
 	1,   // 58: kumiho.SetDefaultArtifactRequest.revision_kref:type_name -> kumiho.Kref
 	1,   // 59: kumiho.CreateEdgeRequest.source_revision_kref:type_name -> kumiho.Kref
 	1,   // 60: kumiho.CreateEdgeRequest.target_revision_kref:type_name -> kumiho.Kref
-	116, // 61: kumiho.CreateEdgeRequest.metadata:type_name -> kumiho.CreateEdgeRequest.MetadataEntry
+	117, // 61: kumiho.CreateEdgeRequest.metadata:type_name -> kumiho.CreateEdgeRequest.MetadataEntry
 	1,   // 62: kumiho.UpdateMetadataRequest.kref:type_name -> kumiho.Kref
-	117, // 63: kumiho.UpdateMetadataRequest.metadata:type_name -> kumiho.UpdateMetadataRequest.MetadataEntry
+	118, // 63: kumiho.UpdateMetadataRequest.metadata:type_name -> kumiho.UpdateMetadataRequest.MetadataEntry
 	1,   // 64: kumiho.SetAttributeRequest.kref:type_name -> kumiho.Kref
 	1,   // 65: kumiho.GetAttributeRequest.kref:type_name -> kumiho.Kref
 	1,   // 66: kumiho.DeleteAttributeRequest.kref:type_name -> kumiho.Kref
@@ -7918,153 +7969,155 @@ var file_kumiho_proto_depIdxs = []int32{
 	1,   // 87: kumiho.ImpactedRevision.revision_kref:type_name -> kumiho.Kref
 	1,   // 88: kumiho.ImpactedRevision.item_kref:type_name -> kumiho.Kref
 	74,  // 89: kumiho.ImpactAnalysisResponse.impacted_revisions:type_name -> kumiho.ImpactedRevision
-	118, // 90: kumiho.CreateBundleRequest.metadata:type_name -> kumiho.CreateBundleRequest.MetadataEntry
+	119, // 90: kumiho.CreateBundleRequest.metadata:type_name -> kumiho.CreateBundleRequest.MetadataEntry
 	1,   // 91: kumiho.BundleMember.item_kref:type_name -> kumiho.Kref
 	1,   // 92: kumiho.AddBundleMemberRequest.bundle_kref:type_name -> kumiho.Kref
 	1,   // 93: kumiho.AddBundleMemberRequest.member_item_kref:type_name -> kumiho.Kref
-	119, // 94: kumiho.AddBundleMemberRequest.metadata:type_name -> kumiho.AddBundleMemberRequest.MetadataEntry
+	120, // 94: kumiho.AddBundleMemberRequest.metadata:type_name -> kumiho.AddBundleMemberRequest.MetadataEntry
 	30,  // 95: kumiho.AddBundleMemberResponse.new_revision:type_name -> kumiho.RevisionResponse
 	1,   // 96: kumiho.RemoveBundleMemberRequest.bundle_kref:type_name -> kumiho.Kref
 	1,   // 97: kumiho.RemoveBundleMemberRequest.member_item_kref:type_name -> kumiho.Kref
-	120, // 98: kumiho.RemoveBundleMemberRequest.metadata:type_name -> kumiho.RemoveBundleMemberRequest.MetadataEntry
+	121, // 98: kumiho.RemoveBundleMemberRequest.metadata:type_name -> kumiho.RemoveBundleMemberRequest.MetadataEntry
 	30,  // 99: kumiho.RemoveBundleMemberResponse.new_revision:type_name -> kumiho.RevisionResponse
 	1,   // 100: kumiho.GetBundleMembersRequest.bundle_kref:type_name -> kumiho.Kref
 	77,  // 101: kumiho.GetBundleMembersResponse.members:type_name -> kumiho.BundleMember
 	1,   // 102: kumiho.BundleRevisionHistory.member_item_kref:type_name -> kumiho.Kref
-	121, // 103: kumiho.BundleRevisionHistory.metadata:type_name -> kumiho.BundleRevisionHistory.MetadataEntry
+	122, // 103: kumiho.BundleRevisionHistory.metadata:type_name -> kumiho.BundleRevisionHistory.MetadataEntry
 	1,   // 104: kumiho.GetBundleHistoryRequest.bundle_kref:type_name -> kumiho.Kref
 	84,  // 105: kumiho.GetBundleHistoryResponse.history:type_name -> kumiho.BundleRevisionHistory
 	1,   // 106: kumiho.Event.kref:type_name -> kumiho.Kref
-	122, // 107: kumiho.Event.details:type_name -> kumiho.Event.DetailsEntry
-	123, // 108: kumiho.CreateProjectRequest.metadata:type_name -> kumiho.CreateProjectRequest.MetadataEntry
-	124, // 109: kumiho.ProjectResponse.metadata:type_name -> kumiho.ProjectResponse.MetadataEntry
+	123, // 107: kumiho.Event.details:type_name -> kumiho.Event.DetailsEntry
+	124, // 108: kumiho.CreateProjectRequest.metadata:type_name -> kumiho.CreateProjectRequest.MetadataEntry
+	125, // 109: kumiho.ProjectResponse.metadata:type_name -> kumiho.ProjectResponse.MetadataEntry
 	92,  // 110: kumiho.GetProjectsResponse.projects:type_name -> kumiho.ProjectResponse
-	125, // 111: kumiho.UpdateProjectRequest.metadata:type_name -> kumiho.UpdateProjectRequest.MetadataEntry
+	126, // 111: kumiho.UpdateProjectRequest.metadata:type_name -> kumiho.UpdateProjectRequest.MetadataEntry
 	1,   // 112: kumiho.SetDeprecatedRequest.kref:type_name -> kumiho.Kref
 	91,  // 113: kumiho.KumihoService.CreateProject:input_type -> kumiho.CreateProjectRequest
 	93,  // 114: kumiho.KumihoService.GetProjects:input_type -> kumiho.GetProjectsRequest
-	103, // 115: kumiho.KumihoService.UpdateProject:input_type -> kumiho.UpdateProjectRequest
-	96,  // 116: kumiho.KumihoService.AnalyzeProjectDeletion:input_type -> kumiho.ProjectDeletionImpactRequest
-	98,  // 117: kumiho.KumihoService.RegisterProjectDeletionGuard:input_type -> kumiho.RegisterProjectDeletionGuardRequest
-	99,  // 118: kumiho.KumihoService.ResolveProjectDeletionGuard:input_type -> kumiho.ResolveProjectDeletionGuardRequest
-	102, // 119: kumiho.KumihoService.ResolveProjectReference:input_type -> kumiho.ResolveProjectReferenceRequest
+	104, // 115: kumiho.KumihoService.UpdateProject:input_type -> kumiho.UpdateProjectRequest
+	97,  // 116: kumiho.KumihoService.AnalyzeProjectDeletion:input_type -> kumiho.ProjectDeletionImpactRequest
+	99,  // 117: kumiho.KumihoService.RegisterProjectDeletionGuard:input_type -> kumiho.RegisterProjectDeletionGuardRequest
+	100, // 118: kumiho.KumihoService.ResolveProjectDeletionGuard:input_type -> kumiho.ResolveProjectDeletionGuardRequest
+	103, // 119: kumiho.KumihoService.ResolveProjectReference:input_type -> kumiho.ResolveProjectReferenceRequest
 	95,  // 120: kumiho.KumihoService.DeleteProject:input_type -> kumiho.DeleteProjectRequest
-	10,  // 121: kumiho.KumihoService.CreateSpace:input_type -> kumiho.CreateSpaceRequest
-	12,  // 122: kumiho.KumihoService.GetSpace:input_type -> kumiho.GetSpaceRequest
-	14,  // 123: kumiho.KumihoService.GetChildSpaces:input_type -> kumiho.GetChildSpacesRequest
-	13,  // 124: kumiho.KumihoService.DeleteSpace:input_type -> kumiho.DeleteSpaceRequest
-	57,  // 125: kumiho.KumihoService.UpdateSpaceMetadata:input_type -> kumiho.UpdateMetadataRequest
-	16,  // 126: kumiho.KumihoService.CreateItem:input_type -> kumiho.CreateItemRequest
-	17,  // 127: kumiho.KumihoService.GetItem:input_type -> kumiho.GetItemRequest
-	20,  // 128: kumiho.KumihoService.GetItems:input_type -> kumiho.GetItemsRequest
-	22,  // 129: kumiho.KumihoService.ItemSearch:input_type -> kumiho.ItemSearchRequest
-	19,  // 130: kumiho.KumihoService.DeleteItem:input_type -> kumiho.DeleteItemRequest
-	57,  // 131: kumiho.KumihoService.UpdateItemMetadata:input_type -> kumiho.UpdateMetadataRequest
-	101, // 132: kumiho.KumihoService.MoveItem:input_type -> kumiho.MoveItemRequest
-	23,  // 133: kumiho.KumihoService.Search:input_type -> kumiho.SearchRequest
-	26,  // 134: kumiho.KumihoService.ScoreRevisions:input_type -> kumiho.ScoreRevisionsRequest
-	7,   // 135: kumiho.KumihoService.ResolveKref:input_type -> kumiho.ResolveKrefRequest
-	8,   // 136: kumiho.KumihoService.ResolveLocation:input_type -> kumiho.ResolveLocationRequest
-	29,  // 137: kumiho.KumihoService.CreateRevision:input_type -> kumiho.CreateRevisionRequest
-	6,   // 138: kumiho.KumihoService.GetRevision:input_type -> kumiho.KrefRequest
-	32,  // 139: kumiho.KumihoService.GetRevisions:input_type -> kumiho.GetRevisionsRequest
-	34,  // 140: kumiho.KumihoService.BatchGetRevisions:input_type -> kumiho.BatchGetRevisionsRequest
-	38,  // 141: kumiho.KumihoService.BatchCreateRevisions:input_type -> kumiho.BatchCreateRevisionsRequest
-	31,  // 142: kumiho.KumihoService.DeleteRevision:input_type -> kumiho.DeleteRevisionRequest
-	62,  // 143: kumiho.KumihoService.PeekNextRevision:input_type -> kumiho.PeekNextRevisionRequest
-	57,  // 144: kumiho.KumihoService.UpdateRevisionMetadata:input_type -> kumiho.UpdateMetadataRequest
-	49,  // 145: kumiho.KumihoService.TagRevision:input_type -> kumiho.TagRevisionRequest
-	50,  // 146: kumiho.KumihoService.UnTagRevision:input_type -> kumiho.UnTagRevisionRequest
-	51,  // 147: kumiho.KumihoService.HasTag:input_type -> kumiho.HasTagRequest
-	53,  // 148: kumiho.KumihoService.WasTagged:input_type -> kumiho.WasTaggedRequest
-	55,  // 149: kumiho.KumihoService.SetDefaultArtifact:input_type -> kumiho.SetDefaultArtifactRequest
-	41,  // 150: kumiho.KumihoService.CreateArtifact:input_type -> kumiho.CreateArtifactRequest
-	43,  // 151: kumiho.KumihoService.GetArtifact:input_type -> kumiho.GetArtifactRequest
-	44,  // 152: kumiho.KumihoService.GetArtifacts:input_type -> kumiho.GetArtifactsRequest
-	47,  // 153: kumiho.KumihoService.GetArtifactsByLocation:input_type -> kumiho.GetArtifactsByLocationRequest
-	46,  // 154: kumiho.KumihoService.DeleteArtifact:input_type -> kumiho.DeleteArtifactRequest
-	57,  // 155: kumiho.KumihoService.UpdateArtifactMetadata:input_type -> kumiho.UpdateMetadataRequest
-	58,  // 156: kumiho.KumihoService.SetAttribute:input_type -> kumiho.SetAttributeRequest
-	59,  // 157: kumiho.KumihoService.GetAttribute:input_type -> kumiho.GetAttributeRequest
-	61,  // 158: kumiho.KumihoService.DeleteAttribute:input_type -> kumiho.DeleteAttributeRequest
-	56,  // 159: kumiho.KumihoService.CreateEdge:input_type -> kumiho.CreateEdgeRequest
-	64,  // 160: kumiho.KumihoService.GetEdges:input_type -> kumiho.GetEdgesRequest
-	66,  // 161: kumiho.KumihoService.DeleteEdge:input_type -> kumiho.DeleteEdgeRequest
-	69,  // 162: kumiho.KumihoService.TraverseEdges:input_type -> kumiho.TraverseEdgesRequest
-	71,  // 163: kumiho.KumihoService.FindShortestPath:input_type -> kumiho.ShortestPathRequest
-	73,  // 164: kumiho.KumihoService.AnalyzeImpact:input_type -> kumiho.ImpactAnalysisRequest
-	76,  // 165: kumiho.KumihoService.CreateBundle:input_type -> kumiho.CreateBundleRequest
-	78,  // 166: kumiho.KumihoService.AddBundleMember:input_type -> kumiho.AddBundleMemberRequest
-	80,  // 167: kumiho.KumihoService.RemoveBundleMember:input_type -> kumiho.RemoveBundleMemberRequest
-	82,  // 168: kumiho.KumihoService.GetBundleMembers:input_type -> kumiho.GetBundleMembersRequest
-	85,  // 169: kumiho.KumihoService.GetBundleHistory:input_type -> kumiho.GetBundleHistoryRequest
-	105, // 170: kumiho.KumihoService.GetTenantUsage:input_type -> kumiho.GetTenantUsageRequest
-	87,  // 171: kumiho.KumihoService.EventStream:input_type -> kumiho.EventStreamRequest
-	89,  // 172: kumiho.KumihoService.GetEventCapabilities:input_type -> kumiho.GetEventCapabilitiesRequest
-	104, // 173: kumiho.KumihoService.SetDeprecated:input_type -> kumiho.SetDeprecatedRequest
-	92,  // 174: kumiho.KumihoService.CreateProject:output_type -> kumiho.ProjectResponse
-	94,  // 175: kumiho.KumihoService.GetProjects:output_type -> kumiho.GetProjectsResponse
-	92,  // 176: kumiho.KumihoService.UpdateProject:output_type -> kumiho.ProjectResponse
-	97,  // 177: kumiho.KumihoService.AnalyzeProjectDeletion:output_type -> kumiho.ProjectDeletionImpactResponse
-	100, // 178: kumiho.KumihoService.RegisterProjectDeletionGuard:output_type -> kumiho.ProjectDeletionGuardResponse
-	3,   // 179: kumiho.KumihoService.ResolveProjectDeletionGuard:output_type -> kumiho.StatusResponse
-	3,   // 180: kumiho.KumihoService.ResolveProjectReference:output_type -> kumiho.StatusResponse
-	3,   // 181: kumiho.KumihoService.DeleteProject:output_type -> kumiho.StatusResponse
-	11,  // 182: kumiho.KumihoService.CreateSpace:output_type -> kumiho.SpaceResponse
-	11,  // 183: kumiho.KumihoService.GetSpace:output_type -> kumiho.SpaceResponse
-	15,  // 184: kumiho.KumihoService.GetChildSpaces:output_type -> kumiho.GetChildSpacesResponse
-	3,   // 185: kumiho.KumihoService.DeleteSpace:output_type -> kumiho.StatusResponse
-	11,  // 186: kumiho.KumihoService.UpdateSpaceMetadata:output_type -> kumiho.SpaceResponse
-	18,  // 187: kumiho.KumihoService.CreateItem:output_type -> kumiho.ItemResponse
-	18,  // 188: kumiho.KumihoService.GetItem:output_type -> kumiho.ItemResponse
-	21,  // 189: kumiho.KumihoService.GetItems:output_type -> kumiho.GetItemsResponse
-	21,  // 190: kumiho.KumihoService.ItemSearch:output_type -> kumiho.GetItemsResponse
-	3,   // 191: kumiho.KumihoService.DeleteItem:output_type -> kumiho.StatusResponse
-	18,  // 192: kumiho.KumihoService.UpdateItemMetadata:output_type -> kumiho.ItemResponse
-	18,  // 193: kumiho.KumihoService.MoveItem:output_type -> kumiho.ItemResponse
-	25,  // 194: kumiho.KumihoService.Search:output_type -> kumiho.SearchResponse
-	28,  // 195: kumiho.KumihoService.ScoreRevisions:output_type -> kumiho.ScoreRevisionsResponse
-	30,  // 196: kumiho.KumihoService.ResolveKref:output_type -> kumiho.RevisionResponse
-	9,   // 197: kumiho.KumihoService.ResolveLocation:output_type -> kumiho.ResolveLocationResponse
-	30,  // 198: kumiho.KumihoService.CreateRevision:output_type -> kumiho.RevisionResponse
-	30,  // 199: kumiho.KumihoService.GetRevision:output_type -> kumiho.RevisionResponse
-	33,  // 200: kumiho.KumihoService.GetRevisions:output_type -> kumiho.GetRevisionsResponse
-	35,  // 201: kumiho.KumihoService.BatchGetRevisions:output_type -> kumiho.BatchGetRevisionsResponse
-	40,  // 202: kumiho.KumihoService.BatchCreateRevisions:output_type -> kumiho.BatchCreateRevisionsResponse
-	3,   // 203: kumiho.KumihoService.DeleteRevision:output_type -> kumiho.StatusResponse
-	63,  // 204: kumiho.KumihoService.PeekNextRevision:output_type -> kumiho.PeekNextRevisionResponse
-	30,  // 205: kumiho.KumihoService.UpdateRevisionMetadata:output_type -> kumiho.RevisionResponse
-	3,   // 206: kumiho.KumihoService.TagRevision:output_type -> kumiho.StatusResponse
-	3,   // 207: kumiho.KumihoService.UnTagRevision:output_type -> kumiho.StatusResponse
-	52,  // 208: kumiho.KumihoService.HasTag:output_type -> kumiho.HasTagResponse
-	54,  // 209: kumiho.KumihoService.WasTagged:output_type -> kumiho.WasTaggedResponse
-	3,   // 210: kumiho.KumihoService.SetDefaultArtifact:output_type -> kumiho.StatusResponse
-	42,  // 211: kumiho.KumihoService.CreateArtifact:output_type -> kumiho.ArtifactResponse
-	42,  // 212: kumiho.KumihoService.GetArtifact:output_type -> kumiho.ArtifactResponse
-	45,  // 213: kumiho.KumihoService.GetArtifacts:output_type -> kumiho.GetArtifactsResponse
-	48,  // 214: kumiho.KumihoService.GetArtifactsByLocation:output_type -> kumiho.GetArtifactsByLocationResponse
-	3,   // 215: kumiho.KumihoService.DeleteArtifact:output_type -> kumiho.StatusResponse
-	42,  // 216: kumiho.KumihoService.UpdateArtifactMetadata:output_type -> kumiho.ArtifactResponse
-	3,   // 217: kumiho.KumihoService.SetAttribute:output_type -> kumiho.StatusResponse
-	60,  // 218: kumiho.KumihoService.GetAttribute:output_type -> kumiho.GetAttributeResponse
-	3,   // 219: kumiho.KumihoService.DeleteAttribute:output_type -> kumiho.StatusResponse
-	3,   // 220: kumiho.KumihoService.CreateEdge:output_type -> kumiho.StatusResponse
-	65,  // 221: kumiho.KumihoService.GetEdges:output_type -> kumiho.GetEdgesResponse
-	3,   // 222: kumiho.KumihoService.DeleteEdge:output_type -> kumiho.StatusResponse
-	70,  // 223: kumiho.KumihoService.TraverseEdges:output_type -> kumiho.TraverseEdgesResponse
-	72,  // 224: kumiho.KumihoService.FindShortestPath:output_type -> kumiho.ShortestPathResponse
-	75,  // 225: kumiho.KumihoService.AnalyzeImpact:output_type -> kumiho.ImpactAnalysisResponse
-	18,  // 226: kumiho.KumihoService.CreateBundle:output_type -> kumiho.ItemResponse
-	79,  // 227: kumiho.KumihoService.AddBundleMember:output_type -> kumiho.AddBundleMemberResponse
-	81,  // 228: kumiho.KumihoService.RemoveBundleMember:output_type -> kumiho.RemoveBundleMemberResponse
-	83,  // 229: kumiho.KumihoService.GetBundleMembers:output_type -> kumiho.GetBundleMembersResponse
-	86,  // 230: kumiho.KumihoService.GetBundleHistory:output_type -> kumiho.GetBundleHistoryResponse
-	106, // 231: kumiho.KumihoService.GetTenantUsage:output_type -> kumiho.TenantUsageResponse
-	88,  // 232: kumiho.KumihoService.EventStream:output_type -> kumiho.Event
-	90,  // 233: kumiho.KumihoService.GetEventCapabilities:output_type -> kumiho.EventCapabilities
-	3,   // 234: kumiho.KumihoService.SetDeprecated:output_type -> kumiho.StatusResponse
-	174, // [174:235] is the sub-list for method output_type
-	113, // [113:174] is the sub-list for method input_type
+	96,  // 121: kumiho.KumihoService.HardDeleteProject:input_type -> kumiho.HardDeleteProjectRequest
+	10,  // 122: kumiho.KumihoService.CreateSpace:input_type -> kumiho.CreateSpaceRequest
+	12,  // 123: kumiho.KumihoService.GetSpace:input_type -> kumiho.GetSpaceRequest
+	14,  // 124: kumiho.KumihoService.GetChildSpaces:input_type -> kumiho.GetChildSpacesRequest
+	13,  // 125: kumiho.KumihoService.DeleteSpace:input_type -> kumiho.DeleteSpaceRequest
+	57,  // 126: kumiho.KumihoService.UpdateSpaceMetadata:input_type -> kumiho.UpdateMetadataRequest
+	16,  // 127: kumiho.KumihoService.CreateItem:input_type -> kumiho.CreateItemRequest
+	17,  // 128: kumiho.KumihoService.GetItem:input_type -> kumiho.GetItemRequest
+	20,  // 129: kumiho.KumihoService.GetItems:input_type -> kumiho.GetItemsRequest
+	22,  // 130: kumiho.KumihoService.ItemSearch:input_type -> kumiho.ItemSearchRequest
+	19,  // 131: kumiho.KumihoService.DeleteItem:input_type -> kumiho.DeleteItemRequest
+	57,  // 132: kumiho.KumihoService.UpdateItemMetadata:input_type -> kumiho.UpdateMetadataRequest
+	102, // 133: kumiho.KumihoService.MoveItem:input_type -> kumiho.MoveItemRequest
+	23,  // 134: kumiho.KumihoService.Search:input_type -> kumiho.SearchRequest
+	26,  // 135: kumiho.KumihoService.ScoreRevisions:input_type -> kumiho.ScoreRevisionsRequest
+	7,   // 136: kumiho.KumihoService.ResolveKref:input_type -> kumiho.ResolveKrefRequest
+	8,   // 137: kumiho.KumihoService.ResolveLocation:input_type -> kumiho.ResolveLocationRequest
+	29,  // 138: kumiho.KumihoService.CreateRevision:input_type -> kumiho.CreateRevisionRequest
+	6,   // 139: kumiho.KumihoService.GetRevision:input_type -> kumiho.KrefRequest
+	32,  // 140: kumiho.KumihoService.GetRevisions:input_type -> kumiho.GetRevisionsRequest
+	34,  // 141: kumiho.KumihoService.BatchGetRevisions:input_type -> kumiho.BatchGetRevisionsRequest
+	38,  // 142: kumiho.KumihoService.BatchCreateRevisions:input_type -> kumiho.BatchCreateRevisionsRequest
+	31,  // 143: kumiho.KumihoService.DeleteRevision:input_type -> kumiho.DeleteRevisionRequest
+	62,  // 144: kumiho.KumihoService.PeekNextRevision:input_type -> kumiho.PeekNextRevisionRequest
+	57,  // 145: kumiho.KumihoService.UpdateRevisionMetadata:input_type -> kumiho.UpdateMetadataRequest
+	49,  // 146: kumiho.KumihoService.TagRevision:input_type -> kumiho.TagRevisionRequest
+	50,  // 147: kumiho.KumihoService.UnTagRevision:input_type -> kumiho.UnTagRevisionRequest
+	51,  // 148: kumiho.KumihoService.HasTag:input_type -> kumiho.HasTagRequest
+	53,  // 149: kumiho.KumihoService.WasTagged:input_type -> kumiho.WasTaggedRequest
+	55,  // 150: kumiho.KumihoService.SetDefaultArtifact:input_type -> kumiho.SetDefaultArtifactRequest
+	41,  // 151: kumiho.KumihoService.CreateArtifact:input_type -> kumiho.CreateArtifactRequest
+	43,  // 152: kumiho.KumihoService.GetArtifact:input_type -> kumiho.GetArtifactRequest
+	44,  // 153: kumiho.KumihoService.GetArtifacts:input_type -> kumiho.GetArtifactsRequest
+	47,  // 154: kumiho.KumihoService.GetArtifactsByLocation:input_type -> kumiho.GetArtifactsByLocationRequest
+	46,  // 155: kumiho.KumihoService.DeleteArtifact:input_type -> kumiho.DeleteArtifactRequest
+	57,  // 156: kumiho.KumihoService.UpdateArtifactMetadata:input_type -> kumiho.UpdateMetadataRequest
+	58,  // 157: kumiho.KumihoService.SetAttribute:input_type -> kumiho.SetAttributeRequest
+	59,  // 158: kumiho.KumihoService.GetAttribute:input_type -> kumiho.GetAttributeRequest
+	61,  // 159: kumiho.KumihoService.DeleteAttribute:input_type -> kumiho.DeleteAttributeRequest
+	56,  // 160: kumiho.KumihoService.CreateEdge:input_type -> kumiho.CreateEdgeRequest
+	64,  // 161: kumiho.KumihoService.GetEdges:input_type -> kumiho.GetEdgesRequest
+	66,  // 162: kumiho.KumihoService.DeleteEdge:input_type -> kumiho.DeleteEdgeRequest
+	69,  // 163: kumiho.KumihoService.TraverseEdges:input_type -> kumiho.TraverseEdgesRequest
+	71,  // 164: kumiho.KumihoService.FindShortestPath:input_type -> kumiho.ShortestPathRequest
+	73,  // 165: kumiho.KumihoService.AnalyzeImpact:input_type -> kumiho.ImpactAnalysisRequest
+	76,  // 166: kumiho.KumihoService.CreateBundle:input_type -> kumiho.CreateBundleRequest
+	78,  // 167: kumiho.KumihoService.AddBundleMember:input_type -> kumiho.AddBundleMemberRequest
+	80,  // 168: kumiho.KumihoService.RemoveBundleMember:input_type -> kumiho.RemoveBundleMemberRequest
+	82,  // 169: kumiho.KumihoService.GetBundleMembers:input_type -> kumiho.GetBundleMembersRequest
+	85,  // 170: kumiho.KumihoService.GetBundleHistory:input_type -> kumiho.GetBundleHistoryRequest
+	106, // 171: kumiho.KumihoService.GetTenantUsage:input_type -> kumiho.GetTenantUsageRequest
+	87,  // 172: kumiho.KumihoService.EventStream:input_type -> kumiho.EventStreamRequest
+	89,  // 173: kumiho.KumihoService.GetEventCapabilities:input_type -> kumiho.GetEventCapabilitiesRequest
+	105, // 174: kumiho.KumihoService.SetDeprecated:input_type -> kumiho.SetDeprecatedRequest
+	92,  // 175: kumiho.KumihoService.CreateProject:output_type -> kumiho.ProjectResponse
+	94,  // 176: kumiho.KumihoService.GetProjects:output_type -> kumiho.GetProjectsResponse
+	92,  // 177: kumiho.KumihoService.UpdateProject:output_type -> kumiho.ProjectResponse
+	98,  // 178: kumiho.KumihoService.AnalyzeProjectDeletion:output_type -> kumiho.ProjectDeletionImpactResponse
+	101, // 179: kumiho.KumihoService.RegisterProjectDeletionGuard:output_type -> kumiho.ProjectDeletionGuardResponse
+	3,   // 180: kumiho.KumihoService.ResolveProjectDeletionGuard:output_type -> kumiho.StatusResponse
+	3,   // 181: kumiho.KumihoService.ResolveProjectReference:output_type -> kumiho.StatusResponse
+	3,   // 182: kumiho.KumihoService.DeleteProject:output_type -> kumiho.StatusResponse
+	3,   // 183: kumiho.KumihoService.HardDeleteProject:output_type -> kumiho.StatusResponse
+	11,  // 184: kumiho.KumihoService.CreateSpace:output_type -> kumiho.SpaceResponse
+	11,  // 185: kumiho.KumihoService.GetSpace:output_type -> kumiho.SpaceResponse
+	15,  // 186: kumiho.KumihoService.GetChildSpaces:output_type -> kumiho.GetChildSpacesResponse
+	3,   // 187: kumiho.KumihoService.DeleteSpace:output_type -> kumiho.StatusResponse
+	11,  // 188: kumiho.KumihoService.UpdateSpaceMetadata:output_type -> kumiho.SpaceResponse
+	18,  // 189: kumiho.KumihoService.CreateItem:output_type -> kumiho.ItemResponse
+	18,  // 190: kumiho.KumihoService.GetItem:output_type -> kumiho.ItemResponse
+	21,  // 191: kumiho.KumihoService.GetItems:output_type -> kumiho.GetItemsResponse
+	21,  // 192: kumiho.KumihoService.ItemSearch:output_type -> kumiho.GetItemsResponse
+	3,   // 193: kumiho.KumihoService.DeleteItem:output_type -> kumiho.StatusResponse
+	18,  // 194: kumiho.KumihoService.UpdateItemMetadata:output_type -> kumiho.ItemResponse
+	18,  // 195: kumiho.KumihoService.MoveItem:output_type -> kumiho.ItemResponse
+	25,  // 196: kumiho.KumihoService.Search:output_type -> kumiho.SearchResponse
+	28,  // 197: kumiho.KumihoService.ScoreRevisions:output_type -> kumiho.ScoreRevisionsResponse
+	30,  // 198: kumiho.KumihoService.ResolveKref:output_type -> kumiho.RevisionResponse
+	9,   // 199: kumiho.KumihoService.ResolveLocation:output_type -> kumiho.ResolveLocationResponse
+	30,  // 200: kumiho.KumihoService.CreateRevision:output_type -> kumiho.RevisionResponse
+	30,  // 201: kumiho.KumihoService.GetRevision:output_type -> kumiho.RevisionResponse
+	33,  // 202: kumiho.KumihoService.GetRevisions:output_type -> kumiho.GetRevisionsResponse
+	35,  // 203: kumiho.KumihoService.BatchGetRevisions:output_type -> kumiho.BatchGetRevisionsResponse
+	40,  // 204: kumiho.KumihoService.BatchCreateRevisions:output_type -> kumiho.BatchCreateRevisionsResponse
+	3,   // 205: kumiho.KumihoService.DeleteRevision:output_type -> kumiho.StatusResponse
+	63,  // 206: kumiho.KumihoService.PeekNextRevision:output_type -> kumiho.PeekNextRevisionResponse
+	30,  // 207: kumiho.KumihoService.UpdateRevisionMetadata:output_type -> kumiho.RevisionResponse
+	3,   // 208: kumiho.KumihoService.TagRevision:output_type -> kumiho.StatusResponse
+	3,   // 209: kumiho.KumihoService.UnTagRevision:output_type -> kumiho.StatusResponse
+	52,  // 210: kumiho.KumihoService.HasTag:output_type -> kumiho.HasTagResponse
+	54,  // 211: kumiho.KumihoService.WasTagged:output_type -> kumiho.WasTaggedResponse
+	3,   // 212: kumiho.KumihoService.SetDefaultArtifact:output_type -> kumiho.StatusResponse
+	42,  // 213: kumiho.KumihoService.CreateArtifact:output_type -> kumiho.ArtifactResponse
+	42,  // 214: kumiho.KumihoService.GetArtifact:output_type -> kumiho.ArtifactResponse
+	45,  // 215: kumiho.KumihoService.GetArtifacts:output_type -> kumiho.GetArtifactsResponse
+	48,  // 216: kumiho.KumihoService.GetArtifactsByLocation:output_type -> kumiho.GetArtifactsByLocationResponse
+	3,   // 217: kumiho.KumihoService.DeleteArtifact:output_type -> kumiho.StatusResponse
+	42,  // 218: kumiho.KumihoService.UpdateArtifactMetadata:output_type -> kumiho.ArtifactResponse
+	3,   // 219: kumiho.KumihoService.SetAttribute:output_type -> kumiho.StatusResponse
+	60,  // 220: kumiho.KumihoService.GetAttribute:output_type -> kumiho.GetAttributeResponse
+	3,   // 221: kumiho.KumihoService.DeleteAttribute:output_type -> kumiho.StatusResponse
+	3,   // 222: kumiho.KumihoService.CreateEdge:output_type -> kumiho.StatusResponse
+	65,  // 223: kumiho.KumihoService.GetEdges:output_type -> kumiho.GetEdgesResponse
+	3,   // 224: kumiho.KumihoService.DeleteEdge:output_type -> kumiho.StatusResponse
+	70,  // 225: kumiho.KumihoService.TraverseEdges:output_type -> kumiho.TraverseEdgesResponse
+	72,  // 226: kumiho.KumihoService.FindShortestPath:output_type -> kumiho.ShortestPathResponse
+	75,  // 227: kumiho.KumihoService.AnalyzeImpact:output_type -> kumiho.ImpactAnalysisResponse
+	18,  // 228: kumiho.KumihoService.CreateBundle:output_type -> kumiho.ItemResponse
+	79,  // 229: kumiho.KumihoService.AddBundleMember:output_type -> kumiho.AddBundleMemberResponse
+	81,  // 230: kumiho.KumihoService.RemoveBundleMember:output_type -> kumiho.RemoveBundleMemberResponse
+	83,  // 231: kumiho.KumihoService.GetBundleMembers:output_type -> kumiho.GetBundleMembersResponse
+	86,  // 232: kumiho.KumihoService.GetBundleHistory:output_type -> kumiho.GetBundleHistoryResponse
+	107, // 233: kumiho.KumihoService.GetTenantUsage:output_type -> kumiho.TenantUsageResponse
+	88,  // 234: kumiho.KumihoService.EventStream:output_type -> kumiho.Event
+	90,  // 235: kumiho.KumihoService.GetEventCapabilities:output_type -> kumiho.EventCapabilities
+	3,   // 236: kumiho.KumihoService.SetDeprecated:output_type -> kumiho.StatusResponse
+	175, // [175:237] is the sub-list for method output_type
+	113, // [113:175] is the sub-list for method input_type
 	113, // [113:113] is the sub-list for extension type_name
 	113, // [113:113] is the sub-list for extension extendee
 	0,   // [0:113] is the sub-list for field type_name
@@ -8096,14 +8149,14 @@ func file_kumiho_proto_init() {
 		(*EventStreamRequest_FromTimestamp)(nil),
 		(*EventStreamRequest_FromBeginning)(nil),
 	}
-	file_kumiho_proto_msgTypes[102].OneofWrappers = []any{}
+	file_kumiho_proto_msgTypes[103].OneofWrappers = []any{}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_kumiho_proto_rawDesc), len(file_kumiho_proto_rawDesc)),
 			NumEnums:      1,
-			NumMessages:   125,
+			NumMessages:   126,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

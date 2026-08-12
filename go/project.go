@@ -88,8 +88,8 @@ func (p *Project) GetItems(ctx context.Context, nameFilter, kindFilter string, p
 	return p.client.ItemSearch(ctx, p.Name, nameFilter, kindFilter, pageSize, cursor, false)
 }
 
-// Delete deprecates this project. force=true is retained for compatibility
-// but rejected; hard-delete requires AnalyzeDeletion followed by HardDelete.
+// Delete forwards the legacy delete/deprecate request to the connected server.
+// New servers require AnalyzeDeletion followed by HardDelete for permanence.
 func (p *Project) Delete(ctx context.Context, force bool) error {
 	return p.client.DeleteProject(ctx, p.ProjectID, force)
 }

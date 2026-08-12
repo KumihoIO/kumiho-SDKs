@@ -76,17 +76,23 @@ void main() {
       expect(calls.single['allowPublic'], equals(true));
     });
 
-    test(
-      'Project rejects legacy force delete without a bound snapshot',
-      () async {
-        final project = Project(
-          mockProjectResponse(projectId: 'p1', name: 'demo'),
-          Object(),
-        );
+    test('Project forwards legacy force delete unchanged', () async {
+      final calls = <Map<String, Object?>>[];
+      final fakeClient = _FakeProjectClient(
+        (projectId, {allowPublic, description}) =>
+            mockProjectResponse(projectId: projectId, name: 'demo'),
+        deleteProject: (projectId, {force = false}) {
+          calls.add({'projectId': projectId, 'force': force});
+        },
+      );
+      final project = Project(
+        mockProjectResponse(projectId: 'p1', name: 'demo'),
+        fakeClient,
+      );
 
-        await expectLater(project.delete(force: true), throwsArgumentError);
-      },
-    );
+      await project.delete(force: true);
+      expect(calls, equals([{'projectId': 'p1', 'force': true}]));
+    });
 
     test(
       'Project hard delete requires explicit confirmation and binding',
@@ -378,7 +384,7 @@ void main() {
 }
 
 class _FakeProjectClient {
-  _FakeProjectClient(this._updateProject);
+  _FakeProjectClient(this._updateProject, {this.deleteProject});
 
   final ProjectResponse Function(
     String projectId, {
@@ -386,6 +392,8 @@ class _FakeProjectClient {
     String? description,
   })
   _updateProject;
+
+  final void Function(String projectId, {bool force})? deleteProject;
 
   Future<ProjectResponse> updateProject(
     String projectId, {

@@ -528,24 +528,15 @@ impl Client {
             .find(|p| p.name == name))
     }
 
-    /// Deprecate a project.
+    /// Delete (force=true) or deprecate a project using the server contract.
     ///
-    /// The `force` parameter is retained for source compatibility. Passing
-    /// `true` is rejected locally because permanent deletion now requires a
-    /// server-issued snapshot passed to [`Client::hard_delete_project`].
+    /// New servers require [`Client::hard_delete_project`] for permanent
+    /// deletion. This legacy method still forwards `force` unchanged so a new
+    /// SDK remains compatible with older servers.
     pub async fn delete_project(&self, project_id: &str, force: bool) -> Result<()> {
-        if force {
-            return Err(Error::InvalidArgument(
-                "force deletion requires analyze_project_deletion followed by hard_delete_project"
-                    .into(),
-            ));
-        }
         let req = pb::DeleteProjectRequest {
             project_id: project_id.to_string(),
-            force: false,
-            impact_snapshot_id: String::new(),
-            impact_snapshot_hash: String::new(),
-            confirmed: false,
+            force,
         };
         unary!(self, delete_project, req)?;
         Ok(())
@@ -581,10 +572,9 @@ impl Client {
         }
         unary!(
             self,
-            delete_project,
-            pb::DeleteProjectRequest {
+            hard_delete_project,
+            pb::HardDeleteProjectRequest {
                 project_id: impact.project_id.clone(),
-                force: true,
                 impact_snapshot_id: impact.impact_snapshot_id.clone(),
                 impact_snapshot_hash: impact.impact_snapshot_hash.clone(),
                 confirmed,

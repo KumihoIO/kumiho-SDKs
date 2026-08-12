@@ -189,7 +189,7 @@ public:
      */
     std::shared_ptr<Project> update(const std::string& description);
 
-    /** @brief Archive this project. force=true is retained but rejected. */
+    /** @brief Forward the legacy delete/deprecate request to the server. */
     void deleteProject(bool force = false);
 
     ::kumiho::ProjectDeletionImpactResponse analyzeDeletion();

@@ -1147,18 +1147,24 @@ class GetProjectsResponse(_message.Message):
     def __init__(self, projects: _Optional[_Iterable[_Union[ProjectResponse, _Mapping]]] = ...) -> None: ...
 
 class DeleteProjectRequest(_message.Message):
-    __slots__ = ("project_id", "force", "impact_snapshot_id", "impact_snapshot_hash", "confirmed")
+    __slots__ = ("project_id", "force")
     PROJECT_ID_FIELD_NUMBER: _ClassVar[int]
     FORCE_FIELD_NUMBER: _ClassVar[int]
+    project_id: str
+    force: bool
+    def __init__(self, project_id: _Optional[str] = ..., force: bool = ...) -> None: ...
+
+class HardDeleteProjectRequest(_message.Message):
+    __slots__ = ("project_id", "impact_snapshot_id", "impact_snapshot_hash", "confirmed")
+    PROJECT_ID_FIELD_NUMBER: _ClassVar[int]
     IMPACT_SNAPSHOT_ID_FIELD_NUMBER: _ClassVar[int]
     IMPACT_SNAPSHOT_HASH_FIELD_NUMBER: _ClassVar[int]
     CONFIRMED_FIELD_NUMBER: _ClassVar[int]
     project_id: str
-    force: bool
     impact_snapshot_id: str
     impact_snapshot_hash: str
     confirmed: bool
-    def __init__(self, project_id: _Optional[str] = ..., force: bool = ..., impact_snapshot_id: _Optional[str] = ..., impact_snapshot_hash: _Optional[str] = ..., confirmed: bool = ...) -> None: ...
+    def __init__(self, project_id: _Optional[str] = ..., impact_snapshot_id: _Optional[str] = ..., impact_snapshot_hash: _Optional[str] = ..., confirmed: bool = ...) -> None: ...
 
 class ProjectDeletionImpactRequest(_message.Message):
     __slots__ = ("project_id",)

@@ -110,6 +110,7 @@ import grpc
 import kumiho
 from kumiho import (
     Project,
+    ProjectDeletionImpact,
     Space,
     Item,
     Revision,
@@ -2139,12 +2140,19 @@ def tool_delete_project(
                 "blockers": list(impact.blockers),
                 "descendants": list(impact.descendants),
             }
-        project.delete(
-            force=force,
-            impact_snapshot_id=impact_snapshot_id,
-            impact_snapshot_hash=impact_snapshot_hash,
-            confirmed=confirmed,
-        )
+        if force:
+            impact = ProjectDeletionImpact(
+                impact_snapshot_id=impact_snapshot_id,
+                impact_snapshot_hash=impact_snapshot_hash,
+                project_id=project.project_id,
+                project_name=project.name,
+                blockers=[],
+                descendants=[],
+                created_at="",
+            )
+            project.hard_delete(impact, confirmed=confirmed)
+        else:
+            project.delete()
         return {
             "deleted": True,
             "project_name": project_name,

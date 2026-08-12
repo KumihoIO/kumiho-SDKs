@@ -363,13 +363,9 @@ std::shared_ptr<Project> Client::getProject(const std::string& name) {
 }
 
 StatusResponse Client::deleteProject(const std::string& project_id, bool force) {
-    if (force) {
-        throw std::invalid_argument(
-            "force deletion requires analyzeProjectDeletion followed by hardDeleteProject"
-        );
-    }
     ::kumiho::DeleteProjectRequest req;
     req.set_project_id(project_id);
+    req.set_force(force);
 
     ::kumiho::StatusResponse res;
     grpc::ClientContext context; configureContext(context);
@@ -397,17 +393,16 @@ StatusResponse Client::hardDeleteProject(const ::kumiho::ProjectDeletionImpactRe
     if (!confirmed || impact.project_id().empty() || impact.impact_snapshot_id().empty() || impact.impact_snapshot_hash().empty()) {
         throw std::invalid_argument("hard-delete requires a server impact snapshot and confirmed=true");
     }
-    ::kumiho::DeleteProjectRequest req;
+    ::kumiho::HardDeleteProjectRequest req;
     req.set_project_id(impact.project_id());
-    req.set_force(true);
     req.set_impact_snapshot_id(impact.impact_snapshot_id());
     req.set_impact_snapshot_hash(impact.impact_snapshot_hash());
     req.set_confirmed(true);
     ::kumiho::StatusResponse res;
     grpc::ClientContext context; configureContext(context);
-    auto status = stub_->DeleteProject(&context, req, &res);
+    auto status = stub_->HardDeleteProject(&context, req, &res);
     if (!status.ok()) {
-        throw RpcError("DeleteProject failed: " + status.error_message(), static_cast<int>(status.error_code()));
+        throw RpcError("HardDeleteProject failed: " + status.error_message(), static_cast<int>(status.error_code()));
     }
     return StatusResponse{res.success(), res.message()};
 }

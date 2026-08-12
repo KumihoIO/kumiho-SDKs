@@ -582,10 +582,6 @@ def analyze_project_deletion(project_id: str) -> ProjectDeletionImpact:
 def delete_project(
     project_id: str,
     force: bool = False,
-    *,
-    impact_snapshot_id: str = "",
-    impact_snapshot_hash: str = "",
-    confirmed: bool = False,
 ) -> StatusResponse:
     """Delete a project.
 
@@ -608,13 +604,7 @@ def delete_project(
         >>> # Hard delete (permanent)
         >>> kumiho.delete_project("proj-uuid-here", force=True)
     """
-    return get_client().delete_project(
-        project_id=project_id,
-        force=force,
-        impact_snapshot_id=impact_snapshot_id,
-        impact_snapshot_hash=impact_snapshot_hash,
-        confirmed=confirmed,
-    )
+    return get_client().delete_project(project_id=project_id, force=force)
 
 
 def item_search(

@@ -7885,17 +7885,10 @@ class DeleteProjectRequest extends $pb.GeneratedMessage {
   factory DeleteProjectRequest({
     $core.String? projectId,
     $core.bool? force,
-    $core.String? impactSnapshotId,
-    $core.String? impactSnapshotHash,
-    $core.bool? confirmed,
   }) {
     final result = create();
     if (projectId != null) result.projectId = projectId;
     if (force != null) result.force = force;
-    if (impactSnapshotId != null) result.impactSnapshotId = impactSnapshotId;
-    if (impactSnapshotHash != null)
-      result.impactSnapshotHash = impactSnapshotHash;
-    if (confirmed != null) result.confirmed = confirmed;
     return result;
   }
 
@@ -7914,9 +7907,6 @@ class DeleteProjectRequest extends $pb.GeneratedMessage {
       createEmptyInstance: create)
     ..aOS(1, _omitFieldNames ? '' : 'projectId')
     ..aOB(2, _omitFieldNames ? '' : 'force')
-    ..aOS(3, _omitFieldNames ? '' : 'impactSnapshotId')
-    ..aOS(4, _omitFieldNames ? '' : 'impactSnapshotHash')
-    ..aOB(5, _omitFieldNames ? '' : 'confirmed')
     ..hasRequiredFields = false;
 
   @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
@@ -7947,8 +7937,8 @@ class DeleteProjectRequest extends $pb.GeneratedMessage {
   @$pb.TagNumber(1)
   void clearProjectId() => $_clearField(1);
 
-  /// force=true requests hard-delete; owner/admin must also supply the
-  /// current server-issued impact snapshot and explicit confirmation.
+  /// Legacy contract: owner/admin force=true performs immediate permanent
+  /// deletion; other calls archive the Project.
   @$pb.TagNumber(2)
   $core.bool get force => $_getBF(1);
   @$pb.TagNumber(2)
@@ -7957,33 +7947,100 @@ class DeleteProjectRequest extends $pb.GeneratedMessage {
   $core.bool hasForce() => $_has(1);
   @$pb.TagNumber(2)
   void clearForce() => $_clearField(2);
+}
+
+/// Snapshot-bound permanent deletion. New clients should prefer this API over
+/// DeleteProject(force=true); the legacy operation remains for compatibility.
+class HardDeleteProjectRequest extends $pb.GeneratedMessage {
+  factory HardDeleteProjectRequest({
+    $core.String? projectId,
+    $core.String? impactSnapshotId,
+    $core.String? impactSnapshotHash,
+    $core.bool? confirmed,
+  }) {
+    final result = create();
+    if (projectId != null) result.projectId = projectId;
+    if (impactSnapshotId != null) result.impactSnapshotId = impactSnapshotId;
+    if (impactSnapshotHash != null)
+      result.impactSnapshotHash = impactSnapshotHash;
+    if (confirmed != null) result.confirmed = confirmed;
+    return result;
+  }
+
+  HardDeleteProjectRequest._();
+
+  factory HardDeleteProjectRequest.fromBuffer($core.List<$core.int> data,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromBuffer(data, registry);
+  factory HardDeleteProjectRequest.fromJson($core.String json,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromJson(json, registry);
+
+  static final $pb.BuilderInfo _i = $pb.BuilderInfo(
+      _omitMessageNames ? '' : 'HardDeleteProjectRequest',
+      package: const $pb.PackageName(_omitMessageNames ? '' : 'kumiho'),
+      createEmptyInstance: create)
+    ..aOS(1, _omitFieldNames ? '' : 'projectId')
+    ..aOS(2, _omitFieldNames ? '' : 'impactSnapshotId')
+    ..aOS(3, _omitFieldNames ? '' : 'impactSnapshotHash')
+    ..aOB(4, _omitFieldNames ? '' : 'confirmed')
+    ..hasRequiredFields = false;
+
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  HardDeleteProjectRequest clone() => deepCopy();
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  HardDeleteProjectRequest copyWith(
+          void Function(HardDeleteProjectRequest) updates) =>
+      super.copyWith((message) => updates(message as HardDeleteProjectRequest))
+          as HardDeleteProjectRequest;
+
+  @$core.override
+  $pb.BuilderInfo get info_ => _i;
+
+  @$core.pragma('dart2js:noInline')
+  static HardDeleteProjectRequest create() => HardDeleteProjectRequest._();
+  @$core.override
+  HardDeleteProjectRequest createEmptyInstance() => create();
+  @$core.pragma('dart2js:noInline')
+  static HardDeleteProjectRequest getDefault() => _defaultInstance ??=
+      $pb.GeneratedMessage.$_defaultFor<HardDeleteProjectRequest>(create);
+  static HardDeleteProjectRequest? _defaultInstance;
+
+  @$pb.TagNumber(1)
+  $core.String get projectId => $_getSZ(0);
+  @$pb.TagNumber(1)
+  set projectId($core.String value) => $_setString(0, value);
+  @$pb.TagNumber(1)
+  $core.bool hasProjectId() => $_has(0);
+  @$pb.TagNumber(1)
+  void clearProjectId() => $_clearField(1);
+
+  @$pb.TagNumber(2)
+  $core.String get impactSnapshotId => $_getSZ(1);
+  @$pb.TagNumber(2)
+  set impactSnapshotId($core.String value) => $_setString(1, value);
+  @$pb.TagNumber(2)
+  $core.bool hasImpactSnapshotId() => $_has(1);
+  @$pb.TagNumber(2)
+  void clearImpactSnapshotId() => $_clearField(2);
 
   @$pb.TagNumber(3)
-  $core.String get impactSnapshotId => $_getSZ(2);
+  $core.String get impactSnapshotHash => $_getSZ(2);
   @$pb.TagNumber(3)
-  set impactSnapshotId($core.String value) => $_setString(2, value);
+  set impactSnapshotHash($core.String value) => $_setString(2, value);
   @$pb.TagNumber(3)
-  $core.bool hasImpactSnapshotId() => $_has(2);
+  $core.bool hasImpactSnapshotHash() => $_has(2);
   @$pb.TagNumber(3)
-  void clearImpactSnapshotId() => $_clearField(3);
+  void clearImpactSnapshotHash() => $_clearField(3);
 
   @$pb.TagNumber(4)
-  $core.String get impactSnapshotHash => $_getSZ(3);
+  $core.bool get confirmed => $_getBF(3);
   @$pb.TagNumber(4)
-  set impactSnapshotHash($core.String value) => $_setString(3, value);
+  set confirmed($core.bool value) => $_setBool(3, value);
   @$pb.TagNumber(4)
-  $core.bool hasImpactSnapshotHash() => $_has(3);
+  $core.bool hasConfirmed() => $_has(3);
   @$pb.TagNumber(4)
-  void clearImpactSnapshotHash() => $_clearField(4);
-
-  @$pb.TagNumber(5)
-  $core.bool get confirmed => $_getBF(4);
-  @$pb.TagNumber(5)
-  set confirmed($core.bool value) => $_setBool(4, value);
-  @$pb.TagNumber(5)
-  $core.bool hasConfirmed() => $_has(4);
-  @$pb.TagNumber(5)
-  void clearConfirmed() => $_clearField(5);
+  void clearConfirmed() => $_clearField(4);
 }
 
 class ProjectDeletionImpactRequest extends $pb.GeneratedMessage {

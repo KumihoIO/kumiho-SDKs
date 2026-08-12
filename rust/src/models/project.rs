@@ -146,8 +146,8 @@ impl Project {
             .await
     }
 
-    /// Deprecate this project. `force=true` is retained for compatibility but
-    /// rejected; hard-delete uses a server impact snapshot.
+    /// Delete or deprecate this Project using the connected server contract.
+    /// New servers require [`Self::hard_delete`] for permanent deletion.
     pub async fn delete(&self, force: bool) -> Result<()> {
         self.client.delete_project(&self.project_id, force).await
     }

@@ -40,6 +40,7 @@ public:
     MOCK_METHOD(grpc::Status, ResolveProjectDeletionGuard, (grpc::ClientContext* context, const kumiho::ResolveProjectDeletionGuardRequest& request, kumiho::StatusResponse* response), (override));
     MOCK_METHOD(grpc::Status, ResolveProjectReference, (grpc::ClientContext* context, const kumiho::ResolveProjectReferenceRequest& request, kumiho::StatusResponse* response), (override));
     MOCK_METHOD(grpc::Status, DeleteProject, (grpc::ClientContext* context, const kumiho::DeleteProjectRequest& request, kumiho::StatusResponse* response), (override));
+    MOCK_METHOD(grpc::Status, HardDeleteProject, (grpc::ClientContext* context, const kumiho::HardDeleteProjectRequest& request, kumiho::StatusResponse* response), (override));
 
     // Space methods (formerly Group)
     MOCK_METHOD(grpc::Status, CreateSpace, (grpc::ClientContext* context, const kumiho::CreateSpaceRequest& request, kumiho::SpaceResponse* response), (override));
@@ -140,6 +141,8 @@ public:
     grpc::ClientAsyncResponseReaderInterface<kumiho::StatusResponse>* PrepareAsyncResolveProjectReferenceRaw(grpc::ClientContext*, const kumiho::ResolveProjectReferenceRequest&, grpc::CompletionQueue*) override { return nullptr; }
     grpc::ClientAsyncResponseReaderInterface<kumiho::StatusResponse>* AsyncDeleteProjectRaw(grpc::ClientContext*, const kumiho::DeleteProjectRequest&, grpc::CompletionQueue*) override { return nullptr; }
     grpc::ClientAsyncResponseReaderInterface<kumiho::StatusResponse>* PrepareAsyncDeleteProjectRaw(grpc::ClientContext*, const kumiho::DeleteProjectRequest&, grpc::CompletionQueue*) override { return nullptr; }
+    grpc::ClientAsyncResponseReaderInterface<kumiho::StatusResponse>* AsyncHardDeleteProjectRaw(grpc::ClientContext*, const kumiho::HardDeleteProjectRequest&, grpc::CompletionQueue*) override { return nullptr; }
+    grpc::ClientAsyncResponseReaderInterface<kumiho::StatusResponse>* PrepareAsyncHardDeleteProjectRaw(grpc::ClientContext*, const kumiho::HardDeleteProjectRequest&, grpc::CompletionQueue*) override { return nullptr; }
     
     // Space async methods (formerly Group)
     grpc::ClientAsyncResponseReaderInterface<kumiho::SpaceResponse>* AsyncCreateSpaceRaw(grpc::ClientContext*, const kumiho::CreateSpaceRequest&, grpc::CompletionQueue*) override { return nullptr; }

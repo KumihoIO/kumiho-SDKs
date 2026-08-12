@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	pb "github.com/KumihoIO/kumiho-SDKs/go/kumihopb"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -105,10 +106,20 @@ func TestIsURLSafeSlug(t *testing.T) {
 	}
 }
 
-func TestForceDeleteRequiresBoundSnapshot(t *testing.T) {
-	client := &Client{}
-	err := client.DeleteProject(context.Background(), "project-1", true)
+func TestLegacyDeleteRequestKeepsForceField(t *testing.T) {
+	req := &pb.DeleteProjectRequest{ProjectId: "project-1", Force: true}
+	if req.GetProjectId() != "project-1" || !req.GetForce() {
+		t.Fatalf("legacy request = %+v, want project id and force=true", req)
+	}
+}
+
+func TestHardDeleteRequiresBoundSnapshot(t *testing.T) {
+	err := (&Client{}).HardDeleteProject(
+		context.Background(),
+		&pb.ProjectDeletionImpactResponse{ProjectId: "project-1"},
+		false,
+	)
 	if status.Code(err) != codes.InvalidArgument {
-		t.Fatalf("force delete error = %v, want InvalidArgument", err)
+		t.Fatalf("hard delete error = %v, want InvalidArgument", err)
 	}
 }

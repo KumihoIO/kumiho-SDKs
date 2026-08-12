@@ -172,6 +172,12 @@ impl KumihoService for FakeKumiho {
     ) -> Result<Response<pb::StatusResponse>, Status> {
         Err(unimpl("delete_project"))
     }
+    async fn hard_delete_project(
+        &self,
+        _r: Request<pb::HardDeleteProjectRequest>,
+    ) -> Result<Response<pb::StatusResponse>, Status> {
+        Err(unimpl("hard_delete_project"))
+    }
     async fn create_space(
         &self,
         _r: Request<pb::CreateSpaceRequest>,
@@ -543,12 +549,12 @@ async fn integration_projects() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn force_delete_requires_a_bound_snapshot() {
+async fn legacy_force_delete_reaches_the_server() {
     let (_fake, client) = start_server().await;
     let result = client.delete_project("proj-123", true).await;
     assert!(
-        matches!(result, Err(kumiho::Error::InvalidArgument(ref message)) if message.contains("hard_delete_project")),
-        "force delete must be rejected locally: {result:?}"
+        !matches!(result, Err(kumiho::Error::InvalidArgument(_))),
+        "legacy force delete must be forwarded rather than rejected locally: {result:?}"
     );
 }
 

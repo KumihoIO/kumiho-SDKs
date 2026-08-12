@@ -145,10 +145,11 @@ public:
     std::shared_ptr<Project> getProject(const std::string& name);
 
     /**
-     * @brief Archive a project.
+     * @brief Forward the legacy delete/deprecate request to the server.
      * @param project_id The project UUID.
-     * @param force Retained for source compatibility. True is rejected;
-     *        use analyzeProjectDeletion() followed by hardDeleteProject().
+     * @param force Passed through unchanged for compatibility with older servers.
+     *        New servers require analyzeProjectDeletion() followed by
+     *        hardDeleteProject() for permanent deletion.
      * @return The StatusResponse returned by the server.
      */
     StatusResponse deleteProject(const std::string& project_id, bool force = false);

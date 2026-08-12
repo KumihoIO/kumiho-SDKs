@@ -213,15 +213,11 @@ class Project extends KumihoObject {
     return Project(response, client);
   }
 
-  /// Archives this project. [force] is retained for source compatibility but
-  /// rejected; hard-delete requires [analyzeDeletion] followed by [hardDelete].
+  /// Forwards the legacy delete/deprecate request to the connected server.
+  /// New servers require [analyzeDeletion] followed by [hardDelete] for
+  /// permanent deletion.
   Future<void> delete({bool force = false}) async {
-    if (force) {
-      throw ArgumentError(
-        'force deletion requires analyzeDeletion followed by hardDelete',
-      );
-    }
-    await client.deleteProject(projectId, force: false);
+    await client.deleteProject(projectId, force: force);
   }
 
   Future<pb.ProjectDeletionImpactResponse> analyzeDeletion() {

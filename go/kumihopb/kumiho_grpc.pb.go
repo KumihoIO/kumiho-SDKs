@@ -50,6 +50,7 @@ const (
 	KumihoService_ResolveProjectDeletionGuard_FullMethodName  = "/kumiho.KumihoService/ResolveProjectDeletionGuard"
 	KumihoService_ResolveProjectReference_FullMethodName      = "/kumiho.KumihoService/ResolveProjectReference"
 	KumihoService_DeleteProject_FullMethodName                = "/kumiho.KumihoService/DeleteProject"
+	KumihoService_HardDeleteProject_FullMethodName            = "/kumiho.KumihoService/HardDeleteProject"
 	KumihoService_CreateSpace_FullMethodName                  = "/kumiho.KumihoService/CreateSpace"
 	KumihoService_GetSpace_FullMethodName                     = "/kumiho.KumihoService/GetSpace"
 	KumihoService_GetChildSpaces_FullMethodName               = "/kumiho.KumihoService/GetChildSpaces"
@@ -120,6 +121,7 @@ type KumihoServiceClient interface {
 	ResolveProjectDeletionGuard(ctx context.Context, in *ResolveProjectDeletionGuardRequest, opts ...grpc.CallOption) (*StatusResponse, error)
 	ResolveProjectReference(ctx context.Context, in *ResolveProjectReferenceRequest, opts ...grpc.CallOption) (*StatusResponse, error)
 	DeleteProject(ctx context.Context, in *DeleteProjectRequest, opts ...grpc.CallOption) (*StatusResponse, error)
+	HardDeleteProject(ctx context.Context, in *HardDeleteProjectRequest, opts ...grpc.CallOption) (*StatusResponse, error)
 	// Space methods
 	CreateSpace(ctx context.Context, in *CreateSpaceRequest, opts ...grpc.CallOption) (*SpaceResponse, error)
 	GetSpace(ctx context.Context, in *GetSpaceRequest, opts ...grpc.CallOption) (*SpaceResponse, error)
@@ -272,6 +274,16 @@ func (c *kumihoServiceClient) DeleteProject(ctx context.Context, in *DeleteProje
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(StatusResponse)
 	err := c.cc.Invoke(ctx, KumihoService_DeleteProject_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *kumihoServiceClient) HardDeleteProject(ctx context.Context, in *HardDeleteProjectRequest, opts ...grpc.CallOption) (*StatusResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(StatusResponse)
+	err := c.cc.Invoke(ctx, KumihoService_HardDeleteProject_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -832,6 +844,7 @@ type KumihoServiceServer interface {
 	ResolveProjectDeletionGuard(context.Context, *ResolveProjectDeletionGuardRequest) (*StatusResponse, error)
 	ResolveProjectReference(context.Context, *ResolveProjectReferenceRequest) (*StatusResponse, error)
 	DeleteProject(context.Context, *DeleteProjectRequest) (*StatusResponse, error)
+	HardDeleteProject(context.Context, *HardDeleteProjectRequest) (*StatusResponse, error)
 	// Space methods
 	CreateSpace(context.Context, *CreateSpaceRequest) (*SpaceResponse, error)
 	GetSpace(context.Context, *GetSpaceRequest) (*SpaceResponse, error)
@@ -933,6 +946,9 @@ func (UnimplementedKumihoServiceServer) ResolveProjectReference(context.Context,
 }
 func (UnimplementedKumihoServiceServer) DeleteProject(context.Context, *DeleteProjectRequest) (*StatusResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method DeleteProject not implemented")
+}
+func (UnimplementedKumihoServiceServer) HardDeleteProject(context.Context, *HardDeleteProjectRequest) (*StatusResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method HardDeleteProject not implemented")
 }
 func (UnimplementedKumihoServiceServer) CreateSpace(context.Context, *CreateSpaceRequest) (*SpaceResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method CreateSpace not implemented")
@@ -1254,6 +1270,24 @@ func _KumihoService_DeleteProject_Handler(srv interface{}, ctx context.Context, 
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(KumihoServiceServer).DeleteProject(ctx, req.(*DeleteProjectRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _KumihoService_HardDeleteProject_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(HardDeleteProjectRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(KumihoServiceServer).HardDeleteProject(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: KumihoService_HardDeleteProject_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(KumihoServiceServer).HardDeleteProject(ctx, req.(*HardDeleteProjectRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -2243,6 +2277,10 @@ var KumihoService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "DeleteProject",
 			Handler:    _KumihoService_DeleteProject_Handler,
+		},
+		{
+			MethodName: "HardDeleteProject",
+			Handler:    _KumihoService_HardDeleteProject_Handler,
 		},
 		{
 			MethodName: "CreateSpace",

@@ -62,14 +62,11 @@ func (c *Client) GetProject(ctx context.Context, name string) (*Project, error) 
 	return nil, nil
 }
 
-// DeleteProject deprecates a project. The force argument is retained for
-// source compatibility; true is rejected because hard-delete requires a
-// server-issued snapshot passed to HardDeleteProject.
+// DeleteProject forwards the legacy delete/deprecate request unchanged.
+// New servers require AnalyzeProjectDeletion followed by HardDeleteProject
+// for permanent deletion, while older servers can still honor force=true.
 func (c *Client) DeleteProject(ctx context.Context, projectID string, force bool) error {
-	if force {
-		return status.Error(codes.InvalidArgument, "force deletion requires AnalyzeProjectDeletion followed by HardDeleteProject")
-	}
-	_, err := c.grpc.DeleteProject(ctx, &pb.DeleteProjectRequest{ProjectId: projectID})
+	_, err := c.grpc.DeleteProject(ctx, &pb.DeleteProjectRequest{ProjectId: projectID, Force: force})
 	return err
 }
 
@@ -83,8 +80,8 @@ func (c *Client) HardDeleteProject(ctx context.Context, impact *pb.ProjectDeleti
 	if impact == nil || !confirmed || impact.GetImpactSnapshotId() == "" || impact.GetImpactSnapshotHash() == "" {
 		return status.Error(codes.InvalidArgument, "hard-delete requires a server impact snapshot and confirmed=true")
 	}
-	_, err := c.grpc.DeleteProject(ctx, &pb.DeleteProjectRequest{
-		ProjectId: impact.GetProjectId(), Force: true, Confirmed: confirmed,
+	_, err := c.grpc.HardDeleteProject(ctx, &pb.HardDeleteProjectRequest{
+		ProjectId: impact.GetProjectId(), Confirmed: confirmed,
 		ImpactSnapshotId: impact.GetImpactSnapshotId(), ImpactSnapshotHash: impact.GetImpactSnapshotHash(),
 	})
 	return err
