@@ -217,3 +217,54 @@ def test_project_hard_delete_requires_and_forwards_server_impact_snapshot(
     assert delete_request.impact_snapshot_id == impact.impact_snapshot_id
     assert delete_request.impact_snapshot_hash == impact.impact_snapshot_hash
     assert response.success is True
+
+
+def test_archived_lifecycle_operations_use_reserved_grpc_metadata(mock_client) -> None:
+    client, stub = mock_client
+    item_kref = kumiho.Kref("kref://film/assets/hero.person")
+    revision_kref = kumiho.Kref(f"{item_kref}?r=1")
+
+    stub.UpdateItemMetadata.return_value = mock_helpers.mock_item_response(
+        kref_uri=str(item_kref),
+        name="hero.person",
+        item_name="hero",
+        kind="person",
+    )
+    client.update_item_metadata(
+        item_kref,
+        {"external_reference": ""},
+        archived_operation="resolve-metadata",
+    )
+    assert stub.UpdateItemMetadata.call_args.kwargs["metadata"] == (
+        ("x-kumiho-archived-operation", "resolve-metadata"),
+    )
+
+    stub.UpdateRevisionMetadata.return_value = mock_helpers.mock_revision_response(
+        str(revision_kref), str(item_kref), metadata={"status": "cancelled"}
+    )
+    client.update_revision_metadata(
+        revision_kref,
+        {"status": "cancelled"},
+        archived_operation="finalize-revision",
+    )
+    assert stub.UpdateRevisionMetadata.call_args.kwargs["metadata"] == (
+        ("x-kumiho-archived-operation", "finalize-revision"),
+    )
+
+    stub.CreateArtifact.return_value = mock_helpers.mock_artifact_response(
+        f"{revision_kref}&a=event-00000001.json",
+        str(revision_kref),
+        str(item_kref),
+        name="event-00000001.json",
+    )
+    client.create_artifact(
+        revision_kref,
+        "event-00000001.json",
+        "C:/events/00000001.json",
+        idempotency_key="event-1",
+        archived_operation="append-artifact",
+    )
+    assert stub.CreateArtifact.call_args.kwargs["metadata"] == (
+        ("x-idempotency-key", "event-1"),
+        ("x-kumiho-archived-operation", "append-artifact"),
+    )

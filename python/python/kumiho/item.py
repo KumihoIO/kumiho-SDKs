@@ -382,7 +382,12 @@ class Item(KumihoObject):
         """
         return self._client.peek_next_revision(self.kref)
 
-    def set_metadata(self, metadata: Dict[str, str]) -> 'Item':
+    def set_metadata(
+        self,
+        metadata: Dict[str, str],
+        *,
+        archived_operation: Optional[str] = None,
+    ) -> 'Item':
         """Set or update metadata for this item.
 
         Metadata is merged with existing metadata—existing keys are
@@ -401,7 +406,11 @@ class Item(KumihoObject):
             ...     "complexity": "high"
             ... })
         """
-        return self._client.update_item_metadata(self.kref, metadata)
+        return self._client.update_item_metadata(
+            self.kref,
+            metadata,
+            archived_operation=archived_operation,
+        )
 
     def set_attribute(self, key: str, value: str) -> bool:
         """Set a single metadata attribute.

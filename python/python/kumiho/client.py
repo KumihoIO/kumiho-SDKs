@@ -998,7 +998,13 @@ class _Client:
             for sr in resp.scored_revisions
         ]
 
-    def update_item_metadata(self, kref: Kref, metadata: Dict[str, str]) -> Item:
+    def update_item_metadata(
+        self,
+        kref: Kref,
+        metadata: Dict[str, str],
+        *,
+        archived_operation: Optional[str] = None,
+    ) -> Item:
         """Update metadata for an item.
 
         Args:
@@ -1009,7 +1015,16 @@ class _Client:
             The updated Item object.
         """
         req = UpdateMetadataRequest(kref=kref.to_pb(), metadata=metadata)
-        resp = self.stub.UpdateItemMetadata(req)
+        call_metadata = (
+            (("x-kumiho-archived-operation", archived_operation),)
+            if archived_operation
+            else None
+        )
+        resp = (
+            self.stub.UpdateItemMetadata(req, metadata=call_metadata)
+            if call_metadata
+            else self.stub.UpdateItemMetadata(req)
+        )
         return Item(resp, self)
 
     def create_revision(self, item_kref: Kref, metadata: Optional[Dict[str, str]] = None, number: int = 0, embedding_text: str = "", idempotency_key: Optional[str] = None) -> Revision:
@@ -1352,7 +1367,13 @@ class _Client:
         req = DeleteItemRequest(kref=kref.to_pb(), force=force)
         self.stub.DeleteItem(req)
 
-    def update_revision_metadata(self, kref: Kref, metadata: Dict[str, str]) -> Revision:
+    def update_revision_metadata(
+        self,
+        kref: Kref,
+        metadata: Dict[str, str],
+        *,
+        archived_operation: Optional[str] = None,
+    ) -> Revision:
         """Update metadata for a revision.
 
         Args:
@@ -1363,7 +1384,16 @@ class _Client:
             The updated Revision object.
         """
         req = UpdateMetadataRequest(kref=kref.to_pb(), metadata=metadata)
-        resp = self.stub.UpdateRevisionMetadata(req)
+        call_metadata = (
+            (("x-kumiho-archived-operation", archived_operation),)
+            if archived_operation
+            else None
+        )
+        resp = (
+            self.stub.UpdateRevisionMetadata(req, metadata=call_metadata)
+            if call_metadata
+            else self.stub.UpdateRevisionMetadata(req)
+        )
         return Revision(resp, self)
 
     def peek_next_revision(self, item_kref: Kref) -> int:
@@ -1445,6 +1475,9 @@ class _Client:
         name: str,
         location: str,
         metadata: Optional[Dict[str, str]] = None,
+        *,
+        idempotency_key: Optional[str] = None,
+        archived_operation: Optional[str] = None,
     ) -> Artifact:
         """Create a new artifact for a revision.
 
@@ -1453,6 +1486,8 @@ class _Client:
             name: The name of the artifact.
             location: The storage location of the artifact.
             metadata: Optional key-value metadata for the artifact.
+            idempotency_key: Stable tenant-scoped identity for retry-safe creation.
+            archived_operation: Explicit Project lifecycle operation, if any.
 
         Returns:
             The created Artifact object.
@@ -1463,7 +1498,16 @@ class _Client:
             location=location,
             metadata=metadata or {},
         )
-        resp = self.stub.CreateArtifact(req)
+        call_metadata = []
+        if idempotency_key:
+            call_metadata.append(("x-idempotency-key", idempotency_key))
+        if archived_operation:
+            call_metadata.append(("x-kumiho-archived-operation", archived_operation))
+        resp = (
+            self.stub.CreateArtifact(req, metadata=tuple(call_metadata))
+            if call_metadata
+            else self.stub.CreateArtifact(req)
+        )
         return Artifact(resp, self)
 
     def get_artifact(self, revision_kref: Kref, name: str) -> Artifact:
@@ -1692,6 +1736,8 @@ class _Client:
         edge_type: str,
         metadata: Optional[Dict[str, str]] = None,
         idempotency_key: Optional[str] = None,
+        archived_operation: Optional[str] = None,
+        archived_original_peer: Optional[str] = None,
     ) -> Edge:
         """Create an edge between two revisions.
 
@@ -1702,6 +1748,9 @@ class _Client:
                        See kumiho.EdgeType for standard types.
                        Must be UPPERCASE with letters, digits, underscores only.
             metadata: Optional metadata for the edge.
+            idempotency_key: Stable tenant-scoped identity for retry-safe creation.
+            archived_operation: Explicit Project lifecycle operation, if any.
+            archived_original_peer: Original external Revision for a replacement.
 
         Returns:
             The created Edge object.
@@ -1718,13 +1767,17 @@ class _Client:
             edge_type=edge_type,
             metadata=metadata or {}
         )
-        call_metadata = (
-            (("x-idempotency-key", idempotency_key),)
-            if idempotency_key
-            else None
-        )
-        if call_metadata is not None:
-            self.stub.CreateEdge(req, metadata=call_metadata)
+        call_metadata = []
+        if idempotency_key:
+            call_metadata.append(("x-idempotency-key", idempotency_key))
+        if archived_operation:
+            call_metadata.append(("x-kumiho-archived-operation", archived_operation))
+        if archived_original_peer:
+            call_metadata.append(
+                ("x-kumiho-archived-original-peer", archived_original_peer)
+            )
+        if call_metadata:
+            self.stub.CreateEdge(req, metadata=tuple(call_metadata))
         else:
             self.stub.CreateEdge(req)
         # Construct Edge object client-side since RPC returns only status
