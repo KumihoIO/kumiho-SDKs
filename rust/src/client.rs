@@ -361,7 +361,7 @@ fn normalize_target(raw: &str) -> Result<(String, u16, bool)> {
         return Err(Error::InvalidArgument(format!("invalid endpoint: {raw}")));
     }
     let tls_scheme = matches!(scheme.as_str(), "https" | "grpcs");
-    let port = port_opt.unwrap_or_else(|| match scheme.as_str() {
+    let port = port_opt.unwrap_or(match scheme.as_str() {
         "https" | "grpcs" => 443,
         "http" | "grpc" => 80,
         _ => 8080,
@@ -492,6 +492,7 @@ impl Client {
         let req = pb::CreateProjectRequest {
             name: name.into(),
             description: description.into(),
+            metadata: HashMap::new(),
         };
         match unary!(self, create_project, req) {
             Ok(resp) => Ok(Project::from_pb(resp, self.clone())),
@@ -504,7 +505,13 @@ impl Client {
 
     /// List all projects accessible to the current user.
     pub async fn get_projects(&self) -> Result<Vec<Project>> {
-        let resp = unary!(self, get_projects, pb::GetProjectsRequest {})?;
+        let resp = unary!(
+            self,
+            get_projects,
+            pb::GetProjectsRequest {
+                include_deprecated: false,
+            }
+        )?;
         Ok(resp
             .projects
             .into_iter()
@@ -526,6 +533,9 @@ impl Client {
         let req = pb::DeleteProjectRequest {
             project_id: project_id.to_string(),
             force,
+            impact_snapshot_id: String::new(),
+            impact_snapshot_hash: String::new(),
+            confirmed: false,
         };
         unary!(self, delete_project, req)?;
         Ok(())
@@ -542,6 +552,8 @@ impl Client {
             project_id: project_id.to_string(),
             allow_public,
             description,
+            deprecated: None,
+            metadata: HashMap::new(),
         };
         let resp = unary!(self, update_project, req)?;
         Ok(Project::from_pb(resp, self.clone()))
@@ -555,6 +567,7 @@ impl Client {
             parent_path: parent_path.to_string(),
             space_name: space_name.to_string(),
             exists_error: false,
+            metadata: HashMap::new(),
         };
         let resp = unary!(self, create_space, req)?;
         Ok(Space::from_pb(resp, self.clone()))
