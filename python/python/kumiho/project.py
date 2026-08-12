@@ -50,6 +50,18 @@ class ProjectDeletionImpact:
     created_at: str
 
 
+@dataclass(frozen=True)
+class ProjectDeletionGuard:
+    """Opaque server-enforced blocker for Project hard-delete."""
+
+    project_id: str
+    guard_id: str
+    resource_kref: str
+    allowed_operations: tuple[str, ...]
+    allowed_metadata_keys: tuple[str, ...]
+    created_at: str
+
+
 class Project(KumihoObject):
     """A Kumiho project—the top-level container for assets.
 
@@ -381,6 +393,45 @@ class Project(KumihoObject):
     def analyze_deletion(self) -> ProjectDeletionImpact:
         """Create a server-bound impact snapshot for this Project."""
         return self._client.analyze_project_deletion(self.project_id)
+
+    def register_deletion_guard(
+        self,
+        guard_id: str,
+        resource_kref: str,
+        *,
+        allowed_operations: List[str],
+        allowed_metadata_keys: Optional[List[str]] = None,
+    ) -> ProjectDeletionGuard:
+        """Register an opaque guard while this Project is active."""
+        return self._client.register_project_deletion_guard(
+            self.project_id,
+            guard_id,
+            resource_kref,
+            allowed_operations=allowed_operations,
+            allowed_metadata_keys=allowed_metadata_keys or [],
+        )
+
+    def resolve_deletion_guard(self, guard_id: str):
+        """Mark a previously registered deletion guard as resolved."""
+        return self._client.resolve_project_deletion_guard(self.project_id, guard_id)
+
+    def resolve_reference(
+        self,
+        inside_revision_kref: str,
+        outside_revision_kref: str,
+        edge_type: str,
+        action: str,
+        replacement_revision_kref: str = "",
+    ):
+        """Resolve one current cross-Project Revision reference while archived."""
+        return self._client.resolve_project_reference(
+            self.project_id,
+            inside_revision_kref,
+            outside_revision_kref,
+            edge_type,
+            action,
+            replacement_revision_kref,
+        )
 
     def hard_delete(self, impact: ProjectDeletionImpact, *, confirmed: bool = False):
         """Permanently delete using the current server-issued impact snapshot."""

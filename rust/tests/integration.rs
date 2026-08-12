@@ -148,6 +148,24 @@ impl KumihoService for FakeKumiho {
     ) -> Result<Response<pb::ProjectDeletionImpactResponse>, Status> {
         Err(unimpl("analyze_project_deletion"))
     }
+    async fn register_project_deletion_guard(
+        &self,
+        _r: Request<pb::RegisterProjectDeletionGuardRequest>,
+    ) -> Result<Response<pb::ProjectDeletionGuardResponse>, Status> {
+        Err(unimpl("register_project_deletion_guard"))
+    }
+    async fn resolve_project_deletion_guard(
+        &self,
+        _r: Request<pb::ResolveProjectDeletionGuardRequest>,
+    ) -> Result<Response<pb::StatusResponse>, Status> {
+        Err(unimpl("resolve_project_deletion_guard"))
+    }
+    async fn resolve_project_reference(
+        &self,
+        _r: Request<pb::ResolveProjectReferenceRequest>,
+    ) -> Result<Response<pb::StatusResponse>, Status> {
+        Err(unimpl("resolve_project_reference"))
+    }
     async fn delete_project(
         &self,
         _r: Request<pb::DeleteProjectRequest>,
@@ -226,6 +244,12 @@ impl KumihoService for FakeKumiho {
         _r: Request<pb::UpdateMetadataRequest>,
     ) -> Result<Response<pb::ItemResponse>, Status> {
         Err(unimpl("update_item_metadata"))
+    }
+    async fn move_item(
+        &self,
+        _r: Request<pb::MoveItemRequest>,
+    ) -> Result<Response<pb::ItemResponse>, Status> {
+        Err(unimpl("move_item"))
     }
     async fn search(
         &self,
@@ -515,6 +539,16 @@ async fn integration_projects() {
     assert!(
         fake.rec.lock().unwrap().saw_correlation_id,
         "server did not receive an x-correlation-id header"
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn force_delete_requires_a_bound_snapshot() {
+    let (_fake, client) = start_server().await;
+    let result = client.delete_project("proj-123", true).await;
+    assert!(
+        matches!(result, Err(kumiho::Error::InvalidArgument(ref message)) if message.contains("hard_delete_project")),
+        "force delete must be rejected locally: {result:?}"
     );
 }
 

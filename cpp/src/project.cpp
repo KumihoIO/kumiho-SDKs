@@ -8,6 +8,7 @@
 #include "kumiho/space.hpp"
 #include "kumiho/bundle.hpp"
 #include "kumiho/error.hpp"
+#include <stdexcept>
 
 namespace kumiho {
 namespace api {
@@ -112,6 +113,30 @@ std::shared_ptr<Project> Project::update(const std::string& description) {
 
 void Project::deleteProject(bool force) {
     client_->deleteProject(response_.project_id(), force);
+}
+
+::kumiho::ProjectDeletionImpactResponse Project::analyzeDeletion() {
+    return client_->analyzeProjectDeletion(response_.project_id());
+}
+
+void Project::hardDelete(const ::kumiho::ProjectDeletionImpactResponse& impact, bool confirmed) {
+    if (impact.project_id() != response_.project_id()) {
+        throw std::invalid_argument("deletion impact belongs to a different Project");
+    }
+    client_->hardDeleteProject(impact, confirmed);
+}
+
+void Project::resolveReference(
+    const std::string& inside_revision_kref,
+    const std::string& outside_revision_kref,
+    const std::string& edge_type,
+    const std::string& action,
+    const std::string& replacement_revision_kref
+) {
+    client_->resolveProjectReference(
+        response_.project_id(), inside_revision_kref, outside_revision_kref,
+        edge_type, action, replacement_revision_kref
+    );
 }
 
 } // namespace api

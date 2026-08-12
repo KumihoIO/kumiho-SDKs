@@ -72,7 +72,9 @@ protected:
         // Clean up test project if it exists
         if (client_ && !projectId_.empty()) {
             try {
-                client_->deleteProject(projectId_, true);
+                client_->deleteProject(projectId_);
+                const auto impact = client_->analyzeProjectDeletion(projectId_);
+                client_->hardDeleteProject(impact, true);
             } catch (...) {
                 // Ignore cleanup errors
             }

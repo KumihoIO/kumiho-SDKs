@@ -268,3 +268,68 @@ def test_archived_lifecycle_operations_use_reserved_grpc_metadata(mock_client) -
         ("x-idempotency-key", "event-1"),
         ("x-kumiho-archived-operation", "append-artifact"),
     )
+
+
+def test_deletion_guard_and_move_item_contract(mock_client) -> None:
+    client, stub = mock_client
+    item_kref = kumiho.Kref("kref://film-one/assets/hero.person")
+    stub.RegisterProjectDeletionGuard.return_value = (
+        kumiho_pb2.ProjectDeletionGuardResponse(
+            project_id="project-1",
+            guard_id=f"shared_asset:{item_kref}",
+            resource_kref=str(item_kref),
+            allowed_operations=["move-item"],
+        )
+    )
+    guard = client.register_project_deletion_guard(
+        "project-1",
+        f"shared_asset:{item_kref}",
+        str(item_kref),
+        allowed_operations=["move-item"],
+    )
+    assert guard.allowed_operations == ("move-item",)
+
+    stub.MoveItem.return_value = mock_helpers.mock_item_response(
+        kref_uri=str(item_kref),
+        name="hero.person",
+        item_name="hero",
+        kind="person",
+    )
+    moved = client.move_item(
+        item_kref,
+        "/film-two/assets",
+        deletion_guard_id=guard.guard_id,
+    )
+    request = stub.MoveItem.call_args.args[0]
+    assert request.item_kref == str(item_kref)
+    assert request.target_space_path == "/film-two/assets"
+    assert stub.MoveItem.call_args.kwargs["metadata"] == (
+        ("x-kumiho-deletion-guard", guard.guard_id),
+    )
+    assert str(moved.kref) == str(item_kref)
+
+
+def test_revision_create_edge_uses_the_regular_edge_contract(mock_client) -> None:
+    client, stub = mock_client
+    source = kumiho.Revision(
+        mock_helpers.mock_revision_response(
+            "kref://film-one/assets/source.person?r=1",
+            "kref://film-one/assets/source.person",
+        ),
+        client,
+    )
+    target = kumiho.Revision(
+        mock_helpers.mock_revision_response(
+            "kref://film-one/assets/target.person?r=1",
+            "kref://film-one/assets/target.person",
+        ),
+        client,
+    )
+
+    edge = source.create_edge(target, kumiho.EdgeType.REFERENCED)
+
+    request = stub.CreateEdge.call_args.args[0]
+    assert request.source_revision_kref.uri == str(source.kref)
+    assert request.target_revision_kref.uri == str(target.kref)
+    assert request.edge_type == kumiho.EdgeType.REFERENCED
+    assert edge.edge_type == kumiho.EdgeType.REFERENCED

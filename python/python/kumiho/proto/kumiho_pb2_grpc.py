@@ -55,6 +55,21 @@ class KumihoServiceStub(object):
                 request_serializer=kumiho__pb2.ProjectDeletionImpactRequest.SerializeToString,
                 response_deserializer=kumiho__pb2.ProjectDeletionImpactResponse.FromString,
                 _registered_method=True)
+        self.RegisterProjectDeletionGuard = channel.unary_unary(
+                '/kumiho.KumihoService/RegisterProjectDeletionGuard',
+                request_serializer=kumiho__pb2.RegisterProjectDeletionGuardRequest.SerializeToString,
+                response_deserializer=kumiho__pb2.ProjectDeletionGuardResponse.FromString,
+                _registered_method=True)
+        self.ResolveProjectDeletionGuard = channel.unary_unary(
+                '/kumiho.KumihoService/ResolveProjectDeletionGuard',
+                request_serializer=kumiho__pb2.ResolveProjectDeletionGuardRequest.SerializeToString,
+                response_deserializer=kumiho__pb2.StatusResponse.FromString,
+                _registered_method=True)
+        self.ResolveProjectReference = channel.unary_unary(
+                '/kumiho.KumihoService/ResolveProjectReference',
+                request_serializer=kumiho__pb2.ResolveProjectReferenceRequest.SerializeToString,
+                response_deserializer=kumiho__pb2.StatusResponse.FromString,
+                _registered_method=True)
         self.DeleteProject = channel.unary_unary(
                 '/kumiho.KumihoService/DeleteProject',
                 request_serializer=kumiho__pb2.DeleteProjectRequest.SerializeToString,
@@ -113,6 +128,11 @@ class KumihoServiceStub(object):
         self.UpdateItemMetadata = channel.unary_unary(
                 '/kumiho.KumihoService/UpdateItemMetadata',
                 request_serializer=kumiho__pb2.UpdateMetadataRequest.SerializeToString,
+                response_deserializer=kumiho__pb2.ItemResponse.FromString,
+                _registered_method=True)
+        self.MoveItem = channel.unary_unary(
+                '/kumiho.KumihoService/MoveItem',
+                request_serializer=kumiho__pb2.MoveItemRequest.SerializeToString,
                 response_deserializer=kumiho__pb2.ItemResponse.FromString,
                 _registered_method=True)
         self.Search = channel.unary_unary(
@@ -351,6 +371,24 @@ class KumihoServiceServicer(object):
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
+    def RegisterProjectDeletionGuard(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def ResolveProjectDeletionGuard(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def ResolveProjectReference(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
     def DeleteProject(self, request, context):
         """Missing associated documentation comment in .proto file."""
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
@@ -420,6 +458,12 @@ class KumihoServiceServicer(object):
         raise NotImplementedError('Method not implemented!')
 
     def UpdateItemMetadata(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def MoveItem(self, request, context):
         """Missing associated documentation comment in .proto file."""
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
@@ -707,6 +751,21 @@ def add_KumihoServiceServicer_to_server(servicer, server):
                     request_deserializer=kumiho__pb2.ProjectDeletionImpactRequest.FromString,
                     response_serializer=kumiho__pb2.ProjectDeletionImpactResponse.SerializeToString,
             ),
+            'RegisterProjectDeletionGuard': grpc.unary_unary_rpc_method_handler(
+                    servicer.RegisterProjectDeletionGuard,
+                    request_deserializer=kumiho__pb2.RegisterProjectDeletionGuardRequest.FromString,
+                    response_serializer=kumiho__pb2.ProjectDeletionGuardResponse.SerializeToString,
+            ),
+            'ResolveProjectDeletionGuard': grpc.unary_unary_rpc_method_handler(
+                    servicer.ResolveProjectDeletionGuard,
+                    request_deserializer=kumiho__pb2.ResolveProjectDeletionGuardRequest.FromString,
+                    response_serializer=kumiho__pb2.StatusResponse.SerializeToString,
+            ),
+            'ResolveProjectReference': grpc.unary_unary_rpc_method_handler(
+                    servicer.ResolveProjectReference,
+                    request_deserializer=kumiho__pb2.ResolveProjectReferenceRequest.FromString,
+                    response_serializer=kumiho__pb2.StatusResponse.SerializeToString,
+            ),
             'DeleteProject': grpc.unary_unary_rpc_method_handler(
                     servicer.DeleteProject,
                     request_deserializer=kumiho__pb2.DeleteProjectRequest.FromString,
@@ -765,6 +824,11 @@ def add_KumihoServiceServicer_to_server(servicer, server):
             'UpdateItemMetadata': grpc.unary_unary_rpc_method_handler(
                     servicer.UpdateItemMetadata,
                     request_deserializer=kumiho__pb2.UpdateMetadataRequest.FromString,
+                    response_serializer=kumiho__pb2.ItemResponse.SerializeToString,
+            ),
+            'MoveItem': grpc.unary_unary_rpc_method_handler(
+                    servicer.MoveItem,
+                    request_deserializer=kumiho__pb2.MoveItemRequest.FromString,
                     response_serializer=kumiho__pb2.ItemResponse.SerializeToString,
             ),
             'Search': grpc.unary_unary_rpc_method_handler(
@@ -1093,6 +1157,87 @@ class KumihoService(object):
             _registered_method=True)
 
     @staticmethod
+    def RegisterProjectDeletionGuard(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/kumiho.KumihoService/RegisterProjectDeletionGuard',
+            kumiho__pb2.RegisterProjectDeletionGuardRequest.SerializeToString,
+            kumiho__pb2.ProjectDeletionGuardResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def ResolveProjectDeletionGuard(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/kumiho.KumihoService/ResolveProjectDeletionGuard',
+            kumiho__pb2.ResolveProjectDeletionGuardRequest.SerializeToString,
+            kumiho__pb2.StatusResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def ResolveProjectReference(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/kumiho.KumihoService/ResolveProjectReference',
+            kumiho__pb2.ResolveProjectReferenceRequest.SerializeToString,
+            kumiho__pb2.StatusResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
     def DeleteProject(request,
             target,
             options=(),
@@ -1405,6 +1550,33 @@ class KumihoService(object):
             target,
             '/kumiho.KumihoService/UpdateItemMetadata',
             kumiho__pb2.UpdateMetadataRequest.SerializeToString,
+            kumiho__pb2.ItemResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def MoveItem(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/kumiho.KumihoService/MoveItem',
+            kumiho__pb2.MoveItemRequest.SerializeToString,
             kumiho__pb2.ItemResponse.FromString,
             options,
             channel_credentials,

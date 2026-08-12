@@ -255,6 +255,19 @@ class Item(KumihoObject):
             space_path = f"/{self.kref.get_project()}"
         return self._client.get_space(space_path)
 
+    def move_to(
+        self,
+        target_space_path: str,
+        *,
+        deletion_guard_id: Optional[str] = None,
+    ) -> 'Item':
+        """Move this Item to a Space in another Project, preserving its kref."""
+        return self._client.move_item(
+            self.kref,
+            target_space_path,
+            deletion_guard_id=deletion_guard_id,
+        )
+
     def get_project(self) -> 'Project':
         """Get the project that contains this item.
 
@@ -387,6 +400,7 @@ class Item(KumihoObject):
         metadata: Dict[str, str],
         *,
         archived_operation: Optional[str] = None,
+        deletion_guard_id: Optional[str] = None,
     ) -> 'Item':
         """Set or update metadata for this item.
 
@@ -410,6 +424,7 @@ class Item(KumihoObject):
             self.kref,
             metadata,
             archived_operation=archived_operation,
+            deletion_guard_id=deletion_guard_id,
         )
 
     def set_attribute(self, key: str, value: str) -> bool:

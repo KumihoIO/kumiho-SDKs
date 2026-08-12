@@ -4,11 +4,15 @@ package kumiho
 // Python-parity behavior (Firebase-fallback candidate selection, tenant slug).
 
 import (
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"path/filepath"
 	"testing"
+
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 func TestResolveCachePathOverride(t *testing.T) {
@@ -98,5 +102,13 @@ func TestIsURLSafeSlug(t *testing.T) {
 		if isURLSafeSlug(s) {
 			t.Errorf("isURLSafeSlug(%q) = true, want false", s)
 		}
+	}
+}
+
+func TestForceDeleteRequiresBoundSnapshot(t *testing.T) {
+	client := &Client{}
+	err := client.DeleteProject(context.Background(), "project-1", true)
+	if status.Code(err) != codes.InvalidArgument {
+		t.Fatalf("force delete error = %v, want InvalidArgument", err)
 	}
 }

@@ -45,9 +45,10 @@ mixin ProjectApi on KumihoClientBase {
     String name, {
     String? description,
   }) async {
-    final request = CreateProjectRequest()
-      ..name = name
-      ..description = description ?? '';
+    final request =
+        CreateProjectRequest()
+          ..name = name
+          ..description = description ?? '';
     try {
       return await stub.createProject(request, options: callOptions);
     } on GrpcError catch (e) {
@@ -90,20 +91,101 @@ mixin ProjectApi on KumihoClientBase {
     return stub.updateProject(request, options: callOptions);
   }
 
-  /// Deletes or deprecates a project.
-  ///
-  /// By default, this performs a soft delete (deprecation).
-  /// Set [force] to `true` to permanently delete the project
-  /// and all its contents.
-  ///
-  /// **Warning**: Force deletion is irreversible.
+  /// Archives a project. The [force] argument is retained for source
+  /// compatibility, but permanent deletion requires an analyzed snapshot.
   Future<StatusResponse> deleteProject(
     String projectId, {
     bool force = false,
   }) async {
-    final request = DeleteProjectRequest()
-      ..projectId = projectId
-      ..force = force;
+    if (force) {
+      throw ArgumentError(
+        'force deletion requires analyzeProjectDeletion followed by hardDeleteProject',
+      );
+    }
+    final request =
+        DeleteProjectRequest()
+          ..projectId = projectId
+          ..force = false;
     return stub.deleteProject(request, options: callOptions);
+  }
+
+  Future<ProjectDeletionImpactResponse> analyzeProjectDeletion(
+    String projectId,
+  ) {
+    return stub.analyzeProjectDeletion(
+      ProjectDeletionImpactRequest()..projectId = projectId,
+      options: callOptions,
+    );
+  }
+
+  Future<StatusResponse> hardDeleteProject(
+    ProjectDeletionImpactResponse impact, {
+    bool confirmed = false,
+  }) {
+    if (!confirmed ||
+        impact.projectId.isEmpty ||
+        impact.impactSnapshotId.isEmpty ||
+        impact.impactSnapshotHash.isEmpty) {
+      throw ArgumentError(
+        'hard-delete requires a server impact snapshot and confirmed=true',
+      );
+    }
+    final request =
+        DeleteProjectRequest()
+          ..projectId = impact.projectId
+          ..force = true
+          ..impactSnapshotId = impact.impactSnapshotId
+          ..impactSnapshotHash = impact.impactSnapshotHash
+          ..confirmed = confirmed;
+    return stub.deleteProject(request, options: callOptions);
+  }
+
+  Future<ProjectDeletionGuardResponse> registerProjectDeletionGuard(
+    String projectId,
+    String guardId,
+    String resourceKref, {
+    required List<String> allowedOperations,
+    List<String> allowedMetadataKeys = const [],
+  }) {
+    final request =
+        RegisterProjectDeletionGuardRequest()
+          ..projectId = projectId
+          ..guardId = guardId
+          ..resourceKref = resourceKref
+          ..allowedOperations.addAll(allowedOperations)
+          ..allowedMetadataKeys.addAll(allowedMetadataKeys);
+    return stub.registerProjectDeletionGuard(request, options: callOptions);
+  }
+
+  Future<StatusResponse> resolveProjectDeletionGuard(
+    String projectId,
+    String guardId,
+  ) {
+    return stub.resolveProjectDeletionGuard(
+      ResolveProjectDeletionGuardRequest()
+        ..projectId = projectId
+        ..guardId = guardId,
+      options: callOptions,
+    );
+  }
+
+  Future<StatusResponse> resolveProjectReference(
+    String projectId,
+    String insideRevisionKref,
+    String outsideRevisionKref,
+    String edgeType,
+    String action, {
+    String replacementRevisionKref = '',
+  }) {
+    return stub.resolveProjectReference(
+      ResolveProjectReferenceRequest()
+        ..projectId = projectId
+        ..insideRevisionKref = insideRevisionKref
+        ..outsideRevisionKref = outsideRevisionKref
+        ..edgeType = edgeType
+        ..action = action
+        ..replacementRevisionKref = replacementRevisionKref,
+      options: callOptions,
+    );
   }
 }

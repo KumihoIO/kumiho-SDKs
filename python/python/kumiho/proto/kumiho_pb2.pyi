@@ -1184,6 +1184,68 @@ class ProjectDeletionImpactResponse(_message.Message):
     created_at: str
     def __init__(self, impact_snapshot_id: _Optional[str] = ..., impact_snapshot_hash: _Optional[str] = ..., project_id: _Optional[str] = ..., project_name: _Optional[str] = ..., blockers: _Optional[_Iterable[str]] = ..., descendants: _Optional[_Iterable[str]] = ..., created_at: _Optional[str] = ...) -> None: ...
 
+class RegisterProjectDeletionGuardRequest(_message.Message):
+    __slots__ = ("project_id", "guard_id", "resource_kref", "allowed_operations", "allowed_metadata_keys")
+    PROJECT_ID_FIELD_NUMBER: _ClassVar[int]
+    GUARD_ID_FIELD_NUMBER: _ClassVar[int]
+    RESOURCE_KREF_FIELD_NUMBER: _ClassVar[int]
+    ALLOWED_OPERATIONS_FIELD_NUMBER: _ClassVar[int]
+    ALLOWED_METADATA_KEYS_FIELD_NUMBER: _ClassVar[int]
+    project_id: str
+    guard_id: str
+    resource_kref: str
+    allowed_operations: _containers.RepeatedScalarFieldContainer[str]
+    allowed_metadata_keys: _containers.RepeatedScalarFieldContainer[str]
+    def __init__(self, project_id: _Optional[str] = ..., guard_id: _Optional[str] = ..., resource_kref: _Optional[str] = ..., allowed_operations: _Optional[_Iterable[str]] = ..., allowed_metadata_keys: _Optional[_Iterable[str]] = ...) -> None: ...
+
+class ResolveProjectDeletionGuardRequest(_message.Message):
+    __slots__ = ("project_id", "guard_id")
+    PROJECT_ID_FIELD_NUMBER: _ClassVar[int]
+    GUARD_ID_FIELD_NUMBER: _ClassVar[int]
+    project_id: str
+    guard_id: str
+    def __init__(self, project_id: _Optional[str] = ..., guard_id: _Optional[str] = ...) -> None: ...
+
+class ProjectDeletionGuardResponse(_message.Message):
+    __slots__ = ("project_id", "guard_id", "resource_kref", "allowed_operations", "allowed_metadata_keys", "created_at")
+    PROJECT_ID_FIELD_NUMBER: _ClassVar[int]
+    GUARD_ID_FIELD_NUMBER: _ClassVar[int]
+    RESOURCE_KREF_FIELD_NUMBER: _ClassVar[int]
+    ALLOWED_OPERATIONS_FIELD_NUMBER: _ClassVar[int]
+    ALLOWED_METADATA_KEYS_FIELD_NUMBER: _ClassVar[int]
+    CREATED_AT_FIELD_NUMBER: _ClassVar[int]
+    project_id: str
+    guard_id: str
+    resource_kref: str
+    allowed_operations: _containers.RepeatedScalarFieldContainer[str]
+    allowed_metadata_keys: _containers.RepeatedScalarFieldContainer[str]
+    created_at: str
+    def __init__(self, project_id: _Optional[str] = ..., guard_id: _Optional[str] = ..., resource_kref: _Optional[str] = ..., allowed_operations: _Optional[_Iterable[str]] = ..., allowed_metadata_keys: _Optional[_Iterable[str]] = ..., created_at: _Optional[str] = ...) -> None: ...
+
+class MoveItemRequest(_message.Message):
+    __slots__ = ("item_kref", "target_space_path")
+    ITEM_KREF_FIELD_NUMBER: _ClassVar[int]
+    TARGET_SPACE_PATH_FIELD_NUMBER: _ClassVar[int]
+    item_kref: str
+    target_space_path: str
+    def __init__(self, item_kref: _Optional[str] = ..., target_space_path: _Optional[str] = ...) -> None: ...
+
+class ResolveProjectReferenceRequest(_message.Message):
+    __slots__ = ("project_id", "inside_revision_kref", "outside_revision_kref", "edge_type", "action", "replacement_revision_kref")
+    PROJECT_ID_FIELD_NUMBER: _ClassVar[int]
+    INSIDE_REVISION_KREF_FIELD_NUMBER: _ClassVar[int]
+    OUTSIDE_REVISION_KREF_FIELD_NUMBER: _ClassVar[int]
+    EDGE_TYPE_FIELD_NUMBER: _ClassVar[int]
+    ACTION_FIELD_NUMBER: _ClassVar[int]
+    REPLACEMENT_REVISION_KREF_FIELD_NUMBER: _ClassVar[int]
+    project_id: str
+    inside_revision_kref: str
+    outside_revision_kref: str
+    edge_type: str
+    action: str
+    replacement_revision_kref: str
+    def __init__(self, project_id: _Optional[str] = ..., inside_revision_kref: _Optional[str] = ..., outside_revision_kref: _Optional[str] = ..., edge_type: _Optional[str] = ..., action: _Optional[str] = ..., replacement_revision_kref: _Optional[str] = ...) -> None: ...
+
 class UpdateProjectRequest(_message.Message):
     __slots__ = ("project_id", "allow_public", "description", "metadata", "deprecated")
     class MetadataEntry(_message.Message):

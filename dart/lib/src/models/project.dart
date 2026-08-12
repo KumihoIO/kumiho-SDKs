@@ -97,8 +97,12 @@ class Project extends KumihoObject {
     Map<String, String>? metadata,
   }) async {
     final baseParent = parentPath ?? '/$name';
-    final response =
-        await client.createItem(baseParent, itemName, kind, metadata: metadata);
+    final response = await client.createItem(
+      baseParent,
+      itemName,
+      kind,
+      metadata: metadata,
+    );
     return Item(response, client);
   }
 
@@ -122,7 +126,7 @@ class Project extends KumihoObject {
       cursor: cursor,
       includeDeprecated: includeDeprecated,
     );
-    
+
     return PagedList(
       items.map<Item>((i) => Item(i, client)).toList(),
       nextCursor: items.nextCursor,
@@ -144,7 +148,11 @@ class Project extends KumihoObject {
     Map<String, String>? metadata,
   }) async {
     final baseParent = parentPath ?? '/$name';
-    final response = await client.createBundle(baseParent, bundleName, metadata: metadata);
+    final response = await client.createBundle(
+      baseParent,
+      bundleName,
+      metadata: metadata,
+    );
     return Bundle(response, client);
   }
 
@@ -198,19 +206,60 @@ class Project extends KumihoObject {
   /// await project.update(description: 'Updated description');
   /// ```
   Future<Project> update({String? description}) async {
-    final response =
-        await client.updateProject(projectId, description: description);
+    final response = await client.updateProject(
+      projectId,
+      description: description,
+    );
     return Project(response, client);
   }
 
-  /// Soft-deletes (deprecates) or hard-deletes this project.
-  ///
-  /// ```dart
-  /// await project.delete();        // Soft delete
-  /// await project.delete(force: true);  // Hard delete
-  /// ```
+  /// Archives this project. [force] is retained for source compatibility but
+  /// rejected; hard-delete requires [analyzeDeletion] followed by [hardDelete].
   Future<void> delete({bool force = false}) async {
-    await client.deleteProject(projectId, force: force);
+    if (force) {
+      throw ArgumentError(
+        'force deletion requires analyzeDeletion followed by hardDelete',
+      );
+    }
+    await client.deleteProject(projectId, force: false);
+  }
+
+  Future<pb.ProjectDeletionImpactResponse> analyzeDeletion() {
+    return client.analyzeProjectDeletion(projectId);
+  }
+
+  Future<void> hardDelete(
+    pb.ProjectDeletionImpactResponse impact, {
+    bool confirmed = false,
+  }) async {
+    if (impact.projectId != projectId) {
+      throw ArgumentError('deletion impact belongs to a different Project');
+    }
+    if (!confirmed ||
+        impact.impactSnapshotId.isEmpty ||
+        impact.impactSnapshotHash.isEmpty) {
+      throw ArgumentError(
+        'hard-delete requires a server impact snapshot and confirmed=true',
+      );
+    }
+    await client.hardDeleteProject(impact, confirmed: confirmed);
+  }
+
+  Future<void> resolveReference(
+    String insideRevisionKref,
+    String outsideRevisionKref,
+    String edgeType,
+    String action, {
+    String replacementRevisionKref = '',
+  }) async {
+    await client.resolveProjectReference(
+      projectId,
+      insideRevisionKref,
+      outsideRevisionKref,
+      edgeType,
+      action,
+      replacementRevisionKref: replacementRevisionKref,
+    );
   }
 
   /// Sets the public access mode for this project.
@@ -219,8 +268,10 @@ class Project extends KumihoObject {
   /// await project.setPublic(true);  // Enable public access
   /// ```
   Future<Project> setPublic(bool allowPublic) async {
-    final response =
-        await client.updateProject(projectId, allowPublic: allowPublic);
+    final response = await client.updateProject(
+      projectId,
+      allowPublic: allowPublic,
+    );
     return Project(response, client);
   }
 

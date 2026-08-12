@@ -174,6 +174,7 @@ class Revision(KumihoObject):
         *,
         idempotency_key: Optional[str] = None,
         archived_operation: Optional[str] = None,
+        deletion_guard_id: Optional[str] = None,
     ) -> Artifact:
         """Create a new artifact for this revision.
 
@@ -201,6 +202,7 @@ class Revision(KumihoObject):
             metadata=metadata,
             idempotency_key=idempotency_key,
             archived_operation=archived_operation,
+            deletion_guard_id=deletion_guard_id,
         )
 
     def set_metadata(
@@ -208,6 +210,7 @@ class Revision(KumihoObject):
         metadata: Dict[str, str],
         *,
         archived_operation: Optional[str] = None,
+        deletion_guard_id: Optional[str] = None,
     ) -> 'Revision':
         """Set or update metadata for this revision.
 
@@ -231,6 +234,7 @@ class Revision(KumihoObject):
             self.kref,
             metadata,
             archived_operation=archived_operation,
+            deletion_guard_id=deletion_guard_id,
         )
 
     def set_attribute(self, key: str, value: str) -> bool:
@@ -528,8 +532,6 @@ class Revision(KumihoObject):
         edge_type: str,
         metadata: Optional[Dict[str, str]] = None,
         idempotency_key: Optional[str] = None,
-        archived_operation: Optional[str] = None,
-        archived_original_peer: Optional[str] = None,
     ) -> 'Edge':
         """Create an edge from this revision to another revision.
 
@@ -568,8 +570,6 @@ class Revision(KumihoObject):
             edge_type,
             metadata,
             idempotency_key=idempotency_key,
-            archived_operation=archived_operation,
-            archived_original_peer=archived_original_peer,
         )
 
     def get_edges(

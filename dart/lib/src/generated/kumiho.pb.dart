@@ -720,11 +720,13 @@ class CreateSpaceRequest extends $pb.GeneratedMessage {
     $core.String? parentPath,
     $core.String? spaceName,
     $core.bool? existsError,
+    $core.Iterable<$core.MapEntry<$core.String, $core.String>>? metadata,
   }) {
     final result = create();
     if (parentPath != null) result.parentPath = parentPath;
     if (spaceName != null) result.spaceName = spaceName;
     if (existsError != null) result.existsError = existsError;
+    if (metadata != null) result.metadata.addEntries(metadata);
     return result;
   }
 
@@ -744,6 +746,11 @@ class CreateSpaceRequest extends $pb.GeneratedMessage {
     ..aOS(1, _omitFieldNames ? '' : 'parentPath')
     ..aOS(2, _omitFieldNames ? '' : 'spaceName')
     ..aOB(3, _omitFieldNames ? '' : 'existsError')
+    ..m<$core.String, $core.String>(4, _omitFieldNames ? '' : 'metadata',
+        entryClassName: 'CreateSpaceRequest.MetadataEntry',
+        keyFieldType: $pb.PbFieldType.OS,
+        valueFieldType: $pb.PbFieldType.OS,
+        packageName: const $pb.PackageName('kumiho'))
     ..hasRequiredFields = false;
 
   @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
@@ -791,6 +798,9 @@ class CreateSpaceRequest extends $pb.GeneratedMessage {
   $core.bool hasExistsError() => $_has(2);
   @$pb.TagNumber(3)
   void clearExistsError() => $_clearField(3);
+
+  @$pb.TagNumber(4)
+  $pb.PbMap<$core.String, $core.String> get metadata => $_getMap(3);
 }
 
 class SpaceResponse extends $pb.GeneratedMessage {
@@ -3089,6 +3099,407 @@ class BatchGetRevisionsResponse extends $pb.GeneratedMessage {
   $core.bool hasFoundCount() => $_has(3);
   @$pb.TagNumber(4)
   void clearFoundCount() => $_clearField(4);
+}
+
+/// Batch revision creation - write many revisions in a single call.
+/// The bulk-write RPC behind backfill, dream state, and migrations: N rows
+/// land in one transaction and one (chunked) embedding pass instead of N
+/// serial single-writes.
+/// An artifact to attach to a batch-created revision, completing the
+/// Item -> Revision -> Artifact chain in the same transaction.
+class BatchArtifactInput extends $pb.GeneratedMessage {
+  factory BatchArtifactInput({
+    $core.String? name,
+    $core.String? location,
+    $core.Iterable<$core.MapEntry<$core.String, $core.String>>? metadata,
+    $core.bool? isDefault,
+  }) {
+    final result = create();
+    if (name != null) result.name = name;
+    if (location != null) result.location = location;
+    if (metadata != null) result.metadata.addEntries(metadata);
+    if (isDefault != null) result.isDefault = isDefault;
+    return result;
+  }
+
+  BatchArtifactInput._();
+
+  factory BatchArtifactInput.fromBuffer($core.List<$core.int> data,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromBuffer(data, registry);
+  factory BatchArtifactInput.fromJson($core.String json,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromJson(json, registry);
+
+  static final $pb.BuilderInfo _i = $pb.BuilderInfo(
+      _omitMessageNames ? '' : 'BatchArtifactInput',
+      package: const $pb.PackageName(_omitMessageNames ? '' : 'kumiho'),
+      createEmptyInstance: create)
+    ..aOS(1, _omitFieldNames ? '' : 'name')
+    ..aOS(2, _omitFieldNames ? '' : 'location')
+    ..m<$core.String, $core.String>(3, _omitFieldNames ? '' : 'metadata',
+        entryClassName: 'BatchArtifactInput.MetadataEntry',
+        keyFieldType: $pb.PbFieldType.OS,
+        valueFieldType: $pb.PbFieldType.OS,
+        packageName: const $pb.PackageName('kumiho'))
+    ..aOB(4, _omitFieldNames ? '' : 'isDefault')
+    ..hasRequiredFields = false;
+
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  BatchArtifactInput clone() => deepCopy();
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  BatchArtifactInput copyWith(void Function(BatchArtifactInput) updates) =>
+      super.copyWith((message) => updates(message as BatchArtifactInput))
+          as BatchArtifactInput;
+
+  @$core.override
+  $pb.BuilderInfo get info_ => _i;
+
+  @$core.pragma('dart2js:noInline')
+  static BatchArtifactInput create() => BatchArtifactInput._();
+  @$core.override
+  BatchArtifactInput createEmptyInstance() => create();
+  @$core.pragma('dart2js:noInline')
+  static BatchArtifactInput getDefault() => _defaultInstance ??=
+      $pb.GeneratedMessage.$_defaultFor<BatchArtifactInput>(create);
+  static BatchArtifactInput? _defaultInstance;
+
+  /// Artifact name; must be kref-safe ([A-Za-z0-9._-]+) and unique within
+  /// the row. The artifact kref becomes "{revision_kref}&a={name}".
+  @$pb.TagNumber(1)
+  $core.String get name => $_getSZ(0);
+  @$pb.TagNumber(1)
+  set name($core.String value) => $_setString(0, value);
+  @$pb.TagNumber(1)
+  $core.bool hasName() => $_has(0);
+  @$pb.TagNumber(1)
+  void clearName() => $_clearField(1);
+
+  /// Storage location the artifact points at.
+  @$pb.TagNumber(2)
+  $core.String get location => $_getSZ(1);
+  @$pb.TagNumber(2)
+  set location($core.String value) => $_setString(1, value);
+  @$pb.TagNumber(2)
+  $core.bool hasLocation() => $_has(1);
+  @$pb.TagNumber(2)
+  void clearLocation() => $_clearField(2);
+
+  @$pb.TagNumber(3)
+  $pb.PbMap<$core.String, $core.String> get metadata => $_getMap(2);
+
+  /// Make this artifact the revision's default, so the location resolves
+  /// straight from an item kref (GetArtifact/ResolveLocation without an
+  /// artifact name). At most one artifact per row may set this.
+  @$pb.TagNumber(4)
+  $core.bool get isDefault => $_getBF(3);
+  @$pb.TagNumber(4)
+  set isDefault($core.bool value) => $_setBool(3, value);
+  @$pb.TagNumber(4)
+  $core.bool hasIsDefault() => $_has(3);
+  @$pb.TagNumber(4)
+  void clearIsDefault() => $_clearField(4);
+}
+
+/// One batch row: a revision to create plus any artifacts that go with it.
+class BatchRevisionRow extends $pb.GeneratedMessage {
+  factory BatchRevisionRow({
+    CreateRevisionRequest? revision,
+    $core.Iterable<BatchArtifactInput>? artifacts,
+  }) {
+    final result = create();
+    if (revision != null) result.revision = revision;
+    if (artifacts != null) result.artifacts.addAll(artifacts);
+    return result;
+  }
+
+  BatchRevisionRow._();
+
+  factory BatchRevisionRow.fromBuffer($core.List<$core.int> data,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromBuffer(data, registry);
+  factory BatchRevisionRow.fromJson($core.String json,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromJson(json, registry);
+
+  static final $pb.BuilderInfo _i = $pb.BuilderInfo(
+      _omitMessageNames ? '' : 'BatchRevisionRow',
+      package: const $pb.PackageName(_omitMessageNames ? '' : 'kumiho'),
+      createEmptyInstance: create)
+    ..aOM<CreateRevisionRequest>(1, _omitFieldNames ? '' : 'revision',
+        subBuilder: CreateRevisionRequest.create)
+    ..pPM<BatchArtifactInput>(2, _omitFieldNames ? '' : 'artifacts',
+        subBuilder: BatchArtifactInput.create)
+    ..hasRequiredFields = false;
+
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  BatchRevisionRow clone() => deepCopy();
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  BatchRevisionRow copyWith(void Function(BatchRevisionRow) updates) =>
+      super.copyWith((message) => updates(message as BatchRevisionRow))
+          as BatchRevisionRow;
+
+  @$core.override
+  $pb.BuilderInfo get info_ => _i;
+
+  @$core.pragma('dart2js:noInline')
+  static BatchRevisionRow create() => BatchRevisionRow._();
+  @$core.override
+  BatchRevisionRow createEmptyInstance() => create();
+  @$core.pragma('dart2js:noInline')
+  static BatchRevisionRow getDefault() => _defaultInstance ??=
+      $pb.GeneratedMessage.$_defaultFor<BatchRevisionRow>(create);
+  static BatchRevisionRow? _defaultInstance;
+
+  /// The revision to create. As with CreateRevision, `number` and
+  /// `exists_error` are ignored (numbers are server-assigned).
+  @$pb.TagNumber(1)
+  CreateRevisionRequest get revision => $_getN(0);
+  @$pb.TagNumber(1)
+  set revision(CreateRevisionRequest value) => $_setField(1, value);
+  @$pb.TagNumber(1)
+  $core.bool hasRevision() => $_has(0);
+  @$pb.TagNumber(1)
+  void clearRevision() => $_clearField(1);
+  @$pb.TagNumber(1)
+  CreateRevisionRequest ensureRevision() => $_ensure(0);
+
+  /// Artifacts to attach to the created revision. An invalid artifact spec
+  /// (bad name, duplicate name, >1 default) fails the whole row.
+  @$pb.TagNumber(2)
+  $pb.PbList<BatchArtifactInput> get artifacts => $_getList(1);
+}
+
+class BatchCreateRevisionsRequest extends $pb.GeneratedMessage {
+  factory BatchCreateRevisionsRequest({
+    $core.Iterable<BatchRevisionRow>? revisions,
+    $core.String? idempotencyPrefix,
+  }) {
+    final result = create();
+    if (revisions != null) result.revisions.addAll(revisions);
+    if (idempotencyPrefix != null) result.idempotencyPrefix = idempotencyPrefix;
+    return result;
+  }
+
+  BatchCreateRevisionsRequest._();
+
+  factory BatchCreateRevisionsRequest.fromBuffer($core.List<$core.int> data,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromBuffer(data, registry);
+  factory BatchCreateRevisionsRequest.fromJson($core.String json,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromJson(json, registry);
+
+  static final $pb.BuilderInfo _i = $pb.BuilderInfo(
+      _omitMessageNames ? '' : 'BatchCreateRevisionsRequest',
+      package: const $pb.PackageName(_omitMessageNames ? '' : 'kumiho'),
+      createEmptyInstance: create)
+    ..pPM<BatchRevisionRow>(1, _omitFieldNames ? '' : 'revisions',
+        subBuilder: BatchRevisionRow.create)
+    ..aOS(2, _omitFieldNames ? '' : 'idempotencyPrefix')
+    ..hasRequiredFields = false;
+
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  BatchCreateRevisionsRequest clone() => deepCopy();
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  BatchCreateRevisionsRequest copyWith(
+          void Function(BatchCreateRevisionsRequest) updates) =>
+      super.copyWith(
+              (message) => updates(message as BatchCreateRevisionsRequest))
+          as BatchCreateRevisionsRequest;
+
+  @$core.override
+  $pb.BuilderInfo get info_ => _i;
+
+  @$core.pragma('dart2js:noInline')
+  static BatchCreateRevisionsRequest create() =>
+      BatchCreateRevisionsRequest._();
+  @$core.override
+  BatchCreateRevisionsRequest createEmptyInstance() => create();
+  @$core.pragma('dart2js:noInline')
+  static BatchCreateRevisionsRequest getDefault() => _defaultInstance ??=
+      $pb.GeneratedMessage.$_defaultFor<BatchCreateRevisionsRequest>(create);
+  static BatchCreateRevisionsRequest? _defaultInstance;
+
+  /// Rows to write, in request order. As with CreateRevision, each row's
+  /// `number` and `exists_error` are ignored (revision numbers are always
+  /// server-assigned next-available).
+  /// Missing parent Items are auto-created from revision.item_kref (the
+  /// parent Space must exist, or the row fails). Rows targeting the same
+  /// item are applied in request order: consecutive numbers, SUPERSEDES
+  /// chained between them, and the last row carries the 'latest' tag.
+  @$pb.TagNumber(1)
+  $pb.PbList<BatchRevisionRow> get revisions => $_getList(0);
+
+  /// Optional idempotency prefix. When non-empty, each row is recorded under
+  /// the key "{prefix}:{row_index}" transactionally with the write, so
+  /// re-submitting the same batch returns the already-created revisions
+  /// instead of writing duplicates (replayed rows skip artifact creation
+  /// too). Empty = no idempotency.
+  @$pb.TagNumber(2)
+  $core.String get idempotencyPrefix => $_getSZ(1);
+  @$pb.TagNumber(2)
+  set idempotencyPrefix($core.String value) => $_setString(1, value);
+  @$pb.TagNumber(2)
+  $core.bool hasIdempotencyPrefix() => $_has(1);
+  @$pb.TagNumber(2)
+  void clearIdempotencyPrefix() => $_clearField(2);
+}
+
+class BatchRevisionFailure extends $pb.GeneratedMessage {
+  factory BatchRevisionFailure({
+    $core.int? index,
+    $core.String? reason,
+  }) {
+    final result = create();
+    if (index != null) result.index = index;
+    if (reason != null) result.reason = reason;
+    return result;
+  }
+
+  BatchRevisionFailure._();
+
+  factory BatchRevisionFailure.fromBuffer($core.List<$core.int> data,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromBuffer(data, registry);
+  factory BatchRevisionFailure.fromJson($core.String json,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromJson(json, registry);
+
+  static final $pb.BuilderInfo _i = $pb.BuilderInfo(
+      _omitMessageNames ? '' : 'BatchRevisionFailure',
+      package: const $pb.PackageName(_omitMessageNames ? '' : 'kumiho'),
+      createEmptyInstance: create)
+    ..aI(1, _omitFieldNames ? '' : 'index')
+    ..aOS(2, _omitFieldNames ? '' : 'reason')
+    ..hasRequiredFields = false;
+
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  BatchRevisionFailure clone() => deepCopy();
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  BatchRevisionFailure copyWith(void Function(BatchRevisionFailure) updates) =>
+      super.copyWith((message) => updates(message as BatchRevisionFailure))
+          as BatchRevisionFailure;
+
+  @$core.override
+  $pb.BuilderInfo get info_ => _i;
+
+  @$core.pragma('dart2js:noInline')
+  static BatchRevisionFailure create() => BatchRevisionFailure._();
+  @$core.override
+  BatchRevisionFailure createEmptyInstance() => create();
+  @$core.pragma('dart2js:noInline')
+  static BatchRevisionFailure getDefault() => _defaultInstance ??=
+      $pb.GeneratedMessage.$_defaultFor<BatchRevisionFailure>(create);
+  static BatchRevisionFailure? _defaultInstance;
+
+  /// Zero-based index of the failed row in the request.
+  @$pb.TagNumber(1)
+  $core.int get index => $_getIZ(0);
+  @$pb.TagNumber(1)
+  set index($core.int value) => $_setSignedInt32(0, value);
+  @$pb.TagNumber(1)
+  $core.bool hasIndex() => $_has(0);
+  @$pb.TagNumber(1)
+  void clearIndex() => $_clearField(1);
+
+  /// Why the row was rejected (validation error, missing parent space, ...).
+  @$pb.TagNumber(2)
+  $core.String get reason => $_getSZ(1);
+  @$pb.TagNumber(2)
+  set reason($core.String value) => $_setString(1, value);
+  @$pb.TagNumber(2)
+  $core.bool hasReason() => $_has(1);
+  @$pb.TagNumber(2)
+  void clearReason() => $_clearField(2);
+}
+
+class BatchCreateRevisionsResponse extends $pb.GeneratedMessage {
+  factory BatchCreateRevisionsResponse({
+    $core.Iterable<RevisionResponse>? results,
+    $core.Iterable<BatchRevisionFailure>? failures,
+    $core.int? requestedCount,
+    $core.int? succeededCount,
+  }) {
+    final result = create();
+    if (results != null) result.results.addAll(results);
+    if (failures != null) result.failures.addAll(failures);
+    if (requestedCount != null) result.requestedCount = requestedCount;
+    if (succeededCount != null) result.succeededCount = succeededCount;
+    return result;
+  }
+
+  BatchCreateRevisionsResponse._();
+
+  factory BatchCreateRevisionsResponse.fromBuffer($core.List<$core.int> data,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromBuffer(data, registry);
+  factory BatchCreateRevisionsResponse.fromJson($core.String json,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromJson(json, registry);
+
+  static final $pb.BuilderInfo _i = $pb.BuilderInfo(
+      _omitMessageNames ? '' : 'BatchCreateRevisionsResponse',
+      package: const $pb.PackageName(_omitMessageNames ? '' : 'kumiho'),
+      createEmptyInstance: create)
+    ..pPM<RevisionResponse>(1, _omitFieldNames ? '' : 'results',
+        subBuilder: RevisionResponse.create)
+    ..pPM<BatchRevisionFailure>(2, _omitFieldNames ? '' : 'failures',
+        subBuilder: BatchRevisionFailure.create)
+    ..aI(3, _omitFieldNames ? '' : 'requestedCount')
+    ..aI(4, _omitFieldNames ? '' : 'succeededCount')
+    ..hasRequiredFields = false;
+
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  BatchCreateRevisionsResponse clone() => deepCopy();
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  BatchCreateRevisionsResponse copyWith(
+          void Function(BatchCreateRevisionsResponse) updates) =>
+      super.copyWith(
+              (message) => updates(message as BatchCreateRevisionsResponse))
+          as BatchCreateRevisionsResponse;
+
+  @$core.override
+  $pb.BuilderInfo get info_ => _i;
+
+  @$core.pragma('dart2js:noInline')
+  static BatchCreateRevisionsResponse create() =>
+      BatchCreateRevisionsResponse._();
+  @$core.override
+  BatchCreateRevisionsResponse createEmptyInstance() => create();
+  @$core.pragma('dart2js:noInline')
+  static BatchCreateRevisionsResponse getDefault() => _defaultInstance ??=
+      $pb.GeneratedMessage.$_defaultFor<BatchCreateRevisionsResponse>(create);
+  static BatchCreateRevisionsResponse? _defaultInstance;
+
+  /// Positional, 1:1 with the request rows. Failed rows are empty stubs
+  /// (kref unset); consult `failures` for the reason.
+  @$pb.TagNumber(1)
+  $pb.PbList<RevisionResponse> get results => $_getList(0);
+
+  /// Rows rejected by per-row validation. All valid rows commit atomically:
+  /// any other failure fails the whole RPC with a gRPC error instead.
+  @$pb.TagNumber(2)
+  $pb.PbList<BatchRevisionFailure> get failures => $_getList(1);
+
+  @$pb.TagNumber(3)
+  $core.int get requestedCount => $_getIZ(2);
+  @$pb.TagNumber(3)
+  set requestedCount($core.int value) => $_setSignedInt32(2, value);
+  @$pb.TagNumber(3)
+  $core.bool hasRequestedCount() => $_has(2);
+  @$pb.TagNumber(3)
+  void clearRequestedCount() => $_clearField(3);
+
+  /// Rows that now have a revision (newly created or idempotent replay).
+  @$pb.TagNumber(4)
+  $core.int get succeededCount => $_getIZ(3);
+  @$pb.TagNumber(4)
+  set succeededCount($core.int value) => $_setSignedInt32(3, value);
+  @$pb.TagNumber(4)
+  $core.bool hasSucceededCount() => $_has(3);
+  @$pb.TagNumber(4)
+  void clearSucceededCount() => $_clearField(4);
 }
 
 class CreateArtifactRequest extends $pb.GeneratedMessage {
@@ -7159,10 +7570,12 @@ class CreateProjectRequest extends $pb.GeneratedMessage {
   factory CreateProjectRequest({
     $core.String? name,
     $core.String? description,
+    $core.Iterable<$core.MapEntry<$core.String, $core.String>>? metadata,
   }) {
     final result = create();
     if (name != null) result.name = name;
     if (description != null) result.description = description;
+    if (metadata != null) result.metadata.addEntries(metadata);
     return result;
   }
 
@@ -7181,6 +7594,11 @@ class CreateProjectRequest extends $pb.GeneratedMessage {
       createEmptyInstance: create)
     ..aOS(1, _omitFieldNames ? '' : 'name')
     ..aOS(2, _omitFieldNames ? '' : 'description')
+    ..m<$core.String, $core.String>(3, _omitFieldNames ? '' : 'metadata',
+        entryClassName: 'CreateProjectRequest.MetadataEntry',
+        keyFieldType: $pb.PbFieldType.OS,
+        valueFieldType: $pb.PbFieldType.OS,
+        packageName: const $pb.PackageName('kumiho'))
     ..hasRequiredFields = false;
 
   @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
@@ -7219,6 +7637,9 @@ class CreateProjectRequest extends $pb.GeneratedMessage {
   $core.bool hasDescription() => $_has(1);
   @$pb.TagNumber(2)
   void clearDescription() => $_clearField(2);
+
+  @$pb.TagNumber(3)
+  $pb.PbMap<$core.String, $core.String> get metadata => $_getMap(2);
 }
 
 class ProjectResponse extends $pb.GeneratedMessage {
@@ -7230,6 +7651,7 @@ class ProjectResponse extends $pb.GeneratedMessage {
     $core.String? updatedAt,
     $core.bool? deprecated,
     $core.bool? allowPublic,
+    $core.Iterable<$core.MapEntry<$core.String, $core.String>>? metadata,
   }) {
     final result = create();
     if (projectId != null) result.projectId = projectId;
@@ -7239,6 +7661,7 @@ class ProjectResponse extends $pb.GeneratedMessage {
     if (updatedAt != null) result.updatedAt = updatedAt;
     if (deprecated != null) result.deprecated = deprecated;
     if (allowPublic != null) result.allowPublic = allowPublic;
+    if (metadata != null) result.metadata.addEntries(metadata);
     return result;
   }
 
@@ -7262,6 +7685,11 @@ class ProjectResponse extends $pb.GeneratedMessage {
     ..aOS(5, _omitFieldNames ? '' : 'updatedAt')
     ..aOB(6, _omitFieldNames ? '' : 'deprecated')
     ..aOB(7, _omitFieldNames ? '' : 'allowPublic')
+    ..m<$core.String, $core.String>(8, _omitFieldNames ? '' : 'metadata',
+        entryClassName: 'ProjectResponse.MetadataEntry',
+        keyFieldType: $pb.PbFieldType.OS,
+        valueFieldType: $pb.PbFieldType.OS,
+        packageName: const $pb.PackageName('kumiho'))
     ..hasRequiredFields = false;
 
   @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
@@ -7345,10 +7773,19 @@ class ProjectResponse extends $pb.GeneratedMessage {
   $core.bool hasAllowPublic() => $_has(6);
   @$pb.TagNumber(7)
   void clearAllowPublic() => $_clearField(7);
+
+  @$pb.TagNumber(8)
+  $pb.PbMap<$core.String, $core.String> get metadata => $_getMap(7);
 }
 
 class GetProjectsRequest extends $pb.GeneratedMessage {
-  factory GetProjectsRequest() => create();
+  factory GetProjectsRequest({
+    $core.bool? includeDeprecated,
+  }) {
+    final result = create();
+    if (includeDeprecated != null) result.includeDeprecated = includeDeprecated;
+    return result;
+  }
 
   GetProjectsRequest._();
 
@@ -7363,6 +7800,7 @@ class GetProjectsRequest extends $pb.GeneratedMessage {
       _omitMessageNames ? '' : 'GetProjectsRequest',
       package: const $pb.PackageName(_omitMessageNames ? '' : 'kumiho'),
       createEmptyInstance: create)
+    ..aOB(1, _omitFieldNames ? '' : 'includeDeprecated')
     ..hasRequiredFields = false;
 
   @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
@@ -7383,6 +7821,15 @@ class GetProjectsRequest extends $pb.GeneratedMessage {
   static GetProjectsRequest getDefault() => _defaultInstance ??=
       $pb.GeneratedMessage.$_defaultFor<GetProjectsRequest>(create);
   static GetProjectsRequest? _defaultInstance;
+
+  @$pb.TagNumber(1)
+  $core.bool get includeDeprecated => $_getBF(0);
+  @$pb.TagNumber(1)
+  set includeDeprecated($core.bool value) => $_setBool(0, value);
+  @$pb.TagNumber(1)
+  $core.bool hasIncludeDeprecated() => $_has(0);
+  @$pb.TagNumber(1)
+  void clearIncludeDeprecated() => $_clearField(1);
 }
 
 class GetProjectsResponse extends $pb.GeneratedMessage {
@@ -7438,10 +7885,17 @@ class DeleteProjectRequest extends $pb.GeneratedMessage {
   factory DeleteProjectRequest({
     $core.String? projectId,
     $core.bool? force,
+    $core.String? impactSnapshotId,
+    $core.String? impactSnapshotHash,
+    $core.bool? confirmed,
   }) {
     final result = create();
     if (projectId != null) result.projectId = projectId;
     if (force != null) result.force = force;
+    if (impactSnapshotId != null) result.impactSnapshotId = impactSnapshotId;
+    if (impactSnapshotHash != null)
+      result.impactSnapshotHash = impactSnapshotHash;
+    if (confirmed != null) result.confirmed = confirmed;
     return result;
   }
 
@@ -7460,6 +7914,9 @@ class DeleteProjectRequest extends $pb.GeneratedMessage {
       createEmptyInstance: create)
     ..aOS(1, _omitFieldNames ? '' : 'projectId')
     ..aOB(2, _omitFieldNames ? '' : 'force')
+    ..aOS(3, _omitFieldNames ? '' : 'impactSnapshotId')
+    ..aOS(4, _omitFieldNames ? '' : 'impactSnapshotHash')
+    ..aOB(5, _omitFieldNames ? '' : 'confirmed')
     ..hasRequiredFields = false;
 
   @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
@@ -7490,7 +7947,8 @@ class DeleteProjectRequest extends $pb.GeneratedMessage {
   @$pb.TagNumber(1)
   void clearProjectId() => $_clearField(1);
 
-  /// force=true lets owner/admin hard-delete; otherwise deprecates.
+  /// force=true requests hard-delete; owner/admin must also supply the
+  /// current server-issued impact snapshot and explicit confirmation.
   @$pb.TagNumber(2)
   $core.bool get force => $_getBF(1);
   @$pb.TagNumber(2)
@@ -7499,6 +7957,677 @@ class DeleteProjectRequest extends $pb.GeneratedMessage {
   $core.bool hasForce() => $_has(1);
   @$pb.TagNumber(2)
   void clearForce() => $_clearField(2);
+
+  @$pb.TagNumber(3)
+  $core.String get impactSnapshotId => $_getSZ(2);
+  @$pb.TagNumber(3)
+  set impactSnapshotId($core.String value) => $_setString(2, value);
+  @$pb.TagNumber(3)
+  $core.bool hasImpactSnapshotId() => $_has(2);
+  @$pb.TagNumber(3)
+  void clearImpactSnapshotId() => $_clearField(3);
+
+  @$pb.TagNumber(4)
+  $core.String get impactSnapshotHash => $_getSZ(3);
+  @$pb.TagNumber(4)
+  set impactSnapshotHash($core.String value) => $_setString(3, value);
+  @$pb.TagNumber(4)
+  $core.bool hasImpactSnapshotHash() => $_has(3);
+  @$pb.TagNumber(4)
+  void clearImpactSnapshotHash() => $_clearField(4);
+
+  @$pb.TagNumber(5)
+  $core.bool get confirmed => $_getBF(4);
+  @$pb.TagNumber(5)
+  set confirmed($core.bool value) => $_setBool(4, value);
+  @$pb.TagNumber(5)
+  $core.bool hasConfirmed() => $_has(4);
+  @$pb.TagNumber(5)
+  void clearConfirmed() => $_clearField(5);
+}
+
+class ProjectDeletionImpactRequest extends $pb.GeneratedMessage {
+  factory ProjectDeletionImpactRequest({
+    $core.String? projectId,
+  }) {
+    final result = create();
+    if (projectId != null) result.projectId = projectId;
+    return result;
+  }
+
+  ProjectDeletionImpactRequest._();
+
+  factory ProjectDeletionImpactRequest.fromBuffer($core.List<$core.int> data,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromBuffer(data, registry);
+  factory ProjectDeletionImpactRequest.fromJson($core.String json,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromJson(json, registry);
+
+  static final $pb.BuilderInfo _i = $pb.BuilderInfo(
+      _omitMessageNames ? '' : 'ProjectDeletionImpactRequest',
+      package: const $pb.PackageName(_omitMessageNames ? '' : 'kumiho'),
+      createEmptyInstance: create)
+    ..aOS(1, _omitFieldNames ? '' : 'projectId')
+    ..hasRequiredFields = false;
+
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  ProjectDeletionImpactRequest clone() => deepCopy();
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  ProjectDeletionImpactRequest copyWith(
+          void Function(ProjectDeletionImpactRequest) updates) =>
+      super.copyWith(
+              (message) => updates(message as ProjectDeletionImpactRequest))
+          as ProjectDeletionImpactRequest;
+
+  @$core.override
+  $pb.BuilderInfo get info_ => _i;
+
+  @$core.pragma('dart2js:noInline')
+  static ProjectDeletionImpactRequest create() =>
+      ProjectDeletionImpactRequest._();
+  @$core.override
+  ProjectDeletionImpactRequest createEmptyInstance() => create();
+  @$core.pragma('dart2js:noInline')
+  static ProjectDeletionImpactRequest getDefault() => _defaultInstance ??=
+      $pb.GeneratedMessage.$_defaultFor<ProjectDeletionImpactRequest>(create);
+  static ProjectDeletionImpactRequest? _defaultInstance;
+
+  @$pb.TagNumber(1)
+  $core.String get projectId => $_getSZ(0);
+  @$pb.TagNumber(1)
+  set projectId($core.String value) => $_setString(0, value);
+  @$pb.TagNumber(1)
+  $core.bool hasProjectId() => $_has(0);
+  @$pb.TagNumber(1)
+  void clearProjectId() => $_clearField(1);
+}
+
+class ProjectDeletionImpactResponse extends $pb.GeneratedMessage {
+  factory ProjectDeletionImpactResponse({
+    $core.String? impactSnapshotId,
+    $core.String? impactSnapshotHash,
+    $core.String? projectId,
+    $core.String? projectName,
+    $core.Iterable<$core.String>? blockers,
+    $core.Iterable<$core.String>? descendants,
+    $core.String? createdAt,
+  }) {
+    final result = create();
+    if (impactSnapshotId != null) result.impactSnapshotId = impactSnapshotId;
+    if (impactSnapshotHash != null)
+      result.impactSnapshotHash = impactSnapshotHash;
+    if (projectId != null) result.projectId = projectId;
+    if (projectName != null) result.projectName = projectName;
+    if (blockers != null) result.blockers.addAll(blockers);
+    if (descendants != null) result.descendants.addAll(descendants);
+    if (createdAt != null) result.createdAt = createdAt;
+    return result;
+  }
+
+  ProjectDeletionImpactResponse._();
+
+  factory ProjectDeletionImpactResponse.fromBuffer($core.List<$core.int> data,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromBuffer(data, registry);
+  factory ProjectDeletionImpactResponse.fromJson($core.String json,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromJson(json, registry);
+
+  static final $pb.BuilderInfo _i = $pb.BuilderInfo(
+      _omitMessageNames ? '' : 'ProjectDeletionImpactResponse',
+      package: const $pb.PackageName(_omitMessageNames ? '' : 'kumiho'),
+      createEmptyInstance: create)
+    ..aOS(1, _omitFieldNames ? '' : 'impactSnapshotId')
+    ..aOS(2, _omitFieldNames ? '' : 'impactSnapshotHash')
+    ..aOS(3, _omitFieldNames ? '' : 'projectId')
+    ..aOS(4, _omitFieldNames ? '' : 'projectName')
+    ..pPS(5, _omitFieldNames ? '' : 'blockers')
+    ..pPS(6, _omitFieldNames ? '' : 'descendants')
+    ..aOS(7, _omitFieldNames ? '' : 'createdAt')
+    ..hasRequiredFields = false;
+
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  ProjectDeletionImpactResponse clone() => deepCopy();
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  ProjectDeletionImpactResponse copyWith(
+          void Function(ProjectDeletionImpactResponse) updates) =>
+      super.copyWith(
+              (message) => updates(message as ProjectDeletionImpactResponse))
+          as ProjectDeletionImpactResponse;
+
+  @$core.override
+  $pb.BuilderInfo get info_ => _i;
+
+  @$core.pragma('dart2js:noInline')
+  static ProjectDeletionImpactResponse create() =>
+      ProjectDeletionImpactResponse._();
+  @$core.override
+  ProjectDeletionImpactResponse createEmptyInstance() => create();
+  @$core.pragma('dart2js:noInline')
+  static ProjectDeletionImpactResponse getDefault() => _defaultInstance ??=
+      $pb.GeneratedMessage.$_defaultFor<ProjectDeletionImpactResponse>(create);
+  static ProjectDeletionImpactResponse? _defaultInstance;
+
+  @$pb.TagNumber(1)
+  $core.String get impactSnapshotId => $_getSZ(0);
+  @$pb.TagNumber(1)
+  set impactSnapshotId($core.String value) => $_setString(0, value);
+  @$pb.TagNumber(1)
+  $core.bool hasImpactSnapshotId() => $_has(0);
+  @$pb.TagNumber(1)
+  void clearImpactSnapshotId() => $_clearField(1);
+
+  @$pb.TagNumber(2)
+  $core.String get impactSnapshotHash => $_getSZ(1);
+  @$pb.TagNumber(2)
+  set impactSnapshotHash($core.String value) => $_setString(1, value);
+  @$pb.TagNumber(2)
+  $core.bool hasImpactSnapshotHash() => $_has(1);
+  @$pb.TagNumber(2)
+  void clearImpactSnapshotHash() => $_clearField(2);
+
+  @$pb.TagNumber(3)
+  $core.String get projectId => $_getSZ(2);
+  @$pb.TagNumber(3)
+  set projectId($core.String value) => $_setString(2, value);
+  @$pb.TagNumber(3)
+  $core.bool hasProjectId() => $_has(2);
+  @$pb.TagNumber(3)
+  void clearProjectId() => $_clearField(3);
+
+  @$pb.TagNumber(4)
+  $core.String get projectName => $_getSZ(3);
+  @$pb.TagNumber(4)
+  set projectName($core.String value) => $_setString(3, value);
+  @$pb.TagNumber(4)
+  $core.bool hasProjectName() => $_has(3);
+  @$pb.TagNumber(4)
+  void clearProjectName() => $_clearField(4);
+
+  @$pb.TagNumber(5)
+  $pb.PbList<$core.String> get blockers => $_getList(4);
+
+  @$pb.TagNumber(6)
+  $pb.PbList<$core.String> get descendants => $_getList(5);
+
+  @$pb.TagNumber(7)
+  $core.String get createdAt => $_getSZ(6);
+  @$pb.TagNumber(7)
+  set createdAt($core.String value) => $_setString(6, value);
+  @$pb.TagNumber(7)
+  $core.bool hasCreatedAt() => $_has(6);
+  @$pb.TagNumber(7)
+  void clearCreatedAt() => $_clearField(7);
+}
+
+/// Opaque application-owned deletion guard. Kumiho stores and enforces the
+/// guard without interpreting application kinds, statuses, or metadata values.
+class RegisterProjectDeletionGuardRequest extends $pb.GeneratedMessage {
+  factory RegisterProjectDeletionGuardRequest({
+    $core.String? projectId,
+    $core.String? guardId,
+    $core.String? resourceKref,
+    $core.Iterable<$core.String>? allowedOperations,
+    $core.Iterable<$core.String>? allowedMetadataKeys,
+  }) {
+    final result = create();
+    if (projectId != null) result.projectId = projectId;
+    if (guardId != null) result.guardId = guardId;
+    if (resourceKref != null) result.resourceKref = resourceKref;
+    if (allowedOperations != null)
+      result.allowedOperations.addAll(allowedOperations);
+    if (allowedMetadataKeys != null)
+      result.allowedMetadataKeys.addAll(allowedMetadataKeys);
+    return result;
+  }
+
+  RegisterProjectDeletionGuardRequest._();
+
+  factory RegisterProjectDeletionGuardRequest.fromBuffer(
+          $core.List<$core.int> data,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromBuffer(data, registry);
+  factory RegisterProjectDeletionGuardRequest.fromJson($core.String json,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromJson(json, registry);
+
+  static final $pb.BuilderInfo _i = $pb.BuilderInfo(
+      _omitMessageNames ? '' : 'RegisterProjectDeletionGuardRequest',
+      package: const $pb.PackageName(_omitMessageNames ? '' : 'kumiho'),
+      createEmptyInstance: create)
+    ..aOS(1, _omitFieldNames ? '' : 'projectId')
+    ..aOS(2, _omitFieldNames ? '' : 'guardId')
+    ..aOS(3, _omitFieldNames ? '' : 'resourceKref')
+    ..pPS(4, _omitFieldNames ? '' : 'allowedOperations')
+    ..pPS(5, _omitFieldNames ? '' : 'allowedMetadataKeys')
+    ..hasRequiredFields = false;
+
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  RegisterProjectDeletionGuardRequest clone() => deepCopy();
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  RegisterProjectDeletionGuardRequest copyWith(
+          void Function(RegisterProjectDeletionGuardRequest) updates) =>
+      super.copyWith((message) =>
+              updates(message as RegisterProjectDeletionGuardRequest))
+          as RegisterProjectDeletionGuardRequest;
+
+  @$core.override
+  $pb.BuilderInfo get info_ => _i;
+
+  @$core.pragma('dart2js:noInline')
+  static RegisterProjectDeletionGuardRequest create() =>
+      RegisterProjectDeletionGuardRequest._();
+  @$core.override
+  RegisterProjectDeletionGuardRequest createEmptyInstance() => create();
+  @$core.pragma('dart2js:noInline')
+  static RegisterProjectDeletionGuardRequest getDefault() =>
+      _defaultInstance ??= $pb.GeneratedMessage.$_defaultFor<
+          RegisterProjectDeletionGuardRequest>(create);
+  static RegisterProjectDeletionGuardRequest? _defaultInstance;
+
+  @$pb.TagNumber(1)
+  $core.String get projectId => $_getSZ(0);
+  @$pb.TagNumber(1)
+  set projectId($core.String value) => $_setString(0, value);
+  @$pb.TagNumber(1)
+  $core.bool hasProjectId() => $_has(0);
+  @$pb.TagNumber(1)
+  void clearProjectId() => $_clearField(1);
+
+  @$pb.TagNumber(2)
+  $core.String get guardId => $_getSZ(1);
+  @$pb.TagNumber(2)
+  set guardId($core.String value) => $_setString(1, value);
+  @$pb.TagNumber(2)
+  $core.bool hasGuardId() => $_has(1);
+  @$pb.TagNumber(2)
+  void clearGuardId() => $_clearField(2);
+
+  @$pb.TagNumber(3)
+  $core.String get resourceKref => $_getSZ(2);
+  @$pb.TagNumber(3)
+  set resourceKref($core.String value) => $_setString(2, value);
+  @$pb.TagNumber(3)
+  $core.bool hasResourceKref() => $_has(2);
+  @$pb.TagNumber(3)
+  void clearResourceKref() => $_clearField(3);
+
+  @$pb.TagNumber(4)
+  $pb.PbList<$core.String> get allowedOperations => $_getList(3);
+
+  @$pb.TagNumber(5)
+  $pb.PbList<$core.String> get allowedMetadataKeys => $_getList(4);
+}
+
+class ResolveProjectDeletionGuardRequest extends $pb.GeneratedMessage {
+  factory ResolveProjectDeletionGuardRequest({
+    $core.String? projectId,
+    $core.String? guardId,
+  }) {
+    final result = create();
+    if (projectId != null) result.projectId = projectId;
+    if (guardId != null) result.guardId = guardId;
+    return result;
+  }
+
+  ResolveProjectDeletionGuardRequest._();
+
+  factory ResolveProjectDeletionGuardRequest.fromBuffer(
+          $core.List<$core.int> data,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromBuffer(data, registry);
+  factory ResolveProjectDeletionGuardRequest.fromJson($core.String json,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromJson(json, registry);
+
+  static final $pb.BuilderInfo _i = $pb.BuilderInfo(
+      _omitMessageNames ? '' : 'ResolveProjectDeletionGuardRequest',
+      package: const $pb.PackageName(_omitMessageNames ? '' : 'kumiho'),
+      createEmptyInstance: create)
+    ..aOS(1, _omitFieldNames ? '' : 'projectId')
+    ..aOS(2, _omitFieldNames ? '' : 'guardId')
+    ..hasRequiredFields = false;
+
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  ResolveProjectDeletionGuardRequest clone() => deepCopy();
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  ResolveProjectDeletionGuardRequest copyWith(
+          void Function(ResolveProjectDeletionGuardRequest) updates) =>
+      super.copyWith((message) =>
+              updates(message as ResolveProjectDeletionGuardRequest))
+          as ResolveProjectDeletionGuardRequest;
+
+  @$core.override
+  $pb.BuilderInfo get info_ => _i;
+
+  @$core.pragma('dart2js:noInline')
+  static ResolveProjectDeletionGuardRequest create() =>
+      ResolveProjectDeletionGuardRequest._();
+  @$core.override
+  ResolveProjectDeletionGuardRequest createEmptyInstance() => create();
+  @$core.pragma('dart2js:noInline')
+  static ResolveProjectDeletionGuardRequest getDefault() => _defaultInstance ??=
+      $pb.GeneratedMessage.$_defaultFor<ResolveProjectDeletionGuardRequest>(
+          create);
+  static ResolveProjectDeletionGuardRequest? _defaultInstance;
+
+  @$pb.TagNumber(1)
+  $core.String get projectId => $_getSZ(0);
+  @$pb.TagNumber(1)
+  set projectId($core.String value) => $_setString(0, value);
+  @$pb.TagNumber(1)
+  $core.bool hasProjectId() => $_has(0);
+  @$pb.TagNumber(1)
+  void clearProjectId() => $_clearField(1);
+
+  @$pb.TagNumber(2)
+  $core.String get guardId => $_getSZ(1);
+  @$pb.TagNumber(2)
+  set guardId($core.String value) => $_setString(1, value);
+  @$pb.TagNumber(2)
+  $core.bool hasGuardId() => $_has(1);
+  @$pb.TagNumber(2)
+  void clearGuardId() => $_clearField(2);
+}
+
+class ProjectDeletionGuardResponse extends $pb.GeneratedMessage {
+  factory ProjectDeletionGuardResponse({
+    $core.String? projectId,
+    $core.String? guardId,
+    $core.String? resourceKref,
+    $core.Iterable<$core.String>? allowedOperations,
+    $core.Iterable<$core.String>? allowedMetadataKeys,
+    $core.String? createdAt,
+  }) {
+    final result = create();
+    if (projectId != null) result.projectId = projectId;
+    if (guardId != null) result.guardId = guardId;
+    if (resourceKref != null) result.resourceKref = resourceKref;
+    if (allowedOperations != null)
+      result.allowedOperations.addAll(allowedOperations);
+    if (allowedMetadataKeys != null)
+      result.allowedMetadataKeys.addAll(allowedMetadataKeys);
+    if (createdAt != null) result.createdAt = createdAt;
+    return result;
+  }
+
+  ProjectDeletionGuardResponse._();
+
+  factory ProjectDeletionGuardResponse.fromBuffer($core.List<$core.int> data,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromBuffer(data, registry);
+  factory ProjectDeletionGuardResponse.fromJson($core.String json,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromJson(json, registry);
+
+  static final $pb.BuilderInfo _i = $pb.BuilderInfo(
+      _omitMessageNames ? '' : 'ProjectDeletionGuardResponse',
+      package: const $pb.PackageName(_omitMessageNames ? '' : 'kumiho'),
+      createEmptyInstance: create)
+    ..aOS(1, _omitFieldNames ? '' : 'projectId')
+    ..aOS(2, _omitFieldNames ? '' : 'guardId')
+    ..aOS(3, _omitFieldNames ? '' : 'resourceKref')
+    ..pPS(4, _omitFieldNames ? '' : 'allowedOperations')
+    ..pPS(5, _omitFieldNames ? '' : 'allowedMetadataKeys')
+    ..aOS(6, _omitFieldNames ? '' : 'createdAt')
+    ..hasRequiredFields = false;
+
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  ProjectDeletionGuardResponse clone() => deepCopy();
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  ProjectDeletionGuardResponse copyWith(
+          void Function(ProjectDeletionGuardResponse) updates) =>
+      super.copyWith(
+              (message) => updates(message as ProjectDeletionGuardResponse))
+          as ProjectDeletionGuardResponse;
+
+  @$core.override
+  $pb.BuilderInfo get info_ => _i;
+
+  @$core.pragma('dart2js:noInline')
+  static ProjectDeletionGuardResponse create() =>
+      ProjectDeletionGuardResponse._();
+  @$core.override
+  ProjectDeletionGuardResponse createEmptyInstance() => create();
+  @$core.pragma('dart2js:noInline')
+  static ProjectDeletionGuardResponse getDefault() => _defaultInstance ??=
+      $pb.GeneratedMessage.$_defaultFor<ProjectDeletionGuardResponse>(create);
+  static ProjectDeletionGuardResponse? _defaultInstance;
+
+  @$pb.TagNumber(1)
+  $core.String get projectId => $_getSZ(0);
+  @$pb.TagNumber(1)
+  set projectId($core.String value) => $_setString(0, value);
+  @$pb.TagNumber(1)
+  $core.bool hasProjectId() => $_has(0);
+  @$pb.TagNumber(1)
+  void clearProjectId() => $_clearField(1);
+
+  @$pb.TagNumber(2)
+  $core.String get guardId => $_getSZ(1);
+  @$pb.TagNumber(2)
+  set guardId($core.String value) => $_setString(1, value);
+  @$pb.TagNumber(2)
+  $core.bool hasGuardId() => $_has(1);
+  @$pb.TagNumber(2)
+  void clearGuardId() => $_clearField(2);
+
+  @$pb.TagNumber(3)
+  $core.String get resourceKref => $_getSZ(2);
+  @$pb.TagNumber(3)
+  set resourceKref($core.String value) => $_setString(2, value);
+  @$pb.TagNumber(3)
+  $core.bool hasResourceKref() => $_has(2);
+  @$pb.TagNumber(3)
+  void clearResourceKref() => $_clearField(3);
+
+  @$pb.TagNumber(4)
+  $pb.PbList<$core.String> get allowedOperations => $_getList(3);
+
+  @$pb.TagNumber(5)
+  $pb.PbList<$core.String> get allowedMetadataKeys => $_getList(4);
+
+  @$pb.TagNumber(6)
+  $core.String get createdAt => $_getSZ(5);
+  @$pb.TagNumber(6)
+  set createdAt($core.String value) => $_setString(5, value);
+  @$pb.TagNumber(6)
+  $core.bool hasCreatedAt() => $_has(5);
+  @$pb.TagNumber(6)
+  void clearCreatedAt() => $_clearField(6);
+}
+
+/// Move an Item between tenant-owned Spaces while preserving its immutable kref.
+/// This is a graph ownership operation; application-specific metadata is not
+/// interpreted by Kumiho.
+class MoveItemRequest extends $pb.GeneratedMessage {
+  factory MoveItemRequest({
+    $core.String? itemKref,
+    $core.String? targetSpacePath,
+  }) {
+    final result = create();
+    if (itemKref != null) result.itemKref = itemKref;
+    if (targetSpacePath != null) result.targetSpacePath = targetSpacePath;
+    return result;
+  }
+
+  MoveItemRequest._();
+
+  factory MoveItemRequest.fromBuffer($core.List<$core.int> data,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromBuffer(data, registry);
+  factory MoveItemRequest.fromJson($core.String json,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromJson(json, registry);
+
+  static final $pb.BuilderInfo _i = $pb.BuilderInfo(
+      _omitMessageNames ? '' : 'MoveItemRequest',
+      package: const $pb.PackageName(_omitMessageNames ? '' : 'kumiho'),
+      createEmptyInstance: create)
+    ..aOS(1, _omitFieldNames ? '' : 'itemKref')
+    ..aOS(2, _omitFieldNames ? '' : 'targetSpacePath')
+    ..hasRequiredFields = false;
+
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  MoveItemRequest clone() => deepCopy();
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  MoveItemRequest copyWith(void Function(MoveItemRequest) updates) =>
+      super.copyWith((message) => updates(message as MoveItemRequest))
+          as MoveItemRequest;
+
+  @$core.override
+  $pb.BuilderInfo get info_ => _i;
+
+  @$core.pragma('dart2js:noInline')
+  static MoveItemRequest create() => MoveItemRequest._();
+  @$core.override
+  MoveItemRequest createEmptyInstance() => create();
+  @$core.pragma('dart2js:noInline')
+  static MoveItemRequest getDefault() => _defaultInstance ??=
+      $pb.GeneratedMessage.$_defaultFor<MoveItemRequest>(create);
+  static MoveItemRequest? _defaultInstance;
+
+  @$pb.TagNumber(1)
+  $core.String get itemKref => $_getSZ(0);
+  @$pb.TagNumber(1)
+  set itemKref($core.String value) => $_setString(0, value);
+  @$pb.TagNumber(1)
+  $core.bool hasItemKref() => $_has(0);
+  @$pb.TagNumber(1)
+  void clearItemKref() => $_clearField(1);
+
+  @$pb.TagNumber(2)
+  $core.String get targetSpacePath => $_getSZ(1);
+  @$pb.TagNumber(2)
+  set targetSpacePath($core.String value) => $_setString(1, value);
+  @$pb.TagNumber(2)
+  $core.bool hasTargetSpacePath() => $_has(1);
+  @$pb.TagNumber(2)
+  void clearTargetSpacePath() => $_clearField(2);
+}
+
+/// Resolve one registered cross-Project Revision reference on an archived
+/// Project. The server validates the current edge and owns the mutation.
+class ResolveProjectReferenceRequest extends $pb.GeneratedMessage {
+  factory ResolveProjectReferenceRequest({
+    $core.String? projectId,
+    $core.String? insideRevisionKref,
+    $core.String? outsideRevisionKref,
+    $core.String? edgeType,
+    $core.String? action,
+    $core.String? replacementRevisionKref,
+  }) {
+    final result = create();
+    if (projectId != null) result.projectId = projectId;
+    if (insideRevisionKref != null)
+      result.insideRevisionKref = insideRevisionKref;
+    if (outsideRevisionKref != null)
+      result.outsideRevisionKref = outsideRevisionKref;
+    if (edgeType != null) result.edgeType = edgeType;
+    if (action != null) result.action = action;
+    if (replacementRevisionKref != null)
+      result.replacementRevisionKref = replacementRevisionKref;
+    return result;
+  }
+
+  ResolveProjectReferenceRequest._();
+
+  factory ResolveProjectReferenceRequest.fromBuffer($core.List<$core.int> data,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromBuffer(data, registry);
+  factory ResolveProjectReferenceRequest.fromJson($core.String json,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromJson(json, registry);
+
+  static final $pb.BuilderInfo _i = $pb.BuilderInfo(
+      _omitMessageNames ? '' : 'ResolveProjectReferenceRequest',
+      package: const $pb.PackageName(_omitMessageNames ? '' : 'kumiho'),
+      createEmptyInstance: create)
+    ..aOS(1, _omitFieldNames ? '' : 'projectId')
+    ..aOS(2, _omitFieldNames ? '' : 'insideRevisionKref')
+    ..aOS(3, _omitFieldNames ? '' : 'outsideRevisionKref')
+    ..aOS(4, _omitFieldNames ? '' : 'edgeType')
+    ..aOS(5, _omitFieldNames ? '' : 'action')
+    ..aOS(6, _omitFieldNames ? '' : 'replacementRevisionKref')
+    ..hasRequiredFields = false;
+
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  ResolveProjectReferenceRequest clone() => deepCopy();
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  ResolveProjectReferenceRequest copyWith(
+          void Function(ResolveProjectReferenceRequest) updates) =>
+      super.copyWith(
+              (message) => updates(message as ResolveProjectReferenceRequest))
+          as ResolveProjectReferenceRequest;
+
+  @$core.override
+  $pb.BuilderInfo get info_ => _i;
+
+  @$core.pragma('dart2js:noInline')
+  static ResolveProjectReferenceRequest create() =>
+      ResolveProjectReferenceRequest._();
+  @$core.override
+  ResolveProjectReferenceRequest createEmptyInstance() => create();
+  @$core.pragma('dart2js:noInline')
+  static ResolveProjectReferenceRequest getDefault() => _defaultInstance ??=
+      $pb.GeneratedMessage.$_defaultFor<ResolveProjectReferenceRequest>(create);
+  static ResolveProjectReferenceRequest? _defaultInstance;
+
+  @$pb.TagNumber(1)
+  $core.String get projectId => $_getSZ(0);
+  @$pb.TagNumber(1)
+  set projectId($core.String value) => $_setString(0, value);
+  @$pb.TagNumber(1)
+  $core.bool hasProjectId() => $_has(0);
+  @$pb.TagNumber(1)
+  void clearProjectId() => $_clearField(1);
+
+  @$pb.TagNumber(2)
+  $core.String get insideRevisionKref => $_getSZ(1);
+  @$pb.TagNumber(2)
+  set insideRevisionKref($core.String value) => $_setString(1, value);
+  @$pb.TagNumber(2)
+  $core.bool hasInsideRevisionKref() => $_has(1);
+  @$pb.TagNumber(2)
+  void clearInsideRevisionKref() => $_clearField(2);
+
+  @$pb.TagNumber(3)
+  $core.String get outsideRevisionKref => $_getSZ(2);
+  @$pb.TagNumber(3)
+  set outsideRevisionKref($core.String value) => $_setString(2, value);
+  @$pb.TagNumber(3)
+  $core.bool hasOutsideRevisionKref() => $_has(2);
+  @$pb.TagNumber(3)
+  void clearOutsideRevisionKref() => $_clearField(3);
+
+  @$pb.TagNumber(4)
+  $core.String get edgeType => $_getSZ(3);
+  @$pb.TagNumber(4)
+  set edgeType($core.String value) => $_setString(3, value);
+  @$pb.TagNumber(4)
+  $core.bool hasEdgeType() => $_has(3);
+  @$pb.TagNumber(4)
+  void clearEdgeType() => $_clearField(4);
+
+  /// "detach" or "replace".
+  @$pb.TagNumber(5)
+  $core.String get action => $_getSZ(4);
+  @$pb.TagNumber(5)
+  set action($core.String value) => $_setString(4, value);
+  @$pb.TagNumber(5)
+  $core.bool hasAction() => $_has(4);
+  @$pb.TagNumber(5)
+  void clearAction() => $_clearField(5);
+
+  @$pb.TagNumber(6)
+  $core.String get replacementRevisionKref => $_getSZ(5);
+  @$pb.TagNumber(6)
+  set replacementRevisionKref($core.String value) => $_setString(5, value);
+  @$pb.TagNumber(6)
+  $core.bool hasReplacementRevisionKref() => $_has(5);
+  @$pb.TagNumber(6)
+  void clearReplacementRevisionKref() => $_clearField(6);
 }
 
 class UpdateProjectRequest extends $pb.GeneratedMessage {
@@ -7506,11 +8635,15 @@ class UpdateProjectRequest extends $pb.GeneratedMessage {
     $core.String? projectId,
     $core.bool? allowPublic,
     $core.String? description,
+    $core.Iterable<$core.MapEntry<$core.String, $core.String>>? metadata,
+    $core.bool? deprecated,
   }) {
     final result = create();
     if (projectId != null) result.projectId = projectId;
     if (allowPublic != null) result.allowPublic = allowPublic;
     if (description != null) result.description = description;
+    if (metadata != null) result.metadata.addEntries(metadata);
+    if (deprecated != null) result.deprecated = deprecated;
     return result;
   }
 
@@ -7530,6 +8663,12 @@ class UpdateProjectRequest extends $pb.GeneratedMessage {
     ..aOS(1, _omitFieldNames ? '' : 'projectId')
     ..aOB(2, _omitFieldNames ? '' : 'allowPublic')
     ..aOS(3, _omitFieldNames ? '' : 'description')
+    ..m<$core.String, $core.String>(4, _omitFieldNames ? '' : 'metadata',
+        entryClassName: 'UpdateProjectRequest.MetadataEntry',
+        keyFieldType: $pb.PbFieldType.OS,
+        valueFieldType: $pb.PbFieldType.OS,
+        packageName: const $pb.PackageName('kumiho'))
+    ..aOB(5, _omitFieldNames ? '' : 'deprecated')
     ..hasRequiredFields = false;
 
   @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
@@ -7577,6 +8716,19 @@ class UpdateProjectRequest extends $pb.GeneratedMessage {
   $core.bool hasDescription() => $_has(2);
   @$pb.TagNumber(3)
   void clearDescription() => $_clearField(3);
+
+  /// Non-empty metadata replaces the complete Project metadata map.
+  @$pb.TagNumber(4)
+  $pb.PbMap<$core.String, $core.String> get metadata => $_getMap(3);
+
+  @$pb.TagNumber(5)
+  $core.bool get deprecated => $_getBF(4);
+  @$pb.TagNumber(5)
+  set deprecated($core.bool value) => $_setBool(4, value);
+  @$pb.TagNumber(5)
+  $core.bool hasDeprecated() => $_has(4);
+  @$pb.TagNumber(5)
+  void clearDeprecated() => $_clearField(5);
 }
 
 class SetDeprecatedRequest extends $pb.GeneratedMessage {

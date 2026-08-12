@@ -6,6 +6,7 @@ import (
 
 	pb "github.com/KumihoIO/kumiho-SDKs/go/kumihopb"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 )
 
@@ -61,9 +62,55 @@ func (c *Client) GetProject(ctx context.Context, name string) (*Project, error) 
 	return nil, nil
 }
 
-// DeleteProject deletes (force=true) or deprecates a project.
+// DeleteProject deprecates a project. The force argument is retained for
+// source compatibility; true is rejected because hard-delete requires a
+// server-issued snapshot passed to HardDeleteProject.
 func (c *Client) DeleteProject(ctx context.Context, projectID string, force bool) error {
-	_, err := c.grpc.DeleteProject(ctx, &pb.DeleteProjectRequest{ProjectId: projectID, Force: force})
+	if force {
+		return status.Error(codes.InvalidArgument, "force deletion requires AnalyzeProjectDeletion followed by HardDeleteProject")
+	}
+	_, err := c.grpc.DeleteProject(ctx, &pb.DeleteProjectRequest{ProjectId: projectID})
+	return err
+}
+
+// AnalyzeProjectDeletion creates a server-authoritative deletion snapshot.
+func (c *Client) AnalyzeProjectDeletion(ctx context.Context, projectID string) (*pb.ProjectDeletionImpactResponse, error) {
+	return c.grpc.AnalyzeProjectDeletion(ctx, &pb.ProjectDeletionImpactRequest{ProjectId: projectID})
+}
+
+// HardDeleteProject permanently deletes an archived Project with explicit confirmation.
+func (c *Client) HardDeleteProject(ctx context.Context, impact *pb.ProjectDeletionImpactResponse, confirmed bool) error {
+	if impact == nil || !confirmed || impact.GetImpactSnapshotId() == "" || impact.GetImpactSnapshotHash() == "" {
+		return status.Error(codes.InvalidArgument, "hard-delete requires a server impact snapshot and confirmed=true")
+	}
+	_, err := c.grpc.DeleteProject(ctx, &pb.DeleteProjectRequest{
+		ProjectId: impact.GetProjectId(), Force: true, Confirmed: confirmed,
+		ImpactSnapshotId: impact.GetImpactSnapshotId(), ImpactSnapshotHash: impact.GetImpactSnapshotHash(),
+	})
+	return err
+}
+
+// RegisterProjectDeletionGuard registers an opaque application guard while active.
+func (c *Client) RegisterProjectDeletionGuard(ctx context.Context, projectID, guardID, resourceKref string, operations, metadataKeys []string) (*pb.ProjectDeletionGuardResponse, error) {
+	return c.grpc.RegisterProjectDeletionGuard(ctx, &pb.RegisterProjectDeletionGuardRequest{
+		ProjectId: projectID, GuardId: guardID, ResourceKref: resourceKref,
+		AllowedOperations: operations, AllowedMetadataKeys: metadataKeys,
+	})
+}
+
+// ResolveProjectDeletionGuard resolves a previously registered guard.
+func (c *Client) ResolveProjectDeletionGuard(ctx context.Context, projectID, guardID string) error {
+	_, err := c.grpc.ResolveProjectDeletionGuard(ctx, &pb.ResolveProjectDeletionGuardRequest{ProjectId: projectID, GuardId: guardID})
+	return err
+}
+
+// ResolveProjectReference resolves one current cross-Project Revision reference.
+func (c *Client) ResolveProjectReference(ctx context.Context, projectID, insideKref, outsideKref, edgeType, action, replacementKref string) error {
+	_, err := c.grpc.ResolveProjectReference(ctx, &pb.ResolveProjectReferenceRequest{
+		ProjectId: projectID, InsideRevisionKref: insideKref,
+		OutsideRevisionKref: outsideKref, EdgeType: edgeType, Action: action,
+		ReplacementRevisionKref: replacementKref,
+	})
 	return err
 }
 
@@ -296,6 +343,26 @@ func (c *Client) UpdateItemMetadata(ctx context.Context, kref Kref, metadata map
 func (c *Client) DeleteItem(ctx context.Context, kref Kref, force bool) error {
 	_, err := c.grpc.DeleteItem(ctx, &pb.DeleteItemRequest{Kref: kref.pb(), Force: force})
 	return err
+}
+
+// MoveItem moves an Item to a Space in another Project without changing its kref.
+func (c *Client) MoveItem(ctx context.Context, kref Kref, targetSpacePath string) (*Item, error) {
+	return c.MoveItemWithGuard(ctx, kref, targetSpacePath, "")
+}
+
+// MoveItemWithGuard moves an archived Item under an exact deletion guard.
+func (c *Client) MoveItemWithGuard(ctx context.Context, kref Kref, targetSpacePath, deletionGuardID string) (*Item, error) {
+	if deletionGuardID != "" {
+		ctx = metadata.AppendToOutgoingContext(ctx, "x-kumiho-deletion-guard", deletionGuardID)
+	}
+	resp, err := c.grpc.MoveItem(ctx, &pb.MoveItemRequest{
+		ItemKref:        kref.URI(),
+		TargetSpacePath: targetSpacePath,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return newItem(resp, c), nil
 }
 
 // ---------------------------------------------------------------------- Revisions

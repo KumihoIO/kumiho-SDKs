@@ -142,7 +142,7 @@ from .edge import (
     ShortestPathResult,
 )
 from .item import Item
-from .project import Project, ProjectDeletionImpact
+from .project import Project, ProjectDeletionGuard, ProjectDeletionImpact
 from .artifact import Artifact
 from .proto.kumiho_pb2 import StatusResponse
 from .revision import Revision
@@ -1229,6 +1229,7 @@ __all__ = [
     "KumihoError",
     "Project",
     "ProjectDeletionImpact",
+    "ProjectDeletionGuard",
     "Space",
     "Item",
     "Revision",

@@ -72,6 +72,10 @@ from .proto.kumiho_pb2 import (
     DeleteRevisionRequest,
     DeleteProjectRequest,
     ProjectDeletionImpactRequest,
+    RegisterProjectDeletionGuardRequest,
+    ResolveProjectDeletionGuardRequest,
+    ResolveProjectReferenceRequest,
+    MoveItemRequest,
     DeleteAttributeRequest,
     EventStreamRequest,
     GetAttributeRequest,
@@ -116,7 +120,7 @@ from .proto.kumiho_pb2 import (
 )
 from .edge import Edge, TraversalResult, ImpactedRevision, ShortestPathResult
 from .proto.kumiho_pb2 import ProjectResponse, StatusResponse
-from .project import Project, ProjectDeletionImpact
+from .project import Project, ProjectDeletionGuard, ProjectDeletionImpact
 from .item import Item
 from .artifact import Artifact
 from .revision import Revision
@@ -526,6 +530,63 @@ class _Client:
             blockers=tuple(response.blockers),
             descendants=tuple(response.descendants),
             created_at=response.created_at,
+        )
+
+    def register_project_deletion_guard(
+        self,
+        project_id: str,
+        guard_id: str,
+        resource_kref: str,
+        *,
+        allowed_operations: Sequence[str],
+        allowed_metadata_keys: Sequence[str] = (),
+    ) -> ProjectDeletionGuard:
+        response = self.stub.RegisterProjectDeletionGuard(
+            RegisterProjectDeletionGuardRequest(
+                project_id=project_id,
+                guard_id=guard_id,
+                resource_kref=resource_kref,
+                allowed_operations=list(allowed_operations),
+                allowed_metadata_keys=list(allowed_metadata_keys),
+            )
+        )
+        return ProjectDeletionGuard(
+            project_id=response.project_id,
+            guard_id=response.guard_id,
+            resource_kref=response.resource_kref,
+            allowed_operations=tuple(response.allowed_operations),
+            allowed_metadata_keys=tuple(response.allowed_metadata_keys),
+            created_at=response.created_at,
+        )
+
+    def resolve_project_deletion_guard(
+        self, project_id: str, guard_id: str
+    ) -> StatusResponse:
+        return self.stub.ResolveProjectDeletionGuard(
+            ResolveProjectDeletionGuardRequest(
+                project_id=project_id,
+                guard_id=guard_id,
+            )
+        )
+
+    def resolve_project_reference(
+        self,
+        project_id: str,
+        inside_revision_kref: str,
+        outside_revision_kref: str,
+        edge_type: str,
+        action: str,
+        replacement_revision_kref: str = "",
+    ) -> StatusResponse:
+        return self.stub.ResolveProjectReference(
+            ResolveProjectReferenceRequest(
+                project_id=project_id,
+                inside_revision_kref=inside_revision_kref,
+                outside_revision_kref=outside_revision_kref,
+                edge_type=edge_type,
+                action=action,
+                replacement_revision_kref=replacement_revision_kref,
+            )
         )
 
     def delete_project(
@@ -1004,28 +1065,43 @@ class _Client:
         metadata: Dict[str, str],
         *,
         archived_operation: Optional[str] = None,
+        deletion_guard_id: Optional[str] = None,
     ) -> Item:
-        """Update metadata for an item.
-
-        Args:
-            kref: The kref of the item.
-            metadata: The metadata to update.
-
-        Returns:
-            The updated Item object.
-        """
+        """Update metadata for an item."""
         req = UpdateMetadataRequest(kref=kref.to_pb(), metadata=metadata)
-        call_metadata = (
-            (("x-kumiho-archived-operation", archived_operation),)
-            if archived_operation
-            else None
-        )
+        call_metadata = []
+        if archived_operation:
+            call_metadata.append(("x-kumiho-archived-operation", archived_operation))
+        if deletion_guard_id:
+            call_metadata.append(("x-kumiho-deletion-guard", deletion_guard_id))
         resp = (
-            self.stub.UpdateItemMetadata(req, metadata=call_metadata)
+            self.stub.UpdateItemMetadata(req, metadata=tuple(call_metadata))
             if call_metadata
             else self.stub.UpdateItemMetadata(req)
         )
         return Item(resp, self)
+
+    def move_item(
+        self,
+        item_kref: Kref,
+        target_space_path: str,
+        *,
+        deletion_guard_id: Optional[str] = None,
+    ) -> Item:
+        """Move an Item to a Space in another Project without changing its kref."""
+        request = MoveItemRequest(
+            item_kref=item_kref.uri,
+            target_space_path=target_space_path,
+        )
+        response = (
+            self.stub.MoveItem(
+                request,
+                metadata=(("x-kumiho-deletion-guard", deletion_guard_id),),
+            )
+            if deletion_guard_id
+            else self.stub.MoveItem(request)
+        )
+        return Item(response, self)
 
     def create_revision(self, item_kref: Kref, metadata: Optional[Dict[str, str]] = None, number: int = 0, embedding_text: str = "", idempotency_key: Optional[str] = None) -> Revision:
         """Create a new revision for an item.
@@ -1373,6 +1449,7 @@ class _Client:
         metadata: Dict[str, str],
         *,
         archived_operation: Optional[str] = None,
+        deletion_guard_id: Optional[str] = None,
     ) -> Revision:
         """Update metadata for a revision.
 
@@ -1384,13 +1461,13 @@ class _Client:
             The updated Revision object.
         """
         req = UpdateMetadataRequest(kref=kref.to_pb(), metadata=metadata)
-        call_metadata = (
-            (("x-kumiho-archived-operation", archived_operation),)
-            if archived_operation
-            else None
-        )
+        call_metadata = []
+        if archived_operation:
+            call_metadata.append(("x-kumiho-archived-operation", archived_operation))
+        if deletion_guard_id:
+            call_metadata.append(("x-kumiho-deletion-guard", deletion_guard_id))
         resp = (
-            self.stub.UpdateRevisionMetadata(req, metadata=call_metadata)
+            self.stub.UpdateRevisionMetadata(req, metadata=tuple(call_metadata))
             if call_metadata
             else self.stub.UpdateRevisionMetadata(req)
         )
@@ -1478,6 +1555,7 @@ class _Client:
         *,
         idempotency_key: Optional[str] = None,
         archived_operation: Optional[str] = None,
+        deletion_guard_id: Optional[str] = None,
     ) -> Artifact:
         """Create a new artifact for a revision.
 
@@ -1503,6 +1581,8 @@ class _Client:
             call_metadata.append(("x-idempotency-key", idempotency_key))
         if archived_operation:
             call_metadata.append(("x-kumiho-archived-operation", archived_operation))
+        if deletion_guard_id:
+            call_metadata.append(("x-kumiho-deletion-guard", deletion_guard_id))
         resp = (
             self.stub.CreateArtifact(req, metadata=tuple(call_metadata))
             if call_metadata
@@ -1736,8 +1816,6 @@ class _Client:
         edge_type: str,
         metadata: Optional[Dict[str, str]] = None,
         idempotency_key: Optional[str] = None,
-        archived_operation: Optional[str] = None,
-        archived_original_peer: Optional[str] = None,
     ) -> Edge:
         """Create an edge between two revisions.
 
@@ -1749,8 +1827,6 @@ class _Client:
                        Must be UPPERCASE with letters, digits, underscores only.
             metadata: Optional metadata for the edge.
             idempotency_key: Stable tenant-scoped identity for retry-safe creation.
-            archived_operation: Explicit Project lifecycle operation, if any.
-            archived_original_peer: Original external Revision for a replacement.
 
         Returns:
             The created Edge object.
@@ -1770,12 +1846,6 @@ class _Client:
         call_metadata = []
         if idempotency_key:
             call_metadata.append(("x-idempotency-key", idempotency_key))
-        if archived_operation:
-            call_metadata.append(("x-kumiho-archived-operation", archived_operation))
-        if archived_original_peer:
-            call_metadata.append(
-                ("x-kumiho-archived-original-peer", archived_original_peer)
-            )
         if call_metadata:
             self.stub.CreateEdge(req, metadata=tuple(call_metadata))
         else:
@@ -1805,7 +1875,12 @@ class _Client:
         resp = self.stub.GetEdges(req)
         return [Edge(pb, self) for pb in resp.edges]
 
-    def delete_edge(self, source_kref: Kref, target_kref: Kref, edge_type: str) -> None:
+    def delete_edge(
+        self,
+        source_kref: Kref,
+        target_kref: Kref,
+        edge_type: str,
+    ) -> None:
         """Delete an edge between revisions.
 
         Args:

@@ -51,7 +51,9 @@ class TestCleanup {
         final type = obj.runtimeType.toString();
         if (obj is Project) {
           print('Deleting Project: ${obj.name}');
-          await client.deleteProject(obj.name, force: true);
+          await client.deleteProject(obj.projectId);
+          final impact = await client.analyzeProjectDeletion(obj.projectId);
+          await client.hardDeleteProject(impact, confirmed: true);
         } else if (obj is Space) {
           print('Deleting Space: ${obj.path}');
           await client.deleteSpace(obj.path, force: true);
@@ -75,9 +77,10 @@ class TestCleanup {
 }
 
 void main() {
-  final skipReason = shouldRunLiveTests()
-      ? null
-      : 'Live tests disabled. Set KUMIHO_INTEGRATION_TEST=1 to enable.';
+  final skipReason =
+      shouldRunLiveTests()
+          ? null
+          : 'Live tests disabled. Set KUMIHO_INTEGRATION_TEST=1 to enable.';
 
   // Assigned only when the live suite actually runs (skipReason == null);
   // every group below is gated with `skip: skipReason`, so the test bodies
@@ -105,10 +108,7 @@ void main() {
     // - Firebase ID token from ~/.kumiho/kumiho_authentication.json
     // - Control plane URL from env / credentials defaults
     // - server_url returned by /api/discovery/tenant
-    client = await clientFromDiscovery(
-      token: token,
-      forceRefresh: true,
-    );
+    client = await clientFromDiscovery(token: token, forceRefresh: true);
   });
 
   setUp(() {
@@ -145,7 +145,10 @@ void main() {
       // Create item
       final item = await space.createItem(assetName, 'model');
       cleanup.track(item);
-      expect(item.kref.uri, equals('kref://$projectName/$spaceName/$assetName.model'));
+      expect(
+        item.kref.uri,
+        equals('kref://$projectName/$spaceName/$assetName.model'),
+      );
 
       // Create revision
       final revision = await item.createRevision();
@@ -153,7 +156,10 @@ void main() {
       expect(revision.kref.uri, endsWith('?r=1'));
 
       // Create artifact
-      final artifact = await revision.createArtifact('data', '/path/to/smoke_test.dat');
+      final artifact = await revision.createArtifact(
+        'data',
+        '/path/to/smoke_test.dat',
+      );
       cleanup.track(artifact);
       expect(artifact.kref.uri, endsWith('&a=data'));
       expect(artifact.location, equals('/path/to/smoke_test.dat'));
@@ -184,7 +190,9 @@ void main() {
       final res2 = await v2.createArtifact('model_data', sharedLocation);
       cleanup.track(res2);
 
-      final foundArtifacts = await client.getArtifactsByLocation(sharedLocation);
+      final foundArtifacts = await client.getArtifactsByLocation(
+        sharedLocation,
+      );
 
       expect(foundArtifacts.length, greaterThanOrEqualTo(2));
       // Most recent artifact should be first
@@ -203,7 +211,10 @@ void main() {
 
       final modelItem = await space.createItem('character_model', 'model');
       cleanup.track(modelItem);
-      final textureItem = await space.createItem('character_textures', 'texture');
+      final textureItem = await space.createItem(
+        'character_textures',
+        'texture',
+      );
       cleanup.track(textureItem);
 
       final modelV1 = await modelItem.createRevision();
@@ -349,7 +360,9 @@ void main() {
     });
 
     test('published tag can be moved before deleting a revision', () async {
-      final project = await client.newProject(uniqueName('published_move_proj'));
+      final project = await client.newProject(
+        uniqueName('published_move_proj'),
+      );
       cleanup.track(project);
       final space = await project.createSpace(project.name);
       cleanup.track(space);
@@ -384,20 +397,32 @@ void main() {
       cleanup.track(item);
       final revision = await item.createRevision();
       cleanup.track(revision);
-      final artifact = await revision.createArtifact('geo', '/path/to/file.abc');
+      final artifact = await revision.createArtifact(
+        'geo',
+        '/path/to/file.abc',
+      );
       cleanup.track(artifact);
 
       // Update metadata (space uses path, others use kref)
       await client.updateSpaceMetadata(space.path, {'status': 'active'});
-      await client.updateItemMetadata(item.kref.uri, {'pipeline_step': 'modeling'});
-      await client.updateRevisionMetadata(revision.kref.uri, {'approved_by': 'lead'});
-      await client.updateArtifactMetadata(artifact.kref.uri, {'format': 'alembic'});
+      await client.updateItemMetadata(item.kref.uri, {
+        'pipeline_step': 'modeling',
+      });
+      await client.updateRevisionMetadata(revision.kref.uri, {
+        'approved_by': 'lead',
+      });
+      await client.updateArtifactMetadata(artifact.kref.uri, {
+        'format': 'alembic',
+      });
 
       // Verify metadata was set (re-fetch objects)
       final updatedSpace = await client.getSpace(space.path);
       final updatedItem = await client.getItemByKref(item.kref.uri);
       final updatedRevision = await client.getRevision(revision.kref.uri);
-      final updatedArtifact = await client.getArtifact(revision.kref.uri, artifact.name);
+      final updatedArtifact = await client.getArtifact(
+        revision.kref.uri,
+        artifact.name,
+      );
 
       expect(updatedSpace.metadata['status'], equals('active'));
       expect(updatedItem.metadata['pipeline_step'], equals('modeling'));
@@ -457,8 +482,12 @@ void main() {
       await revision.setDefaultArtifact(artifact.name);
       final revReloaded = await client.getRevision(revision.kref.uri);
       print('DEBUG: artifact.name="${artifact.name}"');
-      print('DEBUG: revReloaded.defaultArtifact="${revReloaded.defaultArtifact}"');
-      print('DEBUG: revReloaded.hasDefaultArtifact()=${revReloaded.hasDefaultArtifact()}');
+      print(
+        'DEBUG: revReloaded.defaultArtifact="${revReloaded.defaultArtifact}"',
+      );
+      print(
+        'DEBUG: revReloaded.hasDefaultArtifact()=${revReloaded.hasDefaultArtifact()}',
+      );
       print('DEBUG: revReloaded.name="${revReloaded.name}"');
       print('DEBUG: revReloaded.username="${revReloaded.username}"');
       print('DEBUG: revReloaded.hasName()=${revReloaded.hasName()}');
@@ -546,43 +575,46 @@ void main() {
   }, skip: skipReason);
 
   group('Published Revision Immutability', () {
-    test('published revision and artifacts are immutable', () async {
-      final project = await client.newProject(uniqueName('immutable_proj'));
-      cleanup.track(project);
-      final space = await project.createSpace(project.name);
-      cleanup.track(space);
-      final item = await space.createItem('shot', 'comp');
-      cleanup.track(item);
-      final v1 = await item.createRevision();
-      cleanup.track(v1);
-      final artifact = await v1.createArtifact('main', '/path/to/exr_seq');
-      cleanup.track(artifact);
+    test(
+      'published revision and artifacts are immutable',
+      () async {
+        final project = await client.newProject(uniqueName('immutable_proj'));
+        cleanup.track(project);
+        final space = await project.createSpace(project.name);
+        cleanup.track(space);
+        final item = await space.createItem('shot', 'comp');
+        cleanup.track(item);
+        final v1 = await item.createRevision();
+        cleanup.track(v1);
+        final artifact = await v1.createArtifact('main', '/path/to/exr_seq');
+        cleanup.track(artifact);
 
-      // Tag as published
-      await v1.tag('published');
-      final v1Reloaded = await client.getRevision(v1.kref.uri);
-      expect(v1Reloaded.published, isTrue);
+        // Tag as published
+        await v1.tag('published');
+        final v1Reloaded = await client.getRevision(v1.kref.uri);
+        expect(v1Reloaded.published, isTrue);
 
-      // Test immutability rules - these should fail
-      await expectLater(
-        client.updateRevisionMetadata(v1.kref.uri, {'new_key': 'new_val'}),
-        throwsA(anything),
-      );
+        // Test immutability rules - these should fail
+        await expectLater(
+          client.updateRevisionMetadata(v1.kref.uri, {'new_key': 'new_val'}),
+          throwsA(anything),
+        );
 
-      await expectLater(
-        client.updateArtifactMetadata(artifact.kref.uri, {'new_key': 'new_val'}),
-        throwsA(anything),
-      );
+        await expectLater(
+          client.updateArtifactMetadata(artifact.kref.uri, {
+            'new_key': 'new_val',
+          }),
+          throwsA(anything),
+        );
 
-      await expectLater(
-        v1.untag('published'),
-        throwsA(anything),
-      );
+        await expectLater(v1.untag('published'), throwsA(anything));
 
-      await expectLater(
-        v1.createArtifact('mask', '/path/to/mask.png'),
-        throwsA(anything),
-      );
-    }, skip: 'Immutability rules may vary by server configuration');
+        await expectLater(
+          v1.createArtifact('mask', '/path/to/mask.png'),
+          throwsA(anything),
+        );
+      },
+      skip: 'Immutability rules may vary by server configuration',
+    );
   }, skip: skipReason);
 }

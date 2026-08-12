@@ -146,9 +146,47 @@ impl Project {
             .await
     }
 
-    /// Delete (force=true) or deprecate this project.
+    /// Deprecate this project. `force=true` is retained for compatibility but
+    /// rejected; hard-delete uses a server impact snapshot.
     pub async fn delete(&self, force: bool) -> Result<()> {
         self.client.delete_project(&self.project_id, force).await
+    }
+
+    pub async fn analyze_deletion(&self) -> Result<pb::ProjectDeletionImpactResponse> {
+        self.client.analyze_project_deletion(&self.project_id).await
+    }
+
+    pub async fn hard_delete(
+        &self,
+        impact: &pb::ProjectDeletionImpactResponse,
+        confirmed: bool,
+    ) -> Result<()> {
+        if impact.project_id != self.project_id {
+            return Err(crate::error::Error::InvalidArgument(
+                "impact snapshot belongs to a different Project".into(),
+            ));
+        }
+        self.client.hard_delete_project(impact, confirmed).await
+    }
+
+    pub async fn resolve_reference(
+        &self,
+        inside_revision_kref: &str,
+        outside_revision_kref: &str,
+        edge_type: &str,
+        action: &str,
+        replacement_revision_kref: &str,
+    ) -> Result<()> {
+        self.client
+            .resolve_project_reference(
+                &self.project_id,
+                inside_revision_kref,
+                outside_revision_kref,
+                edge_type,
+                action,
+                replacement_revision_kref,
+            )
+            .await
     }
 
     /// Enable/disable anonymous read access.

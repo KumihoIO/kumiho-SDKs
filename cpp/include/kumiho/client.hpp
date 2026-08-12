@@ -145,12 +145,42 @@ public:
     std::shared_ptr<Project> getProject(const std::string& name);
 
     /**
-     * @brief Delete a project.
+     * @brief Archive a project.
      * @param project_id The project UUID.
-     * @param force If true, permanently delete. If false, soft delete.
+     * @param force Retained for source compatibility. True is rejected;
+     *        use analyzeProjectDeletion() followed by hardDeleteProject().
      * @return The StatusResponse returned by the server.
      */
     StatusResponse deleteProject(const std::string& project_id, bool force = false);
+
+    ::kumiho::ProjectDeletionImpactResponse analyzeProjectDeletion(const std::string& project_id);
+
+    StatusResponse hardDeleteProject(
+        const ::kumiho::ProjectDeletionImpactResponse& impact,
+        bool confirmed = false
+    );
+
+    ::kumiho::ProjectDeletionGuardResponse registerProjectDeletionGuard(
+        const std::string& project_id,
+        const std::string& guard_id,
+        const std::string& resource_kref,
+        const std::vector<std::string>& allowed_operations,
+        const std::vector<std::string>& allowed_metadata_keys = {}
+    );
+
+    StatusResponse resolveProjectDeletionGuard(
+        const std::string& project_id,
+        const std::string& guard_id
+    );
+
+    StatusResponse resolveProjectReference(
+        const std::string& project_id,
+        const std::string& inside_revision_kref,
+        const std::string& outside_revision_kref,
+        const std::string& edge_type,
+        const std::string& action,
+        const std::string& replacement_revision_kref = ""
+    );
 
     /**
      * @brief Update a project.
@@ -325,6 +355,12 @@ public:
      * @param force If true, permanently delete.
      */
     void deleteItem(const Kref& kref, bool force = false);
+
+    std::shared_ptr<Item> moveItem(
+        const Kref& kref,
+        const std::string& target_space_path,
+        const std::string& deletion_guard_id = ""
+    );
 
     /**
      * @brief Set item deprecated status.

@@ -193,6 +193,24 @@ impl Item {
         self.client.delete_item(&self.kref, force).await
     }
 
+    /// Move this Item to a Space in another Project, preserving its kref.
+    pub async fn move_to(&self, target_space_path: &str) -> Result<Item> {
+        let response = self.client.move_item(&self.kref, target_space_path).await?;
+        Ok(Item::from_pb(response, self.client.clone()))
+    }
+
+    pub async fn move_to_with_guard(
+        &self,
+        target_space_path: &str,
+        deletion_guard_id: &str,
+    ) -> Result<Item> {
+        let response = self
+            .client
+            .move_item_with_guard(&self.kref, target_space_path, Some(deletion_guard_id))
+            .await?;
+        Ok(Item::from_pb(response, self.client.clone()))
+    }
+
     /// Deprecate/restore this item.
     pub async fn set_deprecated(&self, status: bool) -> Result<()> {
         self.client.set_deprecated(&self.kref, status).await
