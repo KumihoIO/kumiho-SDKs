@@ -142,6 +142,12 @@ impl KumihoService for FakeKumiho {
     ) -> Result<Response<pb::ProjectResponse>, Status> {
         Err(unimpl("update_project"))
     }
+    async fn analyze_project_deletion(
+        &self,
+        _r: Request<pb::ProjectDeletionImpactRequest>,
+    ) -> Result<Response<pb::ProjectDeletionImpactResponse>, Status> {
+        Err(unimpl("analyze_project_deletion"))
+    }
     async fn delete_project(
         &self,
         _r: Request<pb::DeleteProjectRequest>,
@@ -256,6 +262,12 @@ impl KumihoService for FakeKumiho {
         _r: Request<pb::BatchGetRevisionsRequest>,
     ) -> Result<Response<pb::BatchGetRevisionsResponse>, Status> {
         Err(unimpl("batch_get_revisions"))
+    }
+    async fn batch_create_revisions(
+        &self,
+        _r: Request<pb::BatchCreateRevisionsRequest>,
+    ) -> Result<Response<pb::BatchCreateRevisionsResponse>, Status> {
+        Err(unimpl("batch_create_revisions"))
     }
     async fn delete_revision(
         &self,
