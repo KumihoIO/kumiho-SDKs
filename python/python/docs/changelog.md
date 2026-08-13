@@ -5,6 +5,24 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.12.0] - 2026-08-13
+
+### Added
+- **Creative Project lifecycle APIs** — Projects now expose metadata, archived
+  listing and restoration, deletion-impact analysis, deletion guards, external
+  reference resolution, Item moves, and snapshot-bound permanent deletion.
+- **Space metadata support** — Space creation and metadata updates can carry
+  application-defined display labels without changing canonical identity.
+- **Additive hard-delete RPC** — `hard_delete_project()` uses the new
+  confirmation and impact-snapshot contract while the established
+  `delete_project(project_id, force=False)` signature remains available.
+
+### Changed
+- Generated protobuf and gRPC bindings now target the Project lifecycle contract
+  shipped by kumiho-server 1.7.0.
+- Archived canonical Project names are reserved for identity-safe restoration.
+  Creating another Project with the same canonical name returns a conflict.
+
 ## [0.11.0] - 2026-08-01
 
 ### Added
