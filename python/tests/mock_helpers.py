@@ -13,6 +13,7 @@ def mock_project_response(
     updated_at="now",
     deprecated=False,
     allow_public=False,
+    metadata=None,
 ):
     return kumiho_pb2.ProjectResponse(
         project_id=project_id,
@@ -22,6 +23,7 @@ def mock_project_response(
         updated_at=updated_at,
         deprecated=deprecated,
         allow_public=allow_public,
+        metadata=metadata or {},
     )
 
 def mock_get_projects_response(projects=None):

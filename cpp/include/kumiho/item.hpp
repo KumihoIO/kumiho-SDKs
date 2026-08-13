@@ -243,6 +243,12 @@ public:
      */
     void deleteItem(bool force = false);
 
+    /** Move this Item to a Space in another Project, preserving its kref. */
+    std::shared_ptr<Item> moveTo(
+        const std::string& target_space_path,
+        const std::string& deletion_guard_id = ""
+    );
+
     /**
      * @brief Get the parent space.
      * @return The Space containing this item.

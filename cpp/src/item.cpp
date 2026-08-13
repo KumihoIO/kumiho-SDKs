@@ -153,6 +153,13 @@ void Item::deleteItem(bool force) {
     client_->deleteItem(getKref(), force);
 }
 
+std::shared_ptr<Item> Item::moveTo(
+    const std::string& target_space_path,
+    const std::string& deletion_guard_id
+) {
+    return client_->moveItem(getKref(), target_space_path, deletion_guard_id);
+}
+
 std::shared_ptr<Space> Item::getSpace() {
     std::string project = getKref().getProject();
     std::string space = getKref().getSpace();

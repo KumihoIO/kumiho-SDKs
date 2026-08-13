@@ -110,14 +110,23 @@ class ResolveLocationResponse(_message.Message):
     def __init__(self, location: _Optional[str] = ..., resolved_kref: _Optional[_Union[Kref, _Mapping]] = ..., artifact_name: _Optional[str] = ...) -> None: ...
 
 class CreateSpaceRequest(_message.Message):
-    __slots__ = ("parent_path", "space_name", "exists_error")
+    __slots__ = ("parent_path", "space_name", "exists_error", "metadata")
+    class MetadataEntry(_message.Message):
+        __slots__ = ("key", "value")
+        KEY_FIELD_NUMBER: _ClassVar[int]
+        VALUE_FIELD_NUMBER: _ClassVar[int]
+        key: str
+        value: str
+        def __init__(self, key: _Optional[str] = ..., value: _Optional[str] = ...) -> None: ...
     PARENT_PATH_FIELD_NUMBER: _ClassVar[int]
     SPACE_NAME_FIELD_NUMBER: _ClassVar[int]
     EXISTS_ERROR_FIELD_NUMBER: _ClassVar[int]
+    METADATA_FIELD_NUMBER: _ClassVar[int]
     parent_path: str
     space_name: str
     exists_error: bool
-    def __init__(self, parent_path: _Optional[str] = ..., space_name: _Optional[str] = ..., exists_error: bool = ...) -> None: ...
+    metadata: _containers.ScalarMap[str, str]
+    def __init__(self, parent_path: _Optional[str] = ..., space_name: _Optional[str] = ..., exists_error: bool = ..., metadata: _Optional[_Mapping[str, str]] = ...) -> None: ...
 
 class SpaceResponse(_message.Message):
     __slots__ = ("path", "created_at", "modified_at", "author", "metadata", "username", "name", "type")
@@ -1082,15 +1091,31 @@ class EventCapabilities(_message.Message):
     def __init__(self, supports_replay: bool = ..., supports_cursor: bool = ..., supports_consumer_groups: bool = ..., max_retention_hours: _Optional[int] = ..., max_buffer_size: _Optional[int] = ..., tier: _Optional[str] = ...) -> None: ...
 
 class CreateProjectRequest(_message.Message):
-    __slots__ = ("name", "description")
+    __slots__ = ("name", "description", "metadata")
+    class MetadataEntry(_message.Message):
+        __slots__ = ("key", "value")
+        KEY_FIELD_NUMBER: _ClassVar[int]
+        VALUE_FIELD_NUMBER: _ClassVar[int]
+        key: str
+        value: str
+        def __init__(self, key: _Optional[str] = ..., value: _Optional[str] = ...) -> None: ...
     NAME_FIELD_NUMBER: _ClassVar[int]
     DESCRIPTION_FIELD_NUMBER: _ClassVar[int]
+    METADATA_FIELD_NUMBER: _ClassVar[int]
     name: str
     description: str
-    def __init__(self, name: _Optional[str] = ..., description: _Optional[str] = ...) -> None: ...
+    metadata: _containers.ScalarMap[str, str]
+    def __init__(self, name: _Optional[str] = ..., description: _Optional[str] = ..., metadata: _Optional[_Mapping[str, str]] = ...) -> None: ...
 
 class ProjectResponse(_message.Message):
-    __slots__ = ("project_id", "name", "description", "created_at", "updated_at", "deprecated", "allow_public")
+    __slots__ = ("project_id", "name", "description", "created_at", "updated_at", "deprecated", "allow_public", "metadata")
+    class MetadataEntry(_message.Message):
+        __slots__ = ("key", "value")
+        KEY_FIELD_NUMBER: _ClassVar[int]
+        VALUE_FIELD_NUMBER: _ClassVar[int]
+        key: str
+        value: str
+        def __init__(self, key: _Optional[str] = ..., value: _Optional[str] = ...) -> None: ...
     PROJECT_ID_FIELD_NUMBER: _ClassVar[int]
     NAME_FIELD_NUMBER: _ClassVar[int]
     DESCRIPTION_FIELD_NUMBER: _ClassVar[int]
@@ -1098,6 +1123,7 @@ class ProjectResponse(_message.Message):
     UPDATED_AT_FIELD_NUMBER: _ClassVar[int]
     DEPRECATED_FIELD_NUMBER: _ClassVar[int]
     ALLOW_PUBLIC_FIELD_NUMBER: _ClassVar[int]
+    METADATA_FIELD_NUMBER: _ClassVar[int]
     project_id: str
     name: str
     description: str
@@ -1105,11 +1131,14 @@ class ProjectResponse(_message.Message):
     updated_at: str
     deprecated: bool
     allow_public: bool
-    def __init__(self, project_id: _Optional[str] = ..., name: _Optional[str] = ..., description: _Optional[str] = ..., created_at: _Optional[str] = ..., updated_at: _Optional[str] = ..., deprecated: bool = ..., allow_public: bool = ...) -> None: ...
+    metadata: _containers.ScalarMap[str, str]
+    def __init__(self, project_id: _Optional[str] = ..., name: _Optional[str] = ..., description: _Optional[str] = ..., created_at: _Optional[str] = ..., updated_at: _Optional[str] = ..., deprecated: bool = ..., allow_public: bool = ..., metadata: _Optional[_Mapping[str, str]] = ...) -> None: ...
 
 class GetProjectsRequest(_message.Message):
-    __slots__ = ()
-    def __init__(self) -> None: ...
+    __slots__ = ("include_deprecated",)
+    INCLUDE_DEPRECATED_FIELD_NUMBER: _ClassVar[int]
+    include_deprecated: bool
+    def __init__(self, include_deprecated: bool = ...) -> None: ...
 
 class GetProjectsResponse(_message.Message):
     __slots__ = ("projects",)
@@ -1125,15 +1154,124 @@ class DeleteProjectRequest(_message.Message):
     force: bool
     def __init__(self, project_id: _Optional[str] = ..., force: bool = ...) -> None: ...
 
+class HardDeleteProjectRequest(_message.Message):
+    __slots__ = ("project_id", "impact_snapshot_id", "impact_snapshot_hash", "confirmed")
+    PROJECT_ID_FIELD_NUMBER: _ClassVar[int]
+    IMPACT_SNAPSHOT_ID_FIELD_NUMBER: _ClassVar[int]
+    IMPACT_SNAPSHOT_HASH_FIELD_NUMBER: _ClassVar[int]
+    CONFIRMED_FIELD_NUMBER: _ClassVar[int]
+    project_id: str
+    impact_snapshot_id: str
+    impact_snapshot_hash: str
+    confirmed: bool
+    def __init__(self, project_id: _Optional[str] = ..., impact_snapshot_id: _Optional[str] = ..., impact_snapshot_hash: _Optional[str] = ..., confirmed: bool = ...) -> None: ...
+
+class ProjectDeletionImpactRequest(_message.Message):
+    __slots__ = ("project_id",)
+    PROJECT_ID_FIELD_NUMBER: _ClassVar[int]
+    project_id: str
+    def __init__(self, project_id: _Optional[str] = ...) -> None: ...
+
+class ProjectDeletionImpactResponse(_message.Message):
+    __slots__ = ("impact_snapshot_id", "impact_snapshot_hash", "project_id", "project_name", "blockers", "descendants", "created_at")
+    IMPACT_SNAPSHOT_ID_FIELD_NUMBER: _ClassVar[int]
+    IMPACT_SNAPSHOT_HASH_FIELD_NUMBER: _ClassVar[int]
+    PROJECT_ID_FIELD_NUMBER: _ClassVar[int]
+    PROJECT_NAME_FIELD_NUMBER: _ClassVar[int]
+    BLOCKERS_FIELD_NUMBER: _ClassVar[int]
+    DESCENDANTS_FIELD_NUMBER: _ClassVar[int]
+    CREATED_AT_FIELD_NUMBER: _ClassVar[int]
+    impact_snapshot_id: str
+    impact_snapshot_hash: str
+    project_id: str
+    project_name: str
+    blockers: _containers.RepeatedScalarFieldContainer[str]
+    descendants: _containers.RepeatedScalarFieldContainer[str]
+    created_at: str
+    def __init__(self, impact_snapshot_id: _Optional[str] = ..., impact_snapshot_hash: _Optional[str] = ..., project_id: _Optional[str] = ..., project_name: _Optional[str] = ..., blockers: _Optional[_Iterable[str]] = ..., descendants: _Optional[_Iterable[str]] = ..., created_at: _Optional[str] = ...) -> None: ...
+
+class RegisterProjectDeletionGuardRequest(_message.Message):
+    __slots__ = ("project_id", "guard_id", "resource_kref", "allowed_operations", "allowed_metadata_keys")
+    PROJECT_ID_FIELD_NUMBER: _ClassVar[int]
+    GUARD_ID_FIELD_NUMBER: _ClassVar[int]
+    RESOURCE_KREF_FIELD_NUMBER: _ClassVar[int]
+    ALLOWED_OPERATIONS_FIELD_NUMBER: _ClassVar[int]
+    ALLOWED_METADATA_KEYS_FIELD_NUMBER: _ClassVar[int]
+    project_id: str
+    guard_id: str
+    resource_kref: str
+    allowed_operations: _containers.RepeatedScalarFieldContainer[str]
+    allowed_metadata_keys: _containers.RepeatedScalarFieldContainer[str]
+    def __init__(self, project_id: _Optional[str] = ..., guard_id: _Optional[str] = ..., resource_kref: _Optional[str] = ..., allowed_operations: _Optional[_Iterable[str]] = ..., allowed_metadata_keys: _Optional[_Iterable[str]] = ...) -> None: ...
+
+class ResolveProjectDeletionGuardRequest(_message.Message):
+    __slots__ = ("project_id", "guard_id")
+    PROJECT_ID_FIELD_NUMBER: _ClassVar[int]
+    GUARD_ID_FIELD_NUMBER: _ClassVar[int]
+    project_id: str
+    guard_id: str
+    def __init__(self, project_id: _Optional[str] = ..., guard_id: _Optional[str] = ...) -> None: ...
+
+class ProjectDeletionGuardResponse(_message.Message):
+    __slots__ = ("project_id", "guard_id", "resource_kref", "allowed_operations", "allowed_metadata_keys", "created_at")
+    PROJECT_ID_FIELD_NUMBER: _ClassVar[int]
+    GUARD_ID_FIELD_NUMBER: _ClassVar[int]
+    RESOURCE_KREF_FIELD_NUMBER: _ClassVar[int]
+    ALLOWED_OPERATIONS_FIELD_NUMBER: _ClassVar[int]
+    ALLOWED_METADATA_KEYS_FIELD_NUMBER: _ClassVar[int]
+    CREATED_AT_FIELD_NUMBER: _ClassVar[int]
+    project_id: str
+    guard_id: str
+    resource_kref: str
+    allowed_operations: _containers.RepeatedScalarFieldContainer[str]
+    allowed_metadata_keys: _containers.RepeatedScalarFieldContainer[str]
+    created_at: str
+    def __init__(self, project_id: _Optional[str] = ..., guard_id: _Optional[str] = ..., resource_kref: _Optional[str] = ..., allowed_operations: _Optional[_Iterable[str]] = ..., allowed_metadata_keys: _Optional[_Iterable[str]] = ..., created_at: _Optional[str] = ...) -> None: ...
+
+class MoveItemRequest(_message.Message):
+    __slots__ = ("item_kref", "target_space_path")
+    ITEM_KREF_FIELD_NUMBER: _ClassVar[int]
+    TARGET_SPACE_PATH_FIELD_NUMBER: _ClassVar[int]
+    item_kref: str
+    target_space_path: str
+    def __init__(self, item_kref: _Optional[str] = ..., target_space_path: _Optional[str] = ...) -> None: ...
+
+class ResolveProjectReferenceRequest(_message.Message):
+    __slots__ = ("project_id", "inside_revision_kref", "outside_revision_kref", "edge_type", "action", "replacement_revision_kref")
+    PROJECT_ID_FIELD_NUMBER: _ClassVar[int]
+    INSIDE_REVISION_KREF_FIELD_NUMBER: _ClassVar[int]
+    OUTSIDE_REVISION_KREF_FIELD_NUMBER: _ClassVar[int]
+    EDGE_TYPE_FIELD_NUMBER: _ClassVar[int]
+    ACTION_FIELD_NUMBER: _ClassVar[int]
+    REPLACEMENT_REVISION_KREF_FIELD_NUMBER: _ClassVar[int]
+    project_id: str
+    inside_revision_kref: str
+    outside_revision_kref: str
+    edge_type: str
+    action: str
+    replacement_revision_kref: str
+    def __init__(self, project_id: _Optional[str] = ..., inside_revision_kref: _Optional[str] = ..., outside_revision_kref: _Optional[str] = ..., edge_type: _Optional[str] = ..., action: _Optional[str] = ..., replacement_revision_kref: _Optional[str] = ...) -> None: ...
+
 class UpdateProjectRequest(_message.Message):
-    __slots__ = ("project_id", "allow_public", "description")
+    __slots__ = ("project_id", "allow_public", "description", "metadata", "deprecated")
+    class MetadataEntry(_message.Message):
+        __slots__ = ("key", "value")
+        KEY_FIELD_NUMBER: _ClassVar[int]
+        VALUE_FIELD_NUMBER: _ClassVar[int]
+        key: str
+        value: str
+        def __init__(self, key: _Optional[str] = ..., value: _Optional[str] = ...) -> None: ...
     PROJECT_ID_FIELD_NUMBER: _ClassVar[int]
     ALLOW_PUBLIC_FIELD_NUMBER: _ClassVar[int]
     DESCRIPTION_FIELD_NUMBER: _ClassVar[int]
+    METADATA_FIELD_NUMBER: _ClassVar[int]
+    DEPRECATED_FIELD_NUMBER: _ClassVar[int]
     project_id: str
     allow_public: bool
     description: str
-    def __init__(self, project_id: _Optional[str] = ..., allow_public: bool = ..., description: _Optional[str] = ...) -> None: ...
+    metadata: _containers.ScalarMap[str, str]
+    deprecated: bool
+    def __init__(self, project_id: _Optional[str] = ..., allow_public: bool = ..., description: _Optional[str] = ..., metadata: _Optional[_Mapping[str, str]] = ..., deprecated: bool = ...) -> None: ...
 
 class SetDeprecatedRequest(_message.Message):
     __slots__ = ("kref", "deprecated")

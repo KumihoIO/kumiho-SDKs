@@ -292,6 +292,16 @@ class Item extends KumihoObject {
     await client.deleteItem(kref.uri, force: force);
   }
 
+  /// Moves this Item to another Project's Space while preserving its kref.
+  Future<Item> moveTo(String targetSpacePath, {String? deletionGuardId}) async {
+    final response = await client.moveItem(
+      kref.uri,
+      targetSpacePath,
+      deletionGuardId: deletionGuardId,
+    );
+    return Item(response, client);
+  }
+
   @override
   String toString() => "Item(kref: '${kref.uri}', name: '$name')";
 }

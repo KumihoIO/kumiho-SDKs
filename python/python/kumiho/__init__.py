@@ -110,7 +110,7 @@ Attributes:
     PUBLISHED_TAG (str): Standard tag name for published revisions.
 """
 
-__version__ = "0.11.0"
+__version__ = "0.12.0"
 
 import contextvars
 from typing import Any, Dict, List, Optional, Iterator, Tuple
@@ -142,7 +142,7 @@ from .edge import (
     ShortestPathResult,
 )
 from .item import Item
-from .project import Project
+from .project import Project, ProjectDeletionGuard, ProjectDeletionImpact
 from .artifact import Artifact
 from .proto.kumiho_pb2 import StatusResponse
 from .revision import Revision
@@ -171,6 +171,8 @@ PUBLISHED_TAG = "published"
 REFERENCED = EdgeType.REFERENCED
 DEPENDS_ON = EdgeType.DEPENDS_ON
 DERIVED_FROM = EdgeType.DERIVED_FROM
+PRODUCED_BY = EdgeType.PRODUCED_BY
+MIGRATED_FROM = EdgeType.MIGRATED_FROM
 CONTAINS = EdgeType.CONTAINS
 SUPERSEDES = EdgeType.SUPERSEDES
 SUPPORTS = EdgeType.SUPPORTS
@@ -501,7 +503,11 @@ def get_tenant_slug(tenant_hint: Optional[str] = None) -> Optional[str]:
 # =============================================================================
 
 
-def create_project(name: str, description: str = "") -> Project:
+def create_project(
+    name: str,
+    description: str = "",
+    metadata: Optional[Dict[str, str]] = None,
+) -> Project:
     """Create a new project.
 
     Projects are the top-level containers for all assets. Each project
@@ -511,6 +517,7 @@ def create_project(name: str, description: str = "") -> Project:
         name: The unique name for the project. Must be URL-safe
             (lowercase letters, numbers, hyphens).
         description: Optional human-readable description.
+        metadata: Optional string metadata such as ``display_label``.
 
     Returns:
         Project: The newly created Project object.
@@ -527,7 +534,11 @@ def create_project(name: str, description: str = "") -> Project:
         >>> print(project.name)
         commercial-2024
     """
-    return get_client().create_project(name=name, description=description)
+    return get_client().create_project(
+        name=name,
+        description=description,
+        metadata=metadata,
+    )
 
 
 def get_projects() -> List[Project]:
@@ -563,7 +574,15 @@ def get_project(name: str) -> Optional[Project]:
     return get_client().get_project(name)
 
 
-def delete_project(project_id: str, force: bool = False) -> StatusResponse:
+def analyze_project_deletion(project_id: str) -> ProjectDeletionImpact:
+    """Create the server-bound impact snapshot required for hard-delete."""
+    return get_client().analyze_project_deletion(project_id)
+
+
+def delete_project(
+    project_id: str,
+    force: bool = False,
+) -> StatusResponse:
     """Delete a project.
 
     Args:
@@ -1199,6 +1218,8 @@ __all__ = [
     "KumihoObject",
     "KumihoError",
     "Project",
+    "ProjectDeletionImpact",
+    "ProjectDeletionGuard",
     "Space",
     "Item",
     "Revision",
@@ -1237,6 +1258,8 @@ __all__ = [
     "REFERENCED",
     "DEPENDS_ON",
     "DERIVED_FROM",
+    "PRODUCED_BY",
+    "MIGRATED_FROM",
     "CONTAINS",
     # Edge directions
     "EdgeDirection",
@@ -1251,6 +1274,7 @@ __all__ = [
     "get_projects",
     "get_project",
     "delete_project",
+    "analyze_project_deletion",
     "item_search",
     "search",
     "SearchResult",

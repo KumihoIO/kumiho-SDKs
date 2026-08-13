@@ -142,11 +142,41 @@ impl KumihoService for FakeKumiho {
     ) -> Result<Response<pb::ProjectResponse>, Status> {
         Err(unimpl("update_project"))
     }
+    async fn analyze_project_deletion(
+        &self,
+        _r: Request<pb::ProjectDeletionImpactRequest>,
+    ) -> Result<Response<pb::ProjectDeletionImpactResponse>, Status> {
+        Err(unimpl("analyze_project_deletion"))
+    }
+    async fn register_project_deletion_guard(
+        &self,
+        _r: Request<pb::RegisterProjectDeletionGuardRequest>,
+    ) -> Result<Response<pb::ProjectDeletionGuardResponse>, Status> {
+        Err(unimpl("register_project_deletion_guard"))
+    }
+    async fn resolve_project_deletion_guard(
+        &self,
+        _r: Request<pb::ResolveProjectDeletionGuardRequest>,
+    ) -> Result<Response<pb::StatusResponse>, Status> {
+        Err(unimpl("resolve_project_deletion_guard"))
+    }
+    async fn resolve_project_reference(
+        &self,
+        _r: Request<pb::ResolveProjectReferenceRequest>,
+    ) -> Result<Response<pb::StatusResponse>, Status> {
+        Err(unimpl("resolve_project_reference"))
+    }
     async fn delete_project(
         &self,
         _r: Request<pb::DeleteProjectRequest>,
     ) -> Result<Response<pb::StatusResponse>, Status> {
         Err(unimpl("delete_project"))
+    }
+    async fn hard_delete_project(
+        &self,
+        _r: Request<pb::HardDeleteProjectRequest>,
+    ) -> Result<Response<pb::StatusResponse>, Status> {
+        Err(unimpl("hard_delete_project"))
     }
     async fn create_space(
         &self,
@@ -221,6 +251,12 @@ impl KumihoService for FakeKumiho {
     ) -> Result<Response<pb::ItemResponse>, Status> {
         Err(unimpl("update_item_metadata"))
     }
+    async fn move_item(
+        &self,
+        _r: Request<pb::MoveItemRequest>,
+    ) -> Result<Response<pb::ItemResponse>, Status> {
+        Err(unimpl("move_item"))
+    }
     async fn search(
         &self,
         _r: Request<pb::SearchRequest>,
@@ -256,6 +292,12 @@ impl KumihoService for FakeKumiho {
         _r: Request<pb::BatchGetRevisionsRequest>,
     ) -> Result<Response<pb::BatchGetRevisionsResponse>, Status> {
         Err(unimpl("batch_get_revisions"))
+    }
+    async fn batch_create_revisions(
+        &self,
+        _r: Request<pb::BatchCreateRevisionsRequest>,
+    ) -> Result<Response<pb::BatchCreateRevisionsResponse>, Status> {
+        Err(unimpl("batch_create_revisions"))
     }
     async fn delete_revision(
         &self,
@@ -503,6 +545,16 @@ async fn integration_projects() {
     assert!(
         fake.rec.lock().unwrap().saw_correlation_id,
         "server did not receive an x-correlation-id header"
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn legacy_force_delete_reaches_the_server() {
+    let (_fake, client) = start_server().await;
+    let result = client.delete_project("proj-123", true).await;
+    assert!(
+        !matches!(result, Err(kumiho::Error::InvalidArgument(_))),
+        "legacy force delete must be forwarded rather than rejected locally: {result:?}"
     );
 }
 

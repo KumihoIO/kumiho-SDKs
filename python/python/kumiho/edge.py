@@ -117,6 +117,8 @@ class EdgeType:
         REFERENCED (str): Indicates a soft reference relationship.
         DEPENDS_ON (str): Indicates the source requires the target.
         DERIVED_FROM (str): Indicates the source was derived/modified from target.
+        PRODUCED_BY (str): Indicates a result Revision was produced by a FlowRun Revision.
+        MIGRATED_FROM (str): Indicates a Revision was migrated from an exact source Revision or tombstone.
         CONTAINS (str): Indicates the source contains or includes the target.
         SUPERSEDES (str): Indicates the source replaces/supersedes the target (belief revision).
         SUPPORTS (str): Indicates the source corroborates/supports the target (evidence chains).
@@ -146,6 +148,12 @@ class EdgeType:
 
     DERIVED_FROM = "DERIVED_FROM"
     """Source was derived or modified from target."""
+
+    PRODUCED_BY = "PRODUCED_BY"
+    """Result Revision was produced by the target FlowRun Revision."""
+
+    MIGRATED_FROM = "MIGRATED_FROM"
+    """Revision was migrated from the target Revision or migration tombstone."""
 
     CONTAINS = "CONTAINS"
     """Source contains or includes target."""

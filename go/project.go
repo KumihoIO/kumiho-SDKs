@@ -5,6 +5,8 @@ import (
 	"strings"
 
 	pb "github.com/KumihoIO/kumiho-SDKs/go/kumihopb"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 // Project is the top-level container for assets.
@@ -86,9 +88,25 @@ func (p *Project) GetItems(ctx context.Context, nameFilter, kindFilter string, p
 	return p.client.ItemSearch(ctx, p.Name, nameFilter, kindFilter, pageSize, cursor, false)
 }
 
-// Delete deletes (force=true) or deprecates this project.
+// Delete forwards the legacy delete/deprecate request to the connected server.
+// New servers require AnalyzeDeletion followed by HardDelete for permanence.
 func (p *Project) Delete(ctx context.Context, force bool) error {
 	return p.client.DeleteProject(ctx, p.ProjectID, force)
+}
+
+func (p *Project) AnalyzeDeletion(ctx context.Context) (*pb.ProjectDeletionImpactResponse, error) {
+	return p.client.AnalyzeProjectDeletion(ctx, p.ProjectID)
+}
+
+func (p *Project) HardDelete(ctx context.Context, impact *pb.ProjectDeletionImpactResponse, confirmed bool) error {
+	if impact == nil || impact.GetProjectId() != p.ProjectID {
+		return status.Error(codes.InvalidArgument, "impact snapshot belongs to a different Project")
+	}
+	return p.client.HardDeleteProject(ctx, impact, confirmed)
+}
+
+func (p *Project) ResolveReference(ctx context.Context, insideKref, outsideKref, edgeType, action, replacementKref string) error {
+	return p.client.ResolveProjectReference(ctx, p.ProjectID, insideKref, outsideKref, edgeType, action, replacementKref)
 }
 
 // SetPublic enables/disables anonymous read access.

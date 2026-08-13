@@ -361,7 +361,7 @@ fn normalize_target(raw: &str) -> Result<(String, u16, bool)> {
         return Err(Error::InvalidArgument(format!("invalid endpoint: {raw}")));
     }
     let tls_scheme = matches!(scheme.as_str(), "https" | "grpcs");
-    let port = port_opt.unwrap_or_else(|| match scheme.as_str() {
+    let port = port_opt.unwrap_or(match scheme.as_str() {
         "https" | "grpcs" => 443,
         "http" | "grpc" => 80,
         _ => 8080,
@@ -492,6 +492,7 @@ impl Client {
         let req = pb::CreateProjectRequest {
             name: name.into(),
             description: description.into(),
+            metadata: HashMap::new(),
         };
         match unary!(self, create_project, req) {
             Ok(resp) => Ok(Project::from_pb(resp, self.clone())),
@@ -504,7 +505,13 @@ impl Client {
 
     /// List all projects accessible to the current user.
     pub async fn get_projects(&self) -> Result<Vec<Project>> {
-        let resp = unary!(self, get_projects, pb::GetProjectsRequest {})?;
+        let resp = unary!(
+            self,
+            get_projects,
+            pb::GetProjectsRequest {
+                include_deprecated: false,
+            }
+        )?;
         Ok(resp
             .projects
             .into_iter()
@@ -521,13 +528,121 @@ impl Client {
             .find(|p| p.name == name))
     }
 
-    /// Delete (force=true) or deprecate a project.
+    /// Delete (force=true) or deprecate a project using the server contract.
+    ///
+    /// New servers require [`Client::hard_delete_project`] for permanent
+    /// deletion. This legacy method still forwards `force` unchanged so a new
+    /// SDK remains compatible with older servers.
     pub async fn delete_project(&self, project_id: &str, force: bool) -> Result<()> {
         let req = pb::DeleteProjectRequest {
             project_id: project_id.to_string(),
             force,
         };
         unary!(self, delete_project, req)?;
+        Ok(())
+    }
+
+    /// Analyze the current server-authoritative deletion impact.
+    pub async fn analyze_project_deletion(
+        &self,
+        project_id: &str,
+    ) -> Result<pb::ProjectDeletionImpactResponse> {
+        unary!(
+            self,
+            analyze_project_deletion,
+            pb::ProjectDeletionImpactRequest {
+                project_id: project_id.to_string(),
+            }
+        )
+    }
+
+    /// Permanently delete an archived Project using a bound impact snapshot.
+    pub async fn hard_delete_project(
+        &self,
+        impact: &pb::ProjectDeletionImpactResponse,
+        confirmed: bool,
+    ) -> Result<()> {
+        if !confirmed
+            || impact.impact_snapshot_id.is_empty()
+            || impact.impact_snapshot_hash.is_empty()
+        {
+            return Err(Error::InvalidArgument(
+                "hard-delete requires a server impact snapshot and confirmed=true".into(),
+            ));
+        }
+        unary!(
+            self,
+            hard_delete_project,
+            pb::HardDeleteProjectRequest {
+                project_id: impact.project_id.clone(),
+                impact_snapshot_id: impact.impact_snapshot_id.clone(),
+                impact_snapshot_hash: impact.impact_snapshot_hash.clone(),
+                confirmed,
+            }
+        )?;
+        Ok(())
+    }
+
+    /// Register an opaque application deletion guard while the Project is active.
+    pub async fn register_project_deletion_guard(
+        &self,
+        project_id: &str,
+        guard_id: &str,
+        resource_kref: &str,
+        allowed_operations: Vec<String>,
+        allowed_metadata_keys: Vec<String>,
+    ) -> Result<pb::ProjectDeletionGuardResponse> {
+        unary!(
+            self,
+            register_project_deletion_guard,
+            pb::RegisterProjectDeletionGuardRequest {
+                project_id: project_id.to_string(),
+                guard_id: guard_id.to_string(),
+                resource_kref: resource_kref.to_string(),
+                allowed_operations,
+                allowed_metadata_keys,
+            }
+        )
+    }
+
+    /// Resolve a previously registered application deletion guard.
+    pub async fn resolve_project_deletion_guard(
+        &self,
+        project_id: &str,
+        guard_id: &str,
+    ) -> Result<()> {
+        unary!(
+            self,
+            resolve_project_deletion_guard,
+            pb::ResolveProjectDeletionGuardRequest {
+                project_id: project_id.to_string(),
+                guard_id: guard_id.to_string(),
+            }
+        )?;
+        Ok(())
+    }
+
+    pub async fn resolve_project_reference(
+        &self,
+        project_id: &str,
+        inside_revision_kref: &str,
+        outside_revision_kref: &str,
+        edge_type: &str,
+        action: &str,
+        replacement_revision_kref: &str,
+    ) -> Result<()> {
+        unary!(
+            self,
+            resolve_project_reference,
+            pb::ResolveProjectReferenceRequest {
+                project_id: project_id.to_string(),
+                inside_revision_kref: inside_revision_kref.to_string(),
+                outside_revision_kref: outside_revision_kref.to_string(),
+                edge_type: edge_type.to_string(),
+                action: action.to_string(),
+                replacement_revision_kref: replacement_revision_kref.to_string(),
+            }
+        )?;
         Ok(())
     }
 
@@ -542,6 +657,8 @@ impl Client {
             project_id: project_id.to_string(),
             allow_public,
             description,
+            deprecated: None,
+            metadata: HashMap::new(),
         };
         let resp = unary!(self, update_project, req)?;
         Ok(Project::from_pb(resp, self.clone()))
@@ -555,6 +672,7 @@ impl Client {
             parent_path: parent_path.to_string(),
             space_name: space_name.to_string(),
             exists_error: false,
+            metadata: HashMap::new(),
         };
         let resp = unary!(self, create_space, req)?;
         Ok(Space::from_pb(resp, self.clone()))
@@ -933,6 +1051,41 @@ impl Client {
         };
         unary!(self, delete_item, req)?;
         Ok(())
+    }
+
+    /// Move an Item to a Space in another Project without changing its kref.
+    pub async fn move_item(
+        &self,
+        item_kref: &Kref,
+        target_space_path: &str,
+    ) -> Result<pb::ItemResponse> {
+        self.move_item_with_guard(item_kref, target_space_path, None)
+            .await
+    }
+
+    /// Move an archived Item under an exact server-issued deletion guard.
+    pub async fn move_item_with_guard(
+        &self,
+        item_kref: &Kref,
+        target_space_path: &str,
+        deletion_guard_id: Option<&str>,
+    ) -> Result<pb::ItemResponse> {
+        let mut grpc = self.grpc.clone();
+        let mut request = tonic::Request::new(pb::MoveItemRequest {
+            item_kref: item_kref.uri().to_string(),
+            target_space_path: target_space_path.to_string(),
+        });
+        if let Some(timeout) = self.rpc_timeout {
+            request.set_timeout(timeout);
+        }
+        if let Some(guard_id) = deletion_guard_id {
+            request.metadata_mut().insert(
+                "x-kumiho-deletion-guard",
+                AsciiMetadataValue::try_from(guard_id)
+                    .map_err(|_| Error::InvalidArgument("invalid deletion guard id".into()))?,
+            );
+        }
+        Ok(grpc.move_item(request).await?.into_inner())
     }
 
     /// Resolve an item kref to a revision by tag and/or time (low-level).

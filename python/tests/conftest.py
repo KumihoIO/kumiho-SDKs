@@ -64,7 +64,16 @@ def cleanup_test_data(live_client):
         try:
             obj_type = type(obj).__name__
             print(f"Deleting {obj_type}: {getattr(obj, 'kref', getattr(obj, 'path', 'unknown'))}")
-            obj.delete(force=True)
+            if obj_type == "Project":
+                archived = obj if getattr(obj, "deprecated", False) else obj.deprecate()
+                impact = archived.analyze_deletion()
+                if impact.blockers:
+                    raise RuntimeError(
+                        f"Project cleanup blocked: {', '.join(impact.blockers)}"
+                    )
+                archived.hard_delete(impact, confirmed=True)
+            else:
+                obj.delete(force=True)
             print(f"Successfully deleted {obj_type}")
         except Exception as e:
             # Log cleanup errors but don't fail the test

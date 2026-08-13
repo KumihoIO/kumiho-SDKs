@@ -92,7 +92,9 @@ protected:
 
         for (auto it = created_projects.rbegin(); it != created_projects.rend(); ++it) {
             try {
-                (*it)->deleteProject(true);
+                (*it)->deleteProject();
+                const auto impact = (*it)->analyzeDeletion();
+                (*it)->hardDelete(impact);
             } catch (...) {
             }
         }

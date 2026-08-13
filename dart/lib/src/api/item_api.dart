@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2025 kumihoclouds
 
+import 'package:grpc/grpc.dart' show CallOptions;
+
 import '../base_client.dart';
 import '../generated/kumiho.pbgrpc.dart';
 import '../models/base.dart' show ReservedKindError, reservedKinds;
@@ -53,11 +55,12 @@ mixin ItemApi on KumihoClientBase {
         "Item kind '$kind' is reserved. Use createBundle() instead.",
       );
     }
-    final request = CreateItemRequest()
-      ..parentPath = parentPath
-      ..itemName = itemName
-      ..kind = kind
-      ..existsError = existsError;
+    final request =
+        CreateItemRequest()
+          ..parentPath = parentPath
+          ..itemName = itemName
+          ..kind = kind
+          ..existsError = existsError;
     final response = await stub.createItem(request, options: callOptions);
     if (metadata != null && metadata.isNotEmpty) {
       // Apply metadata via a follow-up update (the create RPC carries none),
@@ -77,10 +80,11 @@ mixin ItemApi on KumihoClientBase {
     String itemName,
     String kind,
   ) async {
-    final request = GetItemRequest()
-      ..parentPath = parentPath
-      ..itemName = itemName
-      ..kind = kind;
+    final request =
+        GetItemRequest()
+          ..parentPath = parentPath
+          ..itemName = itemName
+          ..kind = kind;
     return stub.getItem(request, options: callOptions);
   }
 
@@ -89,9 +93,10 @@ mixin ItemApi on KumihoClientBase {
   /// [kref] is the full kref URI (e.g., 'kref://project/space/item.kind').
   Future<ItemResponse> getItemByKref(String kref) async {
     // Parse the kref to extract components
-    final sanitized = kref.startsWith('kref://')
-        ? kref.substring('kref://'.length)
-        : kref.startsWith('/')
+    final sanitized =
+        kref.startsWith('kref://')
+            ? kref.substring('kref://'.length)
+            : kref.startsWith('/')
             ? kref.substring(1)
             : kref;
     final pathPart = sanitized.split('?').first;
@@ -130,24 +135,28 @@ mixin ItemApi on KumihoClientBase {
     String? cursor,
     bool includeDeprecated = false,
   }) async {
-    final request = GetItemsRequest()
-      ..parentPath = parentPath
-      ..itemNameFilter = nameFilter ?? ''
-      ..kindFilter = kindFilter ?? ''
-      ..includeDeprecated = includeDeprecated;
-      
+    final request =
+        GetItemsRequest()
+          ..parentPath = parentPath
+          ..itemNameFilter = nameFilter ?? ''
+          ..kindFilter = kindFilter ?? ''
+          ..includeDeprecated = includeDeprecated;
+
     if (pageSize != null || cursor != null) {
-      request.pagination = PaginationRequest()
-        ..pageSize = pageSize ?? 100
-        ..cursor = cursor ?? '';
+      request.pagination =
+          PaginationRequest()
+            ..pageSize = pageSize ?? 100
+            ..cursor = cursor ?? '';
     }
 
     final response = await stub.getItems(request, options: callOptions);
-    
+
     return PagedList(
       response.items,
-      nextCursor: response.hasPagination() ? response.pagination.nextCursor : null,
-      totalCount: response.hasPagination() ? response.pagination.totalCount : null,
+      nextCursor:
+          response.hasPagination() ? response.pagination.nextCursor : null,
+      totalCount:
+          response.hasPagination() ? response.pagination.totalCount : null,
     );
   }
 
@@ -167,24 +176,28 @@ mixin ItemApi on KumihoClientBase {
     String? cursor,
     bool includeDeprecated = false,
   }) async {
-    final request = ItemSearchRequest()
-      ..contextFilter = contextFilter
-      ..itemNameFilter = nameFilter
-      ..kindFilter = kindFilter
-      ..includeDeprecated = includeDeprecated;
+    final request =
+        ItemSearchRequest()
+          ..contextFilter = contextFilter
+          ..itemNameFilter = nameFilter
+          ..kindFilter = kindFilter
+          ..includeDeprecated = includeDeprecated;
 
     if (pageSize != null || cursor != null) {
-      request.pagination = PaginationRequest()
-        ..pageSize = pageSize ?? 100
-        ..cursor = cursor ?? '';
+      request.pagination =
+          PaginationRequest()
+            ..pageSize = pageSize ?? 100
+            ..cursor = cursor ?? '';
     }
 
     final response = await stub.itemSearch(request, options: callOptions);
 
     return PagedList(
       response.items,
-      nextCursor: response.hasPagination() ? response.pagination.nextCursor : null,
-      totalCount: response.hasPagination() ? response.pagination.totalCount : null,
+      nextCursor:
+          response.hasPagination() ? response.pagination.nextCursor : null,
+      totalCount:
+          response.hasPagination() ? response.pagination.totalCount : null,
     );
   }
 
@@ -207,26 +220,30 @@ mixin ItemApi on KumihoClientBase {
     String? cursor,
     double minScore = 0.0,
   }) async {
-    final request = SearchRequest()
-      ..query = query
-      ..contextFilter = contextFilter
-      ..kindFilter = kindFilter
-      ..includeDeprecated = includeDeprecated
-      ..includeRevisionMetadata = includeRevisionMetadata
-      ..includeArtifactMetadata = includeArtifactMetadata
-      ..minScore = minScore;
+    final request =
+        SearchRequest()
+          ..query = query
+          ..contextFilter = contextFilter
+          ..kindFilter = kindFilter
+          ..includeDeprecated = includeDeprecated
+          ..includeRevisionMetadata = includeRevisionMetadata
+          ..includeArtifactMetadata = includeArtifactMetadata
+          ..minScore = minScore;
     if (pageSize != null || cursor != null) {
-      request.pagination = PaginationRequest()
-        ..pageSize = pageSize ?? 100
-        ..cursor = cursor ?? '';
+      request.pagination =
+          PaginationRequest()
+            ..pageSize = pageSize ?? 100
+            ..cursor = cursor ?? '';
     }
 
     final response = await stub.search(request, options: callOptions);
 
     return PagedList(
       response.results,
-      nextCursor: response.hasPagination() ? response.pagination.nextCursor : null,
-      totalCount: response.hasPagination() ? response.pagination.totalCount : null,
+      nextCursor:
+          response.hasPagination() ? response.pagination.nextCursor : null,
+      totalCount:
+          response.hasPagination() ? response.pagination.totalCount : null,
     );
   }
 
@@ -236,14 +253,34 @@ mixin ItemApi on KumihoClientBase {
   /// Set [force] to `true` to delete with all revisions.
   ///
   /// **Warning**: Force deletion removes all revisions and artifacts.
-  Future<StatusResponse> deleteItem(
-    String kref, {
-    bool force = false,
-  }) async {
-    final request = DeleteItemRequest()
-      ..kref = Kref(uri: kref)
-      ..force = force;
+  Future<StatusResponse> deleteItem(String kref, {bool force = false}) async {
+    final request =
+        DeleteItemRequest()
+          ..kref = Kref(uri: kref)
+          ..force = force;
     return stub.deleteItem(request, options: callOptions);
+  }
+
+  /// Moves an Item to a Space in another Project without changing its kref.
+  Future<ItemResponse> moveItem(
+    String kref,
+    String targetSpacePath, {
+    String? deletionGuardId,
+  }) {
+    final options =
+        deletionGuardId == null || deletionGuardId.isEmpty
+            ? callOptions
+            : callOptions.mergedWith(
+              CallOptions(
+                metadata: {'x-kumiho-deletion-guard': deletionGuardId},
+              ),
+            );
+    return stub.moveItem(
+      MoveItemRequest()
+        ..itemKref = kref
+        ..targetSpacePath = targetSpacePath,
+      options: options,
+    );
   }
 
   /// Updates metadata for an item.
@@ -254,9 +291,10 @@ mixin ItemApi on KumihoClientBase {
     String kref,
     Map<String, String> metadata,
   ) async {
-    final request = UpdateMetadataRequest()
-      ..kref = Kref(uri: kref)
-      ..metadata.addAll(metadata);
+    final request =
+        UpdateMetadataRequest()
+          ..kref = Kref(uri: kref)
+          ..metadata.addAll(metadata);
     return stub.updateItemMetadata(request, options: callOptions);
   }
 
@@ -264,13 +302,11 @@ mixin ItemApi on KumihoClientBase {
   ///
   /// Deprecated items are hidden from searches but not deleted.
   /// Set [deprecated] to `false` to restore an item.
-  Future<StatusResponse> setDeprecated(
-    String kref,
-    bool deprecated,
-  ) async {
-    final request = SetDeprecatedRequest()
-      ..kref = Kref(uri: kref)
-      ..deprecated = deprecated;
+  Future<StatusResponse> setDeprecated(String kref, bool deprecated) async {
+    final request =
+        SetDeprecatedRequest()
+          ..kref = Kref(uri: kref)
+          ..deprecated = deprecated;
     return stub.setDeprecated(request, options: callOptions);
   }
 }

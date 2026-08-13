@@ -55,11 +55,51 @@ class KumihoServiceClient extends $grpc.Client {
     return $createUnaryCall(_$updateProject, request, options: options);
   }
 
+  $grpc.ResponseFuture<$0.ProjectDeletionImpactResponse> analyzeProjectDeletion(
+    $0.ProjectDeletionImpactRequest request, {
+    $grpc.CallOptions? options,
+  }) {
+    return $createUnaryCall(_$analyzeProjectDeletion, request,
+        options: options);
+  }
+
+  $grpc.ResponseFuture<$0.ProjectDeletionGuardResponse>
+      registerProjectDeletionGuard(
+    $0.RegisterProjectDeletionGuardRequest request, {
+    $grpc.CallOptions? options,
+  }) {
+    return $createUnaryCall(_$registerProjectDeletionGuard, request,
+        options: options);
+  }
+
+  $grpc.ResponseFuture<$0.StatusResponse> resolveProjectDeletionGuard(
+    $0.ResolveProjectDeletionGuardRequest request, {
+    $grpc.CallOptions? options,
+  }) {
+    return $createUnaryCall(_$resolveProjectDeletionGuard, request,
+        options: options);
+  }
+
+  $grpc.ResponseFuture<$0.StatusResponse> resolveProjectReference(
+    $0.ResolveProjectReferenceRequest request, {
+    $grpc.CallOptions? options,
+  }) {
+    return $createUnaryCall(_$resolveProjectReference, request,
+        options: options);
+  }
+
   $grpc.ResponseFuture<$0.StatusResponse> deleteProject(
     $0.DeleteProjectRequest request, {
     $grpc.CallOptions? options,
   }) {
     return $createUnaryCall(_$deleteProject, request, options: options);
+  }
+
+  $grpc.ResponseFuture<$0.StatusResponse> hardDeleteProject(
+    $0.HardDeleteProjectRequest request, {
+    $grpc.CallOptions? options,
+  }) {
+    return $createUnaryCall(_$hardDeleteProject, request, options: options);
   }
 
   /// Space methods
@@ -141,6 +181,13 @@ class KumihoServiceClient extends $grpc.Client {
     return $createUnaryCall(_$updateItemMetadata, request, options: options);
   }
 
+  $grpc.ResponseFuture<$0.ItemResponse> moveItem(
+    $0.MoveItemRequest request, {
+    $grpc.CallOptions? options,
+  }) {
+    return $createUnaryCall(_$moveItem, request, options: options);
+  }
+
   /// Full-text search (Google-like fuzzy search across items)
   $grpc.ResponseFuture<$0.SearchResponse> search(
     $0.SearchRequest request, {
@@ -198,6 +245,13 @@ class KumihoServiceClient extends $grpc.Client {
     $grpc.CallOptions? options,
   }) {
     return $createUnaryCall(_$batchGetRevisions, request, options: options);
+  }
+
+  $grpc.ResponseFuture<$0.BatchCreateRevisionsResponse> batchCreateRevisions(
+    $0.BatchCreateRevisionsRequest request, {
+    $grpc.CallOptions? options,
+  }) {
+    return $createUnaryCall(_$batchCreateRevisions, request, options: options);
   }
 
   $grpc.ResponseFuture<$0.StatusResponse> deleteRevision(
@@ -457,10 +511,36 @@ class KumihoServiceClient extends $grpc.Client {
           '/kumiho.KumihoService/UpdateProject',
           ($0.UpdateProjectRequest value) => value.writeToBuffer(),
           $0.ProjectResponse.fromBuffer);
+  static final _$analyzeProjectDeletion = $grpc.ClientMethod<
+          $0.ProjectDeletionImpactRequest, $0.ProjectDeletionImpactResponse>(
+      '/kumiho.KumihoService/AnalyzeProjectDeletion',
+      ($0.ProjectDeletionImpactRequest value) => value.writeToBuffer(),
+      $0.ProjectDeletionImpactResponse.fromBuffer);
+  static final _$registerProjectDeletionGuard = $grpc.ClientMethod<
+          $0.RegisterProjectDeletionGuardRequest,
+          $0.ProjectDeletionGuardResponse>(
+      '/kumiho.KumihoService/RegisterProjectDeletionGuard',
+      ($0.RegisterProjectDeletionGuardRequest value) => value.writeToBuffer(),
+      $0.ProjectDeletionGuardResponse.fromBuffer);
+  static final _$resolveProjectDeletionGuard = $grpc.ClientMethod<
+          $0.ResolveProjectDeletionGuardRequest, $0.StatusResponse>(
+      '/kumiho.KumihoService/ResolveProjectDeletionGuard',
+      ($0.ResolveProjectDeletionGuardRequest value) => value.writeToBuffer(),
+      $0.StatusResponse.fromBuffer);
+  static final _$resolveProjectReference =
+      $grpc.ClientMethod<$0.ResolveProjectReferenceRequest, $0.StatusResponse>(
+          '/kumiho.KumihoService/ResolveProjectReference',
+          ($0.ResolveProjectReferenceRequest value) => value.writeToBuffer(),
+          $0.StatusResponse.fromBuffer);
   static final _$deleteProject =
       $grpc.ClientMethod<$0.DeleteProjectRequest, $0.StatusResponse>(
           '/kumiho.KumihoService/DeleteProject',
           ($0.DeleteProjectRequest value) => value.writeToBuffer(),
+          $0.StatusResponse.fromBuffer);
+  static final _$hardDeleteProject =
+      $grpc.ClientMethod<$0.HardDeleteProjectRequest, $0.StatusResponse>(
+          '/kumiho.KumihoService/HardDeleteProject',
+          ($0.HardDeleteProjectRequest value) => value.writeToBuffer(),
           $0.StatusResponse.fromBuffer);
   static final _$createSpace =
       $grpc.ClientMethod<$0.CreateSpaceRequest, $0.SpaceResponse>(
@@ -517,6 +597,11 @@ class KumihoServiceClient extends $grpc.Client {
           '/kumiho.KumihoService/UpdateItemMetadata',
           ($0.UpdateMetadataRequest value) => value.writeToBuffer(),
           $0.ItemResponse.fromBuffer);
+  static final _$moveItem =
+      $grpc.ClientMethod<$0.MoveItemRequest, $0.ItemResponse>(
+          '/kumiho.KumihoService/MoveItem',
+          ($0.MoveItemRequest value) => value.writeToBuffer(),
+          $0.ItemResponse.fromBuffer);
   static final _$search =
       $grpc.ClientMethod<$0.SearchRequest, $0.SearchResponse>(
           '/kumiho.KumihoService/Search',
@@ -557,6 +642,11 @@ class KumihoServiceClient extends $grpc.Client {
       '/kumiho.KumihoService/BatchGetRevisions',
       ($0.BatchGetRevisionsRequest value) => value.writeToBuffer(),
       $0.BatchGetRevisionsResponse.fromBuffer);
+  static final _$batchCreateRevisions = $grpc.ClientMethod<
+          $0.BatchCreateRevisionsRequest, $0.BatchCreateRevisionsResponse>(
+      '/kumiho.KumihoService/BatchCreateRevisions',
+      ($0.BatchCreateRevisionsRequest value) => value.writeToBuffer(),
+      $0.BatchCreateRevisionsResponse.fromBuffer);
   static final _$deleteRevision =
       $grpc.ClientMethod<$0.DeleteRevisionRequest, $0.StatusResponse>(
           '/kumiho.KumihoService/DeleteRevision',
@@ -749,6 +839,42 @@ abstract class KumihoServiceBase extends $grpc.Service {
         ($core.List<$core.int> value) =>
             $0.UpdateProjectRequest.fromBuffer(value),
         ($0.ProjectResponse value) => value.writeToBuffer()));
+    $addMethod($grpc.ServiceMethod<$0.ProjectDeletionImpactRequest,
+            $0.ProjectDeletionImpactResponse>(
+        'AnalyzeProjectDeletion',
+        analyzeProjectDeletion_Pre,
+        false,
+        false,
+        ($core.List<$core.int> value) =>
+            $0.ProjectDeletionImpactRequest.fromBuffer(value),
+        ($0.ProjectDeletionImpactResponse value) => value.writeToBuffer()));
+    $addMethod($grpc.ServiceMethod<$0.RegisterProjectDeletionGuardRequest,
+            $0.ProjectDeletionGuardResponse>(
+        'RegisterProjectDeletionGuard',
+        registerProjectDeletionGuard_Pre,
+        false,
+        false,
+        ($core.List<$core.int> value) =>
+            $0.RegisterProjectDeletionGuardRequest.fromBuffer(value),
+        ($0.ProjectDeletionGuardResponse value) => value.writeToBuffer()));
+    $addMethod($grpc.ServiceMethod<$0.ResolveProjectDeletionGuardRequest,
+            $0.StatusResponse>(
+        'ResolveProjectDeletionGuard',
+        resolveProjectDeletionGuard_Pre,
+        false,
+        false,
+        ($core.List<$core.int> value) =>
+            $0.ResolveProjectDeletionGuardRequest.fromBuffer(value),
+        ($0.StatusResponse value) => value.writeToBuffer()));
+    $addMethod($grpc.ServiceMethod<$0.ResolveProjectReferenceRequest,
+            $0.StatusResponse>(
+        'ResolveProjectReference',
+        resolveProjectReference_Pre,
+        false,
+        false,
+        ($core.List<$core.int> value) =>
+            $0.ResolveProjectReferenceRequest.fromBuffer(value),
+        ($0.StatusResponse value) => value.writeToBuffer()));
     $addMethod($grpc.ServiceMethod<$0.DeleteProjectRequest, $0.StatusResponse>(
         'DeleteProject',
         deleteProject_Pre,
@@ -757,6 +883,15 @@ abstract class KumihoServiceBase extends $grpc.Service {
         ($core.List<$core.int> value) =>
             $0.DeleteProjectRequest.fromBuffer(value),
         ($0.StatusResponse value) => value.writeToBuffer()));
+    $addMethod(
+        $grpc.ServiceMethod<$0.HardDeleteProjectRequest, $0.StatusResponse>(
+            'HardDeleteProject',
+            hardDeleteProject_Pre,
+            false,
+            false,
+            ($core.List<$core.int> value) =>
+                $0.HardDeleteProjectRequest.fromBuffer(value),
+            ($0.StatusResponse value) => value.writeToBuffer()));
     $addMethod($grpc.ServiceMethod<$0.CreateSpaceRequest, $0.SpaceResponse>(
         'CreateSpace',
         createSpace_Pre,
@@ -840,6 +975,13 @@ abstract class KumihoServiceBase extends $grpc.Service {
         ($core.List<$core.int> value) =>
             $0.UpdateMetadataRequest.fromBuffer(value),
         ($0.ItemResponse value) => value.writeToBuffer()));
+    $addMethod($grpc.ServiceMethod<$0.MoveItemRequest, $0.ItemResponse>(
+        'MoveItem',
+        moveItem_Pre,
+        false,
+        false,
+        ($core.List<$core.int> value) => $0.MoveItemRequest.fromBuffer(value),
+        ($0.ItemResponse value) => value.writeToBuffer()));
     $addMethod($grpc.ServiceMethod<$0.SearchRequest, $0.SearchResponse>(
         'Search',
         search_Pre,
@@ -907,6 +1049,15 @@ abstract class KumihoServiceBase extends $grpc.Service {
         ($core.List<$core.int> value) =>
             $0.BatchGetRevisionsRequest.fromBuffer(value),
         ($0.BatchGetRevisionsResponse value) => value.writeToBuffer()));
+    $addMethod($grpc.ServiceMethod<$0.BatchCreateRevisionsRequest,
+            $0.BatchCreateRevisionsResponse>(
+        'BatchCreateRevisions',
+        batchCreateRevisions_Pre,
+        false,
+        false,
+        ($core.List<$core.int> value) =>
+            $0.BatchCreateRevisionsRequest.fromBuffer(value),
+        ($0.BatchCreateRevisionsResponse value) => value.writeToBuffer()));
     $addMethod($grpc.ServiceMethod<$0.DeleteRevisionRequest, $0.StatusResponse>(
         'DeleteRevision',
         deleteRevision_Pre,
@@ -1202,6 +1353,44 @@ abstract class KumihoServiceBase extends $grpc.Service {
   $async.Future<$0.ProjectResponse> updateProject(
       $grpc.ServiceCall call, $0.UpdateProjectRequest request);
 
+  $async.Future<$0.ProjectDeletionImpactResponse> analyzeProjectDeletion_Pre(
+      $grpc.ServiceCall $call,
+      $async.Future<$0.ProjectDeletionImpactRequest> $request) async {
+    return analyzeProjectDeletion($call, await $request);
+  }
+
+  $async.Future<$0.ProjectDeletionImpactResponse> analyzeProjectDeletion(
+      $grpc.ServiceCall call, $0.ProjectDeletionImpactRequest request);
+
+  $async.Future<$0.ProjectDeletionGuardResponse>
+      registerProjectDeletionGuard_Pre(
+          $grpc.ServiceCall $call,
+          $async.Future<$0.RegisterProjectDeletionGuardRequest>
+              $request) async {
+    return registerProjectDeletionGuard($call, await $request);
+  }
+
+  $async.Future<$0.ProjectDeletionGuardResponse> registerProjectDeletionGuard(
+      $grpc.ServiceCall call, $0.RegisterProjectDeletionGuardRequest request);
+
+  $async.Future<$0.StatusResponse> resolveProjectDeletionGuard_Pre(
+      $grpc.ServiceCall $call,
+      $async.Future<$0.ResolveProjectDeletionGuardRequest> $request) async {
+    return resolveProjectDeletionGuard($call, await $request);
+  }
+
+  $async.Future<$0.StatusResponse> resolveProjectDeletionGuard(
+      $grpc.ServiceCall call, $0.ResolveProjectDeletionGuardRequest request);
+
+  $async.Future<$0.StatusResponse> resolveProjectReference_Pre(
+      $grpc.ServiceCall $call,
+      $async.Future<$0.ResolveProjectReferenceRequest> $request) async {
+    return resolveProjectReference($call, await $request);
+  }
+
+  $async.Future<$0.StatusResponse> resolveProjectReference(
+      $grpc.ServiceCall call, $0.ResolveProjectReferenceRequest request);
+
   $async.Future<$0.StatusResponse> deleteProject_Pre($grpc.ServiceCall $call,
       $async.Future<$0.DeleteProjectRequest> $request) async {
     return deleteProject($call, await $request);
@@ -1209,6 +1398,15 @@ abstract class KumihoServiceBase extends $grpc.Service {
 
   $async.Future<$0.StatusResponse> deleteProject(
       $grpc.ServiceCall call, $0.DeleteProjectRequest request);
+
+  $async.Future<$0.StatusResponse> hardDeleteProject_Pre(
+      $grpc.ServiceCall $call,
+      $async.Future<$0.HardDeleteProjectRequest> $request) async {
+    return hardDeleteProject($call, await $request);
+  }
+
+  $async.Future<$0.StatusResponse> hardDeleteProject(
+      $grpc.ServiceCall call, $0.HardDeleteProjectRequest request);
 
   $async.Future<$0.SpaceResponse> createSpace_Pre($grpc.ServiceCall $call,
       $async.Future<$0.CreateSpaceRequest> $request) async {
@@ -1300,6 +1498,14 @@ abstract class KumihoServiceBase extends $grpc.Service {
   $async.Future<$0.ItemResponse> updateItemMetadata(
       $grpc.ServiceCall call, $0.UpdateMetadataRequest request);
 
+  $async.Future<$0.ItemResponse> moveItem_Pre($grpc.ServiceCall $call,
+      $async.Future<$0.MoveItemRequest> $request) async {
+    return moveItem($call, await $request);
+  }
+
+  $async.Future<$0.ItemResponse> moveItem(
+      $grpc.ServiceCall call, $0.MoveItemRequest request);
+
   $async.Future<$0.SearchResponse> search_Pre(
       $grpc.ServiceCall $call, $async.Future<$0.SearchRequest> $request) async {
     return search($call, await $request);
@@ -1367,6 +1573,15 @@ abstract class KumihoServiceBase extends $grpc.Service {
 
   $async.Future<$0.BatchGetRevisionsResponse> batchGetRevisions(
       $grpc.ServiceCall call, $0.BatchGetRevisionsRequest request);
+
+  $async.Future<$0.BatchCreateRevisionsResponse> batchCreateRevisions_Pre(
+      $grpc.ServiceCall $call,
+      $async.Future<$0.BatchCreateRevisionsRequest> $request) async {
+    return batchCreateRevisions($call, await $request);
+  }
+
+  $async.Future<$0.BatchCreateRevisionsResponse> batchCreateRevisions(
+      $grpc.ServiceCall call, $0.BatchCreateRevisionsRequest request);
 
   $async.Future<$0.StatusResponse> deleteRevision_Pre($grpc.ServiceCall $call,
       $async.Future<$0.DeleteRevisionRequest> $request) async {

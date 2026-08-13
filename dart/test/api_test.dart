@@ -47,23 +47,74 @@ void main() {
     test('Project.setAllowPublic calls updateProject', () async {
       final calls = <Map<String, Object?>>[];
 
-      final fakeClient = _FakeProjectClient((projectId, {allowPublic, description}) {
+      final fakeClient = _FakeProjectClient((
+        projectId, {
+        allowPublic,
+        description,
+      }) {
         calls.add({
           'projectId': projectId,
           'allowPublic': allowPublic,
           'description': description,
         });
-        return mockProjectResponse(projectId: projectId, name: 'demo', allowPublic: allowPublic ?? false);
+        return mockProjectResponse(
+          projectId: projectId,
+          name: 'demo',
+          allowPublic: allowPublic ?? false,
+        );
       });
 
-      final project = Project(mockProjectResponse(projectId: 'p1', name: 'demo', allowPublic: false), fakeClient);
+      final project = Project(
+        mockProjectResponse(projectId: 'p1', name: 'demo', allowPublic: false),
+        fakeClient,
+      );
       final updated = await project.setAllowPublic(true);
 
       expect(updated.allowPublic, isTrue);
       expect(calls.length, equals(1));
-      expect(calls.single['projectId'], equals('demo'));
+      expect(calls.single['projectId'], equals('p1'));
       expect(calls.single['allowPublic'], equals(true));
     });
+
+    test('Project forwards legacy force delete unchanged', () async {
+      final calls = <Map<String, Object?>>[];
+      final fakeClient = _FakeProjectClient(
+        (projectId, {allowPublic, description}) =>
+            mockProjectResponse(projectId: projectId, name: 'demo'),
+        deleteProject: (projectId, {force = false}) {
+          calls.add({'projectId': projectId, 'force': force});
+        },
+      );
+      final project = Project(
+        mockProjectResponse(projectId: 'p1', name: 'demo'),
+        fakeClient,
+      );
+
+      await project.delete(force: true);
+      expect(calls, equals([{'projectId': 'p1', 'force': true}]));
+    });
+
+    test(
+      'Project hard delete requires explicit confirmation and binding',
+      () async {
+        final project = Project(
+          mockProjectResponse(projectId: 'p1', name: 'demo'),
+          Object(),
+        );
+        final unbound = ProjectDeletionImpactResponse()..projectId = 'p1';
+        final bound =
+            ProjectDeletionImpactResponse()
+              ..projectId = 'p1'
+              ..impactSnapshotId = 'snapshot-1'
+              ..impactSnapshotHash = 'sha256:abc';
+
+        await expectLater(
+          project.hardDelete(unbound, confirmed: true),
+          throwsArgumentError,
+        );
+        await expectLater(project.hardDelete(bound), throwsArgumentError);
+      },
+    );
   });
 
   group('Space API', () {
@@ -178,7 +229,10 @@ void main() {
       );
 
       expect(response.name, equals('textures'));
-      expect(response.location, equals('smb://server/textures/hero_diffuse.png'));
+      expect(
+        response.location,
+        equals('smb://server/textures/hero_diffuse.png'),
+      );
     });
   });
 
@@ -208,7 +262,10 @@ void main() {
     test('mockPbKref creates valid protobuf Kref', () {
       final kref = mockPbKref('kref://test-project/test-space/test-item.model');
 
-      expect(kref.uri, equals('kref://test-project/test-space/test-item.model'));
+      expect(
+        kref.uri,
+        equals('kref://test-project/test-space/test-item.model'),
+      );
     });
 
     test('Kref class parsing from mock uri', () {
@@ -280,15 +337,17 @@ void main() {
     test('mockGetItemsResponse supports pagination fields', () {
       final items = [
         mockItemResponse(
-            krefUri: 'kref://p1/s1/i1',
-            name: 'i1',
-            itemName: 'i1',
-            kind: 'model'),
+          krefUri: 'kref://p1/s1/i1',
+          name: 'i1',
+          itemName: 'i1',
+          kind: 'model',
+        ),
         mockItemResponse(
-            krefUri: 'kref://p1/s1/i2',
-            name: 'i2',
-            itemName: 'i2',
-            kind: 'model'),
+          krefUri: 'kref://p1/s1/i2',
+          name: 'i2',
+          itemName: 'i2',
+          kind: 'model',
+        ),
       ];
       final response = mockGetItemsResponse(
         items: items,
@@ -303,34 +362,48 @@ void main() {
 
     test('PagedList behaves like a list and has metadata', () {
       final items = ['a', 'b', 'c'];
-      final pagedList = PagedList(items, nextCursor: 'next_page', totalCount: 100);
+      final pagedList = PagedList(
+        items,
+        nextCursor: 'next_page',
+        totalCount: 100,
+      );
 
       expect(pagedList.length, equals(3));
       expect(pagedList[0], equals('a'));
       expect(pagedList.nextCursor, equals('next_page'));
       expect(pagedList.totalCount, equals(100));
-      
+
       // Verify list methods work
       expect(pagedList.contains('b'), isTrue);
-      expect(pagedList.map((e) => e.toUpperCase()).toList(), equals(['A', 'B', 'C']));
+      expect(
+        pagedList.map((e) => e.toUpperCase()).toList(),
+        equals(['A', 'B', 'C']),
+      );
     });
   });
 }
 
 class _FakeProjectClient {
-  _FakeProjectClient(this._updateProject);
+  _FakeProjectClient(this._updateProject, {this.deleteProject});
 
   final ProjectResponse Function(
     String projectId, {
     bool? allowPublic,
     String? description,
-  }) _updateProject;
+  })
+  _updateProject;
+
+  final void Function(String projectId, {bool force})? deleteProject;
 
   Future<ProjectResponse> updateProject(
     String projectId, {
     bool? allowPublic,
     String? description,
   }) async {
-    return _updateProject(projectId, allowPublic: allowPublic, description: description);
+    return _updateProject(
+      projectId,
+      allowPublic: allowPublic,
+      description: description,
+    );
   }
 }

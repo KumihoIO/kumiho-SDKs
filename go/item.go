@@ -183,6 +183,16 @@ func (i *Item) Delete(ctx context.Context, force bool) error {
 	return i.client.DeleteItem(ctx, i.Kref, force)
 }
 
+// MoveTo moves this Item to a Space in another Project, preserving its kref.
+func (i *Item) MoveTo(ctx context.Context, targetSpacePath string) (*Item, error) {
+	return i.client.MoveItem(ctx, i.Kref, targetSpacePath)
+}
+
+// MoveToWithGuard moves this archived Item under an exact deletion guard.
+func (i *Item) MoveToWithGuard(ctx context.Context, targetSpacePath, deletionGuardID string) (*Item, error) {
+	return i.client.MoveItemWithGuard(ctx, i.Kref, targetSpacePath, deletionGuardID)
+}
+
 // SetDeprecated deprecates/restores this item (updates the in-memory flag).
 func (i *Item) SetDeprecated(ctx context.Context, status bool) error {
 	err := i.client.SetDeprecated(ctx, i.Kref, status)

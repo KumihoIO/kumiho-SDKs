@@ -151,7 +151,8 @@ class Item(KumihoObject):
     def create_revision(
         self,
         metadata: Optional[Dict[str, str]] = None,
-        number: int = 0
+        number: int = 0,
+        idempotency_key: Optional[str] = None,
     ) -> Revision:
         """Create a new revision of this item.
 
@@ -163,6 +164,7 @@ class Item(KumihoObject):
                 render settings, software versions).
             number: Specific revision number to use. If 0 (default), auto-assigns
                 the next available number.
+            idempotency_key: Stable tenant-scoped identity for retry-safe creation.
 
         Returns:
             Revision: The newly created Revision object.
@@ -175,7 +177,9 @@ class Item(KumihoObject):
             >>> # Specific revision number (use with caution)
             >>> v5 = item.create_revision(number=5)
         """
-        return self._client.create_revision(self.kref, metadata, number)
+        return self._client.create_revision(
+            self.kref, metadata, number, idempotency_key=idempotency_key
+        )
 
     def get_revisions(self) -> List[Revision]:
         """Get all revisions of this item.
@@ -250,6 +254,19 @@ class Item(KumihoObject):
             # Item is in project root space: kref://project/item.kind
             space_path = f"/{self.kref.get_project()}"
         return self._client.get_space(space_path)
+
+    def move_to(
+        self,
+        target_space_path: str,
+        *,
+        deletion_guard_id: Optional[str] = None,
+    ) -> 'Item':
+        """Move this Item to a Space in another Project, preserving its kref."""
+        return self._client.move_item(
+            self.kref,
+            target_space_path,
+            deletion_guard_id=deletion_guard_id,
+        )
 
     def get_project(self) -> 'Project':
         """Get the project that contains this item.
@@ -378,7 +395,13 @@ class Item(KumihoObject):
         """
         return self._client.peek_next_revision(self.kref)
 
-    def set_metadata(self, metadata: Dict[str, str]) -> 'Item':
+    def set_metadata(
+        self,
+        metadata: Dict[str, str],
+        *,
+        archived_operation: Optional[str] = None,
+        deletion_guard_id: Optional[str] = None,
+    ) -> 'Item':
         """Set or update metadata for this item.
 
         Metadata is merged with existing metadata—existing keys are
@@ -397,7 +420,12 @@ class Item(KumihoObject):
             ...     "complexity": "high"
             ... })
         """
-        return self._client.update_item_metadata(self.kref, metadata)
+        return self._client.update_item_metadata(
+            self.kref,
+            metadata,
+            archived_operation=archived_operation,
+            deletion_guard_id=deletion_guard_id,
+        )
 
     def set_attribute(self, key: str, value: str) -> bool:
         """Set a single metadata attribute.

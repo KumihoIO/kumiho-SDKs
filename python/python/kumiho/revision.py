@@ -171,6 +171,10 @@ class Revision(KumihoObject):
         name: str,
         location: str,
         metadata: Optional[Dict[str, str]] = None,
+        *,
+        idempotency_key: Optional[str] = None,
+        archived_operation: Optional[str] = None,
+        deletion_guard_id: Optional[str] = None,
     ) -> Artifact:
         """Create a new artifact for this revision.
 
@@ -191,9 +195,23 @@ class Revision(KumihoObject):
             >>> textures = revision.create_artifact("textures", "smb://server/tex/hero.zip",
             ...     metadata={"format": "png", "resolution": "4k"})
         """
-        return self._client.create_artifact(self.kref, name, location, metadata=metadata)
+        return self._client.create_artifact(
+            self.kref,
+            name,
+            location,
+            metadata=metadata,
+            idempotency_key=idempotency_key,
+            archived_operation=archived_operation,
+            deletion_guard_id=deletion_guard_id,
+        )
 
-    def set_metadata(self, metadata: Dict[str, str]) -> 'Revision':
+    def set_metadata(
+        self,
+        metadata: Dict[str, str],
+        *,
+        archived_operation: Optional[str] = None,
+        deletion_guard_id: Optional[str] = None,
+    ) -> 'Revision':
         """Set or update metadata for this revision.
 
         Metadata is merged with existing metadata—existing keys are
@@ -212,7 +230,12 @@ class Revision(KumihoObject):
             ...     "resolution": "4K"
             ... })
         """
-        return self._client.update_revision_metadata(self.kref, metadata)
+        return self._client.update_revision_metadata(
+            self.kref,
+            metadata,
+            archived_operation=archived_operation,
+            deletion_guard_id=deletion_guard_id,
+        )
 
     def set_attribute(self, key: str, value: str) -> bool:
         """Set a single metadata attribute.
@@ -507,7 +530,8 @@ class Revision(KumihoObject):
         self,
         target_revision: 'Revision',
         edge_type: str,
-        metadata: Optional[Dict[str, str]] = None
+        metadata: Optional[Dict[str, str]] = None,
+        idempotency_key: Optional[str] = None,
     ) -> 'Edge':
         """Create an edge from this revision to another revision.
 
@@ -522,6 +546,7 @@ class Revision(KumihoObject):
                 - ``kumiho.REFERENCED``: This revision references target.
                 - ``kumiho.CONTAINS``: This revision contains target.
             metadata: Optional metadata for the edge.
+            idempotency_key: Stable tenant-scoped identity for retry-safe creation.
 
         Returns:
             Edge: The created Edge object.
@@ -539,7 +564,13 @@ class Revision(KumihoObject):
             ...     "modification": "Added details"
             ... })
         """
-        return self._client.create_edge(self, target_revision, edge_type, metadata)
+        return self._client.create_edge(
+            self,
+            target_revision,
+            edge_type,
+            metadata,
+            idempotency_key=idempotency_key,
+        )
 
     def get_edges(
         self,

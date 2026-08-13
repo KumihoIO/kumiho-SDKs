@@ -357,6 +357,7 @@ def test_discovery_falls_back_to_firebase_token(monkeypatch, tmp_path: Path) -> 
 
 def test_auto_configure_from_discovery(monkeypatch) -> None:
     kumiho = importlib.import_module("kumiho")
+    monkeypatch.delenv("KUMIHO_AUTH_TOKEN", raising=False)
 
     recorded = {}
 

@@ -189,11 +189,18 @@ public:
      */
     std::shared_ptr<Project> update(const std::string& description);
 
-    /**
-     * @brief Delete this project.
-     * @param force If true, permanently delete. If false, soft delete (deprecate).
-     */
+    /** @brief Forward the legacy delete/deprecate request to the server. */
     void deleteProject(bool force = false);
+
+    ::kumiho::ProjectDeletionImpactResponse analyzeDeletion();
+    void hardDelete(const ::kumiho::ProjectDeletionImpactResponse& impact, bool confirmed = false);
+    void resolveReference(
+        const std::string& inside_revision_kref,
+        const std::string& outside_revision_kref,
+        const std::string& edge_type,
+        const std::string& action,
+        const std::string& replacement_revision_kref = ""
+    );
 
 private:
     ::kumiho::ProjectResponse response_;

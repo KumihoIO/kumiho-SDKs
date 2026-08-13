@@ -35,7 +35,12 @@ public:
     MOCK_METHOD(grpc::Status, CreateProject, (grpc::ClientContext* context, const kumiho::CreateProjectRequest& request, kumiho::ProjectResponse* response), (override));
     MOCK_METHOD(grpc::Status, GetProjects, (grpc::ClientContext* context, const kumiho::GetProjectsRequest& request, kumiho::GetProjectsResponse* response), (override));
     MOCK_METHOD(grpc::Status, UpdateProject, (grpc::ClientContext* context, const kumiho::UpdateProjectRequest& request, kumiho::ProjectResponse* response), (override));
+    MOCK_METHOD(grpc::Status, AnalyzeProjectDeletion, (grpc::ClientContext* context, const kumiho::ProjectDeletionImpactRequest& request, kumiho::ProjectDeletionImpactResponse* response), (override));
+    MOCK_METHOD(grpc::Status, RegisterProjectDeletionGuard, (grpc::ClientContext* context, const kumiho::RegisterProjectDeletionGuardRequest& request, kumiho::ProjectDeletionGuardResponse* response), (override));
+    MOCK_METHOD(grpc::Status, ResolveProjectDeletionGuard, (grpc::ClientContext* context, const kumiho::ResolveProjectDeletionGuardRequest& request, kumiho::StatusResponse* response), (override));
+    MOCK_METHOD(grpc::Status, ResolveProjectReference, (grpc::ClientContext* context, const kumiho::ResolveProjectReferenceRequest& request, kumiho::StatusResponse* response), (override));
     MOCK_METHOD(grpc::Status, DeleteProject, (grpc::ClientContext* context, const kumiho::DeleteProjectRequest& request, kumiho::StatusResponse* response), (override));
+    MOCK_METHOD(grpc::Status, HardDeleteProject, (grpc::ClientContext* context, const kumiho::HardDeleteProjectRequest& request, kumiho::StatusResponse* response), (override));
 
     // Space methods (formerly Group)
     MOCK_METHOD(grpc::Status, CreateSpace, (grpc::ClientContext* context, const kumiho::CreateSpaceRequest& request, kumiho::SpaceResponse* response), (override));
@@ -51,6 +56,11 @@ public:
     MOCK_METHOD(grpc::Status, ItemSearch, (grpc::ClientContext* context, const kumiho::ItemSearchRequest& request, kumiho::GetItemsResponse* response), (override));
     MOCK_METHOD(grpc::Status, DeleteItem, (grpc::ClientContext* context, const kumiho::DeleteItemRequest& request, kumiho::StatusResponse* response), (override));
     MOCK_METHOD(grpc::Status, UpdateItemMetadata, (grpc::ClientContext* context, const kumiho::UpdateMetadataRequest& request, kumiho::ItemResponse* response), (override));
+    MOCK_METHOD(grpc::Status, MoveItem, (grpc::ClientContext* context, const kumiho::MoveItemRequest& request, kumiho::ItemResponse* response), (override));
+
+    // Search methods
+    MOCK_METHOD(grpc::Status, Search, (grpc::ClientContext* context, const kumiho::SearchRequest& request, kumiho::SearchResponse* response), (override));
+    MOCK_METHOD(grpc::Status, ScoreRevisions, (grpc::ClientContext* context, const kumiho::ScoreRevisionsRequest& request, kumiho::ScoreRevisionsResponse* response), (override));
 
     // Revision methods (formerly Version)
     MOCK_METHOD(grpc::Status, ResolveKref, (grpc::ClientContext* context, const kumiho::ResolveKrefRequest& request, kumiho::RevisionResponse* response), (override));
@@ -58,6 +68,8 @@ public:
     MOCK_METHOD(grpc::Status, CreateRevision, (grpc::ClientContext* context, const kumiho::CreateRevisionRequest& request, kumiho::RevisionResponse* response), (override));
     MOCK_METHOD(grpc::Status, GetRevision, (grpc::ClientContext* context, const kumiho::KrefRequest& request, kumiho::RevisionResponse* response), (override));
     MOCK_METHOD(grpc::Status, GetRevisions, (grpc::ClientContext* context, const kumiho::GetRevisionsRequest& request, kumiho::GetRevisionsResponse* response), (override));
+    MOCK_METHOD(grpc::Status, BatchGetRevisions, (grpc::ClientContext* context, const kumiho::BatchGetRevisionsRequest& request, kumiho::BatchGetRevisionsResponse* response), (override));
+    MOCK_METHOD(grpc::Status, BatchCreateRevisions, (grpc::ClientContext* context, const kumiho::BatchCreateRevisionsRequest& request, kumiho::BatchCreateRevisionsResponse* response), (override));
     MOCK_METHOD(grpc::Status, DeleteRevision, (grpc::ClientContext* context, const kumiho::DeleteRevisionRequest& request, kumiho::StatusResponse* response), (override));
     MOCK_METHOD(grpc::Status, PeekNextRevision, (grpc::ClientContext* context, const kumiho::PeekNextRevisionRequest& request, kumiho::PeekNextRevisionResponse* response), (override));
     MOCK_METHOD(grpc::Status, UpdateRevisionMetadata, (grpc::ClientContext* context, const kumiho::UpdateMetadataRequest& request, kumiho::RevisionResponse* response), (override));
@@ -119,8 +131,18 @@ public:
     grpc::ClientAsyncResponseReaderInterface<kumiho::GetProjectsResponse>* PrepareAsyncGetProjectsRaw(grpc::ClientContext*, const kumiho::GetProjectsRequest&, grpc::CompletionQueue*) override { return nullptr; }
     grpc::ClientAsyncResponseReaderInterface<kumiho::ProjectResponse>* AsyncUpdateProjectRaw(grpc::ClientContext*, const kumiho::UpdateProjectRequest&, grpc::CompletionQueue*) override { return nullptr; }
     grpc::ClientAsyncResponseReaderInterface<kumiho::ProjectResponse>* PrepareAsyncUpdateProjectRaw(grpc::ClientContext*, const kumiho::UpdateProjectRequest&, grpc::CompletionQueue*) override { return nullptr; }
+    grpc::ClientAsyncResponseReaderInterface<kumiho::ProjectDeletionImpactResponse>* AsyncAnalyzeProjectDeletionRaw(grpc::ClientContext*, const kumiho::ProjectDeletionImpactRequest&, grpc::CompletionQueue*) override { return nullptr; }
+    grpc::ClientAsyncResponseReaderInterface<kumiho::ProjectDeletionImpactResponse>* PrepareAsyncAnalyzeProjectDeletionRaw(grpc::ClientContext*, const kumiho::ProjectDeletionImpactRequest&, grpc::CompletionQueue*) override { return nullptr; }
+    grpc::ClientAsyncResponseReaderInterface<kumiho::ProjectDeletionGuardResponse>* AsyncRegisterProjectDeletionGuardRaw(grpc::ClientContext*, const kumiho::RegisterProjectDeletionGuardRequest&, grpc::CompletionQueue*) override { return nullptr; }
+    grpc::ClientAsyncResponseReaderInterface<kumiho::ProjectDeletionGuardResponse>* PrepareAsyncRegisterProjectDeletionGuardRaw(grpc::ClientContext*, const kumiho::RegisterProjectDeletionGuardRequest&, grpc::CompletionQueue*) override { return nullptr; }
+    grpc::ClientAsyncResponseReaderInterface<kumiho::StatusResponse>* AsyncResolveProjectDeletionGuardRaw(grpc::ClientContext*, const kumiho::ResolveProjectDeletionGuardRequest&, grpc::CompletionQueue*) override { return nullptr; }
+    grpc::ClientAsyncResponseReaderInterface<kumiho::StatusResponse>* PrepareAsyncResolveProjectDeletionGuardRaw(grpc::ClientContext*, const kumiho::ResolveProjectDeletionGuardRequest&, grpc::CompletionQueue*) override { return nullptr; }
+    grpc::ClientAsyncResponseReaderInterface<kumiho::StatusResponse>* AsyncResolveProjectReferenceRaw(grpc::ClientContext*, const kumiho::ResolveProjectReferenceRequest&, grpc::CompletionQueue*) override { return nullptr; }
+    grpc::ClientAsyncResponseReaderInterface<kumiho::StatusResponse>* PrepareAsyncResolveProjectReferenceRaw(grpc::ClientContext*, const kumiho::ResolveProjectReferenceRequest&, grpc::CompletionQueue*) override { return nullptr; }
     grpc::ClientAsyncResponseReaderInterface<kumiho::StatusResponse>* AsyncDeleteProjectRaw(grpc::ClientContext*, const kumiho::DeleteProjectRequest&, grpc::CompletionQueue*) override { return nullptr; }
     grpc::ClientAsyncResponseReaderInterface<kumiho::StatusResponse>* PrepareAsyncDeleteProjectRaw(grpc::ClientContext*, const kumiho::DeleteProjectRequest&, grpc::CompletionQueue*) override { return nullptr; }
+    grpc::ClientAsyncResponseReaderInterface<kumiho::StatusResponse>* AsyncHardDeleteProjectRaw(grpc::ClientContext*, const kumiho::HardDeleteProjectRequest&, grpc::CompletionQueue*) override { return nullptr; }
+    grpc::ClientAsyncResponseReaderInterface<kumiho::StatusResponse>* PrepareAsyncHardDeleteProjectRaw(grpc::ClientContext*, const kumiho::HardDeleteProjectRequest&, grpc::CompletionQueue*) override { return nullptr; }
     
     // Space async methods (formerly Group)
     grpc::ClientAsyncResponseReaderInterface<kumiho::SpaceResponse>* AsyncCreateSpaceRaw(grpc::ClientContext*, const kumiho::CreateSpaceRequest&, grpc::CompletionQueue*) override { return nullptr; }
@@ -147,6 +169,14 @@ public:
     grpc::ClientAsyncResponseReaderInterface<kumiho::StatusResponse>* PrepareAsyncDeleteItemRaw(grpc::ClientContext*, const kumiho::DeleteItemRequest&, grpc::CompletionQueue*) override { return nullptr; }
     grpc::ClientAsyncResponseReaderInterface<kumiho::ItemResponse>* AsyncUpdateItemMetadataRaw(grpc::ClientContext*, const kumiho::UpdateMetadataRequest&, grpc::CompletionQueue*) override { return nullptr; }
     grpc::ClientAsyncResponseReaderInterface<kumiho::ItemResponse>* PrepareAsyncUpdateItemMetadataRaw(grpc::ClientContext*, const kumiho::UpdateMetadataRequest&, grpc::CompletionQueue*) override { return nullptr; }
+    grpc::ClientAsyncResponseReaderInterface<kumiho::ItemResponse>* AsyncMoveItemRaw(grpc::ClientContext*, const kumiho::MoveItemRequest&, grpc::CompletionQueue*) override { return nullptr; }
+    grpc::ClientAsyncResponseReaderInterface<kumiho::ItemResponse>* PrepareAsyncMoveItemRaw(grpc::ClientContext*, const kumiho::MoveItemRequest&, grpc::CompletionQueue*) override { return nullptr; }
+
+    // Search async methods
+    grpc::ClientAsyncResponseReaderInterface<kumiho::SearchResponse>* AsyncSearchRaw(grpc::ClientContext*, const kumiho::SearchRequest&, grpc::CompletionQueue*) override { return nullptr; }
+    grpc::ClientAsyncResponseReaderInterface<kumiho::SearchResponse>* PrepareAsyncSearchRaw(grpc::ClientContext*, const kumiho::SearchRequest&, grpc::CompletionQueue*) override { return nullptr; }
+    grpc::ClientAsyncResponseReaderInterface<kumiho::ScoreRevisionsResponse>* AsyncScoreRevisionsRaw(grpc::ClientContext*, const kumiho::ScoreRevisionsRequest&, grpc::CompletionQueue*) override { return nullptr; }
+    grpc::ClientAsyncResponseReaderInterface<kumiho::ScoreRevisionsResponse>* PrepareAsyncScoreRevisionsRaw(grpc::ClientContext*, const kumiho::ScoreRevisionsRequest&, grpc::CompletionQueue*) override { return nullptr; }
     
     // Revision async methods (formerly Version)
     grpc::ClientAsyncResponseReaderInterface<kumiho::RevisionResponse>* AsyncResolveKrefRaw(grpc::ClientContext*, const kumiho::ResolveKrefRequest&, grpc::CompletionQueue*) override { return nullptr; }
@@ -159,6 +189,10 @@ public:
     grpc::ClientAsyncResponseReaderInterface<kumiho::RevisionResponse>* PrepareAsyncGetRevisionRaw(grpc::ClientContext*, const kumiho::KrefRequest&, grpc::CompletionQueue*) override { return nullptr; }
     grpc::ClientAsyncResponseReaderInterface<kumiho::GetRevisionsResponse>* AsyncGetRevisionsRaw(grpc::ClientContext*, const kumiho::GetRevisionsRequest&, grpc::CompletionQueue*) override { return nullptr; }
     grpc::ClientAsyncResponseReaderInterface<kumiho::GetRevisionsResponse>* PrepareAsyncGetRevisionsRaw(grpc::ClientContext*, const kumiho::GetRevisionsRequest&, grpc::CompletionQueue*) override { return nullptr; }
+    grpc::ClientAsyncResponseReaderInterface<kumiho::BatchGetRevisionsResponse>* AsyncBatchGetRevisionsRaw(grpc::ClientContext*, const kumiho::BatchGetRevisionsRequest&, grpc::CompletionQueue*) override { return nullptr; }
+    grpc::ClientAsyncResponseReaderInterface<kumiho::BatchGetRevisionsResponse>* PrepareAsyncBatchGetRevisionsRaw(grpc::ClientContext*, const kumiho::BatchGetRevisionsRequest&, grpc::CompletionQueue*) override { return nullptr; }
+    grpc::ClientAsyncResponseReaderInterface<kumiho::BatchCreateRevisionsResponse>* AsyncBatchCreateRevisionsRaw(grpc::ClientContext*, const kumiho::BatchCreateRevisionsRequest&, grpc::CompletionQueue*) override { return nullptr; }
+    grpc::ClientAsyncResponseReaderInterface<kumiho::BatchCreateRevisionsResponse>* PrepareAsyncBatchCreateRevisionsRaw(grpc::ClientContext*, const kumiho::BatchCreateRevisionsRequest&, grpc::CompletionQueue*) override { return nullptr; }
     grpc::ClientAsyncResponseReaderInterface<kumiho::StatusResponse>* AsyncDeleteRevisionRaw(grpc::ClientContext*, const kumiho::DeleteRevisionRequest&, grpc::CompletionQueue*) override { return nullptr; }
     grpc::ClientAsyncResponseReaderInterface<kumiho::StatusResponse>* PrepareAsyncDeleteRevisionRaw(grpc::ClientContext*, const kumiho::DeleteRevisionRequest&, grpc::CompletionQueue*) override { return nullptr; }
     grpc::ClientAsyncResponseReaderInterface<kumiho::PeekNextRevisionResponse>* AsyncPeekNextRevisionRaw(grpc::ClientContext*, const kumiho::PeekNextRevisionRequest&, grpc::CompletionQueue*) override { return nullptr; }
@@ -254,6 +288,19 @@ protected:
 };
 
 // --- Unit Tests ---
+TEST_F(KumihoUnitTest, ForceProjectDeleteRequiresBoundSnapshot) {
+    EXPECT_THROW(client->deleteProject("project-1", true), std::invalid_argument);
+}
+
+TEST_F(KumihoUnitTest, HardDeleteRequiresExplicitConfirmation) {
+    kumiho::ProjectDeletionImpactResponse impact;
+    impact.set_project_id("project-1");
+    impact.set_impact_snapshot_id("snapshot-1");
+    impact.set_impact_snapshot_hash("sha256:abc");
+
+    EXPECT_THROW(client->hardDeleteProject(impact), std::invalid_argument);
+}
+
 TEST_F(KumihoUnitTest, CreateSpace) {
     kumiho::SpaceResponse fake_response;
     fake_response.set_path("/projectA/seqA");

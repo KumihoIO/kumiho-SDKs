@@ -83,7 +83,10 @@ def test_item_search_performance():
     # --- 3. Teardown ---
     logging.info(f"--- Tearing down test data ---")
     start_delete = time.perf_counter()
-    root_project.delete(force=True)
+    root_project = root_project.deprecate()
+    impact = root_project.analyze_deletion()
+    assert not impact.blockers
+    root_project.hard_delete(impact, confirmed=True)
     end_delete = time.perf_counter()
     logging.info(f"[REPORT] Teardown Time: {end_delete - start_delete:.4f} seconds.")
     

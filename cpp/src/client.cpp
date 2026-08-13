@@ -377,6 +377,95 @@ StatusResponse Client::deleteProject(const std::string& project_id, bool force) 
     return StatusResponse{res.success(), res.message()};
 }
 
+::kumiho::ProjectDeletionImpactResponse Client::analyzeProjectDeletion(const std::string& project_id) {
+    ::kumiho::ProjectDeletionImpactRequest req;
+    req.set_project_id(project_id);
+    ::kumiho::ProjectDeletionImpactResponse res;
+    grpc::ClientContext context; configureContext(context);
+    auto status = stub_->AnalyzeProjectDeletion(&context, req, &res);
+    if (!status.ok()) {
+        throw RpcError("AnalyzeProjectDeletion failed: " + status.error_message(), static_cast<int>(status.error_code()));
+    }
+    return res;
+}
+
+StatusResponse Client::hardDeleteProject(const ::kumiho::ProjectDeletionImpactResponse& impact, bool confirmed) {
+    if (!confirmed || impact.project_id().empty() || impact.impact_snapshot_id().empty() || impact.impact_snapshot_hash().empty()) {
+        throw std::invalid_argument("hard-delete requires a server impact snapshot and confirmed=true");
+    }
+    ::kumiho::HardDeleteProjectRequest req;
+    req.set_project_id(impact.project_id());
+    req.set_impact_snapshot_id(impact.impact_snapshot_id());
+    req.set_impact_snapshot_hash(impact.impact_snapshot_hash());
+    req.set_confirmed(true);
+    ::kumiho::StatusResponse res;
+    grpc::ClientContext context; configureContext(context);
+    auto status = stub_->HardDeleteProject(&context, req, &res);
+    if (!status.ok()) {
+        throw RpcError("HardDeleteProject failed: " + status.error_message(), static_cast<int>(status.error_code()));
+    }
+    return StatusResponse{res.success(), res.message()};
+}
+
+::kumiho::ProjectDeletionGuardResponse Client::registerProjectDeletionGuard(
+    const std::string& project_id,
+    const std::string& guard_id,
+    const std::string& resource_kref,
+    const std::vector<std::string>& allowed_operations,
+    const std::vector<std::string>& allowed_metadata_keys
+) {
+    ::kumiho::RegisterProjectDeletionGuardRequest req;
+    req.set_project_id(project_id);
+    req.set_guard_id(guard_id);
+    req.set_resource_kref(resource_kref);
+    for (const auto& value : allowed_operations) req.add_allowed_operations(value);
+    for (const auto& value : allowed_metadata_keys) req.add_allowed_metadata_keys(value);
+    ::kumiho::ProjectDeletionGuardResponse res;
+    grpc::ClientContext context; configureContext(context);
+    auto status = stub_->RegisterProjectDeletionGuard(&context, req, &res);
+    if (!status.ok()) {
+        throw RpcError("RegisterProjectDeletionGuard failed: " + status.error_message(), static_cast<int>(status.error_code()));
+    }
+    return res;
+}
+
+StatusResponse Client::resolveProjectDeletionGuard(const std::string& project_id, const std::string& guard_id) {
+    ::kumiho::ResolveProjectDeletionGuardRequest req;
+    req.set_project_id(project_id);
+    req.set_guard_id(guard_id);
+    ::kumiho::StatusResponse res;
+    grpc::ClientContext context; configureContext(context);
+    auto status = stub_->ResolveProjectDeletionGuard(&context, req, &res);
+    if (!status.ok()) {
+        throw RpcError("ResolveProjectDeletionGuard failed: " + status.error_message(), static_cast<int>(status.error_code()));
+    }
+    return StatusResponse{res.success(), res.message()};
+}
+
+StatusResponse Client::resolveProjectReference(
+    const std::string& project_id,
+    const std::string& inside_revision_kref,
+    const std::string& outside_revision_kref,
+    const std::string& edge_type,
+    const std::string& action,
+    const std::string& replacement_revision_kref
+) {
+    ::kumiho::ResolveProjectReferenceRequest req;
+    req.set_project_id(project_id);
+    req.set_inside_revision_kref(inside_revision_kref);
+    req.set_outside_revision_kref(outside_revision_kref);
+    req.set_edge_type(edge_type);
+    req.set_action(action);
+    req.set_replacement_revision_kref(replacement_revision_kref);
+    ::kumiho::StatusResponse res;
+    grpc::ClientContext context; configureContext(context);
+    auto status = stub_->ResolveProjectReference(&context, req, &res);
+    if (!status.ok()) {
+        throw RpcError("ResolveProjectReference failed: " + status.error_message(), static_cast<int>(status.error_code()));
+    }
+    return StatusResponse{res.success(), res.message()};
+}
+
 std::shared_ptr<Project> Client::updateProject(
     const std::string& project_id,
     std::optional<bool> allow_public,
@@ -717,6 +806,27 @@ void Client::deleteItem(const Kref& kref, bool force) {
     if (!status.ok()) {
         throw RpcError("DeleteItem failed: " + status.error_message(), static_cast<int>(status.error_code()));
     }
+}
+
+std::shared_ptr<Item> Client::moveItem(
+    const Kref& kref,
+    const std::string& target_space_path,
+    const std::string& deletion_guard_id
+) {
+    ::kumiho::MoveItemRequest req;
+    req.set_item_kref(kref.uri());
+    req.set_target_space_path(target_space_path);
+
+    ::kumiho::ItemResponse res;
+    grpc::ClientContext context; configureContext(context);
+    if (!deletion_guard_id.empty()) {
+        context.AddMetadata("x-kumiho-deletion-guard", deletion_guard_id);
+    }
+    grpc::Status status = stub_->MoveItem(&context, req, &res);
+    if (!status.ok()) {
+        throw RpcError("MoveItem failed: " + status.error_message(), static_cast<int>(status.error_code()));
+    }
+    return std::make_shared<Item>(res, this);
 }
 
 void Client::setItemDeprecated(const Kref& kref, bool deprecated) {
