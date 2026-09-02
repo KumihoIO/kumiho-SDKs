@@ -1122,3 +1122,349 @@ def test_two_tenants_do_not_cross_talk_through_a_handler(
 
     assert results["tenant-a"] == ["tenant-a", "CognitiveMemory"]
     assert results["tenant-b"] == ["tenant-b", "CognitiveMemory"]
+
+
+# ---------------------------------------------------------------------------
+# Composition: the connector profile and the stacking gate (#168)
+# ---------------------------------------------------------------------------
+#
+# The two features reached ``tool_memory_store`` from opposite sides. #168 put
+# the ``KUMIHO_STACK_MIDDLE_BAND`` switch and the ``stack_mode`` telemetry
+# field *inside* it; this branch wrapped the same tool in a profile, hosted
+# guards and tenant-keyed caches *around* it. Nothing in the source makes them
+# interact, which is precisely why the composition is worth pinning rather
+# than assumed: the rebase that brought them together resolved by adjacency,
+# and the next edit to either side has to keep both claims true.
+#
+# The stacking unit tests in test_mcp_revision_stacking.py drive the gate as a
+# pure function. These drive it through the *connector server*, so a profile
+# wrapper that swallowed a result field or a hosted guard that bypassed the
+# gate would fail here and only here.
+
+
+class _FKref:
+    def __init__(self, uri: str) -> None:
+        self.uri = uri
+
+
+class _FRevision:
+    def __init__(
+        self, uri: str, memory_type: str = "", title: str = "", summary: str = ""
+    ) -> None:
+        self.kref = _FKref(uri)
+        self.metadata = {
+            "memory_type": memory_type, "title": title, "summary": summary,
+        }
+
+    def tag(self, tag: str) -> None:
+        return None
+
+    def create_artifact(self, name: str, location: str) -> Any:
+        return types.SimpleNamespace(kref=_FKref("kref://artifact"))
+
+    def create_edge(self, target: Any, edge_type: str) -> Any:
+        return types.SimpleNamespace(target_kref=_FKref("kref://edge"))
+
+
+class _FItem:
+    """The surface ``tool_memory_store`` touches on an item it may stack onto."""
+
+    def __init__(
+        self, name: str, memory_type: str = "", title: str = "", summary: str = ""
+    ) -> None:
+        self.item_name = name
+        self.kref = _FKref(f"kref://CognitiveMemory/decisions/{name}.conversation")
+        self._published = _FRevision(
+            f"{self.kref.uri}?r=1", memory_type, title, summary
+        )
+        self.revisions_created = 0
+
+    def get_revision_by_tag(self, tag: str) -> Any:
+        return self._published if tag == "published" else None
+
+    def get_revision(self, selector: str) -> Any:
+        return self._published
+
+    def create_revision(self, metadata: Dict[str, Any]) -> Any:
+        self.revisions_created += 1
+        return _FRevision(f"{self.kref.uri}?r={self.revisions_created + 1}")
+
+
+class _FHit:
+    def __init__(self, item: _FItem, score: float) -> None:
+        self.item = item
+        self.score = score
+        self.matched_in = ["item", "revision"]
+
+
+# One capture and a stored neighbour carrying the *same* title and summary, so
+# the lexical floor (0.17) is cleared with room to spare and the search score
+# is the only thing left deciding. 0.66 sits in the middle band -- above the
+# 0.55 type-match threshold, below the 0.75 strong threshold -- which is the
+# band #168 makes optional.
+STACK_TITLE = "Connector profile and the revision stacking gate compose cleanly"
+STACK_SUMMARY = (
+    "The connector profile filters which tools a remote client may call, while "
+    "the stacking gate decides whether a capture becomes a new revision of an "
+    "existing item; neither mechanism knows the other exists."
+)
+MIDDLE_BAND_SCORE = 0.66
+
+
+@pytest.fixture
+def offline_store(monkeypatch: pytest.MonkeyPatch) -> Dict[str, Any]:
+    """Run the real ``tool_memory_store`` with every graph call stubbed.
+
+    Only the graph edges are faked: the gate, the result assembly and the
+    profile wrapper are the code under test and run for real.
+    """
+    neighbour = _FItem("prior-decision", "decision", STACK_TITLE, STACK_SUMMARY)
+    minted = _FItem("freshly-minted", "decision")
+    calls: Dict[str, Any] = {"search": [], "neighbour": neighbour, "minted": minted}
+
+    monkeypatch.setattr(mcp_server, "_ensure_configured", lambda: True)
+    monkeypatch.setattr(
+        mcp_server, "_get_project_cached",
+        lambda name: types.SimpleNamespace(name=name),
+    )
+    monkeypatch.setattr(
+        mcp_server, "_ensure_space_path", lambda project, path: "/decisions"
+    )
+    monkeypatch.setattr(mcp_server, "_get_or_create_item", lambda p, s, n, k: minted)
+    monkeypatch.setattr(mcp_server, "_write_memory_artifact", lambda **kw: "")
+    monkeypatch.setattr(
+        mcp_server,
+        "_get_or_create_bundle",
+        lambda p, s, b: types.SimpleNamespace(
+            kref=_FKref("kref://bundle"), add_member=lambda item: None
+        ),
+    )
+
+    def _search(query: str, **kwargs: Any) -> List[_FHit]:
+        calls["search"].append(query)
+        return [_FHit(neighbour, MIDDLE_BAND_SCORE)]
+
+    monkeypatch.setattr(kumiho, "search", _search)
+    return calls
+
+
+def _store_through(server: Any, **overrides: Any) -> Dict[str, Any]:
+    """Dispatch kumiho_memory_store through *server* and decode the result."""
+    arguments: Dict[str, Any] = {
+        "project": "CognitiveMemory",
+        "space_path": "decisions",
+        "memory_type": "decision",
+        "title": STACK_TITLE,
+        "summary": STACK_SUMMARY,
+        # ``user_text`` is the schema's one required property, so the call has
+        # to carry it -- otherwise mcp 2.x refuses before dispatch and every
+        # assertion below would be reading a validation error, not a result.
+        "user_text": "Does the profile wrapper preserve the stacking result?",
+        "assistant_text": STACK_SUMMARY,
+    }
+    arguments.update(overrides)
+    out = _dispatch(
+        server, "tools/call", name="kumiho_memory_store", arguments=arguments
+    )
+    return json.loads(out["content"][0]["text"])
+
+
+def test_connector_store_results_carry_stack_mode(
+    connector_server: Any,
+    offline_store: Dict[str, Any],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """#168's telemetry field survives the connector profile wrapper.
+
+    A hosted tenant has no logs and no hook output; ``stack_mode`` on the
+    result is the only channel that says which gate produced ``stack_score``.
+    """
+    monkeypatch.delenv("KUMIHO_STACK_MIDDLE_BAND", raising=False)
+    result = _store_through(connector_server)
+
+    assert "error" not in result, result
+    assert result["stack_mode"] == "two-band"
+    # the whole stack_* family travels together, so a caller can read the
+    # number and the gate that produced it in one place
+    for field in ("stack_score", "stack_runner_up", "stack_overlap"):
+        assert field in result, field
+
+
+def test_connector_store_withholds_the_middle_band_when_switched_off(
+    connector_server: Any,
+    offline_store: Dict[str, Any],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """KUMIHO_STACK_MIDDLE_BAND=0 reaches the connector server too.
+
+    The switch lives in ``_should_stack``, several frames below the profile
+    wrapper. This asserts the wrapper does not shortcut past it -- a hosted
+    deployment sets the variable precisely because its tenants share one
+    topically homogeneous corpus, where the middle band's false positives
+    displace ``published`` on an unrelated item.
+    """
+    monkeypatch.setenv("KUMIHO_STACK_MIDDLE_BAND", "0")
+    result = _store_through(connector_server)
+
+    assert "error" not in result, result
+    assert result["stack_mode"] == "strong-only"
+    assert result["stacked"] is False
+    # the candidate was seen and scored -- it was refused by the gate, not
+    # missed by the search
+    assert result["stack_score"] == pytest.approx(MIDDLE_BAND_SCORE, abs=1e-4)
+    assert result["item_kref"] == offline_store["minted"].kref.uri
+
+
+def test_connector_store_stacks_the_same_capture_under_the_default_gate(
+    connector_server: Any,
+    offline_store: Dict[str, Any],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The control for the test above: same capture, default gate, stacks.
+
+    Without this pair, a search stub that returned nothing would satisfy the
+    strong-only assertion for entirely the wrong reason.
+    """
+    monkeypatch.delenv("KUMIHO_STACK_MIDDLE_BAND", raising=False)
+    result = _store_through(connector_server)
+
+    assert result["stacked"] is True
+    assert result["stack_mode"] == "two-band"
+    assert result["item_kref"] == offline_store["neighbour"].kref.uri
+
+
+# ---------------------------------------------------------------------------
+# The store path fails closed (kumiho-memory issue #22)
+# ---------------------------------------------------------------------------
+#
+# _ensure_configured is pinned as a function above. What issue #22 actually
+# asks for is narrower and about the *write* tools: a hosted process that lost
+# its client binding must refuse to store rather than fall back to ~/.kumiho,
+# because that fallback writes the remote caller's memory into the operator's
+# own graph. That is a silent cross-tenant write -- the worst failure this
+# file exists to prevent -- so it is pinned at the tool boundary, not only at
+# the helper one frame below it.
+
+
+class _RecordingClient:
+    """Stands in for the client a hosting layer binds per request."""
+
+    def __init__(self) -> None:
+        self.projects_requested: List[str] = []
+
+    def get_project(self, name: str) -> Any:
+        self.projects_requested.append(name)
+        return types.SimpleNamespace(name=name)
+
+
+@pytest.fixture
+def graph_tripwire(monkeypatch: pytest.MonkeyPatch) -> List[str]:
+    """Record any call that would reach a graph, so "before" is checkable."""
+    touched: List[str] = []
+    monkeypatch.setattr(
+        kumiho, "get_project", lambda name: touched.append(f"get_project:{name}")
+    )
+
+    def _search(*a: Any, **k: Any) -> List[Any]:
+        touched.append("search")
+        return []
+
+    monkeypatch.setattr(kumiho, "search", _search)
+    monkeypatch.setattr(
+        kumiho,
+        "auto_configure_from_discovery",
+        lambda *a, **k: touched.append("auto_configure"),
+    )
+    return touched
+
+
+def test_memory_store_fails_closed_when_hosted_without_a_client(
+    graph_tripwire: List[str],
+) -> None:
+    """Hosted, no binding: raise before anything reaches a graph."""
+    with request_context(_ctx("tenant-a")):
+        with pytest.raises(RuntimeError, match="no request-scoped Kumiho client"):
+            mcp_server.tool_memory_store(
+                title="t", summary="s", assistant_text="a", space_path="decisions"
+            )
+    assert graph_tripwire == [], "a refused store must not touch any graph"
+
+
+def test_memory_store_batch_fails_closed_when_hosted_without_a_client(
+    graph_tripwire: List[str],
+) -> None:
+    """The batch path carries the same guarantee; it writes far more per call."""
+    with request_context(_ctx("tenant-a")):
+        with pytest.raises(RuntimeError, match="no request-scoped Kumiho client"):
+            mcp_server.tool_memory_store_batch(
+                captures=[{"type": "decision", "title": "t", "content": "c"}]
+            )
+    assert graph_tripwire == [], "a refused batch store must not touch any graph"
+
+
+def test_the_hosted_env_flag_alone_fails_the_store_closed(
+    monkeypatch: pytest.MonkeyPatch, graph_tripwire: List[str]
+) -> None:
+    """Between requests there is no context, but a hosted process is still
+    hosted -- ``KUMIHO_MCP_HOSTED`` has to bind on its own, or a background
+    task in that process quietly gets the operator's own credentials."""
+    monkeypatch.setenv("KUMIHO_MCP_HOSTED", "1")
+    with pytest.raises(RuntimeError, match="no request-scoped Kumiho client"):
+        mcp_server.tool_memory_store(
+            title="t", summary="s", assistant_text="a", space_path="decisions"
+        )
+    assert graph_tripwire == []
+
+
+def test_a_bound_client_receives_the_store(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The other half of fail-closed: with a binding the call goes through --
+    and goes through the *bound* client, not the process default.
+
+    ``_ensure_configured`` and ``_get_project_cached`` are deliberately left
+    real here, so the project lookup resolves through ``kumiho.get_client()``
+    the way it does in production.
+    """
+    mcp_server._project_cache.clear()
+    client = _RecordingClient()
+    reached: List[str] = []
+    monkeypatch.setattr(
+        kumiho,
+        "auto_configure_from_discovery",
+        lambda *a, **k: reached.append("auto_configure"),
+    )
+    monkeypatch.setattr(
+        mcp_server, "_ensure_space_path", lambda project, path: "/decisions"
+    )
+    monkeypatch.setattr(
+        mcp_server,
+        "_get_or_create_item",
+        lambda p, s, n, k: _FItem("minted-under-binding", "decision"),
+    )
+    monkeypatch.setattr(mcp_server, "_write_memory_artifact", lambda **kw: "")
+    monkeypatch.setattr(
+        mcp_server,
+        "_get_or_create_bundle",
+        lambda p, s, b: types.SimpleNamespace(
+            kref=_FKref("kref://bundle"), add_member=lambda item: None
+        ),
+    )
+    monkeypatch.setattr(kumiho, "search", lambda *a, **k: [])
+
+    with kumiho.use_client(client):
+        with request_context(_ctx("tenant-a")):
+            result = mcp_server.tool_memory_store(
+                title=STACK_TITLE,
+                summary=STACK_SUMMARY,
+                assistant_text=STACK_SUMMARY,
+                space_path="decisions",
+                memory_type="decision",
+            )
+
+    assert "error" not in result, result
+    assert client.projects_requested == ["CognitiveMemory"], (
+        "the bound client must be the one that saw the call"
+    )
+    assert reached == [], "hosted mode must never read ~/.kumiho"
+    # and #168's field is still there on the direct path, not just the
+    # dispatched one
+    assert result["stack_mode"] in ("two-band", "strong-only")

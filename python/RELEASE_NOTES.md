@@ -45,6 +45,13 @@ that used to reach for process-global state.
   error (`isError: true`), not a successful result whose text merely contains
   the word "error". Clients and models branch on `isError`; a refusal that
   reports success reads as "the call went through".
+- **`KUMIHO_STACK_MIDDLE_BAND`** — a switch for the revision-stacking gate
+  0.12.2 introduced. Set it to `0` and a capture stacks only when it clears the
+  0.75 strong threshold **and** the lexical floor; the 0.55 type-match band is
+  withheld. The default is unchanged. Every `kumiho_memory_store` and
+  `kumiho_memory_store_batch` result now also carries `stack_mode` next to
+  `stack_score`, so a deployment can tell which gate produced a number before
+  it decides whether to change the gate.
 
 ### ⚠️ Read this before hosting
 
@@ -68,6 +75,17 @@ that used to reach for process-global state.
   columns because the tools do: `kumiho_memory_space_profile` persists
   versioned profile items unless `dry_run` is set (not read-only), and
   `kumiho_memory_dream_state` applies deprecation (destructive).
+- **Set `KUMIHO_STACK_MIDDLE_BAND=0` when you host.** The two-band stacking
+  gate was calibrated on one corpus, and its middle band is the contested one:
+  every false positive measured there was an unrelated same-type neighbour
+  scoring 0.58-0.62 in a topically homogeneous space. A false stack moves the
+  `published` tag onto an unrelated item, and every recall path resolves
+  `published` first — so the displaced memory leaves the default retrieval
+  surface silently. A shared multi-tenant server has not measured its own
+  distribution yet, so it should run strong-only: near-duplicates still stack,
+  the contested band stays shut, and the `stack_mode` / `stack_score` fields on
+  every store result are the telemetry that tells you when to open it. The
+  stdio plugin keeps the default.
 
 ### 🧪 Testing
 
@@ -75,7 +93,17 @@ that used to reach for process-global state.
   pinned by name, annotation coverage and honesty for all 63 tools, the
   out-of-profile refusal on both mcp legs, and hosted-mode tenancy — cache
   keying, the `auth_token` no-op, and the discovery-fallback refusal.
-- Full suite from `python/python/`: 350 passed, 98 skipped, with and without
+- The same file also pins the two features against each other: a
+  `kumiho_memory_store` dispatched through the **connector** server still
+  carries `stack_mode`, and `KUMIHO_STACK_MIDDLE_BAND=0` still withholds the
+  middle band there — with the default-gate control alongside it, so a search
+  stub returning nothing cannot pass for a withheld band.
+- The store path is pinned **fail-closed** at the tool boundary, not only at
+  the helper: hosted with no bound client, `kumiho_memory_store` and
+  `kumiho_memory_store_batch` raise before anything reaches a graph; with
+  `kumiho.use_client(...)` bound, the bound client is the one that sees the
+  call and `~/.kumiho` is never read.
+- Full suite from `python/python/`: 368 passed, 98 skipped, with and without
   the real `kumiho_memory` source on `PYTHONPATH`.
 
 ### 🎯 Also in this release

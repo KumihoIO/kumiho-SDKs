@@ -51,6 +51,13 @@ its terse companion. Entries belong in both.
   as server `instructions`, returned in the MCP `initialize` result for the
   connector profile. A remote connector has no skill and no hooks, so this is
   the only channel the protocol has.
+- **`KUMIHO_STACK_MIDDLE_BAND`** — set to `0` to run the revision-stacking
+  gate in strong-only mode, where a capture stacks only when its score clears
+  the 0.75 strong threshold **and** the lexical floor; the 0.55 type-match band
+  is withheld. Default is unchanged (two-band). Every `kumiho_memory_store` and
+  `kumiho_memory_store_batch` result also reports `stack_mode` (`"two-band"` or
+  `"strong-only"`) next to `stack_score` / `stack_runner_up` / `stack_overlap`,
+  so per-tenant telemetry can say which gate produced the number.
 
 ### Changed
 - **The MCP server's process-global caches are keyed by tenant.**
@@ -70,6 +77,15 @@ its terse companion. Entries belong in both.
   root is on the server's shared disk and the recorded path resolves for nobody.
 
 ### Notes
+- **Hosted deployments run with `KUMIHO_STACK_MIDDLE_BAND=0`.** The two-band
+  gate was calibrated on one corpus. A shared multi-tenant server has not
+  measured its own score distribution, and a middle-band false positive moves
+  the `published` tag onto an unrelated item — which every recall path then
+  resolves first, so the displaced memory disappears from the default retrieval
+  surface without anything reporting it. Strong-only keeps stacking for
+  near-duplicates and withholds the contested band until the `stack_mode` /
+  `stack_score` telemetry says a tenant's distribution supports turning it back
+  on. The stdio plugin keeps the two-band default.
 - The stdio plugin path is unchanged in behavior: the default
   `create_mcp_server()` still exposes every tool, with the same names and
   schemas. Tools now additionally carry `title` and `annotations`, which the
