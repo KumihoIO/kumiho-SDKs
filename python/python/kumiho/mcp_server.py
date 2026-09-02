@@ -4181,11 +4181,13 @@ except Exception as _exc:
 # Two entries deliberately disagree with the hint columns of the connector
 # plan's §2.2 table, because the tools disagree with them:
 #   * kumiho_memory_space_profile persists versioned space-profile items
-#     unless dry_run is passed, so it is not readOnly.
+#     unless dry_run is passed, so it is not readOnly. It stays in the
+#     connector profile; only the honesty of its hints changed.
 #   * kumiho_memory_dream_state "applies deprecation, tagging, metadata
-#     enrichment" — deprecation is the destructive case by definition.
-# Both remain in the connector profile exactly as specified; only the honesty
-# of their hints changes.
+#     enrichment" — deprecation is the destructive case by definition. It is
+#     also out of the connector profile for v1 (it needs an LLM key hosted
+#     tenants do not have); the annotation stays, since the full profile still
+#     serves it.
 
 TOOL_ANNOTATIONS: Dict[str, Dict[str, Any]] = {
     # -- Core: read ---------------------------------------------------------
@@ -4595,9 +4597,17 @@ def _build_tool(spec: Dict[str, Any]) -> "Tool":
 # Tool profiles
 # ============================================================================
 
-#: The hosted connector's curated surface (connector plan §2.2). Ordered
-#: read / additive-write / destructive, which is also the order the directory
-#: listing presents them in.
+#: The hosted connector's curated surface (connector plan §2.2, less
+#: ``kumiho_memory_dream_state``). Ordered read / additive-write / destructive,
+#: which is also the order the directory listing presents them in.
+#:
+#: ``kumiho_memory_dream_state`` is in the plan's table but is deliberately
+#: *not* here for v1. Its assessment pass needs an LLM key and hosted tenants
+#: are keyless (plan §1.10), so listing it would publish a tool that fails at
+#: call time — which directory review catches head-on, since it asks the
+#: submitter to confirm every listed tool has been run. It keeps its
+#: :data:`TOOL_ANNOTATIONS` entry, so the full profile is unaffected; re-add
+#: the name here once per-tenant LLM metering exists.
 CONNECTOR_PROFILE_TOOLS: Tuple[str, ...] = (
     # Read
     "kumiho_memory_engage",
@@ -4616,7 +4626,6 @@ CONNECTOR_PROFILE_TOOLS: Tuple[str, ...] = (
     "kumiho_memory_store",
     "kumiho_memory_consolidate",
     "kumiho_memory_decompose",
-    "kumiho_memory_dream_state",
     "kumiho_create_space",
     # Destructive
     "kumiho_deprecate_item",

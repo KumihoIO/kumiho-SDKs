@@ -268,25 +268,56 @@ def test_an_unknown_env_profile_raises_at_construction(
 # The connector tool list
 # ---------------------------------------------------------------------------
 
-#: The curated surface, exactly as the connector plan §2.2 specifies it.
+#: The curated surface: the connector plan §2.2 table, less
+#: ``kumiho_memory_dream_state`` (see the exclusion test below). The column
+#: comments are the plan's, so ``kumiho_memory_space_profile`` sits under Read
+#: here even though its own hints say otherwise — membership is what this pins.
 SPEC_CONNECTOR_TOOLS = {
     # Read (11)
     "kumiho_memory_engage", "kumiho_memory_recall", "kumiho_memory_retrieve",
     "kumiho_memory_space_profile", "kumiho_chat_get", "kumiho_search_items",
     "kumiho_get_item", "kumiho_get_revision_by_tag", "kumiho_list_projects",
     "kumiho_get_spaces", "kumiho_get_provenance_summary",
-    # Write (6)
+    # Write (5)
     "kumiho_memory_reflect", "kumiho_memory_store", "kumiho_memory_consolidate",
-    "kumiho_memory_decompose", "kumiho_memory_dream_state", "kumiho_create_space",
+    "kumiho_memory_decompose", "kumiho_create_space",
     # Destructive (2)
     "kumiho_deprecate_item", "kumiho_chat_clear",
 }
 
 
-def test_the_connector_profile_is_the_nineteen_specified_tools() -> None:
-    assert len(CONNECTOR_PROFILE_TOOLS) == 19
-    assert len(set(CONNECTOR_PROFILE_TOOLS)) == 19, "duplicate entry"
+def test_the_connector_profile_is_the_eighteen_specified_tools() -> None:
+    assert len(CONNECTOR_PROFILE_TOOLS) == 18
+    assert len(set(CONNECTOR_PROFILE_TOOLS)) == 18, "duplicate entry"
     assert set(CONNECTOR_PROFILE_TOOLS) == SPEC_CONNECTOR_TOOLS
+
+
+def test_dream_state_is_withheld_from_the_connector_but_stays_annotated() -> None:
+    """Listing it would publish a tool that cannot run.
+
+    Its assessment pass needs an LLM key and hosted tenants are keyless (plan
+    §1.10), so it would fail at call time — which directory review catches
+    head-on, since it asks the submitter to confirm every listed tool has been
+    run. The annotation stays because the full profile still serves it.
+    """
+    assert "kumiho_memory_dream_state" not in CONNECTOR_PROFILE_TOOLS
+    assert "kumiho_memory_dream_state" in TOOL_ANNOTATIONS
+    assert TOOL_ANNOTATIONS["kumiho_memory_dream_state"]["destructiveHint"] is True
+
+
+def test_every_connector_tool_can_run_without_an_llm_key() -> None:
+    """The keyless-core rule (plan §1.10), as a list rather than a habit.
+
+    Every remaining connector tool is either a read or a keyless write — the
+    agent does the reasoning and the tool just stores it. A tool that needs a
+    summarizer belongs in the full profile until per-tenant metering exists.
+    """
+    needs_a_model = {
+        "kumiho_memory_dream_state",  # LLM assessment pass
+        "kumiho_code_ingest",         # batch-mines a commit range with a model
+        "kumiho_code_mine_session",   # mines the transcript with a model
+    }
+    assert set(CONNECTOR_PROFILE_TOOLS) & needs_a_model == set()
 
 
 def test_every_connector_tool_is_annotated() -> None:
@@ -304,7 +335,7 @@ def test_the_connector_profile_exposes_no_delete_tool() -> None:
 def every_connector_tool_registered(monkeypatch: pytest.MonkeyPatch) -> List[str]:
     """Stub any connector tool the installed kumiho-memory does not ship.
 
-    The 19 names include tools that only exist in a current kumiho-memory
+    The 18 names include tools that only exist in a current kumiho-memory
     (``kumiho_memory_space_profile``, ``kumiho_memory_decompose``). Without
     this, an exact-membership assertion would silently weaken into "whatever
     happens to be installed" — which is the assertion least worth making.
@@ -332,7 +363,7 @@ def test_tools_for_profile_filters_the_merged_list(
     tools that were appended at import."""
     names = [t["name"] for t in tools_for_profile("connector")]
     assert set(names) == SPEC_CONNECTOR_TOOLS
-    assert len(names) == 19
+    assert len(names) == 18
 
 
 def test_the_full_profile_is_every_tool() -> None:
@@ -371,10 +402,10 @@ def test_profile_none_and_full_agree(monkeypatch: pytest.MonkeyPatch) -> None:
     assert [t["name"] for t in default["tools"]] == [t["name"] for t in explicit["tools"]]
 
 
-def test_the_connector_server_lists_exactly_the_nineteen(connector_server: Any) -> None:
+def test_the_connector_server_lists_exactly_the_eighteen(connector_server: Any) -> None:
     result = _dispatch(connector_server, "tools/list")
     assert {t["name"] for t in result["tools"]} == SPEC_CONNECTOR_TOOLS
-    assert len(result["tools"]) == 19
+    assert len(result["tools"]) == 18
 
 
 def test_listed_tools_carry_their_annotations(connector_server: Any) -> None:

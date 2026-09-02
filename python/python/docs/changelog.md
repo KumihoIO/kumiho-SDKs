@@ -22,7 +22,7 @@ its terse companion. Entries belong in both.
   the context, so it follows a request across the async/sync boundary without
   being threaded through every call site.
 - **`create_mcp_server(profile=..., instructions=...)`** — `profile="connector"`
-  exposes a curated 19-tool surface for the hosted Claude connector; `None` or
+  exposes a curated 18-tool surface for the hosted Claude connector; `None` or
   `"full"` keeps today's whole tool list, which is what the stdio plugin gets.
   Falls back to `KUMIHO_MCP_TOOL_PROFILE`. An unrecognized name raises
   `ValueError` naming the valid profiles rather than silently serving
@@ -65,8 +65,13 @@ its terse companion. Entries belong in both.
   columns, because the tools disagree with them:
   `kumiho_memory_space_profile` persists versioned profile items unless
   `dry_run` is set (so it is not read-only), and `kumiho_memory_dream_state`
-  applies deprecation (so it is destructive). Both remain in the connector
-  profile exactly as specified; only the honesty of their hints changed.
+  applies deprecation (so it is destructive). `space_profile` keeps its place
+  in the connector profile; only the honesty of its hints changed.
+- `kumiho_memory_dream_state` is annotated but **withheld from the connector
+  profile** for v1. Its assessment pass needs an LLM key and hosted tenants are
+  keyless (plan §1.10), so listing it would publish a tool that fails at call
+  time — which directory review catches head-on, since it asks the submitter to
+  confirm every listed tool has been run. The full profile still serves it.
 
 ## [0.12.2] - 2026-09-02
 
