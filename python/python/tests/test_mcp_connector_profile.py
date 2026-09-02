@@ -591,6 +591,28 @@ def test_the_instructions_carry_the_protocol(fragment: str) -> None:
     assert fragment in CONNECTOR_INSTRUCTIONS
 
 
+def test_the_instructions_do_not_promise_a_session_id_from_engage() -> None:
+    """``engage`` is annotated read-only, and it keeps that promise.
+
+    It resolves no session and returns no ``session_id`` — verified live
+    against kumiho-memory 1.4.0 on 2026-09-02. The previous wording ("every
+    result echoes back the session_id and session_id_source it used")
+    therefore told the model to expect an id from the one call that never
+    produces one, and on a remote connector that is the FIRST call of every
+    conversation.
+
+    Fixing it the other way round is not available: session resolution
+    registers the active-session pointer when it generates an id, so making
+    engage report one would mean a tool annotated ``readOnlyHint=true``
+    writing to Redis.
+    """
+    sessions = " ".join(
+        CONNECTOR_INSTRUCTIONS.split("SESSIONS.", 1)[1].split("\n\n", 1)[0].split()
+    )
+    assert "engage is read-only and reports none" in sessions
+    assert TOOL_ANNOTATIONS["kumiho_memory_engage"]["readOnlyHint"] is True
+
+
 def test_the_instructions_only_name_tools_the_connector_exposes() -> None:
     """Instructing the model to call a tool the profile hides is a dead end."""
     # Word boundaries, not ``in``: every tool name is a prefix of some other
