@@ -11,9 +11,16 @@ def unique_name(prefix: str) -> str:
     """Generates a unique name with a prefix."""
     return f"{prefix}_{uuid.uuid4().hex[:8]}"
 
-def test_item_search_performance():
+def test_item_search_performance(live_client):
     """
     Generates a large number of items and measures creation and search time.
+
+    Live benchmark rather than a correctness test: it writes ~5000 items to a
+    real server through the module-level kumiho.* helpers. Depending on
+    live_client (conftest.py) both configures the default client those helpers
+    use and makes the test skip when no credentials are configured. It
+    previously had neither guard, so it errored wherever no server was
+    reachable — see the note on this file in kumiho-SDKs#153.
     """
     root_space_name = unique_name('perf_test')
     num_projects = 5

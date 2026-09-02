@@ -71,6 +71,12 @@ jobs:
       - name: Show resolved mcp version
         run: python -c "import importlib.metadata as m; print(m.version('mcp'))"
       - name: Test
+        # tests/ here is python/python/tests/. The pyproject/__version__ drift
+        # guard (test_version.py) used to sit at python/tests/, where nothing
+        # collected it — leaving the inline check in publish-pypi below as the
+        # only enforcement of that invariant, and only at tag time, after merge
+        # (kumiho-SDKs#153). It now runs on every PR as part of this suite. The
+        # inline check stays: it also compares the git tag, which no test sees.
         run: python -m pytest tests/ -v
 
   # ===========================================================================

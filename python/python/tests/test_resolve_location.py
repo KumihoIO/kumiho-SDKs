@@ -5,9 +5,14 @@ import kumiho
 from kumiho.kref import Kref
 
 @pytest.fixture
-def client():
-    # Assumes local server is running or configured via env vars
-    return kumiho.get_client()
+def client(live_client):
+    # These are live tests: they create projects, spaces, items, revisions and
+    # artifacts on a real server. Depending on live_client (conftest.py) is what
+    # makes them skip when no credentials are configured, the same way every
+    # other live test in this suite does. The previous kumiho.get_client() had
+    # no such guard, so with no server reachable the whole file errored out
+    # instead of skipping — which is why it could not be collected in CI.
+    return live_client
 
 @pytest.fixture
 def unique_project(client):

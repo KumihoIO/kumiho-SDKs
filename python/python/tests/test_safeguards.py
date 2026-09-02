@@ -4,12 +4,13 @@ import os
 from kumiho import KumihoError
 import kumiho
 
-# Use the existing client fixture if available, or create a new one
+# We need a client authenticated as a tenant member (admin/owner). live_client
+# (conftest.py) provides exactly that, and — unlike the kumiho.get_client() it
+# replaced — it skips instead of erroring when no credentials are configured.
+# Without that guard this file could not be collected in CI at all.
 @pytest.fixture
-def client():
-    # Assuming env vars are set or we can use default
-    # We need a client authenticated as a tenant member (admin/owner)
-    return kumiho.get_client()
+def client(live_client):
+    return live_client
 
 def test_safeguards_lifecycle(client):
     """

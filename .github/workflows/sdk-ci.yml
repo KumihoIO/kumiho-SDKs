@@ -101,6 +101,34 @@ jobs:
       - name: Show resolved mcp version
         run: python -c "import importlib.metadata as m; print(m.version('mcp'))"
       - name: Test
+        # tests/ here is python/python/tests/. It used to hold 4 files while a
+        # 21-file suite sat unreferenced at python/tests/ (kumiho-SDKs#153);
+        # that suite now lives here and is collected by this same command.
+        # Its live tests skip without KUMIHO_AUTH_TOKEN, which CI does not set.
+        run: python -m pytest tests/ -v
+
+  python-cli:
+    # kumiho-cli is a second distribution with its own pyproject and its own
+    # tests, and they were never run either — same root cause as #153, one
+    # directory over. It needs the SDK installed first: its own tests assert
+    # that kumiho_cli.ensure_token *is* kumiho.auth_cli.ensure_token, so a
+    # resolver-fetched kumiho from PyPI would test the wrong pairing.
+    name: Python CLI
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ./python/python
+          pip install -e ./python/kumiho-cli
+          pip install pytest
+      - name: Test
+        working-directory: python/kumiho-cli
         run: python -m pytest tests/ -v
 
   rust:
