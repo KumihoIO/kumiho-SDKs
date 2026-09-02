@@ -238,11 +238,16 @@ void main() {
 
   group('Edge API', () {
     test('EdgeType constants are defined', () {
+      expect(EdgeType.belongsTo, equals('BELONGS_TO'));
+      expect(EdgeType.createdFrom, equals('CREATED_FROM'));
+      expect(EdgeType.referenced, equals('REFERENCED'));
       expect(EdgeType.dependsOn, equals('DEPENDS_ON'));
       expect(EdgeType.derivedFrom, equals('DERIVED_FROM'));
-      expect(EdgeType.referenced, equals('REFERENCED'));
+      expect(EdgeType.producedBy, equals('PRODUCED_BY'));
+      expect(EdgeType.migratedFrom, equals('MIGRATED_FROM'));
       expect(EdgeType.contains, equals('CONTAINS'));
-      expect(EdgeType.createdFrom, equals('CREATED_FROM'));
+      expect(EdgeType.supersedes, equals('SUPERSEDES'));
+      expect(EdgeType.supports, equals('SUPPORTS'));
     });
 
     test('mockEdge creates valid edge', () {
