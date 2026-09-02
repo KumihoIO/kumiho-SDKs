@@ -12,6 +12,62 @@ in descending version order, which is also descending date order.
 narrative — why a change mattered and what you have to do about it. This file is
 its terse companion. Entries belong in both.
 
+## [0.13.0] - 2026-09-02
+
+### Added
+- **`kumiho.request_context`** — `RequestContext`, `current_request()`,
+  `request_context()` and `hosted_mode()`, all re-exported from `kumiho`. A
+  `contextvars`-carried per-request identity (tenant, user, token, session) for
+  deployments where one process serves many tenants. `asyncio.to_thread` copies
+  the context, so it follows a request across the async/sync boundary without
+  being threaded through every call site.
+- **`create_mcp_server(profile=..., instructions=...)`** — `profile="connector"`
+  exposes a curated 19-tool surface for the hosted Claude connector; `None` or
+  `"full"` keeps today's whole tool list, which is what the stdio plugin gets.
+  Falls back to `KUMIHO_MCP_TOOL_PROFILE`. An unrecognized name raises
+  `ValueError` naming the valid profiles rather than silently serving
+  everything — a typo in a deployment's environment would otherwise publish
+  every destructive tool to a public connector.
+- **`kumiho.mcp_server.TOOL_ANNOTATIONS`** — MCP tool annotations (`title`,
+  `readOnlyHint`, `destructiveHint`, `idempotentHint`, `openWorldHint`) for all
+  63 tools, the kumiho-memory ones included. Applied on both the mcp 1.x
+  decorator path and the 2.x `on_*` path, with `Tool.title` and
+  `ToolAnnotations` detected by introspection so an older SDK degrades to
+  unannotated tools instead of failing to construct.
+- **`kumiho.mcp_server.CONNECTOR_INSTRUCTIONS`** — the engage/reflect protocol
+  as server `instructions`, returned in the MCP `initialize` result for the
+  connector profile. A remote connector has no skill and no hooks, so this is
+  the only channel the protocol has.
+
+### Changed
+- **The MCP server's process-global caches are keyed by tenant.**
+  `_project_cache`, `_known_spaces`, `_bundle_cache` and `_space_registry_cache`
+  were keyed by project name alone. Two tenants routinely have a project called
+  `CognitiveMemory`, and the cached value is a live handle bound to one
+  tenant's client and credentials.
+- **Hosted mode never mutates `os.environ`.** The `auth_token` argument to
+  `kumiho_search_items` / `kumiho_fulltext_search` used to be published into
+  `KUMIHO_AUTH_TOKEN`; hosted, that is a credential swap visible to every other
+  in-flight request, and a persistent one. It is now ignored (with a warning)
+  when a request context is active or `KUMIHO_MCP_HOSTED=1`. Unchanged locally.
+- **Hosted mode never reads `~/.kumiho`.** `_ensure_configured()` raises instead
+  of falling back to `auto_configure_from_discovery()` when no request-scoped
+  client is bound: the fallback would serve the operator's own graph to a remote
+  caller. Local memory-artifact writes are likewise a no-op when hosted — the
+  root is on the server's shared disk and the recorded path resolves for nobody.
+
+### Notes
+- The stdio plugin path is unchanged in behavior: the default
+  `create_mcp_server()` still exposes every tool, with the same names and
+  schemas. Tools now additionally carry `title` and `annotations`, which the
+  plugin benefits from as much as the directory does.
+- Two annotations deliberately disagree with the connector plan's §2.2 hint
+  columns, because the tools disagree with them:
+  `kumiho_memory_space_profile` persists versioned profile items unless
+  `dry_run` is set (so it is not read-only), and `kumiho_memory_dream_state`
+  applies deprecation (so it is destructive). Both remain in the connector
+  profile exactly as specified; only the honesty of their hints changed.
+
 ## [0.12.2] - 2026-09-02
 
 ### Fixed
