@@ -629,6 +629,33 @@ _STACK_MIN_OVERLAP_TOKENS = 8
 # dominate whatever summary text fits in the remaining budget.
 _STACK_QUERY_MAX_CHARS = 180
 
+#: Switch for the middle band ([type-match threshold, strong threshold) with a
+#: matching ``memory_type``). Default on. Set to ``"0"`` to run the gate in
+#: strong-only mode, where a capture stacks only when its score clears the
+#: strong threshold AND the lexical floor.
+#:
+#: Why this exists: the two-band gate was calibrated on one corpus. The strong
+#: band sits above every unrelated score observed there (max 0.616) with room
+#: to spare; every contested case -- an unrelated same-type neighbour in a
+#: topically homogeneous space scoring 0.58-0.62 -- lives in the middle band.
+#: A deployment that has not yet measured its own score distribution (a shared
+#: multi-tenant server, a corpus in another language or of much shorter
+#: captures) can keep stacking for near-duplicates while withholding the band
+#: whose false positives displace ``published`` on an unrelated item. The
+#: ``stack_*`` fields on every store result are the telemetry that decides when
+#: to turn the band back on.
+_STACK_MIDDLE_BAND_ENV = "KUMIHO_STACK_MIDDLE_BAND"
+
+
+def _middle_band_enabled() -> bool:
+    """True unless ``KUMIHO_STACK_MIDDLE_BAND`` is explicitly ``"0"``."""
+    return os.environ.get(_STACK_MIDDLE_BAND_ENV, "1").strip() != "0"
+
+
+def _stack_mode() -> str:
+    """Human-readable gate mode, reported on store results for telemetry."""
+    return "two-band" if _middle_band_enabled() else "strong-only"
+
 
 def _build_stack_query(title: str, summary: str, fallback: str = "") -> str:
     """Build the similarity query from the title *and* the summary.
@@ -746,18 +773,26 @@ def _should_stack(
     threshold: float = _STACK_SIMILARITY_THRESHOLD,
     type_match_threshold: float = _STACK_TYPE_MATCH_THRESHOLD,
     min_overlap: float = _STACK_MIN_LEXICAL_OVERLAP,
+    middle_band: Optional[bool] = None,
 ) -> bool:
-    """The gate itself, as a pure function of the three measured signals.
+    """The gate itself, as a pure function of the measured signals.
 
     Split out so the labelled score/overlap table measured on the live graph
-    can drive it directly as a test fixture.
+    can drive it directly as a test fixture. *middle_band* defaults to the
+    ``KUMIHO_STACK_MIDDLE_BAND`` switch; pass it explicitly in tests.
     """
+    if middle_band is None:
+        middle_band = _middle_band_enabled()
     if overlap < min_overlap:
         # The lexical floor binds in both bands: it is the only signal that
         # separated duplicates from neighbours in a homogeneous space.
         return False
     if score >= threshold:
         return True
+    if not middle_band:
+        # Strong-only mode: the contested band is withheld until a deployment
+        # has measured its own score distribution.
+        return False
     return score >= type_match_threshold and type_matches
 
 
@@ -1391,6 +1426,7 @@ def tool_memory_store(
         "stack_score": round(stack_score, 4),
         "stack_runner_up": round(stack_runner_up, 4),
         "stack_overlap": round(stack_overlap, 4),
+        "stack_mode": _stack_mode(),
     }
     if previous_revision_kref:
         result["previous_revision_kref"] = previous_revision_kref
@@ -1548,6 +1584,7 @@ def tool_memory_store_batch(
             "stack_score": stack_score,
             "stack_runner_up": stack_runner_up,
             "stack_overlap": stack_overlap,
+            "stack_mode": _stack_mode(),
         }
         rows.append(row)
 
@@ -1620,6 +1657,7 @@ def tool_memory_store_batch(
             "stack_score": round(prep["stack_score"], 4),
             "stack_runner_up": round(prep["stack_runner_up"], 4),
             "stack_overlap": round(prep["stack_overlap"], 4),
+            "stack_mode": prep.get("stack_mode", _stack_mode()),
         }
 
     return {"results": results, "stored_krefs": stored_krefs, "stacked": stacked_count}
