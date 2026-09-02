@@ -549,9 +549,134 @@ def _resolve_space_hint_path(project: Project, space_path: str) -> str:
 # Revision stacking
 # ---------------------------------------------------------------------------
 
-# Minimum fuzzy-search score to consider two memories "similar enough" to
-# stack revisions on the same item instead of creating a new one.
-_STACK_SIMILARITY_THRESHOLD = 0.92
+# Fuzzy-search scores are corpus-relative, so these thresholds were
+# calibrated by replaying real duplicate pairs against a live CE graph
+# (fulltext-only search; hybrid vector search is a STUDIO+ feature).
+# What that measurement showed:
+#
+#   * An item scored against its OWN exact title tops out at 0.72-0.83.
+#     The previous 0.92 gate sat ABOVE the scorer's ceiling, so stacking
+#     could never fire for any input whatsoever -- not a strict rule, an
+#     unreachable one (issue #163: 20 captures, 20 ``stacked: false``).
+#   * Same-subject / different-title duplicates -- the case stacking
+#     exists to catch -- land at 0.58-0.68.
+#   * Unrelated items in the *same* space reach 0.62 when the space is
+#     topically homogeneous (every capture in ``decisions`` is about
+#     memory design), while in a mixed space they stay at 0.21-0.35.
+#
+# The duplicate band (0.58-0.68) and the unrelated band (up to 0.62)
+# therefore OVERLAP, and no single score can separate them. Hence two
+# tiers: a strong band that stacks on score alone, and a middle band that
+# demands a second, independent signal (the ``memory_type`` must agree)
+# before it will stack.
+#
+# The residual error is deliberately asymmetric. A false split -- today's
+# behaviour, 100% of the time -- fragments a topic forever and leaves the
+# revision operator with nothing to revise. A false stack merely files two
+# related memories as consecutive revisions of one item, where both are
+# still tagged, still retrievable, and recoverable via unroll_revisions.
+_STACK_SIMILARITY_THRESHOLD = 0.75
+
+# Middle band: stack only when the incoming ``memory_type`` also matches the
+# candidate's. Set to sit just under the lowest duplicate score observed.
+_STACK_TYPE_MATCH_THRESHOLD = 0.55
+
+# Hard cap on the generated search query. Long queries are not merely slow:
+# a ~230-character Korean query was observed to fail server-side with
+# Lucene ``maxClauseCount is set to 1024`` (CJK is bigram-tokenized and then
+# fuzzy-expanded, so characters translate into clauses far faster than they
+# do for Latin text). The title is always placed first so its terms
+# dominate whatever summary text fits in the remaining budget.
+_STACK_QUERY_MAX_CHARS = 180
+
+
+def _build_stack_query(title: str, summary: str, fallback: str = "") -> str:
+    """Build the similarity query from the title *and* the summary.
+
+    Searching the title alone (the pre-#163 behaviour) throws away the only
+    signal that survives a rewritten headline: two captures about one
+    subject three hours apart share their body, not their title. The title
+    still leads the query -- it is the most concentrated description of the
+    capture -- and the summary fills whatever budget is left.
+    """
+    title = (title or "").strip()
+    summary = (summary or "").strip()
+    if not title and not summary:
+        summary = (fallback or "").strip()
+    if not title:
+        return summary[:_STACK_QUERY_MAX_CHARS]
+
+    query = title[:_STACK_QUERY_MAX_CHARS]
+    remaining = _STACK_QUERY_MAX_CHARS - len(query) - 1
+    # Only bother appending summary text if a useful amount of it fits.
+    if summary and remaining >= 16:
+        query = f"{query} {summary[:remaining]}"
+    return query
+
+
+def _stack_search(
+    query_text: str,
+    context: str,
+    kind: str,
+    retry_query: str = "",
+) -> Optional[List[Any]]:
+    """Run the stacking search, retrying once with a shorter query.
+
+    Returns the result list, or ``None`` when the search itself failed --
+    which is *not* the same as "nothing similar" and is logged as such.
+    """
+    attempts = [query_text]
+    if retry_query and retry_query.strip() and retry_query != query_text:
+        attempts.append(retry_query)
+
+    last_exc: Optional[Exception] = None
+    for position, attempt in enumerate(attempts, start=1):
+        try:
+            return kumiho.search(
+                attempt,
+                context=context,
+                kind=kind,
+                include_revision_metadata=True,
+            )
+        except Exception as exc:  # noqa: BLE001 - any failure is worth logging
+            last_exc = exc
+            logger.warning(
+                "Revision stacking search failed (attempt %d/%d, context=%r, "
+                "query %d chars): %s",
+                position, len(attempts), context, len(attempt), exc,
+            )
+
+    # A search that fails on every call is a broken install, not a normal
+    # state, so this is a warning rather than the debug line it used to be.
+    logger.warning(
+        "Revision stacking unavailable for this capture (context=%r): every "
+        "search attempt failed, so a new item is being minted even though a "
+        "similar one may already exist. Last error: %s",
+        context or "<project root>", last_exc,
+    )
+    return None
+
+
+def _revision_memory_type(item: Any) -> str:
+    """Best-effort read of an item's current memory type.
+
+    The server reserves the "type" metadata key and strips it from reads,
+    so "memory_type" is the readable carrier; both are checked, mirroring
+    :func:`_matches_memory_types`.
+    """
+    for getter in (
+        lambda: item.get_revision_by_tag("published"),
+        lambda: item.get_revision("latest"),
+    ):
+        try:
+            rev = getter()
+        except Exception:
+            continue
+        meta = getattr(rev, "metadata", None) or {}
+        mem_type = str(meta.get("memory_type") or meta.get("type") or "")
+        if mem_type.strip():
+            return mem_type.strip().lower()
+    return ""
 
 
 def _find_similar_item(
@@ -559,42 +684,61 @@ def _find_similar_item(
     space_path: str,
     query_text: str,
     kind: str,
+    memory_type: str = "",
     threshold: float = _STACK_SIMILARITY_THRESHOLD,
-) -> Optional[Item]:
+    type_match_threshold: float = _STACK_TYPE_MATCH_THRESHOLD,
+    retry_query: str = "",
+) -> Tuple[Optional[Item], float]:
     """Search for an existing memory item similar to the incoming content.
 
-    Uses fuzzy search with revision metadata (title/summary) to find items
-    in the same space that cover a similar topic.  Returns the best match
-    above *threshold*, or ``None`` to fall back to new-item creation.
+    Uses fuzzy search over revision metadata (title/summary) to find items
+    in the same space that cover a similar topic.
+
+    Returns ``(item, score)``. The score is the best candidate's score and
+    is reported *whether or not* it cleared the bar, so a caller can tell
+    "the search returns 0.0 every time" (a broken install) apart from "the
+    top hit was close but not close enough". ``item`` is ``None`` when
+    nothing qualified and the caller should mint a new item.
     """
     if not query_text or not query_text.strip():
-        return None
+        return None, 0.0
 
     # Convert space_path "/CognitiveMemory/work" -> "CognitiveMemory/work"
     context = space_path.lstrip("/")
 
-    try:
-        results = kumiho.search(
-            query_text[:150],
-            context=context,
-            kind=kind,
-            include_revision_metadata=True,
-        )
-    except Exception:
-        logger.debug("Revision stacking search failed, falling back to new item")
-        return None
-
-    if not results or results[0].score < threshold:
-        return None
+    results = _stack_search(query_text, context, kind, retry_query)
+    if not results:
+        return None, 0.0
 
     best = results[0]
+    score = float(getattr(best, "score", 0.0) or 0.0)
+
+    if score >= threshold:
+        logger.debug(
+            "Revision stacking: matched item %s (score=%.3f >= %.2f) for "
+            "query '%.60s...'",
+            best.item.kref.uri, score, threshold, query_text,
+        )
+        return best.item, score
+
+    if score >= type_match_threshold and memory_type:
+        candidate_type = _revision_memory_type(best.item)
+        if candidate_type and candidate_type == memory_type.strip().lower():
+            logger.debug(
+                "Revision stacking: matched item %s (score=%.3f in the "
+                "[%.2f, %.2f) band, memory_type=%r agrees) for query "
+                "'%.60s...'",
+                best.item.kref.uri, score, type_match_threshold, threshold,
+                candidate_type, query_text,
+            )
+            return best.item, score
+
     logger.debug(
-        "Revision stacking: matched item %s (score=%.3f) for query '%.60s...'",
-        best.item.kref.uri,
-        best.score,
-        query_text,
+        "Revision stacking: best candidate %s scored %.3f, below the bar; "
+        "minting a new item.",
+        best.item.kref.uri, score,
     )
-    return best.item
+    return None, score
 
 
 def _get_or_create_bundle(project: Project, space_path: str, bundle_name: str) -> Item:
@@ -986,15 +1130,27 @@ def tool_memory_store(
 
     base_text = title or summary or user_text or assistant_text or "memory"
     stacked = False
+    stack_score = 0.0
     previous_revision_kref = ""
     item = None
 
     # --- Revision stacking: search for a similar existing item ---
     if stack_revisions:
-        search_query = title or summary or (user_text or "")[:150]
+        # Search title AND summary: a capture revisiting the same subject
+        # hours later shares its body, not its headline.
+        search_query = _build_stack_query(
+            title, summary, fallback=(assistant_text or user_text or "")
+        )
         if search_query.strip():
-            item = _find_similar_item(
-                project_name, normalized_space_path, search_query, memory_kind,
+            item, stack_score = _find_similar_item(
+                project_name,
+                normalized_space_path,
+                search_query,
+                memory_kind,
+                memory_type=memory_type,
+                # If the combined query trips the server's clause limit,
+                # fall back to the title alone rather than losing stacking.
+                retry_query=(title or "")[:_STACK_QUERY_MAX_CHARS],
             )
             if item is not None:
                 stacked = True
@@ -1102,6 +1258,10 @@ def tool_memory_store(
         "summary": final_summary,
         "edges_created": edges_created,
         "stacked": stacked,
+        # Best similarity score seen, reported even when nothing stacked, so
+        # a caller can tell a broken search (0.0 every time) from a genuine
+        # near-miss without inferring it from a stream of ``false``.
+        "stack_score": round(stack_score, 4),
     }
     if previous_revision_kref:
         result["previous_revision_kref"] = previous_revision_kref
@@ -1138,7 +1298,9 @@ def tool_memory_store_batch(
 
     Returns ``{"results": [per-capture dict | {"error": ...}], "stored_krefs":
     [...], "stacked": <int>}`` — ``results`` is positional (one entry per input
-    capture, ``None`` collapses to an ``error`` entry).
+    capture, ``None`` collapses to an ``error`` entry). Each successful entry
+    carries ``stack_score``, the best similarity score the stacking search
+    saw, reported whether or not it stacked.
     """
     _ensure_configured()
     source_krefs = source_revision_krefs or []
@@ -1181,11 +1343,18 @@ def tool_memory_store_batch(
         # Fuzzy-stack: reuse a similar existing item, else mint a hash-named one
         # (batch_create_revisions auto-creates the item from a new kref).
         item = None
+        stack_score = 0.0
         if stack_revisions:
-            search_query = title or final_summary[:150]
+            # Title AND summary, same as the single path.
+            search_query = _build_stack_query(title, final_summary)
             if search_query.strip():
-                item = _find_similar_item(
-                    project_name, normalized_space, search_query, memory_kind
+                item, stack_score = _find_similar_item(
+                    project_name,
+                    normalized_space,
+                    search_query,
+                    memory_kind,
+                    memory_type=memory_type,
+                    retry_query=(title or "")[:_STACK_QUERY_MAX_CHARS],
                 )
         if item is not None:
             item_kref = item.kref.uri
@@ -1242,6 +1411,7 @@ def tool_memory_store_batch(
             "tags": cap.get("tags"),
             "space": normalized_space,
             "stacked": item is not None,
+            "stack_score": stack_score,
         }
         rows.append(row)
 
@@ -1311,6 +1481,7 @@ def tool_memory_store_batch(
             "bundle_kref": bundle_kref,
             "edges_created": edges_created,
             "stacked": prep["stacked"],
+            "stack_score": round(prep["stack_score"], 4),
         }
 
     return {"results": results, "stored_krefs": stored_krefs, "stacked": stacked_count}

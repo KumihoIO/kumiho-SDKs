@@ -436,7 +436,7 @@ class TestMemoryTypeRoundTrip:
 
     @patch('kumiho.mcp_server._write_memory_artifact', return_value="")
     @patch('kumiho.mcp_server._get_or_create_item')
-    @patch('kumiho.mcp_server._find_similar_item', return_value=None)
+    @patch('kumiho.mcp_server._find_similar_item', return_value=(None, 0.0))
     @patch('kumiho.mcp_server._ensure_space_path', return_value="facts")
     @patch('kumiho.get_project')
     @patch('kumiho.auto_configure_from_discovery')
@@ -699,7 +699,7 @@ class TestMemoryKindVocabulary:
 
     @patch('kumiho.mcp_server._write_memory_artifact', return_value="")
     @patch('kumiho.mcp_server._get_or_create_item')
-    @patch('kumiho.mcp_server._find_similar_item', return_value=None)
+    @patch('kumiho.mcp_server._find_similar_item', return_value=(None, 0.0))
     @patch('kumiho.mcp_server._ensure_space_path', return_value="facts")
     @patch("kumiho.get_project")
     @patch("kumiho.auto_configure_from_discovery")
@@ -727,7 +727,7 @@ class TestMemoryKindVocabulary:
 
     @patch('kumiho.mcp_server._write_memory_artifact', return_value="")
     @patch('kumiho.mcp_server._get_or_create_item')
-    @patch('kumiho.mcp_server._find_similar_item', return_value=None)
+    @patch('kumiho.mcp_server._find_similar_item', return_value=(None, 0.0))
     @patch('kumiho.mcp_server._ensure_space_path', return_value="facts")
     @patch("kumiho.get_revision")
     @patch("kumiho.get_project")
@@ -794,7 +794,7 @@ def test_tool_memory_store_batch_builds_rows_and_finalizes():
     with patch("kumiho.mcp_server._ensure_configured", return_value=True), \
             patch("kumiho.mcp_server._get_project_cached", return_value=MockProject("CognitiveMemory")), \
             patch("kumiho.mcp_server._ensure_space_path", return_value="/CognitiveMemory/work/x"), \
-            patch("kumiho.mcp_server._find_similar_item", return_value=None), \
+            patch("kumiho.mcp_server._find_similar_item", return_value=(None, 0.0)), \
             patch("kumiho.mcp_server._write_memory_artifact", return_value=""), \
             patch("kumiho.mcp_server._get_or_create_bundle", return_value=MagicMock()), \
             patch("kumiho.get_item", return_value=MagicMock()), \
@@ -843,7 +843,7 @@ def test_tool_memory_store_batch_stacks_on_similar_item():
     with patch("kumiho.mcp_server._ensure_configured", return_value=True), \
             patch("kumiho.mcp_server._get_project_cached", return_value=MockProject("CognitiveMemory")), \
             patch("kumiho.mcp_server._ensure_space_path", return_value="/CognitiveMemory/x"), \
-            patch("kumiho.mcp_server._find_similar_item", return_value=existing), \
+            patch("kumiho.mcp_server._find_similar_item", return_value=(existing, 0.9)), \
             patch("kumiho.mcp_server._write_memory_artifact", return_value=""), \
             patch("kumiho.mcp_server._get_or_create_bundle", return_value=MagicMock()), \
             patch("kumiho.batch_create_revisions", side_effect=fake_batch) as mock_batch:
@@ -878,7 +878,7 @@ def test_tool_memory_store_batch_chunks_over_200_rows():
     with patch("kumiho.mcp_server._ensure_configured", return_value=True), \
             patch("kumiho.mcp_server._get_project_cached", return_value=MockProject("CognitiveMemory")), \
             patch("kumiho.mcp_server._ensure_space_path", return_value="/CognitiveMemory/x"), \
-            patch("kumiho.mcp_server._find_similar_item", return_value=None), \
+            patch("kumiho.mcp_server._find_similar_item", return_value=(None, 0.0)), \
             patch("kumiho.mcp_server._write_memory_artifact", return_value=""), \
             patch("kumiho.mcp_server._get_or_create_bundle", return_value=MagicMock()), \
             patch("kumiho.get_item", return_value=MagicMock()), \
