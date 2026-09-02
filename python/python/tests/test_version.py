@@ -17,7 +17,7 @@ import kumiho
 
 
 def test_version_matches_pyproject() -> None:
-    pyproject_path = Path(__file__).resolve().parents[1] / "python" / "pyproject.toml"
+    pyproject_path = Path(__file__).resolve().parents[1] / "pyproject.toml"
     data = tomllib.loads(pyproject_path.read_text(encoding="utf-8"))
     pyproject_version = data["project"]["version"]
 

@@ -1,15 +1,10 @@
 import os
 import sys
-from pathlib import Path
 from typing import Optional, Tuple
 
 import pytest
 import kumiho
 from kumiho.auth_cli import TokenAcquisitionError, ensure_token
-
-REPO_ROOT = Path(__file__).resolve().parents[2]
-
-
 from kumiho._token_loader import load_bearer_token
 
 def _load_token() -> Tuple[Optional[str], Optional[str]]:
