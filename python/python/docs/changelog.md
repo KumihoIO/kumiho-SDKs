@@ -7,13 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.12.1] - 2026-09-02
 
-### Fixed
-- **MCP edge tools advertise the full edge ontology** — `kumiho_create_edge`
-  and `kumiho_delete_edge` listed only 8 of the 10 `EdgeType` values, omitting
-  `SUPERSEDES` (belief revision) and `SUPPORTS` (evidence chains). Both have
-  been defined on `EdgeType` and accepted by `validate_edge_type` all along, so
-  an MCP host could never record a belief revision itself even though
-  server-side passes create those edges.
+### Added
+- **`SUPPORTS` is reachable from `kumiho_create_edge`** — the tool's
+  `edge_type` enum listed 8 of the 10 `EdgeType` members. The enum is enforced
+  by `jsonschema.validate` in the MCP dispatcher, so the omitted types could not
+  be written through this tool at all, even though `EdgeType` defines them,
+  `__init__` re-exports them, `validate_edge_type` accepts them, and the proto
+  field is a plain string.
+- `SUPERSEDES` and `SUPPORTS` are now listed in `kumiho.__all__`, matching the
+  aliases that were already defined.
+
+### Changed
+- The `kumiho_create_edge` description and the MCP docs now state the direction
+  of each type rather than naming only the four creative-provenance ones.
+
+### Notes
+- `SUPERSEDES` is deliberately still withheld from both edge tools. Belief
+  revision is a protocol rather than a lone edge: its producers also demote the
+  superseded revision and ripple grounding staleness to dependents. A bare edge
+  write performs only part of that, so explicit belief revision belongs in the
+  memory layer. `kumiho_delete_edge` keeps the vocabulary it shipped with, since
+  edge deletion has no repair path.
 
 ## [0.12.0] - 2026-08-13
 

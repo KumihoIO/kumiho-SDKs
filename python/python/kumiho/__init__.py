@@ -1261,6 +1261,8 @@ __all__ = [
     "PRODUCED_BY",
     "MIGRATED_FROM",
     "CONTAINS",
+    "SUPERSEDES",
+    "SUPPORTS",
     # Edge directions
     "EdgeDirection",
     "OUTGOING",

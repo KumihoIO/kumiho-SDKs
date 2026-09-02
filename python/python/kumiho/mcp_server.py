@@ -3034,7 +3034,7 @@ TOOLS: List[Dict[str, Any]] = [
     },
     {
         "name": "kumiho_create_edge",
-        "description": "Create an edge (relationship) between two revisions. Creative provenance uses CREATED_FROM, PRODUCED_BY, DERIVED_FROM, and MIGRATED_FROM.",
+        "description": "Create an edge (relationship) between two revisions. Creative provenance uses CREATED_FROM, PRODUCED_BY, DERIVED_FROM, and MIGRATED_FROM. SUPPORTS points from corroborating evidence to the claim it supports. SUPERSEDES is deliberately not offered here: belief revision also demotes the superseded revision and ripples grounding staleness to what depended on it, so it belongs to the memory layer rather than to a bare edge write.",
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -3057,7 +3057,6 @@ TOOLS: List[Dict[str, Any]] = [
                         "PRODUCED_BY",
                         "MIGRATED_FROM",
                         "BELONGS_TO",
-                        "SUPERSEDES",
                         "SUPPORTS",
                     ],
                     "description": "The type of relationship",
@@ -3319,8 +3318,6 @@ TOOLS: List[Dict[str, Any]] = [
                         "PRODUCED_BY",
                         "MIGRATED_FROM",
                         "BELONGS_TO",
-                        "SUPERSEDES",
-                        "SUPPORTS",
                     ],
                     "description": "The type of relationship to delete",
                 },
