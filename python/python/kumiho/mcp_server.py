@@ -51,6 +51,7 @@ import sys
 import threading
 import time
 import traceback
+import unicodedata
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence, Set, Tuple
@@ -565,21 +566,60 @@ def _resolve_space_hint_path(project: Project, space_path: str) -> str:
 #     memory design), while in a mixed space they stay at 0.21-0.35.
 #
 # The duplicate band (0.58-0.68) and the unrelated band (up to 0.62)
-# therefore OVERLAP, and no single score can separate them. Hence two
-# tiers: a strong band that stacks on score alone, and a middle band that
-# demands a second, independent signal (the ``memory_type`` must agree)
-# before it will stack.
+# therefore OVERLAP, and no single score can separate them.
 #
-# The residual error is deliberately asymmetric. A false split -- today's
-# behaviour, 100% of the time -- fragments a topic forever and leaves the
-# revision operator with nothing to revise. A false stack merely files two
-# related memories as consecutive revisions of one item, where both are
-# still tagged, still retrievable, and recoverable via unroll_revisions.
+# WHAT A FALSE STACK ACTUALLY COSTS. It is not "two related memories filed
+# as consecutive revisions, both still reachable". Stacking calls
+# ``item.create_revision(...)`` and then tags the NEW revision "published"
+# (``tag_list = tags or ["published"]``), while every recall path resolves
+# ``get_revision_by_tag("published") or get_revision_by_tag("latest")``.
+# So the PRIOR revision loses "published" and leaves the default retrieval
+# surface entirely -- it survives only for callers passing
+# ``unroll_revisions``. That is precisely the paper's Definition 7.4 tag
+# move, i.e. a belief revision, performed WITHOUT the SUPERSEDES edge that
+# is supposed to accompany it. A false stack is therefore a false belief
+# revision: non-conflicting information gets DISPLACED where AGM vacuity
+# (K*4) requires it to be merely EXPANDED. Both failure modes destroy
+# retrievability, so "err toward stacking" is not available as a tiebreak;
+# the gate has to actually discriminate.
+#
+# WHY THE SECOND SIGNAL IS LEXICAL, NOT THE SCORE AGAIN. Two candidates
+# were measured against the labelled pairs (see the table pinned in
+# tests/test_mcp_revision_stacking.py):
+#
+#   * memory_type agreement alone: useless in exactly the space that needs
+#     it. ``decisions`` is homogeneous -- nearly every capture is typed
+#     "decision" -- so the gate adds no separation there at all.
+#   * top1-minus-top2 margin: measured, and it does NOT separate. A
+#     no-duplicate capture put an UNRELATED item at top1 with a margin of
+#     0.094, wider than the 0.053 margin of a genuine duplicate pair. Any
+#     margin floor admitting the real duplicate also admits the impostor.
+#     The runner-up score is still reported for inspection, but nothing is
+#     gated on it.
+#   * normalized-token overlap (Jaccard over lowercased Latin words plus
+#     CJK character bigrams): duplicates 0.19-0.25, unrelated 0.03-0.15.
+#     Cleanly separable, with the floor below placed in the gap.
+#
+# Crucially the score and the overlap are near-uncorrelated (score 0.6165
+# with overlap 0.088; score 0.2888 with overlap 0.144), because BM25
+# weights rare terms and normalizes by length while Jaccard weights a term
+# set flatly. That independence is what lets the pair separate a
+# homogeneous space when neither coordinate can do it alone.
 _STACK_SIMILARITY_THRESHOLD = 0.75
 
-# Middle band: stack only when the incoming ``memory_type`` also matches the
-# candidate's. Set to sit just under the lowest duplicate score observed.
+# Middle band: additionally requires ``memory_type`` agreement. Sits just
+# under the lowest duplicate score observed (0.578).
 _STACK_TYPE_MATCH_THRESHOLD = 0.55
+
+# Lexical floor, enforced in BOTH bands. Measured gap: unrelated peaks at
+# 0.148, duplicates bottom out at 0.188.
+_STACK_MIN_LEXICAL_OVERLAP = 0.17
+
+# Below this many tokens on either side the overlap ratio is noise rather
+# than evidence, and a short capture is exactly where lexical support is
+# weakest. Refuse to stack instead of guessing -- a false stack displaces
+# a published revision.
+_STACK_MIN_OVERLAP_TOKENS = 8
 
 # Hard cap on the generated search query. Long queries are not merely slow:
 # a ~230-character Korean query was observed to fail server-side with
@@ -657,11 +697,76 @@ def _stack_search(
     return None
 
 
-def _revision_memory_type(item: Any) -> str:
-    """Best-effort read of an item's current memory type.
+#: Latin/digit word tokens, kept at length >= 2 so stray letters do not
+#: inflate the ratio.
+_TOKEN_WORD_RE = re.compile(r"[0-9a-z_]+")
+#: Han, Hiragana, Katakana and Hangul. These scripts are written without
+#: spaces, so words are approximated by character bigrams -- the same shape
+#: the server's own fulltext index uses.
+_TOKEN_CJK_RE = re.compile(
+    r"[぀-ヿ㐀-䶿一-鿿가-힯]+"
+)
 
-    The server reserves the "type" metadata key and strips it from reads,
-    so "memory_type" is the readable carrier; both are checked, mirroring
+
+def _overlap_tokens(text: str) -> Set[str]:
+    """Normalize text to a comparable token set (Latin words + CJK bigrams)."""
+    if not text:
+        return set()
+    text = unicodedata.normalize("NFKC", text).lower()
+    tokens: Set[str] = {
+        match.group() for match in _TOKEN_WORD_RE.finditer(text)
+        if len(match.group()) >= 2
+    }
+    for run in _TOKEN_CJK_RE.findall(text):
+        if len(run) == 1:
+            tokens.add(run)
+        for i in range(len(run) - 1):
+            tokens.add(run[i:i + 2])
+    return tokens
+
+
+def _lexical_overlap(left: str, right: str) -> float:
+    """Jaccard overlap of two texts' token sets, or 0.0 if either is too thin.
+
+    Deliberately symmetric and length-aware: a containment ratio would let a
+    two-line capture look identical to a long one it happens to sit inside,
+    which is the cheapest way to manufacture a false stack.
+    """
+    a, b = _overlap_tokens(left), _overlap_tokens(right)
+    if len(a) < _STACK_MIN_OVERLAP_TOKENS or len(b) < _STACK_MIN_OVERLAP_TOKENS:
+        return 0.0
+    union = a | b
+    return len(a & b) / len(union) if union else 0.0
+
+
+def _should_stack(
+    score: float,
+    type_matches: bool,
+    overlap: float,
+    threshold: float = _STACK_SIMILARITY_THRESHOLD,
+    type_match_threshold: float = _STACK_TYPE_MATCH_THRESHOLD,
+    min_overlap: float = _STACK_MIN_LEXICAL_OVERLAP,
+) -> bool:
+    """The gate itself, as a pure function of the three measured signals.
+
+    Split out so the labelled score/overlap table measured on the live graph
+    can drive it directly as a test fixture.
+    """
+    if overlap < min_overlap:
+        # The lexical floor binds in both bands: it is the only signal that
+        # separated duplicates from neighbours in a homogeneous space.
+        return False
+    if score >= threshold:
+        return True
+    return score >= type_match_threshold and type_matches
+
+
+def _candidate_profile(item: Any) -> Tuple[str, str]:
+    """Best-effort read of a candidate's ``(memory_type, title+summary)``.
+
+    One revision fetch serves both the type gate and the lexical gate. The
+    server reserves the "type" metadata key and strips it from reads, so
+    "memory_type" is the readable carrier; both are checked, mirroring
     :func:`_matches_memory_types`.
     """
     for getter in (
@@ -673,10 +778,13 @@ def _revision_memory_type(item: Any) -> str:
         except Exception:
             continue
         meta = getattr(rev, "metadata", None) or {}
+        if not meta:
+            continue
         mem_type = str(meta.get("memory_type") or meta.get("type") or "")
-        if mem_type.strip():
-            return mem_type.strip().lower()
-    return ""
+        text = f"{meta.get('title') or ''} {meta.get('summary') or ''}"
+        if mem_type.strip() or text.strip():
+            return mem_type.strip().lower(), text
+    return "", ""
 
 
 def _find_similar_item(
@@ -688,57 +796,72 @@ def _find_similar_item(
     threshold: float = _STACK_SIMILARITY_THRESHOLD,
     type_match_threshold: float = _STACK_TYPE_MATCH_THRESHOLD,
     retry_query: str = "",
-) -> Tuple[Optional[Item], float]:
+    compare_text: str = "",
+) -> Tuple[Optional[Item], float, float, float]:
     """Search for an existing memory item similar to the incoming content.
 
     Uses fuzzy search over revision metadata (title/summary) to find items
-    in the same space that cover a similar topic.
+    in the same space that cover a similar topic, then requires a lexical
+    second opinion before displacing anything (see the constants above --
+    stacking moves the "published" tag, so a wrong match hides a memory).
 
-    Returns ``(item, score)``. The score is the best candidate's score and
-    is reported *whether or not* it cleared the bar, so a caller can tell
-    "the search returns 0.0 every time" (a broken install) apart from "the
-    top hit was close but not close enough". ``item`` is ``None`` when
-    nothing qualified and the caller should mint a new item.
+    Returns ``(item, score, runner_up, overlap)``:
+
+    * ``item`` -- the candidate to stack onto, or ``None`` to mint a new one.
+    * ``score`` -- the best candidate's search score, reported *whether or
+      not* it cleared the bar, so a caller can tell "the search returns 0.0
+      every time" (a broken install) from "close but not close enough".
+    * ``runner_up`` -- the second-best score, 0.0 when there was none. Not
+      gated on (the margin was measured and does not separate); exposed so
+      the decision stays inspectable and can be recalibrated later.
+    * ``overlap`` -- the measured lexical overlap with the best candidate.
     """
     if not query_text or not query_text.strip():
-        return None, 0.0
+        return None, 0.0, 0.0, 0.0
 
     # Convert space_path "/CognitiveMemory/work" -> "CognitiveMemory/work"
     context = space_path.lstrip("/")
 
     results = _stack_search(query_text, context, kind, retry_query)
     if not results:
-        return None, 0.0
+        return None, 0.0, 0.0, 0.0
 
     best = results[0]
     score = float(getattr(best, "score", 0.0) or 0.0)
+    runner_up = (
+        float(getattr(results[1], "score", 0.0) or 0.0) if len(results) > 1 else 0.0
+    )
 
-    if score >= threshold:
+    # Cheap exit: below the lower band nothing can qualify, so skip the
+    # revision fetch the two gates would need.
+    if score < type_match_threshold:
         logger.debug(
-            "Revision stacking: matched item %s (score=%.3f >= %.2f) for "
-            "query '%.60s...'",
-            best.item.kref.uri, score, threshold, query_text,
+            "Revision stacking: best candidate %s scored %.3f, below %.2f; "
+            "minting a new item.",
+            best.item.kref.uri, score, type_match_threshold,
         )
-        return best.item, score
+        return None, score, runner_up, 0.0
 
-    if score >= type_match_threshold and memory_type:
-        candidate_type = _revision_memory_type(best.item)
-        if candidate_type and candidate_type == memory_type.strip().lower():
-            logger.debug(
-                "Revision stacking: matched item %s (score=%.3f in the "
-                "[%.2f, %.2f) band, memory_type=%r agrees) for query "
-                "'%.60s...'",
-                best.item.kref.uri, score, type_match_threshold, threshold,
-                candidate_type, query_text,
-            )
-            return best.item, score
+    candidate_type, candidate_text = _candidate_profile(best.item)
+    overlap = _lexical_overlap(compare_text or query_text, candidate_text)
+    type_matches = bool(
+        candidate_type and candidate_type == (memory_type or "").strip().lower()
+    )
+
+    if _should_stack(score, type_matches, overlap, threshold, type_match_threshold):
+        logger.debug(
+            "Revision stacking: matched item %s (score=%.3f, overlap=%.3f, "
+            "memory_type agrees=%s) for query '%.60s...'",
+            best.item.kref.uri, score, overlap, type_matches, query_text,
+        )
+        return best.item, score, runner_up, overlap
 
     logger.debug(
-        "Revision stacking: best candidate %s scored %.3f, below the bar; "
-        "minting a new item.",
-        best.item.kref.uri, score,
+        "Revision stacking: declined %s (score=%.3f, runner_up=%.3f, "
+        "overlap=%.3f, memory_type agrees=%s); minting a new item.",
+        best.item.kref.uri, score, runner_up, overlap, type_matches,
     )
-    return None, score
+    return None, score, runner_up, overlap
 
 
 def _get_or_create_bundle(project: Project, space_path: str, bundle_name: str) -> Item:
@@ -1131,6 +1254,8 @@ def tool_memory_store(
     base_text = title or summary or user_text or assistant_text or "memory"
     stacked = False
     stack_score = 0.0
+    stack_runner_up = 0.0
+    stack_overlap = 0.0
     previous_revision_kref = ""
     item = None
 
@@ -1142,7 +1267,7 @@ def tool_memory_store(
             title, summary, fallback=(assistant_text or user_text or "")
         )
         if search_query.strip():
-            item, stack_score = _find_similar_item(
+            item, stack_score, stack_runner_up, stack_overlap = _find_similar_item(
                 project_name,
                 normalized_space_path,
                 search_query,
@@ -1151,6 +1276,8 @@ def tool_memory_store(
                 # If the combined query trips the server's clause limit,
                 # fall back to the title alone rather than losing stacking.
                 retry_query=(title or "")[:_STACK_QUERY_MAX_CHARS],
+                # The lexical gate compares full text, not the capped query.
+                compare_text=f"{title} {summary}",
             )
             if item is not None:
                 stacked = True
@@ -1258,10 +1385,12 @@ def tool_memory_store(
         "summary": final_summary,
         "edges_created": edges_created,
         "stacked": stacked,
-        # Best similarity score seen, reported even when nothing stacked, so
-        # a caller can tell a broken search (0.0 every time) from a genuine
-        # near-miss without inferring it from a stream of ``false``.
+        # Reported even when nothing stacked, so a caller can tell a broken
+        # search (0.0 every time) from a genuine near-miss without inferring
+        # it from a stream of ``false``, and can see WHICH gate declined.
         "stack_score": round(stack_score, 4),
+        "stack_runner_up": round(stack_runner_up, 4),
+        "stack_overlap": round(stack_overlap, 4),
     }
     if previous_revision_kref:
         result["previous_revision_kref"] = previous_revision_kref
@@ -1344,17 +1473,22 @@ def tool_memory_store_batch(
         # (batch_create_revisions auto-creates the item from a new kref).
         item = None
         stack_score = 0.0
+        stack_runner_up = 0.0
+        stack_overlap = 0.0
         if stack_revisions:
             # Title AND summary, same as the single path.
             search_query = _build_stack_query(title, final_summary)
             if search_query.strip():
-                item, stack_score = _find_similar_item(
-                    project_name,
-                    normalized_space,
-                    search_query,
-                    memory_kind,
-                    memory_type=memory_type,
-                    retry_query=(title or "")[:_STACK_QUERY_MAX_CHARS],
+                item, stack_score, stack_runner_up, stack_overlap = (
+                    _find_similar_item(
+                        project_name,
+                        normalized_space,
+                        search_query,
+                        memory_kind,
+                        memory_type=memory_type,
+                        retry_query=(title or "")[:_STACK_QUERY_MAX_CHARS],
+                        compare_text=f"{final_title} {final_summary}",
+                    )
                 )
         if item is not None:
             item_kref = item.kref.uri
@@ -1412,6 +1546,8 @@ def tool_memory_store_batch(
             "space": normalized_space,
             "stacked": item is not None,
             "stack_score": stack_score,
+            "stack_runner_up": stack_runner_up,
+            "stack_overlap": stack_overlap,
         }
         rows.append(row)
 
@@ -1482,6 +1618,8 @@ def tool_memory_store_batch(
             "edges_created": edges_created,
             "stacked": prep["stacked"],
             "stack_score": round(prep["stack_score"], 4),
+            "stack_runner_up": round(prep["stack_runner_up"], 4),
+            "stack_overlap": round(prep["stack_overlap"], 4),
         }
 
     return {"results": results, "stored_krefs": stored_krefs, "stacked": stacked_count}
