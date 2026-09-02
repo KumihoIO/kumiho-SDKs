@@ -32,6 +32,21 @@ plan, §2.1):
 :func:`current_request`: a hosted process must behave defensively (no env
 mutation, no filesystem writes) even on code paths that run outside a request,
 such as server construction.
+
+Importing
+---------
+
+``RequestContext``, ``current_request`` and ``hosted_mode`` are re-exported
+from the package root. The context manager is not, because a submodule and a
+package attribute share one namespace: binding ``kumiho.request_context`` to
+the *function* overwrites the module attribute, and
+``import kumiho.request_context as rc`` — which resolves through
+``getattr(kumiho, "request_context")`` rather than ``sys.modules`` — then hands
+back the function. Use either spelling instead::
+
+    from kumiho.request_context import request_context
+    kumiho.use_request_context   # the same object, root-level, and symmetric
+                                 # with kumiho.use_client
 """
 
 from __future__ import annotations

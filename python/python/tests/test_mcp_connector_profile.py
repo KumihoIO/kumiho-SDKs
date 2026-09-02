@@ -20,10 +20,12 @@ the shared ``_dispatch`` helper for that reason.
 from __future__ import annotations
 
 import asyncio
+import importlib
 import json
 import os
 import re
 import threading
+import types
 from typing import Any, Dict, List
 
 import pytest
@@ -54,11 +56,40 @@ from test_mcp_server_construction import _dispatch  # noqa: E402
 # ---------------------------------------------------------------------------
 
 
-def test_the_four_names_are_exported_from_kumiho() -> None:
+def test_the_root_exports_the_request_scoping_names() -> None:
     """WP-B and WP-C import these off ``kumiho``, not off the submodule."""
-    for name in ("RequestContext", "current_request", "request_context", "hosted_mode"):
+    for name in ("RequestContext", "current_request", "hosted_mode",
+                 "use_request_context"):
         assert hasattr(kumiho, name), name
         assert name in kumiho.__all__, name
+
+
+def test_the_submodule_is_not_shadowed_by_the_context_manager() -> None:
+    """``kumiho.request_context`` must be the module, not the function.
+
+    A submodule and a package attribute share one namespace. Re-exporting the
+    context manager under its own name from ``kumiho/__init__.py`` overwrote
+    the module attribute that importing the submodule sets, so
+    ``import kumiho.request_context as rc`` silently bound the *function* —
+    that form resolves through ``getattr(kumiho, "request_context")``, not
+    through ``sys.modules``. Every later attribute access on ``rc`` then died
+    with an unhelpful AttributeError.
+    """
+    module = importlib.import_module("kumiho.request_context")
+    assert isinstance(module, types.ModuleType)
+    assert isinstance(kumiho.request_context, types.ModuleType)
+    assert kumiho.request_context is module
+    assert "request_context" not in kumiho.__all__
+
+
+def test_the_context_manager_is_reachable_by_both_supported_spellings() -> None:
+    module = importlib.import_module("kumiho.request_context")
+    assert module.request_context is request_context
+    assert kumiho.use_request_context is request_context
+    # And it still binds through the module-attribute path.
+    ctx = RequestContext(tenant_id="t", user_id="u", auth_token="a")
+    with kumiho.request_context.request_context(ctx):
+        assert kumiho.current_request() is ctx
 
 
 def test_current_request_is_none_outside_a_request() -> None:
@@ -441,19 +472,36 @@ def test_the_full_profile_is_annotated_too(full_server: Any) -> None:
     assert all(t["annotations"] is not None for t in result["tools"])
 
 
-def test_call_tool_refuses_a_tool_outside_the_profile(connector_server: Any) -> None:
+def test_call_tool_refuses_a_tool_outside_the_profile(
+    connector_server: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """Hiding a tool from the listing is not access control: a model that saw
-    the full surface in another session will still ask for it by name."""
+    the full surface in another session will still ask for it by name.
+
+    The refusal must be an MCP tool *error*. A result with ``isError: false``
+    whose text merely contains the word "error" reads to a client as "the call
+    went through" — which is how a withheld tool gets reported as having run.
+    """
+    executed: List[Any] = []
+    monkeypatch.setitem(
+        mcp_server.TOOL_HANDLERS,
+        "kumiho_delete_project",
+        lambda args: executed.append(args) or {"deleted": True},
+    )
+
     result = _dispatch(
         connector_server,
         "tools/call",
         name="kumiho_delete_project",
         arguments={"project_name": "demo"},
     )
-    payload = json.loads(result["content"][0]["text"])
-    assert "not available" in payload["error"]
-    assert "kumiho_delete_project" in payload["error"]
-    assert payload["profile"] == "connector"
+
+    assert result["isError"] is True
+    text = result["content"][0]["text"]
+    assert "kumiho_delete_project" in text
+    assert "not available" in text
+    assert "connector" in text
+    assert executed == [], "the handler must never be entered"
 
 
 def test_the_refusal_beats_schema_validation(connector_server: Any) -> None:
@@ -466,8 +514,19 @@ def test_the_refusal_beats_schema_validation(connector_server: Any) -> None:
     result = _dispatch(
         connector_server, "tools/call", name="kumiho_delete_project", arguments={}
     )
-    payload = json.loads(result["content"][0]["text"])
-    assert payload.get("profile") == "connector"
+    assert result["isError"] is True
+    assert "not available" in result["content"][0]["text"]
+
+
+def test_the_refusal_error_names_the_tool_and_the_profile() -> None:
+    """One message, raised once, used by both registration branches."""
+    exc = mcp_server.ToolNotInProfileError("kumiho_delete_project", "connector")
+    assert exc.tool_name == "kumiho_delete_project"
+    assert exc.profile == "connector"
+    assert str(exc) == (
+        "Tool 'kumiho_delete_project' is not available in the "
+        "'connector' tool profile."
+    )
 
 
 def test_call_tool_still_dispatches_an_in_profile_tool(
@@ -604,6 +663,53 @@ async def test_the_instructions_come_back_in_the_initialize_result(
         forget = by_name["kumiho_deprecate_item"]
         assert forget.annotations.title == "Forget a memory"
         assert forget.annotations.destructiveHint is True
+
+
+@pytest.mark.anyio
+async def test_an_out_of_profile_call_is_rejected_over_a_real_session(
+    connector_server: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The integration case, end to end and with a side-effect probe.
+
+    Asserting on the response text alone would pass even if the handler had
+    run and its result were merely relabelled. The recorder is what proves the
+    tool was withheld rather than executed-and-hidden.
+    """
+    if not _MCP_HAS_DECORATORS:  # pragma: no cover - depends on installed mcp
+        pytest.skip("in-memory session helper targets the mcp 1.x Server")
+    memory = pytest.importorskip("mcp.shared.memory")
+
+    executed: List[Any] = []
+    monkeypatch.setitem(
+        mcp_server.TOOL_HANDLERS,
+        "kumiho_delete_project",
+        lambda args: executed.append(args) or {"deleted": True},
+    )
+
+    async with memory.create_connected_server_and_client_session(
+        connector_server
+    ) as client:
+        await client.initialize()
+
+        listed = await client.list_tools()
+        assert "kumiho_delete_project" not in {t.name for t in listed.tools}
+
+        result = await client.call_tool(
+            "kumiho_delete_project", {"project_name": "demo"}
+        )
+        assert result.isError is True
+        assert "not available" in result.content[0].text
+        assert "kumiho_delete_project" in result.content[0].text
+
+        # An in-profile tool still works over the same session, so the
+        # rejection is the profile talking and not a broken dispatch path.
+        monkeypatch.setitem(
+            mcp_server.TOOL_HANDLERS, "kumiho_list_projects", lambda args: {"ok": True}
+        )
+        ok = await client.call_tool("kumiho_list_projects", {})
+        assert ok.isError is False
+
+    assert executed == [], "the withheld handler must never be entered"
 
 
 @pytest.fixture

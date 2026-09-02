@@ -4643,6 +4643,28 @@ _PROFILE_TOOL_NAMES: Dict[str, frozenset] = {
 }
 
 
+class ToolNotInProfileError(Exception):
+    """A tool exists, but the active profile does not offer it.
+
+    Raised rather than returned, so the refusal reaches the client as a real
+    MCP tool error (``isError: true``) instead of a *successful* result whose
+    text happens to contain the word "error". Clients and models branch on
+    ``isError``; a refusal that reports success reads as "the call went
+    through", which is the opposite of what happened.
+
+    mcp 1.x turns an exception out of the ``call_tool`` handler into an error
+    result carrying ``str(exc)``; the 2.x branch catches this type explicitly
+    and builds the same result. One raise, one message, both majors.
+    """
+
+    def __init__(self, tool_name: str, profile: str) -> None:
+        self.tool_name = tool_name
+        self.profile = profile
+        super().__init__(
+            f"Tool '{tool_name}' is not available in the '{profile}' tool profile."
+        )
+
+
 def resolve_tool_profile(profile: Optional[str] = None) -> str:
     """Normalize an explicit profile, falling back to the environment.
 
@@ -4889,21 +4911,16 @@ def create_mcp_server(
 
         # Filtering the listing is not access control: a client can call any
         # name it likes, and a model that saw the full surface in an earlier
-        # session will. Checked *after* the handler lookup so the two answers
-        # stay distinguishable — "no such tool" and "that tool exists but this
+        # session will. This check is what actually withholds the tool — the
+        # listing filter only stops it being advertised.
+        #
+        # Checked *after* the handler lookup so the two answers stay
+        # distinguishable ("no such tool" and "that tool exists but this
         # deployment does not offer it" call for different next moves, and the
-        # tool list is public either way.
+        # tool list is public either way), and *before* the dispatch below, so
+        # the handler is never entered.
         if allowed_names is not None and name not in allowed_names:
-            return [TextContent(
-                type="text",
-                text=json.dumps({
-                    "error": (
-                        f"Tool '{name}' is not available in the "
-                        f"'{active_profile}' tool profile."
-                    ),
-                    "profile": active_profile,
-                }),
-            )]
+            raise ToolNotInProfileError(name, active_profile)
 
         try:
             # Run the tool handler (may be blocking gRPC call)
@@ -5094,10 +5111,17 @@ Use kumiho_search_items to find matching assets and summarize the results."""
                     content=[TextContent(type="text", text=error)],
                     isError=True,
                 )
-        return CallToolResult(
-            content=list(await call_tool(params.name, arguments)),
-            isError=False,
-        )
+        try:
+            content = list(await call_tool(params.name, arguments))
+        except ToolNotInProfileError as exc:
+            # mcp 1.x's decorator does this for us; 2.x's runner does not, and
+            # would turn the raise into a JSON-RPC error instead of a tool
+            # error. Same shape on both majors.
+            return CallToolResult(
+                content=[TextContent(type="text", text=str(exc))],
+                isError=True,
+            )
+        return CallToolResult(content=content, isError=False)
 
     async def on_list_resources(ctx: Any, params: Any) -> "ListResourcesResult":
         return ListResourcesResult(resources=await list_resources())

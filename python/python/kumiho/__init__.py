@@ -159,11 +159,20 @@ from ._bootstrap import bootstrap_default_client
 # Per-request tenant scoping for hosted (multi-tenant) deployments. Imports
 # nothing but the stdlib, so it cannot introduce an import cycle; it is the
 # contract kumiho_memory and the hosted MCP service both code against.
+#
+# The context manager is deliberately NOT re-exported under its own name. A
+# submodule and a package attribute share one namespace, so binding
+# ``request_context`` here overwrites the ``kumiho.request_context`` module
+# attribute that importing the submodule sets — and then
+# ``import kumiho.request_context as rc`` silently hands back the *function*,
+# since that form resolves through ``getattr(kumiho, "request_context")``.
+# It stays reachable as ``from kumiho.request_context import request_context``,
+# and as ``kumiho.use_request_context`` for symmetry with ``use_client``.
 from .request_context import (
     RequestContext,
     current_request,
-    request_context,
     hosted_mode,
+    request_context as use_request_context,
 )
 
 # Expose EdgeType constants for convenience
@@ -1257,11 +1266,13 @@ __all__ = [
     "configure_default_client",
     "auto_configure_from_discovery",
     "client_from_local_ce",
-    # Hosted request scoping
+    # Hosted request scoping. "request_context" is absent on purpose: that
+    # name belongs to the submodule. Use kumiho.use_request_context, or
+    # from kumiho.request_context import request_context.
     "RequestContext",
     "current_request",
-    "request_context",
     "hosted_mode",
+    "use_request_context",
     # Constants
     "LATEST_TAG",
     "PUBLISHED_TAG",

@@ -16,11 +16,17 @@ its terse companion. Entries belong in both.
 
 ### Added
 - **`kumiho.request_context`** — `RequestContext`, `current_request()`,
-  `request_context()` and `hosted_mode()`, all re-exported from `kumiho`. A
-  `contextvars`-carried per-request identity (tenant, user, token, session) for
-  deployments where one process serves many tenants. `asyncio.to_thread` copies
-  the context, so it follows a request across the async/sync boundary without
-  being threaded through every call site.
+  `request_context()` and `hosted_mode()`. A `contextvars`-carried per-request
+  identity (tenant, user, token, session) for deployments where one process
+  serves many tenants. `asyncio.to_thread` copies the context, so it follows a
+  request across the async/sync boundary without being threaded through every
+  call site. `RequestContext`, `current_request` and `hosted_mode` are
+  re-exported from `kumiho`; the context manager is reachable as
+  `from kumiho.request_context import request_context` or as
+  `kumiho.use_request_context` — re-exporting it under its own name would
+  shadow the submodule, since a submodule and a package attribute share one
+  namespace and `import kumiho.request_context as rc` resolves through
+  `getattr`, not `sys.modules`.
 - **`create_mcp_server(profile=..., instructions=...)`** — `profile="connector"`
   exposes a curated 18-tool surface for the hosted Claude connector; `None` or
   `"full"` keeps today's whole tool list, which is what the stdio plugin gets.
@@ -34,6 +40,13 @@ its terse companion. Entries belong in both.
   decorator path and the 2.x `on_*` path, with `Tool.title` and
   `ToolAnnotations` detected by introspection so an older SDK degrades to
   unannotated tools instead of failing to construct.
+- **`kumiho.mcp_server.ToolNotInProfileError`** — raised by `call_tool` when a
+  client asks for a tool the active profile withholds, so the refusal reaches
+  the client as a real MCP tool error (`isError: true`) rather than a
+  successful result whose text merely contains the word "error". Clients and
+  models branch on `isError`; a refusal that reports success reads as "the call
+  went through". mcp 1.x turns the raise into an error result on its own, and
+  the 2.x branch catches the type and builds the same one.
 - **`kumiho.mcp_server.CONNECTOR_INSTRUCTIONS`** — the engage/reflect protocol
   as server `instructions`, returned in the MCP `initialize` result for the
   connector profile. A remote connector has no skill and no hooks, so this is
