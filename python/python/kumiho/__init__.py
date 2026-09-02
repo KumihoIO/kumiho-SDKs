@@ -110,7 +110,7 @@ Attributes:
     PUBLISHED_TAG (str): Standard tag name for published revisions.
 """
 
-__version__ = "0.12.2"
+__version__ = "0.13.0"
 
 import contextvars
 from typing import Any, Dict, List, Optional, Iterator, Tuple
@@ -156,6 +156,15 @@ from .discovery import (
     _DEFAULT_CACHE_KEY,
 )
 from ._bootstrap import bootstrap_default_client
+# Per-request tenant scoping for hosted (multi-tenant) deployments. Imports
+# nothing but the stdlib, so it cannot introduce an import cycle; it is the
+# contract kumiho_memory and the hosted MCP service both code against.
+from .request_context import (
+    RequestContext,
+    current_request,
+    request_context,
+    hosted_mode,
+)
 
 # Expose EdgeType constants for convenience
 BELONGS_TO = EdgeType.BELONGS_TO
@@ -1248,6 +1257,11 @@ __all__ = [
     "configure_default_client",
     "auto_configure_from_discovery",
     "client_from_local_ce",
+    # Hosted request scoping
+    "RequestContext",
+    "current_request",
+    "request_context",
+    "hosted_mode",
     # Constants
     "LATEST_TAG",
     "PUBLISHED_TAG",
