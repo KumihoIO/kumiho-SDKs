@@ -1,5 +1,84 @@
 # Kumiho Python SDK - Release Notes
 
+> **This file is the release record.** It is the narrative, user-facing history:
+> what changed, why it mattered, and what you have to do about it.
+> `python/docs/changelog.md` is the terse Keep a Changelog companion — same
+> releases, one screen each, no upgrade guidance. Every release needs an entry
+> here; a changelog entry alone is not enough, and the two drifting apart is
+> what produced the gaps backfilled in KumihoIO/kumiho-SDKs#155 and #157.
+
+
+## kumiho 0.12.1 (September 2026) — `SUPPORTS` Reachable from `kumiho_create_edge` 🔗
+
+`kumiho_create_edge` advertised **8 of the 10** `EdgeType` members in its
+`edge_type` JSON-Schema enum, and that enum is enforced rather than advisory:
+the MCP dispatcher runs `jsonschema.validate` against the tool schema, so an
+omitted type could not be written through the tool at all — even though
+`EdgeType` defines it, `__init__` re-exports it, `validate_edge_type` accepts
+any well-formed uppercase name, and the proto field is a plain `string`.
+
+### ✨ What changed
+
+- **`SUPPORTS` added to the `kumiho_create_edge` enum.** Evidence chains —
+  corroborating revision → the claim it supports — are writable from MCP.
+- **`SUPERSEDES` and `SUPPORTS` added to `kumiho.__all__`**, matching aliases
+  that already existed but were not exported.
+- **Edge-type documentation completed.** The tool description and the
+  `docs/mcp.md` table now state the *direction* of each type rather than naming
+  only the four creative-provenance ones.
+
+### 🧭 Why `SUPERSEDES` is still withheld
+
+Belief revision is a protocol, not a lone edge. Every in-system producer pairs
+the `SUPERSEDES` edge with a status demotion on the superseded revision and a
+grounding-staleness ripple to whatever depended on it. A bare edge write
+performs the first third of that, silently, so recall would keep serving
+decisions built on a retracted fact as if their grounding were intact. Explicit
+belief revision belongs in the memory layer, where the companions run.
+
+It is withheld from `kumiho_delete_edge` for the same reason in reverse: nothing
+re-creates a deleted edge, so a stranded revision keeps `status=superseded`
+while `superseded_by` goes empty. `kumiho_delete_edge` keeps the vocabulary it
+shipped with.
+
+### 🧪 Testing
+
+`tests/test_mcp_edge_ontology.py` derives its expectations from `EdgeType`, so
+the tool schema cannot drift from the ontology again, and pins the deliberate
+create/delete asymmetry so a future reader does not "fix" the exclusions back in
+without reading why.
+
+
+## kumiho 0.12.0 (August 2026) — Creative Project Lifecycle 🗂️
+
+Targets the Project lifecycle contract shipped by **kumiho-server 1.7.0**.
+Projects gain a full archive → restore → delete lifecycle, and deletion becomes
+a two-step operation you can inspect before committing.
+
+### ✨ New Features
+
+- **Project lifecycle APIs** — project metadata, archived-project listing and
+  restoration, deletion-impact analysis, deletion guards, external reference
+  resolution, and Item moves between Projects.
+- **Snapshot-bound permanent deletion** — `hard_delete_project()` uses the new
+  confirmation and impact-snapshot contract: analyze the impact, then commit
+  against that snapshot, so a Project that changed underneath you is not
+  destroyed on stale information.
+- **Space metadata** — Space creation and metadata updates carry
+  application-defined display labels without changing canonical identity, so a
+  human-readable name no longer forces a rename of the thing krefs point at.
+
+### ✅ Compatibility Notes
+
+- **`delete_project(project_id, force=False)` is unchanged.** `hard_delete_project()`
+  is additive; existing calls keep working exactly as before.
+- **Archived canonical Project names stay reserved.** Restoration is
+  identity-safe, so creating another Project with the same canonical name while
+  the original is archived returns a conflict rather than silently taking the
+  name.
+- Generated protobuf and gRPC bindings were regenerated for the 1.7.0 contract.
+
+
 ## kumiho 0.11.0 (August 2026) — MCP 2.0 Support 🔌
 
 `kumiho[mcp]` now works on **both mcp 1.x and mcp 2.x**.
@@ -26,6 +105,52 @@ The floor is bounded too, and is not a round number: `mcp.server.lowlevel.helper
 ### 🧪 Testing
 
 The MCP server is now covered by construction and dispatch tests that run against **both mcp majors in CI**, so a future major bump fails the build rather than reaching users.
+
+
+## kumiho 0.10.8 (July 2026) — MCP Server Orphan Watchdog 🐕
+
+`python -m kumiho.mcp_server` processes accumulated without bound
+(KumihoIO/kumiho-plugins#25). This release makes the server exit when the client
+that launched it dies.
+
+### 🐛 The bug
+
+On Windows, MCP clients restart a session by **terminating the launcher
+process**, which does not kill its children. Worse, a venv's
+`Scripts\python.exe` is a redirector stub that runs the base interpreter as a
+*separate child*, so the real server is a grandchild or deeper — watching only
+the direct parent would not have caught it.
+
+### 🔧 The fix
+
+- **Ancestor-chain watchdog.** The whole contiguous python-named ancestor chain,
+  plus the client, is watched: event-driven on Windows (a thread blocks on the
+  ancestor process handles via `WaitForMultipleObjects`), ppid-reparent polling
+  on POSIX.
+- **Hard exit on transport close.** `main()` now hard-exits once the stdio
+  transport closes, so lingering non-daemon threads — thread pools, gRPC
+  channels — can never keep a dead server alive.
+- Opt out with `KUMIHO_MCP_DISABLE_ORPHAN_WATCHDOG=1`.
+
+
+## kumiho 0.10.7 (July 2026) — Batch Reflect Writes: `tool_memory_store_batch` 📚
+
+The bulk counterpart of `tool_memory_store` for the MCP write path, built on
+0.10.6's `batch_create_revisions`.
+
+### ✨ `tool_memory_store_batch`
+
+N captures land in **one `batch_create_revisions` transaction**, which removes
+the neo4j relationship-group deadlock that per-capture concurrency triggers and
+collapses the heaviest create/revision writes into a single round trip.
+
+Every per-capture semantic of the single path is preserved: credential
+screening, space resolution, fuzzy-stack, `event_date`/metadata, tags, `topic`
+bundle, and `DERIVED_FROM` edges. Tag, bundle and edge writes stay per-item —
+the server has no batch RPC for them.
+
+`kumiho_memory_reflect` routes writes of **2 or more captures** through it; a
+single capture keeps the byte-identical per-capture path.
 
 
 ## kumiho 0.10.6 (July 2026) — Bulk Ingest: `batch_create_revisions` 🚚

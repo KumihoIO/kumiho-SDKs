@@ -76,25 +76,49 @@ class EdgeType {
   /// Source was derived or modified from target.
   static const String derivedFrom = 'DERIVED_FROM';
 
+  /// Result revision was produced by the target FlowRun revision.
+  static const String producedBy = 'PRODUCED_BY';
+
+  /// Revision was migrated from the target revision or migration tombstone.
+  static const String migratedFrom = 'MIGRATED_FROM';
+
   /// Source contains or includes target.
   static const String contains = 'CONTAINS';
 
   /// Source replaces or supersedes target (belief revision).
   static const String supersedes = 'SUPERSEDES';
 
-  /// All valid edge type values.
+  /// Source corroborates or supports target (evidence chains).
+  static const String supports = 'SUPPORTS';
+
+  /// The standard edge types this SDK names as constants.
+  ///
+  /// This is the shared vocabulary, **not** the set of accepted values: the
+  /// server accepts any string matching `^[A-Z][A-Z0-9_]{0,49}$`, so an
+  /// application-defined type is legal even though it is absent here. Use
+  /// [isValid] to validate; use this list only to enumerate or present the
+  /// standard types.
   static const List<String> values = [
     belongsTo,
     createdFrom,
     referenced,
     dependsOn,
     derivedFrom,
+    producedBy,
+    migratedFrom,
     contains,
     supersedes,
+    supports,
   ];
 
   /// Checks if a string is a valid edge type.
-  static bool isValid(String edgeType) => values.contains(edgeType);
+  ///
+  /// Applies the same `^[A-Z][A-Z0-9_]{0,49}$` rule as [validateEdgeType] and
+  /// [isValidEdgeType], and as every other Kumiho SDK — membership in [values]
+  /// is not required. This previously tested [values] membership, so it
+  /// rejected well-formed types the server accepts, `SUPPORTS`, `PRODUCED_BY`
+  /// and `MIGRATED_FROM` among them.
+  static bool isValid(String edgeType) => isValidEdgeType(edgeType);
 }
 
 /// Edge API mixin for managing relationships between revisions.

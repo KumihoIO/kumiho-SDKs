@@ -165,15 +165,26 @@ Every object in Kumiho is addressable by a URI-style **Kref** (Kumiho Reference)
 
 ## Edges (Relationships)
 
-Edges represent relationships between revisions. Common edge types include:
+Edges represent relationships between revisions. The standard edge types, named
+as constants on `EdgeType`, are:
 
 | Edge Type | Description |
 |-----------|-------------|
-| `DEPENDS_ON` | Asset requires another asset to function |
-| `DERIVED_FROM` | Asset was created from another asset |
-| `REFERENCED` | Asset references another asset |
-| `CONTAINS` | Asset contains another asset |
-| `CREATED_FROM` | Asset was created using another asset |
+| `BELONGS_TO` | Source belongs to / is grouped under the target |
+| `CREATED_FROM` | Source was generated or created from the target |
+| `REFERENCED` | Source holds a soft reference to the target |
+| `DEPENDS_ON` | Source requires the target to function |
+| `DERIVED_FROM` | Source was derived or modified from the target |
+| `PRODUCED_BY` | Source was produced by the target FlowRun revision |
+| `MIGRATED_FROM` | Source was migrated from the target revision or tombstone |
+| `CONTAINS` | Source contains or includes the target |
+| `SUPERSEDES` | Source replaces the target (belief revision) |
+| `SUPPORTS` | Source corroborates the target (evidence chains) |
+
+The list is a shared vocabulary, not a closed set. The server accepts any edge
+type matching `^[A-Z][A-Z0-9_]{0,49}$`, so an application-defined type is legal;
+`EdgeType.isValid` (and `isValidEdgeType` / `validateEdgeType`) apply that rule
+rather than checking membership in `EdgeType.values`.
 
 ```dart
 // Create a dependency relationship

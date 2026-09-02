@@ -15,31 +15,88 @@ void main() {
   group('EdgeType validation', () {
     test('EdgeType constants match proto values', () {
       // Verify the edge type constants match what the server expects
+      expect(EdgeType.belongsTo, equals('BELONGS_TO'));
+      expect(EdgeType.createdFrom, equals('CREATED_FROM'));
+      expect(EdgeType.referenced, equals('REFERENCED'));
       expect(EdgeType.dependsOn, equals('DEPENDS_ON'));
       expect(EdgeType.derivedFrom, equals('DERIVED_FROM'));
-      expect(EdgeType.referenced, equals('REFERENCED'));
+      expect(EdgeType.producedBy, equals('PRODUCED_BY'));
+      expect(EdgeType.migratedFrom, equals('MIGRATED_FROM'));
       expect(EdgeType.contains, equals('CONTAINS'));
-      expect(EdgeType.createdFrom, equals('CREATED_FROM'));
+      expect(EdgeType.supersedes, equals('SUPERSEDES'));
+      expect(EdgeType.supports, equals('SUPPORTS'));
     });
 
-    test('EdgeType.values contains all types', () {
-      expect(EdgeType.values, contains('DEPENDS_ON'));
-      expect(EdgeType.values, contains('DERIVED_FROM'));
-      expect(EdgeType.values, contains('REFERENCED'));
-      expect(EdgeType.values, contains('CONTAINS'));
-      expect(EdgeType.values, contains('CREATED_FROM'));
+    test('EdgeType.values is the full ten-member vocabulary', () {
+      // Mirrors Python's kumiho.edge.EdgeType, the authoritative list.
+      expect(
+        EdgeType.values,
+        equals([
+          'BELONGS_TO',
+          'CREATED_FROM',
+          'REFERENCED',
+          'DEPENDS_ON',
+          'DERIVED_FROM',
+          'PRODUCED_BY',
+          'MIGRATED_FROM',
+          'CONTAINS',
+          'SUPERSEDES',
+          'SUPPORTS',
+        ]),
+      );
     });
 
     test('isValidEdgeType validates correctly', () {
-      expect(EdgeType.isValid('DEPENDS_ON'), isTrue);
-      expect(EdgeType.isValid('DERIVED_FROM'), isTrue);
-      expect(EdgeType.isValid('REFERENCED'), isTrue);
-      expect(EdgeType.isValid('CONTAINS'), isTrue);
-      expect(EdgeType.isValid('CREATED_FROM'), isTrue);
+      for (final type in EdgeType.values) {
+        expect(EdgeType.isValid(type), isTrue, reason: '$type should be valid');
+      }
 
-      expect(EdgeType.isValid('INVALID_TYPE'), isFalse);
       expect(EdgeType.isValid('depends_on'), isFalse); // case sensitive
       expect(EdgeType.isValid(''), isFalse);
+      expect(EdgeType.isValid('1DEPENDS'), isFalse); // must start with a letter
+      expect(EdgeType.isValid('_DEPENDS'), isFalse);
+      expect(EdgeType.isValid('DEPENDS-ON'), isFalse); // hyphen not allowed
+      expect(EdgeType.isValid('DEPENDS ON'), isFalse);
+      expect(EdgeType.isValid('A' * 50), isTrue); // 50 chars is the limit
+      expect(EdgeType.isValid('A' * 51), isFalse);
+    });
+
+    test('EdgeType.isValid accepts the types values omitted before', () {
+      // Regression for KumihoIO/kumiho-SDKs#154: isValid was membership in a
+      // seven-element list, so these three standard types read as invalid.
+      expect(EdgeType.isValid('SUPPORTS'), isTrue);
+      expect(EdgeType.isValid('PRODUCED_BY'), isTrue);
+      expect(EdgeType.isValid('MIGRATED_FROM'), isTrue);
+    });
+
+    test('EdgeType.isValid agrees with isValidEdgeType and validateEdgeType',
+        () {
+      // isValid is pre-flight validation for the same rule createEdge and
+      // deleteEdge enforce; the three must never disagree.
+      const cases = [
+        'DEPENDS_ON',
+        'SUPPORTS',
+        'APP_DEFINED_TYPE', // well-formed but not a named constant
+        'X',
+        'depends_on',
+        '',
+        'DEPENDS-ON',
+      ];
+      for (final type in cases) {
+        expect(
+          EdgeType.isValid(type),
+          equals(isValidEdgeType(type)),
+          reason: 'isValid disagrees with isValidEdgeType for "$type"',
+        );
+        if (isValidEdgeType(type)) {
+          expect(() => validateEdgeType(type), returnsNormally);
+        } else {
+          expect(
+            () => validateEdgeType(type),
+            throwsA(isA<EdgeTypeValidationError>()),
+          );
+        }
+      }
     });
   });
 

@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+Dates are the release tag's date (`sdk-v*` in KumihoIO/kumiho-SDKs). Entries are
+in descending version order, which is also descending date order.
+
+`../../RELEASE_NOTES.md` is the release record: the same releases with the
+narrative — why a change mattered and what you have to do about it. This file is
+its terse companion. Entries belong in both.
+
 ## [0.12.1] - 2026-09-02
 
 ### Added
@@ -109,7 +116,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   pools, gRPC channels) can never keep a dead server alive. Opt out with
   `KUMIHO_MCP_DISABLE_ORPHAN_WATCHDOG=1`.
 
-## [0.10.7] - 2026-07-14
+## [0.10.7] - 2026-07-15
 
 ### Added
 - **`tool_memory_store_batch`** — the bulk counterpart of `tool_memory_store` for
@@ -134,6 +141,60 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `idempotency_prefix` makes re-submission a safe no-op. Requires
   kumiho-server >= 1.6.3.
 
+## [0.10.5] - 2026-07-11
+
+### Added
+- **`kumiho._text.slugify()`** — one canonical slug helper shared by the SDK and
+  kumiho-memory, so a fix (Unicode handling in particular) cannot land in one
+  copy and silently miss another. `\w` is Unicode-aware, so Hangul, CJK and
+  Cyrillic names slug to themselves rather than to the empty string, matching
+  the kref path segments the server accepts. Optional `hash_on_truncate` appends
+  a short digest of the full normalized string so two long names sharing a
+  prefix keep distinct slugs.
+- **MCP space registry** — the MCP server records space aliases and resolves
+  space hints against a short-lived per-project registry of existing space
+  paths, with stem matching, so a near-miss space name resolves to the existing
+  space instead of creating a near-duplicate.
+
+## [0.10.4] - 2026-07-03
+
+### Fixed
+- **`memory_type` never round-tripped** — the server reserves the `type`
+  metadata key, which made the `memory_types` filter dead code (#21).
+- **Interactive login prompt inside headless processes** — the SDK could open a
+  login prompt in a process with no console, hanging the MCP server
+  indefinitely (#22). Both fixed in #23.
+
+## [0.10.3] - 2026-07-03
+
+### Fixed
+- **Memory-retrieve RPC storm** (#20) — `search` now retries shallow when
+  `include_revision_metadata=True` returns nothing, and the pattern-fallback and
+  bundle-expansion loops are bounded at `limit * 2`. This removes the ~185s MCP
+  timeout on unscoped recall against large cloud projects.
+
+## [0.10.2] - 2026-07-03
+
+### Fixed
+- **`__version__` drift left over from 0.10.1** — `kumiho/__init__.py` was never
+  bumped when `pyproject.toml` went to 0.10.1, so the published wheel's metadata
+  correctly said 0.10.1 while `kumiho.__version__` still read `"0.10.0"` at
+  runtime.
+
+### Added
+- `tests/test_version.py` asserts `kumiho.__version__` matches `pyproject.toml`,
+  so this class of drift fails a test instead of silently shipping again.
+
+## [0.10.1] - 2026-07-03
+
+### Fixed
+- **`tool_memory_store` never applied tags** — it called a nonexistent
+  module-level `kumiho.tag_revision(...)` instead of the `revision.tag(...)`
+  method, and a bare `except` swallowed the failure. No tag, including the
+  default `published` tag, was ever actually applied through this path, which
+  broke Dream State's published-revision deprecation protection for every
+  consumer relying on the default store backend.
+
 ## [0.10.0] - 2026-06-17
 
 ### Added
@@ -150,6 +211,87 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The advanced `event_stream()` parameters (`cursor`, `consumer_group`,
   `from_beginning`) and `get_event_capabilities()` are now generally available.
 - The C++ and Dart SDKs now have full feature parity with the Python SDK.
+
+## [0.9.24] - 2026-04-17
+
+### Fixed
+- **Unicode kref path segments** — `Kref` rejected non-ASCII letters in path
+  segments even though the server accepts them, so a Hangul or CJK space or item
+  name could not be addressed from the SDK.
+
+## [0.9.23] - 2026-04-17
+
+### Changed
+- **gRPC reliability hardening** — a per-RPC default deadline, so a call can no
+  longer hang indefinitely against an unresponsive gateway.
+- Recall defaults to summarized mode, and summarized recall skips sibling
+  unrolling.
+
+## [0.9.22] - 2026-04-02
+
+### Fixed
+- `tool_memory_retrieve` accepts a `memory_types` parameter, which the tool
+  schema had omitted.
+
+## [0.9.21] - 2026-04-02
+
+### Added
+- **`kumiho_batch_get_revisions` MCP tool** — exposes the SDK's batch revision
+  fetch to MCP clients, replacing N serial `get_revision` calls.
+
+## [0.9.20] - 2026-03-15
+
+### Fixed
+- Dream State consolidation returned data the ingest path could not use. The
+  consolidation and Dream State responses are now shaped correctly for ingest,
+  and the OpenAI response object is parsed as JSON rather than passed through
+  as an object.
+
+## [0.9.19] - 2026-03-10
+
+### Added
+- **Per-call `auth_token` on the search tools**, enabling cross-project search
+  without rebuilding the client.
+
+## [0.9.18] - 2026-03-10
+
+### Fixed
+- `assistant_text` removed from `required` in the `kumiho_memory_store` schema;
+  it was never mandatory to the handler, so the schema rejected valid calls.
+
+## [0.9.17] - 2026-03-09
+
+### Added
+- **`TransientRetryInterceptor`** — retries transient gRPC failures, so a
+  gateway restart no longer surfaces as a hard error to the caller.
+
+## [0.9.16] - 2026-03-08
+
+### Fixed
+- **Dream State** replaced its event-stream collection with a revision query,
+  decoupled its collection window from the gRPC deadline, and handles
+  `DEADLINE_EXCEEDED` gracefully instead of aborting the pass.
+
+## [0.9.15] - 2026-03-07
+
+### Fixed
+- The chat tool handlers respect the client's `project` parameter, and the
+  replay tier gate was removed.
+
+<!--
+Releases 0.4.1 through 0.9.14 are intentionally absent from this file.
+
+The `python/` tree was subtree-imported into kumiho-SDKs on 2026-03-03, and the
+first release tag in this repository is `sdk-v0.9.15`. There is no tag — and so
+no reliable version boundary — for any release before it, and the imported
+commits cannot be partitioned into releases without guessing: several versions
+(0.9.10-0.9.12, 0.9.14) have no identifiable bump commit at all.
+
+Rather than invent entries, see ../../RELEASE_NOTES.md, which carries
+hand-written notes for 0.4.0-0.4.4, 0.7.0, 0.8.0-0.8.6, 0.9.0-0.9.2 and
+0.9.4-0.9.7. 0.9.3 and 0.9.8-0.9.14 are undocumented in both files. No 0.5.x or
+0.6.x release is attested anywhere in this repository.
+-->
 
 ## [0.4.0] - 2025-12-03
 
