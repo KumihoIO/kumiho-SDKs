@@ -235,6 +235,10 @@ When creating or querying edges, use these relationship types:
 | `CONTAINS` | Asset contains another |
 | `CREATED_FROM` | AI asset created from training data |
 | `BELONGS_TO` | Asset belongs to a bundle |
+| `PRODUCED_BY` | Result was produced by a flow run |
+| `MIGRATED_FROM` | Revision was migrated from a source revision or tombstone |
+| `SUPERSEDES` | Newer revision replaces the older one (belief revision). Written by the memory layer, not by `kumiho_create_edge` -- it carries a status demotion and a grounding-staleness ripple |
+| `SUPPORTS` | Evidence corroborates the claim it points to |
 
 ## Environment Variables
 

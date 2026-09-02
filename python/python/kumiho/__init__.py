@@ -110,7 +110,7 @@ Attributes:
     PUBLISHED_TAG (str): Standard tag name for published revisions.
 """
 
-__version__ = "0.12.0"
+__version__ = "0.12.1"
 
 import contextvars
 from typing import Any, Dict, List, Optional, Iterator, Tuple
@@ -1261,6 +1261,8 @@ __all__ = [
     "PRODUCED_BY",
     "MIGRATED_FROM",
     "CONTAINS",
+    "SUPERSEDES",
+    "SUPPORTS",
     # Edge directions
     "EdgeDirection",
     "OUTGOING",
