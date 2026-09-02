@@ -12,6 +12,37 @@ in descending version order, which is also descending date order.
 narrative — why a change mattered and what you have to do about it. This file is
 its terse companion. Entries belong in both.
 
+## [0.12.2] - 2026-09-02
+
+### Fixed
+- **Revision stacking in `kumiho_memory_store` never fired.** The 0.92 fuzzy
+  threshold sat above the scorer's ceiling: an item scores 0.72-0.83 against
+  its own exact title, so no input could ever stack and every capture minted a
+  new item. The gate is now a lexical-overlap floor (token Jaccard >= 0.17 over
+  Latin words and CJK bigrams, refusing texts under 8 tokens) combined with two
+  score bands (>= 0.75 alone, or >= 0.55 with matching `memory_type`),
+  calibrated on 17 labelled pairs from a live graph that are pinned as tests.
+  The search now uses title and summary, is capped at 180 characters with a
+  title-only retry (long CJK queries hit Lucene's 1024-clause limit), and logs
+  failures at warning instead of debug.
+- **Dart `EdgeType.isValid` rejected valid types.** It checked membership in a
+  seven-item list rather than the regex every other SDK uses, so `SUPPORTS`,
+  `PRODUCED_BY` and `MIGRATED_FROM` returned false. Constants added; `isValid`
+  now delegates to `isValidEdgeType`.
+
+### Added
+- `stack_score`, `stack_runner_up` and `stack_overlap` on every
+  `kumiho_memory_store` and `kumiho_memory_store_batch` result, reported whether
+  or not the capture stacked, so a caller can tell a broken search from a
+  near-miss.
+- The 21-file `python/tests/` suite is now collected by CI (moved under
+  `python/python/tests/`), together with the `kumiho-cli` tests; a layout guard
+  fails the build if a test directory under `python/` is not run by any job.
+
+### Removed
+- `python/.github/workflows/`: dead copies that GitHub never read and that
+  documented a stale version gate.
+
 ## [0.12.1] - 2026-09-02
 
 ### Added

@@ -8,6 +8,64 @@
 > what produced the gaps backfilled in KumihoIO/kumiho-SDKs#155 and #157.
 
 
+## kumiho 0.12.2 (September 2026) — Revision Stacking Actually Stacks 🧱
+
+Revision stacking is the mechanism that lets one subject accumulate history on
+one item instead of fragmenting into many: when a new capture covers a topic an
+existing item already covers, the new content should land as a new revision on
+that item. **It had never fired.** Measured on a live graph, an item scores
+0.72-0.83 against its *own exact title*; the gate was 0.92. Every capture ever
+written through `kumiho_memory_store` minted a fresh item at `r=1`, which also
+meant the revision operator the belief-revision model rests on had nothing to
+revise.
+
+### ✨ What changed
+
+- **A gate that can be reached, and that discriminates.** Fuzzy-search scores
+  alone cannot separate a genuine duplicate from an unrelated neighbour in a
+  topically homogeneous space (duplicates 0.58-0.68, unrelated up to 0.62, and
+  an unrelated item can win top-1 outright). The new gate requires token-Jaccard
+  overlap >= 0.17 between the incoming title+summary and the candidate's
+  (Latin words plus CJK character bigrams; texts under 8 tokens are refused),
+  and then either score >= 0.75, or score >= 0.55 with a matching
+  `memory_type`. A runner-up margin rule was measured and rejected: an impostor
+  had a wider margin than a true duplicate. All 17 measured pairs are pinned as
+  a parametrized test driving the gate as a pure function.
+- **Search on title and summary,** capped at 180 characters with a title-only
+  retry. A ~230-character Korean query was failing server-side with Lucene
+  `maxClauseCount is set to 1024`, and the failure was being swallowed at debug
+  level as if nothing similar existed. Search failures now log at warning.
+- **Inspectable results.** `stack_score`, `stack_runner_up` and `stack_overlap`
+  are reported on every store result, stacked or not.
+
+### ⚠️ Read this before relying on stacking
+
+A stacked write tags the *new* revision `published`, and every recall path
+resolves `published` first. The prior revision leaves the default retrieval
+surface and is reachable only via `unroll_revisions`. That is a tag move in the
+sense of the belief-revision model, without a `SUPERSEDES` edge. A **false
+stack is therefore a false belief revision**, not a harmless grouping — which
+is why the gate errs toward *not* stacking, and why the lexical floor binds in
+both score bands.
+
+### 🧪 Testing
+
+- `python/python/tests/test_mcp_revision_stacking.py`: the measured table, the
+  gate, reachability (restoring 0.92 fails), and negative controls showing that
+  score alone, type alone, and the margin rule each fail to separate.
+- The 21-file suite formerly at `python/tests/` is now collected by CI
+  (157 passed / 98 skipped on all three mcp legs), plus the `kumiho-cli` tests
+  and a layout guard that fails the build on any uncollected test directory.
+
+### 🎯 Also in this release
+
+- **Dart:** `EdgeType.isValid` now agrees with the regex validator the other
+  SDKs use; `SUPPORTS`, `PRODUCED_BY` and `MIGRATED_FROM` constants added.
+  (The Dart package has no publish path from this repo yet — #164.)
+- Release record backfilled: 0.12.0, 0.12.1, 0.10.7 and 0.10.8 in this file;
+  changelog dates and ordering repaired.
+- Dead workflow copies under `python/.github/workflows/` removed.
+
 ## kumiho 0.12.1 (September 2026) — `SUPPORTS` Reachable from `kumiho_create_edge` 🔗
 
 `kumiho_create_edge` advertised **8 of the 10** `EdgeType` members in its
