@@ -457,3 +457,51 @@ def test_no_results_reports_zeroes() -> None:
         assert mcp_server._find_similar_item(
             "CognitiveMemory", "CognitiveMemory/work", "q", "conversation"
         ) == (None, 0.0, 0.0, 0.0)
+
+
+# ===========================================================================
+# Strong-only mode (KUMIHO_STACK_MIDDLE_BAND=0)
+# ===========================================================================
+#
+# A deployment that has not measured its own score distribution can withhold
+# the middle band and keep stacking only for near-duplicates. The measured
+# `decisions` duplicates (0.6697 / 0.6761) sit in the middle band, so under
+# strong-only they must NOT stack -- that is the intended trade, stated here so
+# nobody reads it as a regression.
+
+STRONG_ONLY_CASES = [
+    # (score, type_matches, overlap, expected)
+    (0.8000, False, 0.25, True),    # strong band, no type needed
+    (0.8000, True,  0.10, False),   # lexical floor still binds in strong mode
+    (0.6697, True,  0.2525, False), # measured decisions duplicate: middle band, withheld
+    (0.6761, True,  0.2174, False), # measured decisions duplicate: middle band, withheld
+    (0.6165, True,  0.0875, False), # measured impostor: refused either way
+]
+
+
+@pytest.mark.parametrize("score,type_matches,overlap,expected", STRONG_ONLY_CASES)
+def test_strong_only_withholds_the_middle_band(score, type_matches, overlap, expected):
+    assert mcp_server._should_stack(score, type_matches, overlap, middle_band=False) is expected
+
+
+def test_two_band_is_the_default_and_admits_the_measured_duplicates(monkeypatch):
+    monkeypatch.delenv("KUMIHO_STACK_MIDDLE_BAND", raising=False)
+    assert mcp_server._middle_band_enabled() is True
+    assert mcp_server._stack_mode() == "two-band"
+    # the same measured duplicate that strong-only refuses
+    assert mcp_server._should_stack(0.6697, True, 0.2525) is True
+
+
+def test_env_switch_flips_the_default_gate(monkeypatch):
+    monkeypatch.setenv("KUMIHO_STACK_MIDDLE_BAND", "0")
+    assert mcp_server._middle_band_enabled() is False
+    assert mcp_server._stack_mode() == "strong-only"
+    # default (middle_band=None) now resolves to strong-only
+    assert mcp_server._should_stack(0.6697, True, 0.2525) is False
+    assert mcp_server._should_stack(0.8000, False, 0.25) is True
+
+
+@pytest.mark.parametrize("value", ["1", "", "true", "yes"])
+def test_only_a_literal_zero_disables_the_middle_band(monkeypatch, value):
+    monkeypatch.setenv("KUMIHO_STACK_MIDDLE_BAND", value)
+    assert mcp_server._middle_band_enabled() is True
