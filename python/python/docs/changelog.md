@@ -12,7 +12,7 @@ in descending version order, which is also descending date order.
 narrative — why a change mattered and what you have to do about it. This file is
 its terse companion. Entries belong in both.
 
-## [0.13.0] - 2026-09-02
+## [0.13.0] - 2026-09-04
 
 ### Added
 - **`kumiho.request_context`** — `RequestContext`, `current_request()`,
