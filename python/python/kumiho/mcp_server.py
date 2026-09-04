@@ -26,6 +26,13 @@ Configuration:
 
 Environment Variables:
     KUMIHO_MCP_LOG_LEVEL: Log level (DEBUG, INFO, WARNING, ERROR). Default: INFO
+    KUMIHO_MCP_TOOL_PROFILE: Which tool surface to expose — "full" (default,
+        every tool) or "connector" (the curated hosted set). Overridden by an
+        explicit ``profile`` argument to :func:`create_mcp_server`.
+    KUMIHO_MCP_HOSTED: Set to "1" when this process serves many tenants. Stops
+        the server touching process-global user state — no ``os.environ``
+        writes, no ``~/.kumiho`` reads, no local artifact files — and makes
+        every cache tenant-scoped. See :mod:`kumiho.request_context`.
 
 Example MCP client configuration (VS Code settings.json)::
 
@@ -95,6 +102,28 @@ except ImportError:
 # forks and vendored copies (PackageNotFoundError, no dist-info).
 _MCP_HAS_DECORATORS = MCP_AVAILABLE and hasattr(Server, "list_tools")
 
+
+def _server_accepts_instructions() -> bool:
+    """Whether the installed ``Server`` takes an ``instructions`` keyword.
+
+    Server instructions reach the client in the ``initialize`` result, which is
+    the only channel a *remote* connector has for the memory protocol (there is
+    no skill and no hook out there). Probed rather than assumed, for the same
+    reason as ``_MCP_HAS_DECORATORS``: a version table goes stale, and lies
+    outright for vendored copies.
+    """
+    if not MCP_AVAILABLE:
+        return False
+    try:
+        import inspect
+
+        return "instructions" in inspect.signature(Server.__init__).parameters
+    except (TypeError, ValueError):  # pragma: no cover - unintrospectable build
+        return False
+
+
+_SERVER_SUPPORTS_INSTRUCTIONS = _server_accepts_instructions()
+
 # mcp 1.x's ``@server.call_tool()`` defaulted to validate_input=True and checked
 # arguments against each tool's inputSchema before dispatch. mcp 2.0's low-level
 # path has no equivalent, so the 2.x branch re-implements it — without this, the
@@ -126,6 +155,7 @@ from kumiho import (
     CONTAINS,
     CREATED_FROM,
 )
+from kumiho.request_context import current_request, hosted_mode
 
 # Configure logging
 LOG_LEVEL = os.environ.get("KUMIHO_MCP_LOG_LEVEL", "INFO").upper()
@@ -144,8 +174,106 @@ except ImportError:
     _PRIVACY_AVAILABLE = False
 
 
+# ---------------------------------------------------------------------------
+# Hosted (multi-tenant) mode
+# ---------------------------------------------------------------------------
+
+# One stdio process serves exactly one user, so this module could treat the
+# environment and its caches as private. A hosted deployment serves many
+# tenants from one process, and every one of those assumptions becomes a
+# cross-tenant leak. The two predicates below are the guards.
+#
+# ``_is_hosted`` is deliberately the OR of the two signals: a request context
+# means a request is in flight *now*, while ``KUMIHO_MCP_HOSTED`` marks the
+# whole process, so code that runs between requests (server construction,
+# cache warming) still behaves defensively.
+
+
+def _is_hosted() -> bool:
+    """True when this process must not touch process-global user state."""
+    return current_request() is not None or hosted_mode()
+
+
+def _tenant_scope() -> str:
+    """The cache namespace for the in-flight request; ``"local"`` when stdio."""
+    ctx = current_request()
+    return ctx.tenant_id if ctx is not None else "local"
+
+
+# U+001F UNIT SEPARATOR: never appears in a tenant UUID, a project name or a
+# space path, so a prefixed key cannot collide with a differently-scoped one.
+_TENANT_KEY_SEP = "\x1f"
+
+
+def _tenant_key(key: str) -> str:
+    """Namespace a process-global cache key by the calling tenant.
+
+    Every module-level cache in this file predates hosting and was keyed by
+    project name alone. Two tenants routinely have a project called
+    ``CognitiveMemory``, so an unprefixed key would serve tenant B the
+    ``Project`` handle — and thus the gRPC channel and credentials — that
+    tenant A cached.
+    """
+    return f"{_tenant_scope()}{_TENANT_KEY_SEP}{key}"
+
+
+def _apply_auth_token_override(auth_token: str, tool_name: str) -> None:
+    """Honour a caller-supplied ``auth_token`` argument — locally only.
+
+    Two search tools accept an ``auth_token`` argument and used to publish it
+    into ``os.environ["KUMIHO_AUTH_TOKEN"]``. On stdio that is merely blunt:
+    one process, one user, and the override outlives the call. Hosted it is a
+    credential swap visible to every other tenant's in-flight request, and a
+    *persistent* one — the next request that falls back to the environment
+    picks up whichever token happened to be written last.
+
+    So hosted mode ignores the argument. The hosting layer already establishes
+    the caller's identity from the verified bearer token and enters
+    ``kumiho.use_client`` for the request; an argument-supplied token could
+    only ever contradict it, and the contradiction would be an escalation
+    attempt, not a configuration.
+    """
+    if not auth_token:
+        return
+    if _is_hosted():
+        logger.warning(
+            "Ignoring the auth_token argument to %s: in hosted mode the "
+            "request's own credentials are authoritative.",
+            tool_name,
+        )
+        return
+    os.environ["KUMIHO_AUTH_TOKEN"] = auth_token
+
+
+def _request_scoped_client() -> Any:
+    """The client bound by ``kumiho.use_client``, or ``None``."""
+    var = getattr(kumiho, "_client_context_var", None)
+    return var.get() if var is not None else None
+
+
 def _ensure_configured() -> bool:
-    """Ensure Kumiho client is configured."""
+    """Ensure Kumiho client is configured.
+
+    Hosted mode takes a different path on purpose. ``auto_configure_from_
+    discovery`` reads the *machine's* cached credentials from ``~/.kumiho``
+    and installs the resulting client as the process-global default — exactly
+    the two things a multi-tenant process must never do. The hosting layer has
+    already built a client from the caller's verified token and entered
+    ``kumiho.use_client``, so there is nothing to configure.
+
+    When that binding is missing, this raises rather than degrading: the
+    fallback would be to serve the *operator's* own graph to a remote caller,
+    which is worse than a failed tool call.
+    """
+    if _is_hosted():
+        if _request_scoped_client() is not None:
+            return True
+        raise RuntimeError(
+            "Hosted mode is active but no request-scoped Kumiho client is "
+            "bound. The hosting layer must wrap each request in "
+            "kumiho.use_client(client); falling back to local credentials "
+            "would serve the wrong tenant."
+        )
     try:
         kumiho.auto_configure_from_discovery()
         return True
@@ -308,7 +436,16 @@ def _write_memory_artifact(
     """Write a Markdown artifact for a memory entry and return the file path.
 
     Layout: {artifact_root}/{project}/{space_segments}/{item_name}.md
+
+    Hosted mode writes nothing and returns ``""``. The root is
+    ``~/.kumiho/artifacts`` on the *server's* filesystem, so hosted writes
+    would drop one tenant's memory text into a directory shared by all of
+    them, and then record that server-local path as an artifact location no
+    remote caller can ever resolve. Both call sites treat an empty return as
+    "no artifact", which is the correct outcome.
     """
+    if _is_hosted():
+        return ""
     root = _artifact_root()
     target_dir = root / project
     stripped = space_path.strip("/")
@@ -348,19 +485,24 @@ def _write_memory_artifact(
 # In-process caches – avoid redundant gRPC round-trips within a session.
 # ---------------------------------------------------------------------------
 
+# Every key here goes through :func:`_tenant_key`. The values are live SDK
+# handles bound to a client, i.e. to a tenant's credentials and gRPC channel —
+# sharing one across tenants would hand tenant B tenant A's graph.
+
 _project_cache: Dict[str, Project] = {}
-_known_spaces: set = set()          # normalized space paths already ensured
-_bundle_cache: Dict[str, Item] = {} # space_path/bundle_slug -> bundle Item
+_known_spaces: set = set()          # tenant-scoped normalized space paths already ensured
+_bundle_cache: Dict[str, Item] = {} # tenant + space_path/bundle_slug -> bundle Item
 
 
 def _get_project_cached(project_name: str) -> Project:
     """Return a cached Project, fetching (or creating) only on first call."""
-    if project_name in _project_cache:
-        return _project_cache[project_name]
+    cache_key = _tenant_key(project_name)
+    if cache_key in _project_cache:
+        return _project_cache[cache_key]
     project_obj = kumiho.get_project(project_name)
     if not project_obj:
         project_obj = kumiho.create_project(project_name, description="AI Cognitive Memory")
-    _project_cache[project_name] = project_obj
+    _project_cache[cache_key] = project_obj
     return project_obj
 
 
@@ -382,7 +524,8 @@ def _normalize_space_path(project_name: str, space_path: str) -> str:
 
 def _ensure_space_path(project: Project, space_path: str) -> str:
     normalized = _normalize_space_path(project.name, space_path)
-    if normalized in _known_spaces:
+    known_key = _tenant_key(normalized)
+    if known_key in _known_spaces:
         return normalized
     parts = normalized.strip("/").split("/")
     parent = f"/{parts[0]}"
@@ -395,7 +538,7 @@ def _ensure_space_path(project: Project, space_path: str) -> str:
             if exc.code() != grpc.StatusCode.ALREADY_EXISTS:
                 raise
         parent = f"{parent.rstrip('/')}/{segment}"
-    _known_spaces.add(normalized)
+    _known_spaces.add(known_key)
     # A new space invalidates the registry listing so the next hint resolves
     # against it (otherwise back-to-back stores wouldn't see each other's
     # freshly-created spaces within the cache TTL).
@@ -477,20 +620,21 @@ def _stem_slug(segment: str) -> str:
 def _existing_space_paths(project: Project) -> Set[str]:
     """All space paths in *project*, cached briefly per process."""
     now = time.monotonic()
+    cache_key = _tenant_key(project.name)
     with _space_registry_lock:
-        cached = _space_registry_cache.get(project.name)
+        cached = _space_registry_cache.get(cache_key)
         if cached and now - cached[0] < _SPACE_REGISTRY_TTL_SECONDS:
             return cached[1]
     # List outside the lock (network call); last writer wins on the cache.
     paths = {space.path for space in project.get_spaces(recursive=True)}
     with _space_registry_lock:
-        _space_registry_cache[project.name] = (now, paths)
+        _space_registry_cache[cache_key] = (now, paths)
     return paths
 
 
 def _invalidate_space_registry(project_name: str) -> None:
     with _space_registry_lock:
-        _space_registry_cache.pop(project_name, None)
+        _space_registry_cache.pop(_tenant_key(project_name), None)
 
 
 def _record_space_alias(project: Project, canonical_path: str, alias_slug: str) -> None:
@@ -900,7 +1044,7 @@ def _find_similar_item(
 
 
 def _get_or_create_bundle(project: Project, space_path: str, bundle_name: str) -> Item:
-    cache_key = f"{space_path}/{bundle_name}"
+    cache_key = _tenant_key(f"{space_path}/{bundle_name}")
     if cache_key in _bundle_cache:
         return _bundle_cache[cache_key]
     try:
@@ -1083,9 +1227,7 @@ def tool_search_items(
     auth_token: str = "",
 ) -> Dict[str, Any]:
     """Search for items across projects and spaces."""
-    import os
-    if auth_token:
-        os.environ["KUMIHO_AUTH_TOKEN"] = auth_token
+    _apply_auth_token_override(auth_token, "kumiho_search_items")
     _ensure_configured()
     items = kumiho.item_search(
         context_filter=context_filter,
@@ -1128,9 +1270,7 @@ def tool_fulltext_search(
     (fulltext + vector similarity) for improved accuracy when searching
     revision metadata.
     """
-    import os
-    if auth_token:
-        os.environ["KUMIHO_AUTH_TOKEN"] = auth_token
+    _apply_auth_token_override(auth_token, "kumiho_fulltext_search")
     _ensure_configured()
     results = kumiho.search(
         query,
@@ -4012,6 +4152,651 @@ except Exception as _exc:
 
 
 # ============================================================================
+# Tool annotations
+# ============================================================================
+
+# MCP tool annotations (MCP spec "Tool Annotations"; Anthropic's connector
+# directory requires a ``title`` plus ``readOnlyHint`` or ``destructiveHint``
+# on every listed tool). They are advisory hints a client uses to decide how
+# much ceremony a call deserves — read-only calls can run unprompted, a
+# destructive one should be confirmed — so a wrong hint is not cosmetic.
+#
+# The four booleans, per spec:
+#   readOnlyHint     - does not modify its environment.
+#   destructiveHint  - may perform *non-additive* updates (delete, overwrite,
+#                      deprecate). Meaningful only when readOnlyHint is false.
+#   idempotentHint   - repeating the call with the same arguments adds no
+#                      further effect. Meaningful only when readOnlyHint is
+#                      false.
+#   openWorldHint    - talks to an open, unbounded external world. Uniformly
+#                      False here: every tool addresses one closed system, the
+#                      caller's own Kumiho graph.
+#
+# The table covers every tool that can appear in :data:`TOOLS`, including the
+# kumiho-memory tools that are appended at import time and the ones gated
+# behind env flags (the four ``kumiho_code_*``), so the map does not go blank
+# on a deployment where a gate happens to be open. Tests assert the two
+# directions: no tool without an annotation, no annotation without a tool.
+#
+# Two entries deliberately disagree with the hint columns of the connector
+# plan's §2.2 table, because the tools disagree with them:
+#   * kumiho_memory_space_profile persists versioned space-profile items
+#     unless dry_run is passed, so it is not readOnly. It stays in the
+#     connector profile; only the honesty of its hints changed.
+#   * kumiho_memory_dream_state "applies deprecation, tagging, metadata
+#     enrichment" — deprecation is the destructive case by definition. It is
+#     also out of the connector profile for v1 (it needs an LLM key hosted
+#     tenants do not have); the annotation stays, since the full profile still
+#     serves it.
+
+TOOL_ANNOTATIONS: Dict[str, Dict[str, Any]] = {
+    # -- Core: read ---------------------------------------------------------
+    "kumiho_list_projects": {
+        "title": "List projects",
+        "readOnlyHint": True, "destructiveHint": False,
+        "idempotentHint": True, "openWorldHint": False,
+    },
+    "kumiho_get_project": {
+        "title": "Get a project",
+        "readOnlyHint": True, "destructiveHint": False,
+        "idempotentHint": True, "openWorldHint": False,
+    },
+    "kumiho_get_spaces": {
+        "title": "List spaces",
+        "readOnlyHint": True, "destructiveHint": False,
+        "idempotentHint": True, "openWorldHint": False,
+    },
+    "kumiho_get_space": {
+        "title": "Get a space",
+        "readOnlyHint": True, "destructiveHint": False,
+        "idempotentHint": True, "openWorldHint": False,
+    },
+    "kumiho_get_item": {
+        "title": "Get an item",
+        "readOnlyHint": True, "destructiveHint": False,
+        "idempotentHint": True, "openWorldHint": False,
+    },
+    "kumiho_search_items": {
+        "title": "Search items",
+        "readOnlyHint": True, "destructiveHint": False,
+        "idempotentHint": True, "openWorldHint": False,
+    },
+    "kumiho_fulltext_search": {
+        "title": "Full-text search",
+        "readOnlyHint": True, "destructiveHint": False,
+        "idempotentHint": True, "openWorldHint": False,
+    },
+    "kumiho_memory_retrieve": {
+        "title": "Retrieve memories",
+        "readOnlyHint": True, "destructiveHint": False,
+        "idempotentHint": True, "openWorldHint": False,
+    },
+    "kumiho_get_item_revisions": {
+        "title": "List an item's revisions",
+        "readOnlyHint": True, "destructiveHint": False,
+        "idempotentHint": True, "openWorldHint": False,
+    },
+    "kumiho_get_revision": {
+        "title": "Get a revision",
+        "readOnlyHint": True, "destructiveHint": False,
+        "idempotentHint": True, "openWorldHint": False,
+    },
+    "kumiho_get_revision_by_tag": {
+        "title": "Get a revision by tag",
+        "readOnlyHint": True, "destructiveHint": False,
+        "idempotentHint": True, "openWorldHint": False,
+    },
+    "kumiho_get_revision_as_of": {
+        "title": "Get a revision as of a time",
+        "readOnlyHint": True, "destructiveHint": False,
+        "idempotentHint": True, "openWorldHint": False,
+    },
+    "kumiho_batch_get_revisions": {
+        "title": "Get several revisions at once",
+        "readOnlyHint": True, "destructiveHint": False,
+        "idempotentHint": True, "openWorldHint": False,
+    },
+    "kumiho_get_artifacts": {
+        "title": "List a revision's artifacts",
+        "readOnlyHint": True, "destructiveHint": False,
+        "idempotentHint": True, "openWorldHint": False,
+    },
+    "kumiho_get_artifact": {
+        "title": "Get an artifact",
+        "readOnlyHint": True, "destructiveHint": False,
+        "idempotentHint": True, "openWorldHint": False,
+    },
+    "kumiho_get_bundle": {
+        "title": "Get a bundle",
+        "readOnlyHint": True, "destructiveHint": False,
+        "idempotentHint": True, "openWorldHint": False,
+    },
+    "kumiho_resolve_kref": {
+        "title": "Resolve a kref",
+        "readOnlyHint": True, "destructiveHint": False,
+        "idempotentHint": True, "openWorldHint": False,
+    },
+    "kumiho_get_artifacts_by_location": {
+        "title": "Find artifacts by file location",
+        "readOnlyHint": True, "destructiveHint": False,
+        "idempotentHint": True, "openWorldHint": False,
+    },
+    "kumiho_get_dependencies": {
+        "title": "Get dependencies",
+        "readOnlyHint": True, "destructiveHint": False,
+        "idempotentHint": True, "openWorldHint": False,
+    },
+    "kumiho_get_dependents": {
+        "title": "Get dependents",
+        "readOnlyHint": True, "destructiveHint": False,
+        "idempotentHint": True, "openWorldHint": False,
+    },
+    "kumiho_get_provenance_summary": {
+        "title": "Summarize provenance",
+        "readOnlyHint": True, "destructiveHint": False,
+        "idempotentHint": True, "openWorldHint": False,
+    },
+    "kumiho_analyze_impact": {
+        "title": "Analyze change impact",
+        "readOnlyHint": True, "destructiveHint": False,
+        "idempotentHint": True, "openWorldHint": False,
+    },
+    "kumiho_find_path": {
+        "title": "Find a path between revisions",
+        "readOnlyHint": True, "destructiveHint": False,
+        "idempotentHint": True, "openWorldHint": False,
+    },
+    "kumiho_get_edges": {
+        "title": "List edges",
+        "readOnlyHint": True, "destructiveHint": False,
+        "idempotentHint": True, "openWorldHint": False,
+    },
+    "kumiho_get_bundle_members": {
+        "title": "List bundle members",
+        "readOnlyHint": True, "destructiveHint": False,
+        "idempotentHint": True, "openWorldHint": False,
+    },
+    # -- Core: additive writes ---------------------------------------------
+    "kumiho_memory_store": {
+        "title": "Store a memory",
+        "readOnlyHint": False, "destructiveHint": False,
+        "idempotentHint": False, "openWorldHint": False,
+    },
+    "kumiho_create_revision": {
+        "title": "Create a revision",
+        "readOnlyHint": False, "destructiveHint": False,
+        "idempotentHint": False, "openWorldHint": False,
+    },
+    "kumiho_tag_revision": {
+        "title": "Tag a revision",
+        "readOnlyHint": False, "destructiveHint": False,
+        "idempotentHint": True, "openWorldHint": False,
+    },
+    "kumiho_create_edge": {
+        "title": "Create an edge",
+        "readOnlyHint": False, "destructiveHint": False,
+        "idempotentHint": True, "openWorldHint": False,
+    },
+    "kumiho_create_project": {
+        "title": "Create a project",
+        "readOnlyHint": False, "destructiveHint": False,
+        "idempotentHint": False, "openWorldHint": False,
+    },
+    "kumiho_create_space": {
+        "title": "Create a space",
+        "readOnlyHint": False, "destructiveHint": False,
+        "idempotentHint": False, "openWorldHint": False,
+    },
+    "kumiho_create_item": {
+        "title": "Create an item",
+        "readOnlyHint": False, "destructiveHint": False,
+        "idempotentHint": False, "openWorldHint": False,
+    },
+    "kumiho_create_artifact": {
+        "title": "Create an artifact",
+        "readOnlyHint": False, "destructiveHint": False,
+        "idempotentHint": False, "openWorldHint": False,
+    },
+    "kumiho_create_bundle": {
+        "title": "Create a bundle",
+        "readOnlyHint": False, "destructiveHint": False,
+        "idempotentHint": False, "openWorldHint": False,
+    },
+    "kumiho_add_bundle_member": {
+        "title": "Add a bundle member",
+        "readOnlyHint": False, "destructiveHint": False,
+        "idempotentHint": True, "openWorldHint": False,
+    },
+    # -- Core: destructive --------------------------------------------------
+    "kumiho_delete_project": {
+        "title": "Delete a project",
+        "readOnlyHint": False, "destructiveHint": True,
+        "idempotentHint": True, "openWorldHint": False,
+    },
+    "kumiho_delete_space": {
+        "title": "Delete a space",
+        "readOnlyHint": False, "destructiveHint": True,
+        "idempotentHint": True, "openWorldHint": False,
+    },
+    "kumiho_delete_item": {
+        "title": "Delete an item",
+        "readOnlyHint": False, "destructiveHint": True,
+        "idempotentHint": True, "openWorldHint": False,
+    },
+    "kumiho_delete_revision": {
+        "title": "Delete a revision",
+        "readOnlyHint": False, "destructiveHint": True,
+        "idempotentHint": True, "openWorldHint": False,
+    },
+    "kumiho_delete_artifact": {
+        "title": "Delete an artifact",
+        "readOnlyHint": False, "destructiveHint": True,
+        "idempotentHint": True, "openWorldHint": False,
+    },
+    "kumiho_delete_edge": {
+        "title": "Delete an edge",
+        "readOnlyHint": False, "destructiveHint": True,
+        "idempotentHint": True, "openWorldHint": False,
+    },
+    "kumiho_untag_revision": {
+        "title": "Remove a revision tag",
+        "readOnlyHint": False, "destructiveHint": True,
+        "idempotentHint": True, "openWorldHint": False,
+    },
+    "kumiho_set_metadata": {
+        # Overwrites the named keys rather than merging beside them.
+        "title": "Set metadata",
+        "readOnlyHint": False, "destructiveHint": True,
+        "idempotentHint": True, "openWorldHint": False,
+    },
+    "kumiho_deprecate_item": {
+        # Title fixed by the connector plan: this is the user-facing "forget"
+        # verb, and the directory shows the title, not the tool name.
+        "title": "Forget a memory",
+        "readOnlyHint": False, "destructiveHint": True,
+        "idempotentHint": True, "openWorldHint": False,
+    },
+    "kumiho_remove_bundle_member": {
+        "title": "Remove a bundle member",
+        "readOnlyHint": False, "destructiveHint": True,
+        "idempotentHint": True, "openWorldHint": False,
+    },
+    # -- kumiho-memory: working memory --------------------------------------
+    "kumiho_chat_add": {
+        "title": "Add to the chat buffer",
+        "readOnlyHint": False, "destructiveHint": False,
+        "idempotentHint": False, "openWorldHint": False,
+    },
+    "kumiho_chat_get": {
+        "title": "Read the chat buffer",
+        "readOnlyHint": True, "destructiveHint": False,
+        "idempotentHint": True, "openWorldHint": False,
+    },
+    "kumiho_chat_clear": {
+        "title": "Clear the chat buffer",
+        "readOnlyHint": False, "destructiveHint": True,
+        "idempotentHint": True, "openWorldHint": False,
+    },
+    # -- kumiho-memory: lifecycle -------------------------------------------
+    "kumiho_memory_engage": {
+        "title": "Engage memory before responding",
+        "readOnlyHint": True, "destructiveHint": False,
+        "idempotentHint": True, "openWorldHint": False,
+    },
+    "kumiho_memory_recall": {
+        "title": "Recall memories",
+        "readOnlyHint": True, "destructiveHint": False,
+        "idempotentHint": True, "openWorldHint": False,
+    },
+    "kumiho_memory_reflect": {
+        "title": "Reflect and capture memories",
+        "readOnlyHint": False, "destructiveHint": False,
+        "idempotentHint": False, "openWorldHint": False,
+    },
+    "kumiho_memory_ingest": {
+        "title": "Ingest a user message",
+        "readOnlyHint": False, "destructiveHint": False,
+        "idempotentHint": False, "openWorldHint": False,
+    },
+    "kumiho_memory_add_response": {
+        "title": "Buffer an assistant response",
+        "readOnlyHint": False, "destructiveHint": False,
+        "idempotentHint": False, "openWorldHint": False,
+    },
+    "kumiho_memory_consolidate": {
+        "title": "Consolidate the session into long-term memory",
+        "readOnlyHint": False, "destructiveHint": False,
+        "idempotentHint": False, "openWorldHint": False,
+    },
+    "kumiho_memory_discover_edges": {
+        "title": "Discover memory relationships",
+        "readOnlyHint": False, "destructiveHint": False,
+        "idempotentHint": False, "openWorldHint": False,
+    },
+    "kumiho_memory_store_execution": {
+        "title": "Store an execution outcome",
+        "readOnlyHint": False, "destructiveHint": False,
+        "idempotentHint": False, "openWorldHint": False,
+    },
+    "kumiho_memory_dream_state": {
+        # Deprecates, retags and rewrites metadata across the graph. See the
+        # §2.2 note above: additive it is not.
+        "title": "Run a Dream State consolidation cycle",
+        "readOnlyHint": False, "destructiveHint": True,
+        "idempotentHint": False, "openWorldHint": False,
+    },
+    "kumiho_memory_space_profile": {
+        # Persists versioned space-profile items unless dry_run is set, so it
+        # is an additive write, not a read. See the §2.2 note above.
+        "title": "Profile memory spaces",
+        "readOnlyHint": False, "destructiveHint": False,
+        "idempotentHint": False, "openWorldHint": False,
+    },
+    "kumiho_memory_decompose": {
+        "title": "Decompose a memory into the typed graph",
+        "readOnlyHint": False, "destructiveHint": False,
+        "idempotentHint": False, "openWorldHint": False,
+    },
+    # -- kumiho-memory: Decision Memory (code) ------------------------------
+    "kumiho_code_why": {
+        "title": "Explain why code is the way it is",
+        "readOnlyHint": True, "destructiveHint": False,
+        "idempotentHint": True, "openWorldHint": False,
+    },
+    "kumiho_code_capture": {
+        "title": "Capture a code decision",
+        "readOnlyHint": False, "destructiveHint": False,
+        "idempotentHint": False, "openWorldHint": False,
+    },
+    "kumiho_code_ingest": {
+        "title": "Mine a commit range for decisions",
+        "readOnlyHint": False, "destructiveHint": False,
+        "idempotentHint": False, "openWorldHint": False,
+    },
+    "kumiho_code_mine_session": {
+        "title": "Mine this session for code decisions",
+        "readOnlyHint": False, "destructiveHint": False,
+        "idempotentHint": False, "openWorldHint": False,
+    },
+}
+
+#: The keys every :data:`TOOL_ANNOTATIONS` entry must carry.
+_ANNOTATION_FIELDS = (
+    "title",
+    "readOnlyHint",
+    "destructiveHint",
+    "idempotentHint",
+    "openWorldHint",
+)
+
+# ``ToolAnnotations`` and ``Tool.title`` arrived after the oldest mcp this
+# package supports (>=1.10.0), and mcp 2.x renamed model fields wholesale. Both
+# are detected by introspection rather than by version, exactly as
+# ``_MCP_HAS_DECORATORS`` is: an old or vendored SDK then serves unannotated
+# tools instead of failing to construct.
+if MCP_AVAILABLE:
+    try:
+        from mcp.types import ToolAnnotations as _ToolAnnotations  # type: ignore
+    except Exception:  # pragma: no cover - only on pre-annotation mcp builds
+        _ToolAnnotations = None  # type: ignore[assignment]
+    _TOOL_MODEL_FIELDS = set(getattr(Tool, "model_fields", {}) or {})
+else:  # pragma: no cover - exercised only without the mcp extra
+    _ToolAnnotations = None  # type: ignore[assignment]
+    _TOOL_MODEL_FIELDS = set()
+
+_TOOL_SUPPORTS_ANNOTATIONS = _ToolAnnotations is not None and "annotations" in _TOOL_MODEL_FIELDS
+_TOOL_SUPPORTS_TITLE = "title" in _TOOL_MODEL_FIELDS
+
+
+def _tool_annotations(name: str) -> Optional[Any]:
+    """Build the ``ToolAnnotations`` model for *name*, or ``None``."""
+    spec = TOOL_ANNOTATIONS.get(name)
+    if spec is None or not _TOOL_SUPPORTS_ANNOTATIONS:
+        return None
+    try:
+        # camelCase keyword names: they are the field names on mcp 1.x and the
+        # aliases on 2.x, so one spelling populates both.
+        return _ToolAnnotations(  # type: ignore[misc]
+            title=spec["title"],
+            readOnlyHint=spec["readOnlyHint"],
+            destructiveHint=spec["destructiveHint"],
+            idempotentHint=spec["idempotentHint"],
+            openWorldHint=spec["openWorldHint"],
+        )
+    except Exception as exc:  # pragma: no cover - shape change in a future mcp
+        logger.warning("Could not build annotations for tool '%s': %s", name, exc)
+        return None
+
+
+def _build_tool(spec: Dict[str, Any]) -> "Tool":
+    """Turn one :data:`TOOLS` entry into an mcp ``Tool``, annotations included.
+
+    Used by both registration branches, so the 1.x decorator path and the 2.x
+    ``on_*`` path cannot advertise different metadata for the same tool.
+    """
+    kwargs: Dict[str, Any] = {
+        "name": spec["name"],
+        "description": spec["description"],
+        "inputSchema": spec["inputSchema"],
+    }
+    annotation = TOOL_ANNOTATIONS.get(spec["name"])
+    if annotation is not None:
+        if _TOOL_SUPPORTS_TITLE:
+            kwargs["title"] = annotation["title"]
+        built = _tool_annotations(spec["name"])
+        if built is not None:
+            kwargs["annotations"] = built
+    else:
+        # Not fatal — a third party can append to TOOLS — but the directory
+        # requires a title on everything listed, so say so once.
+        logger.warning("Tool '%s' has no entry in TOOL_ANNOTATIONS", spec["name"])
+    return Tool(**kwargs)
+
+
+# ============================================================================
+# Tool profiles
+# ============================================================================
+
+#: The hosted connector's curated surface (connector plan §2.2, less
+#: ``kumiho_memory_dream_state``). Ordered read / additive-write / destructive,
+#: which is also the order the directory listing presents them in.
+#:
+#: ``kumiho_memory_dream_state`` is in the plan's table but is deliberately
+#: *not* here for v1. Its assessment pass needs an LLM key and hosted tenants
+#: are keyless (plan §1.10), so listing it would publish a tool that fails at
+#: call time — which directory review catches head-on, since it asks the
+#: submitter to confirm every listed tool has been run. It keeps its
+#: :data:`TOOL_ANNOTATIONS` entry, so the full profile is unaffected; re-add
+#: the name here once per-tenant LLM metering exists.
+CONNECTOR_PROFILE_TOOLS: Tuple[str, ...] = (
+    # Read
+    "kumiho_memory_engage",
+    "kumiho_memory_recall",
+    "kumiho_memory_retrieve",
+    "kumiho_memory_space_profile",
+    "kumiho_chat_get",
+    "kumiho_search_items",
+    "kumiho_get_item",
+    "kumiho_get_revision_by_tag",
+    "kumiho_list_projects",
+    "kumiho_get_spaces",
+    "kumiho_get_provenance_summary",
+    # Write
+    "kumiho_memory_reflect",
+    "kumiho_memory_store",
+    "kumiho_memory_consolidate",
+    "kumiho_memory_decompose",
+    "kumiho_create_space",
+    # Destructive
+    "kumiho_deprecate_item",
+    "kumiho_chat_clear",
+)
+
+PROFILE_FULL = "full"
+PROFILE_CONNECTOR = "connector"
+
+#: Every accepted value of the ``profile`` argument / ``KUMIHO_MCP_TOOL_PROFILE``.
+TOOL_PROFILES: Tuple[str, ...] = (PROFILE_FULL, PROFILE_CONNECTOR)
+
+_PROFILE_TOOL_NAMES: Dict[str, frozenset] = {
+    PROFILE_CONNECTOR: frozenset(CONNECTOR_PROFILE_TOOLS),
+}
+
+
+class ToolNotInProfileError(Exception):
+    """A tool exists, but the active profile does not offer it.
+
+    Raised rather than returned, so the refusal reaches the client as a real
+    MCP tool error (``isError: true``) instead of a *successful* result whose
+    text happens to contain the word "error". Clients and models branch on
+    ``isError``; a refusal that reports success reads as "the call went
+    through", which is the opposite of what happened.
+
+    mcp 1.x turns an exception out of the ``call_tool`` handler into an error
+    result carrying ``str(exc)``; the 2.x branch catches this type explicitly
+    and builds the same result. One raise, one message, both majors.
+    """
+
+    def __init__(self, tool_name: str, profile: str) -> None:
+        self.tool_name = tool_name
+        self.profile = profile
+        super().__init__(
+            f"Tool '{tool_name}' is not available in the '{profile}' tool profile."
+        )
+
+
+def resolve_tool_profile(profile: Optional[str] = None) -> str:
+    """Normalize an explicit profile, falling back to the environment.
+
+    ``None`` means "unspecified", not "full": it defers to
+    ``KUMIHO_MCP_TOOL_PROFILE`` so a deployment can pick the profile without
+    touching the code that constructs the server. An empty or whitespace-only
+    value on either path means full, which keeps ``KUMIHO_MCP_TOOL_PROFILE=``
+    from being a silent misconfiguration.
+    """
+    raw = profile if profile is not None else os.environ.get("KUMIHO_MCP_TOOL_PROFILE", "")
+    name = (raw or "").strip().lower()
+    if not name:
+        return PROFILE_FULL
+    if name not in TOOL_PROFILES:
+        raise ValueError(
+            f"Unknown MCP tool profile {raw!r}. "
+            f"Valid profiles: {', '.join(repr(p) for p in TOOL_PROFILES)}."
+        )
+    return name
+
+
+def profile_tool_names(profile: str) -> Optional[frozenset]:
+    """The names *profile* admits, or ``None`` for "everything in TOOLS"."""
+    return _PROFILE_TOOL_NAMES.get(profile)
+
+
+def tools_for_profile(profile: str) -> List[Dict[str, Any]]:
+    """The :data:`TOOLS` entries *profile* exposes.
+
+    Read from :data:`TOOLS` on every call rather than snapshotted at server
+    construction. ``TOOLS`` is a module-level list that kumiho-memory *extends
+    at import time* — with a further two extensions gated behind env flags —
+    so a snapshot would silently depend on import order, and a filter built
+    from one would go stale.
+    """
+    allowed = profile_tool_names(profile)
+    if allowed is None:
+        return list(TOOLS)
+    return [t for t in TOOLS if t["name"] in allowed]
+
+
+# ============================================================================
+# Connector instructions
+# ============================================================================
+
+# Server ``instructions`` are handed to the model once, at initialize. On the
+# stdio plugin path the engage/reflect protocol arrives as a skill plus
+# SessionStart hooks; a remote connector has neither, so the protocol has to
+# travel with the server or it does not travel at all. Distilled from
+# kumiho-plugins/claude/skills/kumiho-memory/SKILL.md ("Two Reflexes",
+# "Memory Discipline"), minus everything that assumes a local host: artifact
+# files, transcript mining, the session-id card, skill discovery.
+CONNECTOR_INSTRUCTIONS = """\
+Kumiho Memory gives you persistent, graph-native memory across conversations. \
+This is a remote connector: there are no hooks, no skills and no local files, \
+so this protocol is the whole of it. Run it yourself.
+
+FIRST TURN — identity bootstrap, once per conversation.
+Before answering the first message, call kumiho_get_revision_by_tag(
+item_kref="kref://CognitiveMemory/personal/agent.instruction", tag="published").
+Adopt whatever it returns: your name, the user's name, language, tone, \
+verbosity, standing rules. If it is not found, this is a first meeting: ask \
+the user three short questions in chat — what to call them, how they want you \
+to work (tone, length, language), and what they are working on — wait for the \
+answers, then store them with kumiho_memory_reflect using space_hint \
+"personal". Never invent the answers and never re-run this check later in the \
+conversation. An auth or connection error is not a first meeting: say memory \
+is unavailable and carry on without it.
+
+ENGAGE — before you respond.
+When the user's message touches anything that might have history, call \
+kumiho_memory_engage(query: <derived from their message>) once, before \
+answering. At most one engage per response; identical queries within five \
+seconds are deduplicated server-side. Skip it when the answer is already \
+visible in this conversation. Use graph_augmented: true for indirect or \
+chain-of-decision questions. Keep the returned source_krefs for reflect. \
+Compare each result's created_at with today's date and express age naturally \
+("last Tuesday", "about two weeks ago"); recent memories outrank stale ones.
+
+REFLECT — after you respond.
+After a substantive answer, call kumiho_memory_reflect(response: <your reply>, \
+captures: [...], source_krefs: [...]). Each capture is {type, title, content, \
+space_hint}, where type is one of decision, preference, fact, correction, \
+architecture, skill, creative. Capture the user's decisions, preferences, \
+facts and corrections, and your own substantive output — architecture calls, \
+bug resolutions, long drafts. Skip trivia, uncommitted brainstorming, \
+credentials and secrets; on a trivial turn call reflect with no captures, to \
+buffer the response only.
+space_hint is not optional. An unrouted capture lands at the project root, \
+where automatic revision stacking can fuse it onto an unrelated months-old \
+item. Reuse a space the graph already shows you — engage results come back as \
+krefs shaped kref://<project>/<space>/<item>.<kind> — and copy the name \
+exactly, capitalization included. When none fits, use the capture's type: \
+decisions, facts, preferences, corrections, personal.
+Titles carry absolute dates — "Chose gRPC on 2026-03-27", never "today".
+
+SPEAK, DON'T NARRATE.
+Weave memory into the answer: "Since you prefer concise output...". Never say \
+"let me check my memory", "my memory shows", "I've saved that", or otherwise \
+describe the plumbing. You simply know, and you simply remember.
+
+SESSIONS.
+Never invent a session_id. Omit it and the server resolves one, and keeps \
+resolving to that same one for the rest of the conversation. Every \
+session-scoped result — reflect, consolidate, chat — echoes back the \
+session_id and session_id_source it used; engage is read-only and reports \
+none. Pass a session_id only when a tool already reported it to you in this \
+conversation.
+
+CONSOLIDATE.
+When the user signals the end (goodbye, "that's all", "thanks, done") or after \
+roughly twenty exchanges, call kumiho_memory_consolidate(summary: {...}) with a \
+summary you write yourself — you have the whole conversation, and this path \
+needs no external model. Include title, summary, key events, knowledge (facts, \
+decisions, actions, open questions) and classification (topics, entities). \
+Close by naming what is still open.
+
+FORGETTING.
+When the user says "forget X", locate the item and call \
+kumiho_deprecate_item(item_kref=...) right away, then confirm plainly. Be \
+honest about what you remember; only summaries are stored, never raw \
+transcripts.
+
+WHEN IT PAYS.
+After a substantive exchange, kumiho_memory_decompose(kref: <from reflect or \
+consolidate>, entities, facts, relations) builds the typed graph so later \
+recall can bridge memories through shared entities. Distill from the stored \
+summary, a handful of each.\
+"""
+
+
+# ============================================================================
 # MCP Server Implementation
 # ============================================================================
 
@@ -4059,29 +4844,62 @@ def _validate_tool_input(name: str, arguments: dict) -> Optional[str]:
     return None
 
 
-def create_mcp_server() -> "Server":
+def create_mcp_server(
+    profile: Optional[str] = None,
+    instructions: Optional[str] = None,
+) -> "Server":
     """Create and configure the Kumiho MCP server.
 
     The six handlers are defined once, in the shapes mcp 1.x expects, and are
     either registered through the 1.x decorators or wrapped into the
     ``(ctx, params) -> ResultModel`` shape mcp 2.0 wants. Keeping one copy of
     each body is what stops the two branches from drifting apart.
+
+    Args:
+        profile: Which tool surface to expose. ``None`` defers to
+            ``KUMIHO_MCP_TOOL_PROFILE`` and then to ``"full"`` — today's whole
+            tool list, which is what the stdio plugin gets. ``"connector"``
+            exposes the curated hosted set (:data:`CONNECTOR_PROFILE_TOOLS`).
+            An unrecognized name raises ``ValueError`` rather than silently
+            serving everything: a typo in a deployment's env would otherwise
+            publish every destructive tool to a public connector.
+        instructions: Server instructions returned in the MCP ``initialize``
+            result. Defaults to :data:`CONNECTOR_INSTRUCTIONS` for the
+            connector profile and to nothing otherwise, because the stdio
+            plugin already carries the protocol as a skill and a second copy
+            would just spend the user's context twice.
+
+    Nothing here starts the orphan watchdog or otherwise assumes a stdio child
+    process — that belongs to :func:`main`. A hosted server builds many of
+    these inside a long-lived web process, where a watchdog would watch the
+    wrong parent and ``os._exit`` the whole service.
     """
     if not MCP_AVAILABLE:
         raise ImportError(
             "MCP SDK not installed. Install with: pip install mcp"
         )
 
-    async def list_tools() -> List[Tool]:
-        """List all available Kumiho tools."""
-        return [
-            Tool(
-                name=t["name"],
-                description=t["description"],
-                inputSchema=t["inputSchema"],
+    active_profile = resolve_tool_profile(profile)
+    if instructions is None and active_profile == PROFILE_CONNECTOR:
+        instructions = CONNECTOR_INSTRUCTIONS
+
+    allowed_names = profile_tool_names(active_profile)
+    if allowed_names is not None:
+        # Named-but-absent means an optional dependency is missing or a gate is
+        # closed (the kumiho-memory tools are appended at import time, and some
+        # only when their env flag is set). Serving the rest is right; doing it
+        # silently is not — a connector quietly short of kumiho_memory_reflect
+        # looks like a model failure, not a deployment one.
+        missing = sorted(n for n in allowed_names if n not in TOOL_HANDLERS)
+        if missing:
+            logger.warning(
+                "Tool profile '%s' names %d tool(s) that are not registered: %s",
+                active_profile, len(missing), ", ".join(missing),
             )
-            for t in TOOLS
-        ]
+
+    async def list_tools() -> List[Tool]:
+        """List the tools the active profile exposes."""
+        return [_build_tool(t) for t in tools_for_profile(active_profile)]
 
     async def call_tool(name: str, arguments: dict) -> Sequence[TextContent]:
         """Handle tool invocations."""
@@ -4093,6 +4911,19 @@ def create_mcp_server() -> "Server":
                 type="text",
                 text=json.dumps({"error": f"Unknown tool: {name}"}),
             )]
+
+        # Filtering the listing is not access control: a client can call any
+        # name it likes, and a model that saw the full surface in an earlier
+        # session will. This check is what actually withholds the tool — the
+        # listing filter only stops it being advertised.
+        #
+        # Checked *after* the handler lookup so the two answers stay
+        # distinguishable ("no such tool" and "that tool exists but this
+        # deployment does not offer it" call for different next moves, and the
+        # tool list is public either way), and *before* the dispatch below, so
+        # the handler is never entered.
+        if allowed_names is not None and name not in allowed_names:
+            raise ToolNotInProfileError(name, active_profile)
 
         try:
             # Run the tool handler (may be blocking gRPC call)
@@ -4237,8 +5068,18 @@ Use kumiho_search_items to find matching assets and summarize the results."""
     # ``version`` is kumiho's own. Passing none makes mcp 1.x advertise the mcp
     # SDK's version as kumiho's, and mcp 2.0 advertise an empty string
     # (kumiho-SDKs#147). Both majors accept it as a keyword.
+    server_kwargs: Dict[str, Any] = {"version": kumiho.__version__}
+    if instructions:
+        if _SERVER_SUPPORTS_INSTRUCTIONS:
+            server_kwargs["instructions"] = instructions
+        else:  # pragma: no cover - only on mcp builds without the keyword
+            logger.warning(
+                "The installed mcp SDK's Server takes no 'instructions' "
+                "keyword; the connector protocol will not reach the client."
+            )
+
     if _MCP_HAS_DECORATORS:
-        server = Server("kumiho-mcp", version=kumiho.__version__)
+        server = Server("kumiho-mcp", **server_kwargs)
         server.list_tools()(list_tools)
         server.call_tool()(call_tool)
         server.list_resources()(list_resources)
@@ -4262,16 +5103,28 @@ Use kumiho_search_items to find matching assets and summarize the results."""
 
     async def on_call_tool(ctx: Any, params: Any) -> "CallToolResult":
         arguments = params.arguments or {}
-        error = _validate_tool_input(params.name, arguments)
-        if error is not None:
+        # Skip validation for a tool this profile hides, so both majors answer
+        # a hidden call the same way: with the profile rejection ``call_tool``
+        # produces, never with a schema complaint about a tool that is not on
+        # offer in the first place.
+        if allowed_names is None or params.name in allowed_names:
+            error = _validate_tool_input(params.name, arguments)
+            if error is not None:
+                return CallToolResult(
+                    content=[TextContent(type="text", text=error)],
+                    isError=True,
+                )
+        try:
+            content = list(await call_tool(params.name, arguments))
+        except ToolNotInProfileError as exc:
+            # mcp 1.x's decorator does this for us; 2.x's runner does not, and
+            # would turn the raise into a JSON-RPC error instead of a tool
+            # error. Same shape on both majors.
             return CallToolResult(
-                content=[TextContent(type="text", text=error)],
+                content=[TextContent(type="text", text=str(exc))],
                 isError=True,
             )
-        return CallToolResult(
-            content=list(await call_tool(params.name, arguments)),
-            isError=False,
-        )
+        return CallToolResult(content=content, isError=False)
 
     async def on_list_resources(ctx: Any, params: Any) -> "ListResourcesResult":
         return ListResourcesResult(resources=await list_resources())
@@ -4297,7 +5150,7 @@ Use kumiho_search_items to find matching assets and summarize the results."""
     # get_capabilities still derives them from which methods are registered.
     return Server(
         "kumiho-mcp",
-        version=kumiho.__version__,
+        **server_kwargs,
         on_list_tools=on_list_tools,
         on_call_tool=on_call_tool,
         on_list_resources=on_list_resources,

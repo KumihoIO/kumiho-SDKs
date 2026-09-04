@@ -12,6 +12,96 @@ in descending version order, which is also descending date order.
 narrative — why a change mattered and what you have to do about it. This file is
 its terse companion. Entries belong in both.
 
+## [0.13.0] - 2026-09-02
+
+### Added
+- **`kumiho.request_context`** — `RequestContext`, `current_request()`,
+  `request_context()` and `hosted_mode()`. A `contextvars`-carried per-request
+  identity (tenant, user, token, session) for deployments where one process
+  serves many tenants. `asyncio.to_thread` copies the context, so it follows a
+  request across the async/sync boundary without being threaded through every
+  call site. `RequestContext`, `current_request` and `hosted_mode` are
+  re-exported from `kumiho`; the context manager is reachable as
+  `from kumiho.request_context import request_context` or as
+  `kumiho.use_request_context` — re-exporting it under its own name would
+  shadow the submodule, since a submodule and a package attribute share one
+  namespace and `import kumiho.request_context as rc` resolves through
+  `getattr`, not `sys.modules`.
+- **`create_mcp_server(profile=..., instructions=...)`** — `profile="connector"`
+  exposes a curated 18-tool surface for the hosted Claude connector; `None` or
+  `"full"` keeps today's whole tool list, which is what the stdio plugin gets.
+  Falls back to `KUMIHO_MCP_TOOL_PROFILE`. An unrecognized name raises
+  `ValueError` naming the valid profiles rather than silently serving
+  everything — a typo in a deployment's environment would otherwise publish
+  every destructive tool to a public connector.
+- **`kumiho.mcp_server.TOOL_ANNOTATIONS`** — MCP tool annotations (`title`,
+  `readOnlyHint`, `destructiveHint`, `idempotentHint`, `openWorldHint`) for all
+  63 tools, the kumiho-memory ones included. Applied on both the mcp 1.x
+  decorator path and the 2.x `on_*` path, with `Tool.title` and
+  `ToolAnnotations` detected by introspection so an older SDK degrades to
+  unannotated tools instead of failing to construct.
+- **`kumiho.mcp_server.ToolNotInProfileError`** — raised by `call_tool` when a
+  client asks for a tool the active profile withholds, so the refusal reaches
+  the client as a real MCP tool error (`isError: true`) rather than a
+  successful result whose text merely contains the word "error". Clients and
+  models branch on `isError`; a refusal that reports success reads as "the call
+  went through". mcp 1.x turns the raise into an error result on its own, and
+  the 2.x branch catches the type and builds the same one.
+- **`kumiho.mcp_server.CONNECTOR_INSTRUCTIONS`** — the engage/reflect protocol
+  as server `instructions`, returned in the MCP `initialize` result for the
+  connector profile. A remote connector has no skill and no hooks, so this is
+  the only channel the protocol has.
+- **`KUMIHO_STACK_MIDDLE_BAND`** — set to `0` to run the revision-stacking
+  gate in strong-only mode, where a capture stacks only when its score clears
+  the 0.75 strong threshold **and** the lexical floor; the 0.55 type-match band
+  is withheld. Default is unchanged (two-band). Every `kumiho_memory_store` and
+  `kumiho_memory_store_batch` result also reports `stack_mode` (`"two-band"` or
+  `"strong-only"`) next to `stack_score` / `stack_runner_up` / `stack_overlap`,
+  so per-tenant telemetry can say which gate produced the number.
+
+### Changed
+- **The MCP server's process-global caches are keyed by tenant.**
+  `_project_cache`, `_known_spaces`, `_bundle_cache` and `_space_registry_cache`
+  were keyed by project name alone. Two tenants routinely have a project called
+  `CognitiveMemory`, and the cached value is a live handle bound to one
+  tenant's client and credentials.
+- **Hosted mode never mutates `os.environ`.** The `auth_token` argument to
+  `kumiho_search_items` / `kumiho_fulltext_search` used to be published into
+  `KUMIHO_AUTH_TOKEN`; hosted, that is a credential swap visible to every other
+  in-flight request, and a persistent one. It is now ignored (with a warning)
+  when a request context is active or `KUMIHO_MCP_HOSTED=1`. Unchanged locally.
+- **Hosted mode never reads `~/.kumiho`.** `_ensure_configured()` raises instead
+  of falling back to `auto_configure_from_discovery()` when no request-scoped
+  client is bound: the fallback would serve the operator's own graph to a remote
+  caller. Local memory-artifact writes are likewise a no-op when hosted — the
+  root is on the server's shared disk and the recorded path resolves for nobody.
+
+### Notes
+- **Hosted deployments run with `KUMIHO_STACK_MIDDLE_BAND=0`.** The two-band
+  gate was calibrated on one corpus. A shared multi-tenant server has not
+  measured its own score distribution, and a middle-band false positive moves
+  the `published` tag onto an unrelated item — which every recall path then
+  resolves first, so the displaced memory disappears from the default retrieval
+  surface without anything reporting it. Strong-only keeps stacking for
+  near-duplicates and withholds the contested band until the `stack_mode` /
+  `stack_score` telemetry says a tenant's distribution supports turning it back
+  on. The stdio plugin keeps the two-band default.
+- The stdio plugin path is unchanged in behavior: the default
+  `create_mcp_server()` still exposes every tool, with the same names and
+  schemas. Tools now additionally carry `title` and `annotations`, which the
+  plugin benefits from as much as the directory does.
+- Two annotations deliberately disagree with the connector plan's §2.2 hint
+  columns, because the tools disagree with them:
+  `kumiho_memory_space_profile` persists versioned profile items unless
+  `dry_run` is set (so it is not read-only), and `kumiho_memory_dream_state`
+  applies deprecation (so it is destructive). `space_profile` keeps its place
+  in the connector profile; only the honesty of its hints changed.
+- `kumiho_memory_dream_state` is annotated but **withheld from the connector
+  profile** for v1. Its assessment pass needs an LLM key and hosted tenants are
+  keyless (plan §1.10), so listing it would publish a tool that fails at call
+  time — which directory review catches head-on, since it asks the submitter to
+  confirm every listed tool has been run. The full profile still serves it.
+
 ## [0.12.2] - 2026-09-02
 
 ### Fixed

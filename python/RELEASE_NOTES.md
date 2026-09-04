@@ -8,6 +8,111 @@
 > what produced the gaps backfilled in KumihoIO/kumiho-SDKs#155 and #157.
 
 
+## kumiho 0.13.0 (September 2026) — Hosted Connector Surface 🔌
+
+The stdio MCP server is single-tenant by construction: one process, one user,
+one set of credentials in the environment. Serving the same tools as a hosted
+Claude connector inverts every one of those assumptions, and this release is
+the seam that makes it safe — a per-request identity, a curated tool surface,
+annotations the connector directory requires, and hosted guards on the paths
+that used to reach for process-global state.
+
+### ✨ What changed
+
+- **`kumiho.request_context`** — a `contextvars`-carried per-request identity
+  (tenant, user, bearer token, memory session/context). `asyncio.to_thread`
+  copies the context, so it follows a request across the async/sync boundary
+  without being threaded through every call site. `RequestContext`,
+  `current_request` and `hosted_mode` are re-exported from `kumiho`; the
+  context manager is `kumiho.use_request_context`, or
+  `from kumiho.request_context import request_context`.
+- **`create_mcp_server(profile=..., instructions=...)`.** `profile="connector"`
+  exposes a curated **18-tool** surface; `None` or `"full"` keeps the whole
+  63-tool list, which is what the stdio plugin gets. The value falls back to
+  `KUMIHO_MCP_TOOL_PROFILE`, and an unrecognized name raises `ValueError`
+  naming the valid profiles — a typo in a deployment's environment would
+  otherwise publish every destructive tool to a public connector.
+- **`TOOL_ANNOTATIONS` for all 63 tools** (`title`, `readOnlyHint`,
+  `destructiveHint`, `idempotentHint`, `openWorldHint`), applied on both the
+  mcp 1.x decorator path and the 2.x `on_*` path. `Tool.title` and
+  `ToolAnnotations` are detected by introspection, so an older mcp degrades to
+  unannotated tools instead of failing to construct.
+- **`CONNECTOR_INSTRUCTIONS`** — the engage/reflect protocol returned as server
+  `instructions` in the MCP `initialize` result for the connector profile. A
+  remote connector has no skill and no hooks, so this is the only channel the
+  protocol has.
+- **`ToolNotInProfileError`** — a withheld tool is refused as a real MCP tool
+  error (`isError: true`), not a successful result whose text merely contains
+  the word "error". Clients and models branch on `isError`; a refusal that
+  reports success reads as "the call went through".
+- **`KUMIHO_STACK_MIDDLE_BAND`** — a switch for the revision-stacking gate
+  0.12.2 introduced. Set it to `0` and a capture stacks only when it clears the
+  0.75 strong threshold **and** the lexical floor; the 0.55 type-match band is
+  withheld. The default is unchanged. Every `kumiho_memory_store` and
+  `kumiho_memory_store_batch` result now also carries `stack_mode` next to
+  `stack_score`, so a deployment can tell which gate produced a number before
+  it decides whether to change the gate.
+
+### ⚠️ Read this before hosting
+
+- **Process-global caches are now keyed by tenant.** `_project_cache`,
+  `_known_spaces`, `_bundle_cache` and `_space_registry_cache` were keyed by
+  project name alone. Two tenants routinely have a project called
+  `CognitiveMemory`, and the cached value is a live handle bound to one
+  tenant's client and credentials.
+- **Hosted mode never mutates `os.environ`.** The `auth_token` argument to
+  `kumiho_search_items` / `kumiho_fulltext_search` used to be published into
+  `KUMIHO_AUTH_TOKEN` — hosted, a credential swap visible to every other
+  in-flight request, and a persistent one. It is ignored (with a warning) when
+  a request context is active or `KUMIHO_MCP_HOSTED=1`. Local behaviour is
+  unchanged.
+- **Hosted mode never reads `~/.kumiho`.** `_ensure_configured()` raises rather
+  than falling back to `auto_configure_from_discovery()` when no request-scoped
+  client is bound; the fallback would serve the operator's own graph to a
+  remote caller. Local memory-artifact writes are likewise a no-op when hosted.
+- **`kumiho_memory_dream_state` is withheld from the connector profile** for
+  v1, and two annotations deliberately disagree with the connector plan's hint
+  columns because the tools do: `kumiho_memory_space_profile` persists
+  versioned profile items unless `dry_run` is set (not read-only), and
+  `kumiho_memory_dream_state` applies deprecation (destructive).
+- **Set `KUMIHO_STACK_MIDDLE_BAND=0` when you host.** The two-band stacking
+  gate was calibrated on one corpus, and its middle band is the contested one:
+  every false positive measured there was an unrelated same-type neighbour
+  scoring 0.58-0.62 in a topically homogeneous space. A false stack moves the
+  `published` tag onto an unrelated item, and every recall path resolves
+  `published` first — so the displaced memory leaves the default retrieval
+  surface silently. A shared multi-tenant server has not measured its own
+  distribution yet, so it should run strong-only: near-duplicates still stack,
+  the contested band stays shut, and the `stack_mode` / `stack_score` fields on
+  every store result are the telemetry that tells you when to open it. The
+  stdio plugin keeps the default.
+
+### 🧪 Testing
+
+- `python/python/tests/test_mcp_connector_profile.py`: the 18-tool profile
+  pinned by name, annotation coverage and honesty for all 63 tools, the
+  out-of-profile refusal on both mcp legs, and hosted-mode tenancy — cache
+  keying, the `auth_token` no-op, and the discovery-fallback refusal.
+- The same file also pins the two features against each other: a
+  `kumiho_memory_store` dispatched through the **connector** server still
+  carries `stack_mode`, and `KUMIHO_STACK_MIDDLE_BAND=0` still withholds the
+  middle band there — with the default-gate control alongside it, so a search
+  stub returning nothing cannot pass for a withheld band.
+- The store path is pinned **fail-closed** at the tool boundary, not only at
+  the helper: hosted with no bound client, `kumiho_memory_store` and
+  `kumiho_memory_store_batch` raise before anything reaches a graph; with
+  `kumiho.use_client(...)` bound, the bound client is the one that sees the
+  call and `~/.kumiho` is never read.
+- Full suite from `python/python/`: 368 passed, 98 skipped, with and without
+  the real `kumiho_memory` source on `PYTHONPATH`.
+
+### 🎯 Also in this release
+
+- The stdio plugin path is unchanged in behavior: the default
+  `create_mcp_server()` still exposes every tool under the same names and
+  schemas. Tools now additionally carry `title` and `annotations`, which the
+  plugin benefits from as much as the directory does.
+
 ## kumiho 0.12.2 (September 2026) — Revision Stacking Actually Stacks 🧱
 
 Revision stacking is the mechanism that lets one subject accumulate history on
