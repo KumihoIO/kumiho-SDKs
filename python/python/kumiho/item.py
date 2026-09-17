@@ -60,6 +60,9 @@ class Item(KumihoObject):
         project (str): The project name this item belongs to.
         space (str): The space path this item belongs to.
         created_at (Optional[str]): ISO timestamp when the item was created.
+        modified_at (Optional[str]): ISO timestamp when the item was last
+            modified (creating a revision advances it), or ``None`` when the
+            server does not report one.
         author (str): The user ID who created the item.
         metadata (Dict[str, str]): Custom metadata key-value pairs.
         deprecated (bool): Whether the item is deprecated.
@@ -107,6 +110,9 @@ class Item(KumihoObject):
         self.item_name = pb_item.item_name
         self.kind = pb_item.kind
         self.created_at = pb_item.created_at or None
+        # getattr: added in 0.13.1, so a duck-typed stand-in for
+        # ItemResponse written against an older SDK must keep constructing.
+        self.modified_at = getattr(pb_item, "modified_at", "") or None
         self.author = pb_item.author
         self.metadata = dict(pb_item.metadata)
         self.deprecated = pb_item.deprecated

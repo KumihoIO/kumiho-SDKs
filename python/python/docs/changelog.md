@@ -12,6 +12,54 @@ in descending version order, which is also descending date order.
 narrative — why a change mattered and what you have to do about it. This file is
 its terse companion. Entries belong in both.
 
+## [0.13.1] - 2026-09-17
+
+### Fixed
+- **`kumiho_memory_retrieve` `mode="latest"` behaved as search.** The schema
+  advertised it, but `tool_memory_retrieve` had no branch for it: with a query
+  results came back relevance-ranked, and without one in item-creation order,
+  so a memory updated by a newer stacked revision never moved forward. It now
+  orders newest first by the `created_at` of the revision returned for each
+  item. With a query, relevance search picks the candidates (the top
+  `max(limit * 4, 20)` hits) and date orders them; `scores` are kept, unsorted.
+  Without a query, items are walked by `modified_at` with an early stop and a
+  cap of the same size on revision resolutions. `space_paths`,
+  `memory_types`, bundles and `unroll_revisions` are honoured. `"newest"`,
+  `"recent"` and `"most_recent"` are accepted as aliases.
+- **`mode="first"` ignored the query and `space_paths`.** It listed the whole
+  project and returned its oldest item, although auto-detect selects it only
+  when a query is present. It now searches the scope contexts with no
+  cross-space fallback. With a query, it returns the oldest by item
+  `created_at` among the top `max(limit * 4, 20)` relevance hits that pass
+  `memory_types`, falling back to the scoped listing as the other modes do.
+  Without a query, it walks the scoped items oldest first as before. It still
+  returns at most one result with the same keys. A revision-less item no
+  longer satisfies a `memory_types` filter.
+- **`spaces_used` was never filled from search hits.** The search loop read
+  `item.space.path`; `Item.space` is a `str`, and the swallowed
+  `AttributeError` left the list empty. Returned search hits now report their
+  space in project-prefixed form (`"CognitiveMemory/personal"`, or the project
+  name for a root item), deduped. First mode reports the returned item's space
+  instead of the project name.
+
+### Added
+- `created_at` on `mode="latest"` results — a list aligned with
+  `revision_krefs` (ISO strings, `null` when a revision has none). Other modes'
+  results are unchanged.
+- `Item.modified_at`, from the `ItemResponse` field of the same name the SDK
+  never read. `None` when the server does not report it.
+
+### Changed
+- The `kumiho_memory_retrieve` description and its `mode` description now say
+  what each mode does.
+
+### Notes
+- `spaces_used` is a deduped list, not aligned with `revision_krefs`. Clients
+  that read `spaces_used[i]` as the i-th result's space were relying on an
+  accident: the list was empty for search hits. They should derive the space
+  from each result's kref. The openclaw client in kumiho-plugins is being
+  fixed.
+
 ## [0.13.0] - 2026-09-04
 
 ### Added

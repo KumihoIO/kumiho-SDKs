@@ -8,6 +8,150 @@
 > what produced the gaps backfilled in KumihoIO/kumiho-SDKs#155 and #157.
 
 
+## kumiho 0.13.1 (September 2026) — Retrieval Modes That Do What They Say 🕒
+
+`kumiho_memory_retrieve` advertised three modes in its schema — search, first
+and latest — and only search behaved as described. There was no branch for
+`latest`, so the value fell straight through to search, and `first` ignored
+both the query and `space_paths`. Separately, `spaces_used` was never filled
+from search hits. Both the hosted connector and the local plugin serve this
+tool, and models are told to reach for `mode="latest"` when a user asks for the
+most recent memory, so those questions were being answered from a list that
+was not in date order:
+
+- **With a query**, results were relevance-ranked, exactly as in search mode.
+- **Without a query**, the pattern fallback happened to return the newest
+  *items* first — by item `created_at`. An old memory that had just received
+  a newer stacked revision kept its original position, so the update a user
+  had most recently made was the one least likely to come back.
+
+### ✨ What changed
+
+- **`mode="latest"` orders newest first by the revision it returns.** The key
+  is the `created_at` of each item's `published` revision (else `latest`) —
+  the same resolution every retrieval path already uses — so a stacked update
+  counts as recent. Missing timestamps sort last; ties break by relevance score,
+  then kref.
+- **With a query, relevance filters and date orders.** The same fuzzy search
+  as search mode (space scoping, `memory_types`, the deep-then-shallow retry,
+  `unroll_revisions`) selects the candidates, widened from `limit * 2` to
+  `max(limit * 4, 20)` hits because date order promotes hits relevance order
+  would have cut. `scores` still carries each result's relevance score; it is
+  simply no longer the sort key. With `unroll_revisions`, each revision is
+  ordered by its own date. If the query matches nothing, the name-pattern
+  fallback search mode uses applies here too (score `0.0`), in date order.
+- **Without a query, a bounded walk that still finds restacked items.**
+  Resolving an item's revision costs 1-2 RPCs, so resolving a whole project
+  is not an option (the 457-item incident behind 0.10.3's fallback bound).
+  `ItemResponse` already carried `modified_at`, and creating a revision
+  advances it, so it is an upper bound on every revision's `created_at` —
+  measured on a live graph, no resolved revision was newer than its item's
+  `modified_at` (312 items, 131 of them multi-revision). The walk goes through
+  every in-scope item by `modified_at`, newest first, and stops once `limit`
+  results are all newer than the next item's bound. Nothing further down can
+  displace them, so the result is exact. On that graph it resolved 5 of
+  2,106 items for `limit=5`, and a brute-force check agreed with the result.
+  A hard cap of `max(limit * 4, 20)` resolutions holds regardless.
+- **`created_at` on latest results** — a list aligned with `revision_krefs`,
+  so a model can say *when*, not just *what*. Search and first results do not
+  gain the key.
+- **Aliases:** `"newest"`, `"recent"` and `"most_recent"` select latest. Mode
+  matching ignores case and surrounding whitespace.
+- **`mode="first"` respects the query and `space_paths`.** It used to list
+  the whole project and return its oldest item, whatever was asked. Auto-detect
+  selects `first` only when a query is present, so "what was the first
+  decision about auth?" returned the oldest memory of any kind, anywhere. It
+  now searches within the same scope contexts as the other modes, with no
+  cross-space fallback. With a query, the top `max(limit * 4, 20)` relevance
+  hits are the candidates, and the oldest of them by *item* `created_at` (when
+  the memory was first created) that passes `memory_types` is returned.
+  Ordering needs no RPC, so revisions are resolved one candidate at a time
+  until one passes. If none does, first mode falls back to the scoped listing,
+  as search and latest do. Without a query, the scoped items are walked oldest
+  first until one passes, as before. It still returns at most one result, with
+  the same three keys. A revision-less item no longer satisfies a
+  `memory_types` filter.
+- **`spaces_used` is populated from search hits.** The search loop read
+  `item.space.path`, but `Item.space` is the kref's space as a `str`, so the
+  `AttributeError` was swallowed right after each result was appended.
+  Results were unaffected; `spaces_used` just stayed empty for every search
+  hit. Search hits now report their space in the form the scope contexts
+  already use: project-prefixed, e.g. `"CognitiveMemory/personal"`, or the
+  project name for an item at the root. Only hits that survive into the
+  returned results count. The bundle and listing fallbacks still report the
+  scope they searched, and first mode reports the returned item's space
+  instead of the project name.
+- **`Item.modified_at`** is now exposed on the SDK's `Item`.
+
+### ⚠️ Limits worth knowing
+
+- **The cap can bind.** With a `memory_types` filter that rejects most of the
+  newest items, the walk stops after `max(limit * 4, 20)` resolutions and can
+  return fewer than `limit` results even though older matches exist.
+- **Servers that do not report a usable `modified_at`** fall back to item
+  `created_at` for the walk — the old window — which misses an old item whose
+  only recent change is a new revision. If a resolved revision ever turns out
+  newer than its item's `modified_at`, early stopping switches off and the cap
+  alone bounds the walk.
+- **Bundles** keep search mode's rules for *when* members are added (only
+  while there are fewer than `limit` results); members that are added are
+  ordered by date like everything else.
+- **First mode's relevance pool is a pool.** An older relevant memory ranked
+  below the top `max(limit * 4, 20)` hits is not considered; raise `limit` to
+  widen it.
+
+### ✅ Compatibility
+
+- **`spaces_used` is not aligned with `revision_krefs`, and never was.** It is
+  a deduped list of spaces. A client reading `spaces_used[i]` as the i-th
+  result's space was relying on an accident: for search hits the list was
+  empty, and otherwise it held a scope context or two. Now that search hits
+  fill it, that reading returns the wrong space. Derive a result's space from
+  its own kref instead. The openclaw client in kumiho-plugins reads the list by
+  index and is being fixed there.
+- **`mode="first"` answers differently when given a query or `space_paths`**;
+  that is the fix. Called with neither, it returns the same item as before,
+  and only `spaces_used` changes, from the project name to that item's space.
+- **Otherwise, no upgrade action is needed.** Search mode returns the same
+  krefs and scores in the same order as before, and so does a caller that
+  omits `mode`, because the function and the MCP dispatcher both default it
+  to `"search"`. Only an explicitly empty `mode` auto-detects `first`, and that
+  detection is unchanged. There is deliberately no query-text detection for
+  latest: kumiho-memory's recall calls this function without a `mode` and must
+  keep relevance ranking, even when the user's message says "latest". It reads
+  `revision_krefs` and `scores`, not `spaces_used`.
+- The MCP `mode` parameter is still a free string, not a JSON-Schema `enum`.
+  Tool schemas are validated on dispatch, so an enum would reject spellings
+  the code accepts, such as `"earliest"` and the latest aliases.
+- **Downstream:** the hosted connector (mcp.kumiho.cloud) picks this up when
+  its `kumiho` pin moves to 0.13.1.
+
+### 🧪 Testing
+
+- `python/python/tests/test_mcp_server.py::TestMemoryRetrieveLatestMode`:
+  date order over relevance with scores retained, the widened pool, unrolled
+  revisions, a restacked old item winning without a query, `published` pinned
+  to an older revision, `space_paths` / `memory_types` with no cross-space
+  fallback, `limit` and aligned `created_at` with missing timestamps last and
+  mixed UTC offsets, aliases, search-mode and mode-less regressions (through
+  MCP dispatch too), the resolution cap on 457 items, the `modified_at` walk
+  finding a restacked item and stopping at `limit`, the untrustworthy-bound
+  guard, and date-ordered bundle members. 17 of the 19 fail against 0.13.0;
+  the two that pass are the search-mode regression and the resolution cap,
+  which 0.13.0 already satisfied.
+- `TestMemoryRetrieveSpacesUsed`: the project-prefixed form (nested spaces,
+  root items); search hits deduped in result order, with a hit cut by `limit`
+  contributing nothing in search or latest mode; the unroll path; and the
+  listing fallback still reporting its scope.
+- `TestMemoryRetrieveFirstMode`: no query walks the project oldest first and
+  stops at the first passing item; `space_paths` stays inside the space on
+  both paths; an auto-detected query returns the oldest relevant match rather
+  than the oldest item, never resolving hits past the pool; `memory_types` on
+  both paths, including revision-less items.
+- Full suite from `python/python/`: 393 passed, 100 skipped, with and without
+  the real `kumiho_memory` source on `PYTHONPATH` (Windows, mcp 2.2.0). First
+  mode and `spaces_used` were also checked read-only against a live graph.
+
 ## kumiho 0.13.0 (September 2026) — Hosted Connector Surface 🔌
 
 The stdio MCP server is single-tenant by construction: one process, one user,

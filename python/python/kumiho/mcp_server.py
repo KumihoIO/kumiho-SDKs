@@ -1084,6 +1084,151 @@ def _most_recent_items(items: List[Any], cap: int) -> List[Any]:
     return sorted(items, key=_created, reverse=True)[:cap]
 
 
+# mode="latest" and the explicit spellings that mean the same thing.  Only an
+# explicit mode selects it: there is deliberately no query-text detection,
+# because kumiho-memory's recall calls tool_memory_retrieve without a mode and
+# must keep relevance ranking whatever words the user's message contains.
+_LATEST_MODE_ALIASES = frozenset({"latest", "newest", "recent", "most_recent"})
+
+
+def _latest_candidate_pool(limit: int) -> int:
+    """How many candidates mode="latest" considers before date-ordering.
+
+    Wider than search mode's ``limit * 2``: date order promotes candidates
+    that relevance order would have cut, so the pool has to reach past them.
+    """
+    return max(limit * 4, 20)
+
+
+def _ordering_timestamp(value: Any) -> Optional[datetime]:
+    """Parse an ISO timestamp into a naive-UTC datetime for ordering.
+
+    Aware values are converted to UTC before the offset is dropped, so mixed
+    offsets compare correctly.  Anything that is not a parseable string
+    (missing, empty, or a non-string stand-in) is ``None``.
+    """
+    if not isinstance(value, str):
+        return None
+    ts = _parse_timestamp(value)
+    if ts is None:
+        return None
+    if ts.tzinfo is not None:
+        ts = ts.astimezone(timezone.utc).replace(tzinfo=None)
+    return ts
+
+
+def _newest_revisions(
+    items: List[Any], limit: int, allowed_types: Optional[Set[str]],
+) -> List[Tuple[Any, Any]]:
+    """Resolve published/latest revisions for the items that can be newest.
+
+    mode="latest" orders by the ``created_at`` of the revision it returns, and
+    that time is only known after resolving the revision — 1-2 RPCs per item
+    (see ``_most_recent_items``).  Two things keep this bounded:
+
+    * ``Item.modified_at`` is an upper bound on every revision's
+      ``created_at`` (creating a revision advances it; verified on a live
+      graph: 0 of 312 items, 131 of them multi-revision, had a resolved
+      revision newer than the item's ``modified_at``).  Walking items by it,
+      newest first, reaches an old item that received a new stacked revision
+      without resolving anything else, and once ``limit`` accepted revisions
+      are all newer than the next item's bound, nothing further down can
+      displace them — so the walk stops early and the result is exact.  If a
+      resolved revision turns out newer than its item's ``modified_at``, the
+      server's field is not a bound and early stopping is switched off.
+    * A hard cap of ``_latest_candidate_pool(limit)`` resolutions.  It binds
+      when ``memory_types`` rejects most of the walk (fewer than ``limit``
+      results can come back even though older matches exist), or when the
+      server does not report ``modified_at``.  Then the walk falls back to
+      item ``created_at`` — the old window — which misses an old item whose
+      only recent change is a new revision, and never stops early because
+      ``created_at`` is not an upper bound.
+    """
+    cap = _latest_candidate_pool(limit)
+    bounds = [_ordering_timestamp(getattr(item, "modified_at", None)) for item in items]
+    exact = bool(items) and all(b is not None for b in bounds)
+    keyed = [
+        (
+            bound or _ordering_timestamp(getattr(item, "created_at", None)),
+            str(getattr(getattr(item, "kref", None), "uri", "")),
+            item,
+        )
+        for bound, item in zip(bounds, items)
+    ]
+    # kref ascending, then (stable) window key descending with missing last.
+    keyed.sort(key=lambda entry: entry[1])
+    keyed.sort(key=lambda entry: (entry[0] is not None, entry[0] or datetime.min), reverse=True)
+
+    accepted: List[Tuple[Any, Any]] = []
+    accepted_keys: List[datetime] = []
+    for resolved, (bound, _, item) in enumerate(keyed):
+        if resolved >= cap:
+            break
+        if exact and limit > 0 and len(accepted_keys) >= limit:
+            kth_newest = sorted(accepted_keys, reverse=True)[limit - 1]
+            if bound is not None and bound < kth_newest:
+                break
+        try:
+            rev = item.get_revision_by_tag("published") or item.get_revision_by_tag("latest")
+        except Exception:
+            continue
+        key = _ordering_timestamp(getattr(rev, "created_at", None)) if rev else None
+        if exact and key is not None and bound is not None and key > bound:
+            # A server whose modified_at does not track revisions: it is no
+            # bound, so stop trusting it for early exit (the cap still holds).
+            exact = False
+        if rev and _matches_memory_types(rev, allowed_types):
+            accepted.append((item, rev))
+            if key is not None:
+                accepted_keys.append(key)
+    return accepted
+
+
+def _order_newest_first(
+    entries: List[Tuple[str, str, float]], created_at: Dict[str, Optional[str]],
+) -> List[Tuple[str, str, float]]:
+    """Order ``(item_kref, revision_kref, score)`` rows by revision date.
+
+    Newest ``created_at`` first; rows without a parseable timestamp sort
+    last.  Ties break by relevance score (descending), then by item and
+    revision kref (ascending), so the order is deterministic.
+    """
+    def newest(row: Tuple[str, str, float]) -> Tuple[bool, datetime, float]:
+        ts = _ordering_timestamp(created_at.get(row[1]))
+        return (ts is not None, ts or datetime.min, row[2])
+
+    by_kref = sorted(entries, key=lambda row: (row[0], row[1]))
+    return sorted(by_kref, key=newest, reverse=True)  # stable: kref order holds
+
+
+def _kref_space_context(kref_uri: str) -> str:
+    """The project-prefixed space path an item kref lives in.
+
+    ``kref://CognitiveMemory/personal/prefs.conversation`` gives
+    ``"CognitiveMemory/personal"``; an item at the project root gives the
+    project name.  That is the form ``tool_memory_retrieve`` uses for its
+    scope contexts and reports in ``spaces_used``.  ``Item.space`` is not: it
+    is the space *without* the project, and a ``str``, not a ``Space``.
+    """
+    kref = Kref(str(kref_uri), validate=False)
+    project, space = kref.get_project(), kref.get_space()
+    return f"{project}/{space}" if space else project
+
+
+def _oldest_items_first(items: List[Any]) -> List[Any]:
+    """Items ordered by item ``created_at``, oldest first; undated items last.
+
+    Stable, so items with equal timestamps keep their input order.
+    Timestamps are compared as naive UTC (see ``_ordering_timestamp``), which
+    also keeps an undated item from being compared against aware ones.
+    """
+    def oldest(item: Any) -> Tuple[bool, datetime]:
+        ts = _ordering_timestamp(getattr(item, "created_at", None))
+        return (ts is None, ts or datetime.min)
+
+    return sorted(items, key=oldest)
+
+
 def _matches_memory_types(rev: Any, allowed: Optional[Set[str]]) -> bool:
     """True when the revision's memory type passes the filter.
 
@@ -1824,9 +1969,50 @@ def tool_memory_retrieve(
     fuzzy search returns no results.
 
     Args:
+        mode: How results are chosen and ordered.
+
+            * ``"search"`` (default): relevance-ranked.
+            * ``"latest"`` (also ``"newest"``, ``"recent"``,
+              ``"most_recent"``): newest first, by the ``created_at`` of the
+              revision returned for each item — so an old item that received
+              a newer stacked revision counts as recent.  With a query
+              (``query``/``keywords``/``topics``), relevance search still
+              decides *which* memories qualify — the top
+              ``max(limit * 4, 20)`` matches — and date decides their order;
+              ``scores`` keeps the relevance scores, unsorted.  Without a
+              query, items are listed per space and a bounded window of the
+              most recently modified is resolved (see ``_newest_revisions``).
+              If a query matches nothing, the same name-pattern fallback as
+              search mode applies (score 0.0), ordered by date.  The result
+              adds ``created_at``, aligned with ``revision_krefs``.
+            * ``"first"`` (also ``"earliest"``, ``"oldest"``,
+              ``"initial"``): the single memory created first — oldest by
+              *item* ``created_at`` — within ``space_paths``.  With a query,
+              relevance search picks the candidates (the top
+              ``max(limit * 4, 20)`` hits) and the oldest of those that
+              passes ``memory_types`` is returned; if none does, the scoped
+              listing below is used.  Without a query, the scoped items are
+              walked oldest first until one passes.  Returns at most one
+              result, with ``item_krefs``, ``revision_krefs`` and
+              ``spaces_used`` only.
+
+            Matching ignores case and surrounding whitespace.  An empty mode
+            with a query containing "first"/"earliest"/"oldest"/"initial"
+            selects ``"first"``; nothing auto-selects ``"latest"``.
         unroll_revisions: If True, return ALL revisions of stacked items
             (useful for dream-state or history browsing). If False (default),
-            return only the published/latest revision per item.
+            return only the published/latest revision per item.  With
+            ``mode="latest"`` each revision is ordered by its own
+            ``created_at``.
+
+    Returns:
+        ``item_krefs``, ``revision_krefs``, ``scores`` (search and latest
+        modes; latest adds ``created_at``) — lists aligned with each other —
+        and ``spaces_used``, which is **not** aligned: a deduped list of
+        project-prefixed space paths (``"CognitiveMemory/personal"``) that
+        results came from — the returned item's own space for search hits
+        and first mode, the scope searched for the bundle and listing
+        fallbacks.  Derive a result's own space from its kref.
     """
     _ensure_configured()
 
@@ -1865,6 +2051,9 @@ def tool_memory_retrieve(
             mode_text = "first"
     if not mode_text:
         mode_text = "search"
+    is_latest = mode_text in _LATEST_MODE_ALIASES
+    if is_latest:
+        mode_text = "latest"
 
     def normalize_context(value: str) -> str:
         path = value.strip()
@@ -1879,31 +2068,6 @@ def tool_memory_retrieve(
     contexts = [normalize_context(p) for p in spaces] if spaces else [project_name]
     spaces_used: List[str] = []
 
-    # Mode: first/earliest - find oldest item by created_at
-    if mode_text in ["first", "earliest", "oldest", "initial"]:
-        items = kumiho.item_search(
-            context_filter=project_name,
-            name_filter="",
-            kind_filter=memory_item_kind,
-        )
-        # Oldest-first, returning the first item whose revision passes the
-        # memory_types filter — min() alone would ignore the filter.
-        for item in sorted(
-            items, key=lambda item: _parse_timestamp(item.created_at) or datetime.max,
-        ):
-            try:
-                rev = item.get_revision_by_tag("published") or item.get_revision_by_tag("latest")
-            except Exception:
-                continue
-            if rev and not _matches_memory_types(rev, allowed_types):
-                continue
-            return {
-                "item_krefs": [item.kref.uri],
-                "revision_krefs": [rev.kref.uri] if rev else [],
-                "spaces_used": [project_name],
-            }
-        return {"item_krefs": [], "revision_krefs": [], "spaces_used": []}
-
     # Build search query from query + keywords + topics
     search_terms = []
     if query_text:
@@ -1911,48 +2075,125 @@ def tool_memory_retrieve(
     search_terms.extend(keyword_list)
     search_terms.extend(topic_list)
     combined_query = " ".join(search_terms).strip()
+    # Name-pattern filter for the listing fallbacks.
+    name_filter = keyword_list[0] if keyword_list else (topic_list[0] if topic_list else "")
+
+    def relevance_search() -> List[Any]:
+        """Fuzzy-search hits for ``combined_query`` across contexts, best first."""
+        # Search each space context separately so space_paths filtering
+        # is honoured.  When no space_paths are specified, contexts
+        # defaults to [project_name] which searches everything.
+        hits: List[Any] = []
+        for ctx in contexts:
+            hits.extend(kumiho.search(
+                combined_query,
+                context=ctx,
+                kind=memory_item_kind,
+                include_revision_metadata=include_revision_metadata,
+            ))
+        # The deep search variant (include_revision_metadata=True) can
+        # return zero results on some deployments even when the plain
+        # item search matches (observed in production: every deep query
+        # returned 0 while the same query without revision metadata
+        # returned 100).  Retry shallow before giving up — falling
+        # through to the pattern fallback instead costs 1-2 RPCs per
+        # item in the project.
+        if not hits and include_revision_metadata:
+            for ctx in contexts:
+                hits.extend(kumiho.search(
+                    combined_query,
+                    context=ctx,
+                    kind=memory_item_kind,
+                    include_revision_metadata=False,
+                ))
+            if hits:
+                logger.warning(
+                    "tool_memory_retrieve: deep search returned 0 results "
+                    "but shallow retry matched %d — deep search may be "
+                    "broken on this server", len(hits),
+                )
+        # Sort by score descending after merging contexts
+        hits.sort(key=lambda sr: sr.score, reverse=True)
+        return hits
+
+    # Mode: first/earliest - the memory created first, within scope
+    if mode_text in ["first", "earliest", "oldest", "initial"]:
+        def first_passing(items: List[Any]) -> Optional[Dict[str, Any]]:
+            # Oldest-first, returning the first item whose revision passes
+            # the memory_types filter — min() alone would ignore the filter.
+            for item in _oldest_items_first(items):
+                try:
+                    rev = item.get_revision_by_tag("published") or item.get_revision_by_tag("latest")
+                except Exception:
+                    continue
+                if not _matches_memory_types(rev, allowed_types):
+                    continue
+                return {
+                    "item_krefs": [item.kref.uri],
+                    "revision_krefs": [rev.kref.uri] if rev else [],
+                    "spaces_used": [_kref_space_context(item.kref.uri)],
+                }
+            return None
+
+        if combined_query:
+            # Relevance decides which memories qualify; item creation date
+            # decides which of them came first.  Ordering needs no RPC, so
+            # only the widened pool is ever resolved, and the walk stops
+            # at the first item that passes.
+            try:
+                hits = relevance_search()
+            except Exception as exc:
+                logger.warning(
+                    "tool_memory_retrieve: fulltext search failed: %s: %s",
+                    type(exc).__name__, exc,
+                )
+                hits = []
+            pool: Dict[str, Any] = {}  # score order; kept for date ties
+            for sr in hits[:_latest_candidate_pool(limit)]:
+                pool.setdefault(sr.item.kref.uri, sr.item)
+            found = first_passing(list(pool.values()))
+            if found:
+                return found
+
+        # No query, or nothing relevant passed: walk the scoped items, the
+        # same fallback search and latest use.  Never wider than contexts,
+        # so space_paths isolation holds.
+        listed: Dict[str, Any] = {}
+        for context in contexts:
+            for item in kumiho.item_search(
+                context_filter=context,
+                name_filter=name_filter,
+                kind_filter=memory_item_kind,
+            ):
+                listed.setdefault(item.kref.uri, item)
+        found = first_passing(sorted(listed.values(), key=lambda item: item.kref.uri))
+        return found or {"item_krefs": [], "revision_krefs": [], "spaces_used": []}
 
     results: List[Tuple[str, str, float]] = []  # (item_kref, revision_kref, score)
+    # revision_kref -> that revision's created_at.  mode="latest" orders by it
+    # and reports it; other modes record it and never read it.
+    revision_created: Dict[str, Optional[str]] = {}
+
+    def remember_created(rev: Any) -> None:
+        value = getattr(rev, "created_at", None)
+        revision_created[rev.kref.uri] = value if isinstance(value, str) and value else None
+
+    # Candidates resolved from the relevance-ranked search hits.  Latest mode
+    # re-orders them by date, which promotes hits relevance order would have
+    # cut, so it reaches further down the ranking.
+    search_pool = _latest_candidate_pool(limit) if is_latest else limit * 2
+
+    # revision_kref -> the space its search hit lives in.  Only the hits that
+    # survive into the final results contribute to spaces_used.
+    hit_spaces: Dict[str, str] = {}
 
     # Primary: Use fuzzy search if we have a query
     if combined_query:
         try:
-            # Search each space context separately so space_paths filtering
-            # is honoured.  When no space_paths are specified, contexts
-            # defaults to [project_name] which searches everything.
-            search_results = []
-            for ctx in contexts:
-                search_results.extend(kumiho.search(
-                    combined_query,
-                    context=ctx,
-                    kind=memory_item_kind,
-                    include_revision_metadata=include_revision_metadata,
-                ))
-            # The deep search variant (include_revision_metadata=True) can
-            # return zero results on some deployments even when the plain
-            # item search matches (observed in production: every deep query
-            # returned 0 while the same query without revision metadata
-            # returned 100).  Retry shallow before giving up — falling
-            # through to the pattern fallback instead costs 1-2 RPCs per
-            # item in the project.
-            if not search_results and include_revision_metadata:
-                for ctx in contexts:
-                    search_results.extend(kumiho.search(
-                        combined_query,
-                        context=ctx,
-                        kind=memory_item_kind,
-                        include_revision_metadata=False,
-                    ))
-                if search_results:
-                    logger.warning(
-                        "tool_memory_retrieve: deep search returned 0 results "
-                        "but shallow retry matched %d — deep search may be "
-                        "broken on this server", len(search_results),
-                    )
-            # Sort by score descending after merging contexts
-            search_results.sort(key=lambda sr: sr.score, reverse=True)
-            for sr in search_results[:limit * 2]:  # Get extra for filtering
+            search_results = relevance_search()
+            for sr in search_results[:search_pool]:  # Get extra for filtering
                 try:
+                    hit_space = _kref_space_context(sr.item.kref.uri)
                     if unroll_revisions:
                         # Unroll ALL revisions for stacked items (dream-state,
                         # history browsing). Each revision gets a separate slot.
@@ -1965,8 +2206,8 @@ def tool_memory_retrieve(
                                     sr.item.kref.uri, rev.kref.uri,
                                     sr.score,
                                 ))
-                            if sr.item.space:
-                                spaces_used.append(sr.item.space.path)
+                                remember_created(rev)
+                                hit_spaces[rev.kref.uri] = hit_space
                             continue
 
                     # Default: return only published/latest per item.
@@ -1978,8 +2219,8 @@ def tool_memory_retrieve(
                     )
                     if rev and _matches_memory_types(rev, allowed_types):
                         results.append((sr.item.kref.uri, rev.kref.uri, sr.score))
-                        if sr.item.space:
-                            spaces_used.append(sr.item.space.path)
+                        remember_created(rev)
+                        hit_spaces[rev.kref.uri] = hit_space
                 except Exception:
                     continue
         except Exception as exc:
@@ -2015,17 +2256,13 @@ def tool_memory_retrieve(
                                 rev = item.get_revision_by_tag("published") or item.get_revision_by_tag("latest")
                                 if rev and _matches_memory_types(rev, allowed_types):
                                     results.append((member.item_kref.uri, rev.kref.uri, 0.5))
+                                    remember_created(rev)
                     except Exception:
                         continue
 
     # Fallback: Pattern search if still no results
     if not results:
-        name_filter = ""
-        if keyword_list:
-            name_filter = keyword_list[0]
-        elif topic_list:
-            name_filter = topic_list[0]
-
+        pooled: Dict[str, Any] = {}  # latest mode: every context's items
         for context in contexts:
             items = kumiho.item_search(
                 context_filter=context,
@@ -2034,6 +2271,13 @@ def tool_memory_retrieve(
             )
             if items:
                 spaces_used.append(context)
+            if is_latest:
+                # One window across all contexts, resolved below: a
+                # per-context window would spend resolutions on a space
+                # whose newest memory is older than another space's.
+                for item in items:
+                    pooled.setdefault(item.kref.uri, item)
+                continue
             # Bounded: resolving published/latest costs 1-2 RPCs per item,
             # and only `limit` results survive — never resolve the whole
             # project (see _most_recent_items).
@@ -2044,6 +2288,11 @@ def tool_memory_retrieve(
                         results.append((item.kref.uri, rev.kref.uri, 0.0))
                 except Exception:
                     continue
+        if is_latest:
+            # Bounded by _latest_candidate_pool(limit) resolutions.
+            for item, rev in _newest_revisions(list(pooled.values()), limit, allowed_types):
+                results.append((item.kref.uri, rev.kref.uri, 0.0))
+                remember_created(rev)
 
         # Last resort: search entire project — but ONLY when the caller
         # did NOT explicitly scope to specific spaces.  When space_paths
@@ -2058,13 +2307,18 @@ def tool_memory_retrieve(
             )
             if items:
                 spaces_used.append(project_name)
-            for item in _most_recent_items(items, limit * 2):
-                try:
-                    rev = item.get_revision_by_tag("published") or item.get_revision_by_tag("latest")
-                    if rev and _matches_memory_types(rev, allowed_types):
-                        results.append((item.kref.uri, rev.kref.uri, 0.0))
-                except Exception:
-                    continue
+            if is_latest:
+                for item, rev in _newest_revisions(items, limit, allowed_types):
+                    results.append((item.kref.uri, rev.kref.uri, 0.0))
+                    remember_created(rev)
+            else:
+                for item in _most_recent_items(items, limit * 2):
+                    try:
+                        rev = item.get_revision_by_tag("published") or item.get_revision_by_tag("latest")
+                        if rev and _matches_memory_types(rev, allowed_types):
+                            results.append((item.kref.uri, rev.kref.uri, 0.0))
+                    except Exception:
+                        continue
 
     # Dedupe: when unrolling, dedup by revision_kref so stacked revisions
     # survive.  Otherwise dedup by item_kref — one slot per memory item.
@@ -2076,15 +2330,30 @@ def tool_memory_retrieve(
             seen.add(dedup_key)
             deduped.append((item_kref, rev_kref, score))
 
-    deduped.sort(key=lambda x: x[2], reverse=True)
+    if is_latest:
+        # Date order only; the relevance score is a tie-break, never the key.
+        deduped = _order_newest_first(deduped, revision_created)
+    else:
+        deduped.sort(key=lambda x: x[2], reverse=True)
     final = deduped[:limit]
+    # spaces_used is a deduped set of spaces, NOT aligned with revision_krefs:
+    # the spaces of the returned search hits (in result order), then the
+    # scope contexts the bundle and listing fallbacks drew from.  A caller
+    # that needs each result's space derives it from that result's kref.
+    spaces_used = [
+        hit_spaces[rev] for _, rev, _ in final if rev in hit_spaces
+    ] + spaces_used
 
-    return {
+    response: Dict[str, Any] = {
         "item_krefs": [item for item, _, _ in final],
         "revision_krefs": [rev for _, rev, _ in final],
         "spaces_used": list(dict.fromkeys(spaces_used)),
         "scores": [score for _, _, score in final],
     }
+    if is_latest:
+        # Aligned with revision_krefs, so a caller can state how recent each is.
+        response["created_at"] = [revision_created.get(rev) for _, rev, _ in final]
+    return response
 
 
 def tool_get_dependencies(
@@ -3097,7 +3366,7 @@ TOOLS: List[Dict[str, Any]] = [
     },
     {
         "name": "kumiho_memory_retrieve",
-        "description": "Retrieve memory using Google-like fuzzy search with relevance ranking. Supports natural language queries with automatic typo tolerance. Falls back to bundle and pattern search when needed.",
+        "description": "Retrieve memory using Google-like fuzzy search with relevance ranking. Supports natural language queries with automatic typo tolerance. Falls back to bundle and pattern search when needed. For the most recent memories, set mode to \"latest\": results come newest first and include created_at.",
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -3142,7 +3411,7 @@ TOOLS: List[Dict[str, Any]] = [
                 },
                 "mode": {
                     "type": "string",
-                    "description": "search (fuzzy) | first (oldest by date) | latest (default: search)",
+                    "description": "search (default): relevance-ranked | latest: newest first by last update; with a query, relevant matches ordered by date | first: the single oldest memory; with a query, the oldest relevant match",
                     "default": "search",
                 },
                 "include_revision_metadata": {
