@@ -714,11 +714,13 @@ def _resolve_space_hint_path(project: Project, space_path: str) -> str:
 #
 # WHAT A FALSE STACK ACTUALLY COSTS. It is not "two related memories filed
 # as consecutive revisions, both still reachable". Stacking calls
-# ``item.create_revision(...)`` and then tags the NEW revision "published"
-# (``tag_list = tags or ["published"]``), while every recall path resolves
-# ``get_revision_by_tag("published") or get_revision_by_tag("latest")``.
-# So the PRIOR revision loses "published" and leaves the default retrieval
-# surface entirely -- it survives only for callers passing
+# ``item.create_revision(...)``, and whenever that new revision ends up
+# tagged "published" -- an untagged store (``tag_list = tags or
+# ["published"]``), or a caller opting in with ``keep_published=True`` --
+# the tag MOVES, because the server keeps a tag on one revision per item.
+# Every recall path resolves ``get_revision_by_tag("published") or
+# get_revision_by_tag("latest")``, so the PRIOR revision leaves the default
+# retrieval surface entirely -- it survives only for callers passing
 # ``unroll_revisions``. That is precisely the paper's Definition 7.4 tag
 # move, i.e. a belief revision, performed WITHOUT the SUPERSEDES edge that
 # is supposed to accompany it. A false stack is therefore a false belief
@@ -1473,6 +1475,7 @@ def tool_memory_store(
     metadata: Optional[Dict[str, Any]] = None,
     edge_type: str = DERIVED_FROM,
     stack_revisions: bool = True,
+    keep_published: bool = False,
 ) -> Dict[str, Any]:
     """Store a memory bundle with minimal inputs.
 
@@ -1480,6 +1483,26 @@ def tool_memory_store(
     item in the same space with similar content and stacks a new revision
     on it instead of creating a duplicate item.  Falls back to creating a
     new item when no similar item is found or the search fails.
+
+    *keep_published* (default False) carries an EXISTING ``published`` tag
+    forward. It applies only when all three hold: the caller opted in, this
+    store stacked onto an existing item, and that item already had a
+    ``published`` revision. In that case the new revision is tagged
+    ``published`` too, which moves the tag off the old revision -- the server
+    keeps a tag on one revision per item and records the move in tag history
+    (``Revision.was_tagged``). Without it, a store that stacks with caller
+    *tags* leaves ``published`` on the OLD revision, and recall, which
+    resolves ``published`` before ``latest``, keeps returning the old value;
+    the stacked update is invisible.
+
+    Nothing is ever published on the store's own initiative. ``published`` is
+    an approval/immutability marker, so *keep_published* has no effect on a
+    new item, and none on an item with no ``published`` revision. It is not
+    in the MCP tool schema: kumiho-memory's reflect is the caller that opts
+    in. Untagged stores keep their long-standing ``["published"]`` default.
+
+    ``published`` is applied LAST, after the caller's *tags* -- the server
+    freezes a published revision and rejects tags applied to it afterwards.
     """
     _ensure_configured()
 
@@ -1577,6 +1600,7 @@ def tool_memory_store(
     stack_runner_up = 0.0
     stack_overlap = 0.0
     previous_revision_kref = ""
+    stacked_onto_published = False
     item = None
 
     # --- Revision stacking: search for a similar existing item ---
@@ -1604,6 +1628,9 @@ def tool_memory_store(
                 try:
                     prev_rev = item.get_revision_by_tag("published")
                     if prev_rev:
+                        # Also what ``keep_published`` keys off, so opting in
+                        # costs no extra RPC: this lookup already happens.
+                        stacked_onto_published = True
                         previous_revision_kref = prev_rev.kref.uri
                 except Exception:
                     pass  # Non-critical; proceed with stacking
@@ -1665,13 +1692,26 @@ def tool_memory_store(
             return {"error": f"Failed to create artifact: {exc}"}
 
     tag_list = tags or ["published"]
+    # Opt-in only (see the docstring): carry an existing "published" tag
+    # forward onto the revision this store just stacked. Deferred to the end
+    # because the server freezes a published revision and rejects tags applied
+    # to it afterwards. Each tag keeps its own ``try``, so a classification tag
+    # that fails cannot stop the one that matters.
+    move_published = keep_published and stacked_onto_published
     for tag in tag_list:
         if tag == "latest":
             continue
+        if move_published and tag == "published":
+            continue  # applied last, below -- never twice
         try:
             revision.tag(tag)
         except Exception:
             continue
+    if move_published:
+        try:
+            revision.tag("published")
+        except Exception:
+            pass
 
     bundle_kref = ""
     if bundle_name:
@@ -1727,6 +1767,7 @@ def tool_memory_store_batch(
     edge_type: str = DERIVED_FROM,
     stack_revisions: bool = True,
     idempotency_prefix: str = "",
+    keep_published: bool = False,
 ) -> Dict[str, Any]:
     """Bulk counterpart of :func:`tool_memory_store` — N captures, one batched write.
 
@@ -1745,6 +1786,15 @@ def tool_memory_store_batch(
         ``tags``      — optional; defaults to ``["published"]``.
         ``metadata``  — optional pre-validated dict (e.g. ``{"event_date": ...}``).
         ``space_hint``— optional per-capture space override.
+
+    *keep_published* (default False) is call-level, not per-capture, and is the
+    batch counterpart of the same keyword on :func:`tool_memory_store`: for a
+    capture that stacked onto an item which already had a ``published``
+    revision, the new revision is tagged ``published`` too (applied last, after
+    the caller's tags), moving the tag forward so recall returns the stacked
+    update instead of the value it superseded. It never publishes a new item,
+    never publishes an item that had no ``published`` revision, and costs one
+    extra tag lookup per stacked capture — only when opted in.
 
     Returns ``{"results": [per-capture dict | {"error": ...}], "stored_krefs":
     [...], "stacked": <int>}`` — ``results`` is positional (one entry per input
@@ -1811,6 +1861,18 @@ def tool_memory_store_batch(
                         compare_text=f"{final_title} {final_summary}",
                     )
                 )
+        # Only under the opt-in: unlike the single path, the batch prep has no
+        # published revision in hand, so ask for it here (one lookup per
+        # stacked capture, and none at all by default).
+        stacked_onto_published = False
+        if keep_published and item is not None:
+            try:
+                stacked_onto_published = (
+                    item.get_revision_by_tag("published") is not None
+                )
+            except Exception:
+                stacked_onto_published = False
+
         if item is not None:
             item_kref = item.kref.uri
         else:
@@ -1864,6 +1926,7 @@ def tool_memory_store_batch(
             "item_obj": item,
             "item_kref": item_kref,
             "tags": cap.get("tags"),
+            "move_published": stacked_onto_published,
             "space": normalized_space,
             "stacked": item is not None,
             "stack_score": stack_score,
@@ -1905,13 +1968,23 @@ def tool_memory_store_batch(
             results[i] = {"error": failure_by_row.get(row_idx, "batch row rejected")}
             continue
 
+        # ``move_published`` mirrors the single path: "published" last, once,
+        # and only for a capture that stacked onto an already-published item.
+        move_published = prep.get("move_published", False)
         for tag in (prep["tags"] or ["published"]):
             if tag == "latest":
+                continue
+            if move_published and tag == "published":
                 continue
             try:
                 rev.tag(tag)
             except Exception:
                 continue
+        if move_published:
+            try:
+                rev.tag("published")
+            except Exception:
+                pass
 
         bundle_kref = ""
         try:
