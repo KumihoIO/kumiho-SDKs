@@ -12,6 +12,32 @@ in descending version order, which is also descending date order.
 narrative — why a change mattered and what you have to do about it. This file is
 its terse companion. Entries belong in both.
 
+## [0.13.1] - 2026-09-17
+
+### Fixed
+- **`kumiho_memory_retrieve` `mode="latest"` behaved as search.** The schema
+  advertised it, but `tool_memory_retrieve` had no branch for it: with a query
+  results came back relevance-ranked, and without one in item-creation order,
+  so a memory updated by a newer stacked revision never moved forward. It now
+  orders newest first by the `created_at` of the revision returned for each
+  item. With a query, relevance search picks the candidates (the top
+  `max(limit * 4, 20)` hits) and date orders them; `scores` are kept, unsorted.
+  Without a query, items are walked by `modified_at` with an early stop and a
+  cap of the same size on revision resolutions. `space_paths`,
+  `memory_types`, bundles and `unroll_revisions` are honoured. `"newest"`,
+  `"recent"` and `"most_recent"` are accepted as aliases.
+
+### Added
+- `created_at` on `mode="latest"` results — a list aligned with
+  `revision_krefs` (ISO strings, `null` when a revision has none). Other modes'
+  results are unchanged.
+- `Item.modified_at`, from the `ItemResponse` field of the same name the SDK
+  never read. `None` when the server does not report it.
+
+### Changed
+- The `kumiho_memory_retrieve` description and its `mode` description now say
+  what each mode does.
+
 ## [0.13.0] - 2026-09-04
 
 ### Added
