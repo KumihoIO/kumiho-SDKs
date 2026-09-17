@@ -12,6 +12,47 @@ in descending version order, which is also descending date order.
 narrative — why a change mattered and what you have to do about it. This file is
 its terse companion. Entries belong in both.
 
+## [0.13.2] - 2026-09-18
+
+### Added
+- **`keep_published` on `tool_memory_store` and `tool_memory_store_batch`**
+  (default `False`, call-level on the batch path). When `True`, and only when
+  the store stacked onto an existing item that already had a `published`
+  revision, the new revision is tagged `published` as well. Tags are exclusive
+  per item, so that moves the tag forward onto the stacked revision and the
+  server records the move in tag history. `published` is applied last, after
+  the caller's tags, because the server freezes a published revision and
+  rejects tags applied to it afterwards; it is never applied twice when the
+  caller's `tags` already list it.
+
+### Fixed
+- **A stacked update could be invisible to recall.** `tool_memory_store`
+  stacks a new revision onto a similar existing item. If that item's current
+  revision was `published` and the new revision was stored with caller tags
+  (kumiho-memory's reflect passes each capture's classification tags through),
+  the new revision was not published, so recall — which resolves
+  `get_revision_by_tag("published") or get_revision_by_tag("latest")` — kept
+  returning the old revision. A caller that wants the stacked revision to be
+  the one recall reads now passes `keep_published=True`.
+
+### Notes
+- **Nothing is published automatically and the default is unchanged.**
+  `published` is an approval/immutability marker, so the store does not stamp
+  it on its own initiative. With `keep_published=False` behaviour is exactly
+  as before, including the long-standing `tags or ["published"]` default for
+  an untagged store. `keep_published=True` has no effect on a new item, and
+  none on an item that had no `published` revision.
+- The opt-in costs no extra RPC on the single path — it reuses the published
+  revision the stacking block already fetches for `previous_revision_kref`.
+  The batch path has no such lookup, so it adds one tag resolution per stacked
+  capture, and none at all by default.
+- `keep_published` is not exposed in the `kumiho_memory_store` MCP schema.
+  kumiho-memory's reflect is the caller that opts in (separate PR); the hosted
+  connector picks it up when its `kumiho` pin moves to 0.13.2.
+- Revisions already stored are not retagged. An item corrected before the
+  upgrade keeps `published` on its old revision until a later store opts in,
+  or its newest revision is tagged with `kumiho_tag_revision`.
+
 ## [0.13.1] - 2026-09-17
 
 ### Fixed
