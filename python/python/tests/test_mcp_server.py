@@ -1723,3 +1723,298 @@ def test_tool_memory_store_batch_chunks_over_200_rows():
     assert [n for n, _ in calls] == [200, 50]
     assert [p for _, p in calls] == ["run0:0", "run0:200"]
     assert len(out["stored_krefs"]) == 250
+
+
+# ---------------------------------------------------------------------------
+# Tests — the "published" tag on stored revisions (0.13.2)
+# ---------------------------------------------------------------------------
+#
+# Until 0.13.2 the store paths tagged ``tags or ["published"]``, so caller
+# tags (reflect passes every capture's classification tags) REPLACED
+# "published". A tagged correction that stacked left "published" on the old
+# revision, and every recall path resolves "published" before "latest", so
+# recall kept answering with the value the user had just corrected.
+
+
+class _TagGraphRevision:
+    """A revision under the server's tag rules, as the repo's live tests pin them.
+
+    * A tag lives on one revision per item: tagging moves it
+      (tests/test_tagging_logic.py::test_manual_tag_uniqueness; the Dart live
+      test moves "published" between revisions the same way).
+    * A published revision is frozen, and a tag applied to it afterwards is
+      rejected (the PERMISSION_DENIED case in ``kumiho.client``'s auth
+      interceptor; ``test_published_revision_immutability``).
+    """
+
+    def __init__(self, item, number, metadata):
+        self.item = item
+        self.number = number
+        self.metadata = dict(metadata or {})
+        self.kref = MagicMock()
+        self.kref.uri = f"{item.kref.uri}?r={number}"
+        self.created_at = f"2026-09-{number:02d}T00:00:00+00:00"
+        self.tags = set()
+
+    @property
+    def published(self):
+        return "published" in self.tags
+
+    def tag(self, tag):
+        self.item.tag_calls.append((self.number, tag))
+        if tag in self.item.failing_tags:
+            raise RuntimeError(f"tag RPC failed for {tag!r}")
+        if tag == "latest":
+            raise RuntimeError("'latest' is a reserved, server-managed tag")
+        if self.published:
+            raise RuntimeError("PERMISSION_DENIED: revision is published and immutable")
+        for revision in self.item.revisions:
+            revision.tags.discard(tag)
+        self.tags.add(tag)
+
+    def create_artifact(self, name, location):
+        return MagicMock()
+
+    def create_edge(self, target, edge_type):
+        return MagicMock()
+
+
+class _TagGraphItem:
+    def __init__(self, name="favorite-color-3f9a", space="personal"):
+        self.item_name = name
+        self.kind = "conversation"
+        self.space = None
+        self.created_at = "2026-09-01T00:00:00+00:00"
+        self.kref = MagicMock()
+        self.kref.uri = f"kref://CognitiveMemory/{space}/{name}.conversation"
+        self.revisions = []
+        self.tag_calls = []
+        self.failing_tags = set()
+
+    def create_revision(self, metadata=None):
+        revision = _TagGraphRevision(self, len(self.revisions) + 1, metadata)
+        for prior in self.revisions:
+            prior.tags.discard("latest")
+        revision.tags.add("latest")
+        self.revisions.append(revision)
+        return revision
+
+    def get_revision_by_tag(self, tag):
+        return next((r for r in self.revisions if tag in r.tags), None)
+
+    def get_revision(self, selector):
+        return self.get_revision_by_tag(selector)
+
+    def get_revisions(self):
+        return list(self.revisions)
+
+
+def _store_on(item, *, stacks, **kwargs):
+    """Run the real ``tool_memory_store`` against *item*, graph edges stubbed.
+
+    ``stacks`` decides what the similarity gate returns; the gate itself is
+    covered by test_mcp_revision_stacking.py and is not under test here.
+    """
+    similar = (item, 0.81, 0.2, 0.3) if stacks else (None, 0.0, 0.0, 0.0)
+    arguments = {
+        "project": "CognitiveMemory", "space_path": "personal",
+        "memory_type": "preference", "user_text": "u",
+    }
+    arguments.update(kwargs)
+    with patch("kumiho.mcp_server._ensure_configured", return_value=True), \
+            patch("kumiho.mcp_server._get_project_cached", return_value=MockProject("CognitiveMemory")), \
+            patch("kumiho.mcp_server._ensure_space_path", return_value="/CognitiveMemory/personal"), \
+            patch("kumiho.mcp_server._find_similar_item", return_value=similar), \
+            patch("kumiho.mcp_server._get_or_create_item", return_value=item), \
+            patch("kumiho.mcp_server._write_memory_artifact", return_value=""), \
+            patch("kumiho.mcp_server._get_or_create_bundle", return_value=MagicMock()):
+        from kumiho.mcp_server import tool_memory_store
+        return tool_memory_store(**arguments)
+
+
+def _recall_revision_krefs(item, query):
+    """Default retrieve (search mode) for a query that hits *item*."""
+    hit = MagicMock()
+    hit.item = item
+    hit.score = 0.7
+    with patch("kumiho.auto_configure_from_discovery"), \
+            patch("kumiho.get_project", return_value=MockProject("CognitiveMemory")), \
+            patch("kumiho.item_search", return_value=[]), \
+            patch("kumiho.search", return_value=[hit]):
+        from kumiho.mcp_server import tool_memory_retrieve
+        return tool_memory_retrieve(project="CognitiveMemory", query=query)["revision_krefs"]
+
+
+CLASSIFICATION_TAGS = ["preference", "color", "personal"]
+
+
+class TestMemoryStorePublishesTaggedCaptures:
+
+    def test_tagged_new_item_is_published_with_its_tags(self):
+        item = _TagGraphItem()
+        result = _store_on(
+            item, stacks=False, title="Favorite color is blue",
+            summary="The user's favorite color is blue.", tags=CLASSIFICATION_TAGS,
+        )
+
+        assert "error" not in result and result["stacked"] is False
+        (revision,) = item.revisions
+        assert revision.published
+        assert revision.tags == {"latest", "published", *CLASSIFICATION_TAGS}
+        # "latest" is server-managed: the store never tags it.
+        assert all(tag != "latest" for _, tag in item.tag_calls)
+
+    def test_tagged_correction_that_stacks_becomes_what_recall_reads(self):
+        """The observed case: blue was published, black was captured with tags."""
+        item = _TagGraphItem()
+        _store_on(
+            item, stacks=False, title="Favorite color is blue",
+            summary="The user's favorite color is blue.",
+        )
+        blue = item.revisions[0]
+        assert _recall_revision_krefs(item, "favorite color") == [blue.kref.uri]
+
+        result = _store_on(
+            item, stacks=True, title="Favorite color is black",
+            summary="Correction: the user's favorite color is black, not blue.",
+            tags=CLASSIFICATION_TAGS,
+        )
+
+        black = item.revisions[1]
+        assert result["stacked"] is True
+        assert result["revision_kref"] == black.kref.uri
+        assert result["previous_revision_kref"] == blue.kref.uri
+        # The tag moved: the correction is published, the old value is not.
+        assert item.get_revision_by_tag("published") is black
+        assert not blue.published
+        assert black.tags >= {"published", *CLASSIFICATION_TAGS}
+        # ...so recall, which resolves published before latest, reads black.
+        assert _recall_revision_krefs(item, "favorite color") == [black.kref.uri]
+
+    def test_published_is_applied_last_after_deduped_caller_tags(self):
+        """A published revision is frozen, so tags applied after it are lost."""
+        item = _TagGraphItem()
+        _store_on(
+            item, stacks=False, title="t", summary="s",
+            tags=["published", "preference", "latest", "preference", "color", ""],
+        )
+
+        assert item.tag_calls == [(1, "preference"), (1, "color"), (1, "published")]
+        assert item.revisions[0].tags == {"latest", "preference", "color", "published"}
+
+    def test_a_failing_classification_tag_does_not_stop_publishing(self):
+        item = _TagGraphItem()
+        item.failing_tags = {"color"}
+        result = _store_on(
+            item, stacks=False, title="t", summary="s", tags=CLASSIFICATION_TAGS,
+        )
+
+        assert "error" not in result
+        revision = item.revisions[0]
+        assert revision.published
+        assert revision.tags == {"latest", "published", "preference", "personal"}
+
+    @pytest.mark.parametrize("tags", [None, []])
+    def test_untagged_store_is_unchanged(self, tags):
+        item = _TagGraphItem()
+        _store_on(item, stacks=False, title="t", summary="s", tags=tags)
+        assert item.tag_calls == [(1, "published")]
+
+        _store_on(item, stacks=True, title="t2", summary="s2", tags=tags)
+        assert item.tag_calls == [(1, "published"), (2, "published")]
+        assert item.get_revision_by_tag("published") is item.revisions[1]
+
+    def test_mcp_dispatch_publishes_a_tagged_capture(self):
+        from kumiho.mcp_server import TOOL_HANDLERS
+
+        item = _TagGraphItem()
+        with patch("kumiho.mcp_server._ensure_configured", return_value=True), \
+                patch("kumiho.mcp_server._get_project_cached", return_value=MockProject("CognitiveMemory")), \
+                patch("kumiho.mcp_server._ensure_space_path", return_value="/CognitiveMemory/personal"), \
+                patch("kumiho.mcp_server._find_similar_item", return_value=(None, 0.0, 0.0, 0.0)), \
+                patch("kumiho.mcp_server._get_or_create_item", return_value=item), \
+                patch("kumiho.mcp_server._write_memory_artifact", return_value=""), \
+                patch("kumiho.mcp_server._get_or_create_bundle", return_value=MagicMock()):
+            TOOL_HANDLERS["kumiho_memory_store"]({
+                "space_path": "personal", "title": "t", "summary": "s",
+                "user_text": "u", "tags": CLASSIFICATION_TAGS,
+            })
+
+        assert item.revisions[0].tags == {"latest", "published", *CLASSIFICATION_TAGS}
+
+    # -- the explicit opt-out ------------------------------------------------
+
+    def test_publish_false_keeps_the_revision_unpublished(self):
+        """kumiho-memory stores experience snapshots and pattern proposals unpublished."""
+        item = _TagGraphItem()
+        tags = ["experience", "evidence:unverified", "proposal", "published"]
+        result = _store_on(
+            item, stacks=False, title="t", summary="s", tags=tags,
+            stack_revisions=False, publish=False,
+        )
+
+        assert "error" not in result
+        assert item.tag_calls == [
+            (1, "experience"), (1, "evidence:unverified"), (1, "proposal"),
+        ]
+        assert not item.revisions[0].published
+
+    def test_publish_false_on_a_stack_leaves_published_where_it_was(self):
+        item = _TagGraphItem()
+        _store_on(item, stacks=False, title="t", summary="s")
+        _store_on(
+            item, stacks=True, title="t2", summary="s2", tags=["draft"], publish=False,
+        )
+
+        assert item.get_revision_by_tag("published") is item.revisions[0]
+        assert item.revisions[1].tags == {"latest", "draft"}
+
+    def test_schema_says_tags_add_to_published_and_hides_the_opt_out(self):
+        from kumiho.mcp_server import TOOLS
+
+        store_tool = next(t for t in TOOLS if t["name"] == "kumiho_memory_store")
+        properties = store_tool["inputSchema"]["properties"]
+        assert "published" in properties["tags"]["description"]
+        # Python callers only. A model reading "publish" as "make public"
+        # would set it false on a correction and bring this bug back.
+        assert "publish" not in properties
+
+
+def test_tool_memory_store_batch_publishes_tagged_captures_last():
+    """The batch path had the same ``tags or ["published"]`` fallback."""
+    from kumiho.mcp_server import tool_memory_store_batch
+
+    tagged = []
+
+    def fake_batch(rows, idempotency_prefix=""):
+        revs = []
+        for i in range(len(rows)):
+            rev = MagicMock()
+            rev.kref.uri = f"kref://CognitiveMemory/work/x/mem{i}.conversation?r=1"
+            rev.tag.side_effect = lambda t, _i=i: tagged.append((_i, t))
+            revs.append(rev)
+        return (revs, [])
+
+    with patch("kumiho.mcp_server._ensure_configured", return_value=True), \
+            patch("kumiho.mcp_server._get_project_cached", return_value=MockProject("CognitiveMemory")), \
+            patch("kumiho.mcp_server._ensure_space_path", return_value="/CognitiveMemory/work/x"), \
+            patch("kumiho.mcp_server._find_similar_item", return_value=(None, 0.0, 0.0, 0.0)), \
+            patch("kumiho.mcp_server._write_memory_artifact", return_value=""), \
+            patch("kumiho.mcp_server._get_or_create_bundle", return_value=MagicMock()), \
+            patch("kumiho.get_item", return_value=MagicMock()), \
+            patch("kumiho.batch_create_revisions", side_effect=fake_batch):
+        out = tool_memory_store_batch(
+            captures=[
+                {"type": "preference", "title": "Favorite color is black",
+                 "content": "black, not blue", "tags": CLASSIFICATION_TAGS},
+                {"type": "fact", "title": "untagged", "content": "no tags"},
+                {"type": "summary", "title": "proposal", "content": "unverified",
+                 "tags": ["proposal"], "publish": False},
+            ],
+            project="CognitiveMemory", space_path="work/x",
+        )
+
+    assert len(out["stored_krefs"]) == 3
+    assert [t for i, t in tagged if i == 0] == [*CLASSIFICATION_TAGS, "published"]
+    assert [t for i, t in tagged if i == 1] == ["published"]
+    assert [t for i, t in tagged if i == 2] == ["proposal"]

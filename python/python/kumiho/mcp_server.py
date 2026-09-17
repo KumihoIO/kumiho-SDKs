@@ -715,10 +715,12 @@ def _resolve_space_hint_path(project: Project, space_path: str) -> str:
 # WHAT A FALSE STACK ACTUALLY COSTS. It is not "two related memories filed
 # as consecutive revisions, both still reachable". Stacking calls
 # ``item.create_revision(...)`` and then tags the NEW revision "published"
-# (``tag_list = tags or ["published"]``), while every recall path resolves
+# (``_apply_store_tags``: always, caller tags or not, unless the caller opts
+# out with ``publish=False``), while every recall path resolves
 # ``get_revision_by_tag("published") or get_revision_by_tag("latest")``.
-# So the PRIOR revision loses "published" and leaves the default retrieval
-# surface entirely -- it survives only for callers passing
+# The server keeps a tag on one revision per item, so the PRIOR revision
+# loses "published" and leaves the default retrieval surface
+# entirely -- it survives only for callers passing
 # ``unroll_revisions``. That is precisely the paper's Definition 7.4 tag
 # move, i.e. a belief revision, performed WITHOUT the SUPERSEDES edge that
 # is supposed to accompany it. A false stack is therefore a false belief
@@ -1454,6 +1456,50 @@ def tool_fulltext_search(
     }
 
 
+def _store_tag_order(tags: Optional[List[str]], publish: bool = True) -> List[str]:
+    """The tags a stored revision receives, in the order they are applied.
+
+    Caller tags are ADDED to ``published``; they never replace it. Until
+    0.13.2 this was ``tags or ["published"]``, so any classification tag
+    (reflect passes them through) left the new revision unpublished. A
+    stacked correction then never became the revision recall reads, since
+    every recall path resolves ``published`` before ``latest``.
+
+    * ``latest`` is server-managed and skipped.
+    * Duplicates and empty tags are dropped; first occurrence wins.
+    * ``published`` goes LAST. The server freezes a revision once it is
+      published and rejects every tag applied afterward, so publishing first
+      would lose the classification tags. Each tag is applied in its own
+      ``try``, so a classification tag that fails cannot stop publishing.
+    * ``publish=False`` withholds ``published``, including one listed in
+      *tags*. It exists for records that are deliberately stored unpublished,
+      such as kumiho-memory's experience snapshots and pattern proposals.
+    """
+    ordered: List[str] = []
+    for tag in tags or []:
+        if not tag or tag in ("latest", "published") or tag in ordered:
+            continue
+        ordered.append(tag)
+    if publish:
+        ordered.append("published")
+    return ordered
+
+
+def _apply_store_tags(revision: Any, tags: Optional[List[str]], publish: bool = True) -> None:
+    """Best-effort tagging of a freshly stored revision (see :func:`_store_tag_order`).
+
+    The server keeps a tag on one revision per item, so tagging the new
+    revision ``published`` moves the tag off the prior one. No explicit untag
+    is needed, and none is possible: untagging a published revision is
+    rejected as immutable.
+    """
+    for tag in _store_tag_order(tags, publish):
+        try:
+            revision.tag(tag)
+        except Exception as exc:  # noqa: BLE001 - one tag must not stop the rest
+            logger.debug("Tagging stored revision %r failed: %s", tag, exc)
+
+
 def tool_memory_store(
     project: str = "CognitiveMemory",
     space_path: str = "",
@@ -1473,6 +1519,7 @@ def tool_memory_store(
     metadata: Optional[Dict[str, Any]] = None,
     edge_type: str = DERIVED_FROM,
     stack_revisions: bool = True,
+    publish: bool = True,
 ) -> Dict[str, Any]:
     """Store a memory bundle with minimal inputs.
 
@@ -1480,6 +1527,13 @@ def tool_memory_store(
     item in the same space with similar content and stacks a new revision
     on it instead of creating a duplicate item.  Falls back to creating a
     new item when no similar item is found or the search fails.
+
+    The new revision is tagged ``published`` on both paths, so a stacked
+    revision becomes the one recall returns. *tags* are added to it, not
+    substituted for ``published``; ``latest`` is server-managed and ignored.
+    *publish* = False withholds ``published`` for a record that must stay
+    unpublished. It is deliberately not exposed in the MCP tool schema. See
+    :func:`_store_tag_order` for the order tags are applied in.
     """
     _ensure_configured()
 
@@ -1664,14 +1718,7 @@ def tool_memory_store(
         except Exception as exc:
             return {"error": f"Failed to create artifact: {exc}"}
 
-    tag_list = tags or ["published"]
-    for tag in tag_list:
-        if tag == "latest":
-            continue
-        try:
-            revision.tag(tag)
-        except Exception:
-            continue
+    _apply_store_tags(revision, tags, publish)
 
     bundle_kref = ""
     if bundle_name:
@@ -1742,7 +1789,10 @@ def tool_memory_store_batch(
 
     Each capture dict mirrors the fields reflect passes to ``tool_memory_store``:
         ``type``, ``title``, ``content`` — the memory itself.
-        ``tags``      — optional; defaults to ``["published"]``.
+        ``tags``      — optional classification tags, added to ``published``
+                        (never a replacement for it); ``latest`` is ignored.
+        ``publish``   — optional, default ``True``; ``False`` withholds
+                        ``published`` from that capture's revision.
         ``metadata``  — optional pre-validated dict (e.g. ``{"event_date": ...}``).
         ``space_hint``— optional per-capture space override.
 
@@ -1864,6 +1914,7 @@ def tool_memory_store_batch(
             "item_obj": item,
             "item_kref": item_kref,
             "tags": cap.get("tags"),
+            "publish": cap.get("publish", True) is not False,
             "space": normalized_space,
             "stacked": item is not None,
             "stack_score": stack_score,
@@ -1905,13 +1956,7 @@ def tool_memory_store_batch(
             results[i] = {"error": failure_by_row.get(row_idx, "batch row rejected")}
             continue
 
-        for tag in (prep["tags"] or ["published"]):
-            if tag == "latest":
-                continue
-            try:
-                rev.tag(tag)
-            except Exception:
-                continue
+        _apply_store_tags(rev, prep["tags"], prep["publish"])
 
         bundle_kref = ""
         try:
@@ -3294,7 +3339,7 @@ TOOLS: List[Dict[str, Any]] = [
     # Memory operations (production)
     {
         "name": "kumiho_memory_store",
-        "description": "Store a memory entry with one call (space + item + revision + artifact + bundle + edges). By default, searches for an existing similar item and stacks a new revision instead of creating a duplicate.",
+        "description": "Store a memory entry with one call (space + item + revision + artifact + bundle + edges). By default, searches for an existing similar item and stacks a new revision instead of creating a duplicate. The new revision is tagged 'published', so it becomes the version recall returns.",
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -3340,7 +3385,17 @@ TOOLS: List[Dict[str, Any]] = [
                 "assistant_text": {"type": "string"},
                 "artifact_location": {"type": "string"},
                 "artifact_name": {"type": "string", "default": "chat_io"},
-                "tags": {"type": "array", "items": {"type": "string"}},
+                "tags": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": (
+                        "Optional classification tags for the new revision. "
+                        "They are added to the 'published' tag, not a "
+                        "replacement for it: the new revision is always "
+                        "published, so it is the one recall returns. 'latest' "
+                        "is managed by the server and ignored here."
+                    ),
+                },
                 "source_revision_krefs": {"type": "array", "items": {"type": "string"}},
                 "metadata": {
                     "type": "object",
