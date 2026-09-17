@@ -8,6 +8,122 @@
 > what produced the gaps backfilled in KumihoIO/kumiho-SDKs#155 and #157.
 
 
+## kumiho 0.13.2 (September 2026) — Corrections That Recall Returns 🏷️
+
+A correction could be stored, stack onto the memory it corrected, and still
+not be what recall returned. It happened whenever the capture carried tags.
+In the case that surfaced it, a user on claude.ai corrected their favorite
+color from blue to black. The capture carried classification tags, so even
+had it stacked onto the "blue" memory, recall would have kept answering blue.
+
+`tool_memory_store` tagged the revision it created like this:
+
+```python
+tag_list = tags or ["published"]
+```
+
+Tags were meant to be added to `published`, but they replaced it. Every recall
+path resolves an item's `published` revision before its `latest` one, and
+stacking relies on the new revision taking `published` from the old one. A
+tagged capture that stacked never took it, so `published` stayed on the old
+revision and recall read the old value. A tagged capture that minted a new
+item was not published either. That went unnoticed, because with no
+`published` revision recall falls back to `latest`, which is the same
+revision.
+
+Tagged captures are the normal case. kumiho-memory's `kumiho_memory_reflect`
+passes each capture's classification tags (for example
+`["preference", "color", "personal"]`) straight through, on the single-capture
+path and the batched path alike. That covers:
+
+- **kumiho-memory reflect users**, everywhere reflect runs.
+- **The hosted connector** (mcp.kumiho.cloud), which serves both
+  `kumiho_memory_reflect` and `kumiho_memory_store`.
+- **Local plugins:** Claude Code and Codex capture through reflect, and
+  OpenClaw's memory tool and consolidation hook call `kumiho_memory_store`
+  with their own tags.
+
+### ✨ What changed
+
+- **The revision a store creates is always published**, on the new-item path
+  and the stacked path, with the caller's tags added to it. Tags are deduped,
+  `latest` is still skipped (the server manages it), and `published` is
+  applied last.
+- **`published` goes last on purpose.** The server freezes a revision once it
+  is published and rejects tags applied to it afterwards, so publishing first
+  would lose every classification tag. Each tag is still applied on its own,
+  so a classification tag that fails cannot stop the revision being published.
+- **No explicit untag of the old revision.** The server keeps a tag on one
+  revision per item, so publishing the new revision moves `published` off the
+  old one. Untagging a published revision directly is rejected as immutable,
+  so it could not be done anyway.
+- **`tool_memory_store_batch`** had the same `tags or ["published"]` fallback
+  and gets the same fix.
+- **`publish=False`** is a new keyword on `tool_memory_store` and a new
+  per-capture key on `tool_memory_store_batch`. It withholds `published`, even
+  when `tags` lists it, for records meant to stay unpublished. It is for
+  Python callers only and is not in the MCP schema: a model could read
+  "publish" as "make public" and set it false on a correction, which would
+  bring this bug back.
+- **The `kumiho_memory_store` description and its `tags` parameter** now say
+  the new revision is published and that tags are added to `published`.
+
+### ⚠️ Worth knowing
+
+- **Memories corrected before the upgrade stay wrong.** Nothing is retagged
+  retroactively. An item that took a tagged correction still has `published`
+  on the old revision, so recall still returns the old value. The next store
+  that stacks onto it fixes it, or tag its newest revision `published` with
+  `kumiho_tag_revision`. An affected item's `latest` revision is newer than
+  its `published` one.
+- **Tagged captures now get published-revision treatment.** Dream State and
+  graph maintenance do not deprecate a published revision unless
+  `allow_published_deprecation` is set, and the server rejects later metadata
+  and tag edits to it. Untagged captures have always worked this way, but
+  tagged captures used to escape it.
+- **kumiho-memory's experience snapshots and pattern proposals** are stored
+  unpublished on purpose. They pass tags without `published`, which relied on
+  the old behavior. Under 0.13.2 they are published until kumiho-memory passes
+  `publish=False`. Older kumiho versions reject that keyword, so kumiho-memory
+  needs to require 0.13.2 or check for it first.
+
+### ✅ Compatibility
+
+- **No action is needed beyond upgrading** for anything stored from then on.
+- **Untagged stores are unchanged:** no tags, or an empty list, still means
+  `published` alone.
+- **Callers that already put `published` last are unchanged.** kumiho-memory's
+  consolidation (`["summarized", "published"]`), its execution records and
+  OpenClaw's topic fold all do. A caller that listed `published` *before*
+  other tags used to lose those tags to the freeze, and now keeps them.
+- **`publish` is keyword-appended**, so positional callers of
+  `tool_memory_store` are unaffected.
+- **Downstream:** the hosted connector picks this up when its `kumiho` pin in
+  kumiho-plugins `cloud-mcp` moves to 0.13.2.
+
+### 🧪 Testing
+
+- `python/python/tests/test_mcp_server.py::TestMemoryStorePublishesTaggedCaptures`
+  runs the real `tool_memory_store` against an item fake that follows the
+  server's tag rules: tags move between revisions of one item, and a
+  published revision rejects later tags. The tests cover:
+  - a tagged new item ending up published with its tags, never tagged
+    `latest`;
+  - the blue-to-black case: the tagged correction stacks, takes `published`,
+    and default retrieve returns it instead of the old revision;
+  - `published` applied last after deduped caller tags;
+  - a failing classification tag not stopping publishing;
+  - the untagged path (`None` and `[]`) unchanged on both paths;
+  - MCP dispatch;
+  - `publish=False` on a new item and on a stack;
+  - the schema wording, and `publish` absent from it.
+- `test_tool_memory_store_batch_publishes_tagged_captures_last` covers the
+  batch path, including a per-capture `publish: False`.
+- 9 of the 11 new tests fail against 0.13.1. The two that pass are the
+  untagged-path cases, which should pass on both.
+- Full suite from `python/python/`: 404 passed, 100 skipped (0.13.1: 393
+  passed, 100 skipped; Windows, Python 3.13, mcp 2.2.0).
+
 ## kumiho 0.13.1 (September 2026) — Retrieval Modes That Do What They Say 🕒
 
 `kumiho_memory_retrieve` advertised three modes in its schema — search, first

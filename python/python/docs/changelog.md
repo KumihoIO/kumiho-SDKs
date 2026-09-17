@@ -12,6 +12,40 @@ in descending version order, which is also descending date order.
 narrative — why a change mattered and what you have to do about it. This file is
 its terse companion. Entries belong in both.
 
+## [0.13.2] - 2026-09-18
+
+### Fixed
+- **`kumiho_memory_store` dropped `published` whenever it was given tags.**
+  The new revision was tagged `tags or ["published"]`, so caller tags
+  replaced `published` instead of joining it. kumiho-memory's reflect passes
+  each capture's classification tags through, so a tagged correction that
+  stacked onto a published memory left `published` on the old revision, and
+  recall, which resolves `published` before `latest`, kept returning the old
+  value. The new revision now always receives the caller's tags (deduped,
+  `latest` skipped) and then `published`, on both the new-item and the
+  stacked path. `tool_memory_store_batch` had the same fallback and gets the
+  same fix.
+
+### Added
+- `publish` keyword on `tool_memory_store` (default `True`) and a per-capture
+  `publish` key on `tool_memory_store_batch`. `False` withholds `published`,
+  including a `published` listed in `tags`. For Python callers that store a
+  record unpublished on purpose; it is not in the MCP tool schema.
+
+### Changed
+- The `kumiho_memory_store` description and its `tags` description say the
+  new revision is published and that tags are added to `published`.
+
+### Notes
+- `published` is applied after the caller's tags, because the server freezes
+  a published revision and rejects tags applied to it afterwards.
+- Revisions already stored with tags are not retagged. An item corrected
+  before the upgrade keeps `published` on its old revision until it is
+  stored to again or retagged.
+- kumiho-memory stores experience snapshots and pattern proposals
+  unpublished by passing tags without `published`. They are published under
+  0.13.2 until kumiho-memory passes `publish=False`.
+
 ## [0.13.1] - 2026-09-17
 
 ### Fixed
