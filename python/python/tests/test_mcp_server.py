@@ -945,7 +945,7 @@ class TestMemoryRetrieveLatestMode:
             "revision_krefs": [
                 best.returned_rev.kref.uri, newest.returned_rev.kref.uri,
             ],
-            "spaces_used": [],
+            "spaces_used": ["CognitiveMemory/facts"],
             "scores": [0.9, 0.4],
         }
 
@@ -1102,6 +1102,310 @@ class TestMemoryRetrieveLatestMode:
         ]
 
 
+def _memory_item(path, created_at="2026-01-01T00:00:00+00:00", mem_type=None):
+    """A memory item at ``kref://<path>.conversation`` whose published
+    revision counts ``resolved`` calls."""
+    item = MockItem(f"kref://{path}.conversation")
+    item.kind = "conversation"
+    item.created_at = created_at
+    # Item.space is the kref's space WITHOUT the project, as a str.
+    item.space = "/".join(path.split("/")[1:-1])
+    item.resolved = 0
+    rev = MockRevision(f"{item.kref.uri}?r=1")
+    rev.metadata = {"memory_type": mem_type} if mem_type else {}
+    item.returned_rev = rev
+
+    def get_revision_by_tag(tag, _item=item, _rev=rev):
+        if tag == "published":
+            _item.resolved += 1
+            return _rev
+        return None
+
+    item.get_revision_by_tag = get_revision_by_tag
+    return item
+
+
+def _search_hit(item, score):
+    hit = MagicMock()
+    hit.item = item
+    hit.score = score
+    return hit
+
+
+class TestMemoryRetrieveSpacesUsed:
+    """spaces_used was never filled from search hits: the loop read
+    ``sr.item.space.path``, but ``Item.space`` is a ``str``, so the
+    AttributeError was swallowed after each result had been appended."""
+
+    def test_kref_space_context_is_project_prefixed(self):
+        from kumiho.mcp_server import _kref_space_context
+        assert _kref_space_context(
+            "kref://CognitiveMemory/personal/prefs.conversation",
+        ) == "CognitiveMemory/personal"
+        assert _kref_space_context(
+            "kref://CognitiveMemory/work/infra/deploy.conversation?r=3",
+        ) == "CognitiveMemory/work/infra"
+        assert _kref_space_context(
+            "kref://CognitiveMemory/root-note.conversation",
+        ) == "CognitiveMemory"
+
+    @patch('kumiho.get_project')
+    @patch('kumiho.auto_configure_from_discovery')
+    @patch('kumiho.item_search')
+    @patch('kumiho.search')
+    def test_search_hits_populate_deduped_project_prefixed_spaces(
+        self, mock_search, mock_item_search, mock_configure, mock_get_project,
+    ):
+        mock_get_project.return_value = MockProject("CognitiveMemory")
+        mock_item_search.return_value = []
+        personal_a = _memory_item("CognitiveMemory/personal/a")
+        work = _memory_item("CognitiveMemory/work/infra/b")
+        personal_c = _memory_item("CognitiveMemory/personal/c")
+        cut = _memory_item("CognitiveMemory/elsewhere/d")
+        mock_search.return_value = [
+            _search_hit(personal_a, 0.9), _search_hit(work, 0.8),
+            _search_hit(personal_c, 0.7), _search_hit(cut, 0.1),
+        ]
+
+        from kumiho.mcp_server import tool_memory_retrieve
+        result = tool_memory_retrieve(
+            project="CognitiveMemory", query="anything", limit=3,
+        )
+
+        assert result["item_krefs"] == [
+            personal_a.kref.uri, work.kref.uri, personal_c.kref.uri,
+        ]
+        # Deduped, in result order, and not index-aligned with the results.
+        # The hit cut by `limit` contributes nothing.
+        assert result["spaces_used"] == [
+            "CognitiveMemory/personal", "CognitiveMemory/work/infra",
+        ]
+
+        # Both modes resolve the cut hit as a candidate but report only the
+        # spaces of what they return.  Equal revision dates here, so latest
+        # falls back to score order.
+        assert cut.resolved == 1
+        cut.resolved = 0
+        latest = tool_memory_retrieve(
+            project="CognitiveMemory", query="anything", limit=3, mode="latest",
+        )
+        assert cut.resolved == 1
+        assert latest["spaces_used"] == [
+            "CognitiveMemory/personal", "CognitiveMemory/work/infra",
+        ]
+
+    @patch('kumiho.get_project')
+    @patch('kumiho.auto_configure_from_discovery')
+    @patch('kumiho.search')
+    def test_unrolled_search_hits_populate_spaces_used(
+        self, mock_search, mock_configure, mock_get_project,
+    ):
+        mock_get_project.return_value = MockProject("CognitiveMemory")
+        stacked = _memory_item("CognitiveMemory/decisions/auth")
+        revisions = [
+            MockRevision(f"{stacked.kref.uri}?r={n}", number=n) for n in (1, 2)
+        ]
+        stacked.get_revisions = lambda: revisions
+        single = _memory_item("CognitiveMemory/facts/db")
+        single.get_revisions = lambda: [single.returned_rev]
+        mock_search.return_value = [_search_hit(stacked, 0.9), _search_hit(single, 0.5)]
+
+        from kumiho.mcp_server import tool_memory_retrieve
+        result = tool_memory_retrieve(
+            project="CognitiveMemory", query="anything", unroll_revisions=True,
+        )
+
+        assert result["revision_krefs"] == [
+            revisions[0].kref.uri, revisions[1].kref.uri, single.returned_rev.kref.uri,
+        ]
+        assert result["spaces_used"] == [
+            "CognitiveMemory/decisions", "CognitiveMemory/facts",
+        ]
+
+    @patch('kumiho.get_project')
+    @patch('kumiho.auto_configure_from_discovery')
+    @patch('kumiho.item_search')
+    @patch('kumiho.search')
+    def test_listing_fallback_keeps_reporting_the_scope_context(
+        self, mock_search, mock_item_search, mock_configure, mock_get_project,
+    ):
+        mock_get_project.return_value = MockProject("CognitiveMemory")
+        mock_search.return_value = []
+        mock_item_search.return_value = [_memory_item("CognitiveMemory/personal/x")]
+
+        from kumiho.mcp_server import tool_memory_retrieve
+        result = tool_memory_retrieve(
+            project="CognitiveMemory", query="nothing matches", space_paths=["personal"],
+        )
+        assert result["spaces_used"] == ["CognitiveMemory/personal"]
+
+
+class TestMemoryRetrieveFirstMode:
+    """mode="first" listed the whole project and ignored both space_paths
+    and the query — and auto-detect only selects it when a query is present."""
+
+    @patch('kumiho.get_project')
+    @patch('kumiho.auto_configure_from_discovery')
+    @patch('kumiho.item_search')
+    @patch('kumiho.search')
+    def test_no_query_walks_the_project_oldest_first_as_before(
+        self, mock_search, mock_item_search, mock_configure, mock_get_project,
+    ):
+        mock_get_project.return_value = MockProject("CognitiveMemory")
+        newer = _memory_item("CognitiveMemory/personal/newer", "2026-03-01T00:00:00+00:00")
+        oldest = _memory_item("CognitiveMemory/work/oldest", "2025-01-01T00:00:00+00:00")
+        middle = _memory_item("CognitiveMemory/personal/middle", "2026-02-01T00:00:00+00:00")
+        mock_item_search.return_value = [newer, oldest, middle]
+
+        from kumiho.mcp_server import tool_memory_retrieve
+        result = tool_memory_retrieve(project="CognitiveMemory", mode="first")
+
+        assert result == {
+            "item_krefs": [oldest.kref.uri],
+            "revision_krefs": [oldest.returned_rev.kref.uri],
+            "spaces_used": ["CognitiveMemory/work"],
+        }
+        mock_search.assert_not_called()
+        mock_item_search.assert_called_once_with(
+            context_filter="CognitiveMemory", name_filter="",
+            kind_filter="conversation",
+        )
+        # Stops at the first passing item.
+        assert (newer.resolved, oldest.resolved, middle.resolved) == (0, 1, 0)
+
+    @patch('kumiho.get_project')
+    @patch('kumiho.auto_configure_from_discovery')
+    @patch('kumiho.item_search')
+    @patch('kumiho.search')
+    def test_space_paths_stay_inside_the_space(
+        self, mock_search, mock_item_search, mock_configure, mock_get_project,
+    ):
+        mock_get_project.return_value = MockProject("CognitiveMemory")
+        outside_oldest = _memory_item("CognitiveMemory/work/ancient", "2024-01-01T00:00:00+00:00")
+        inside_old = _memory_item("CognitiveMemory/personal/old", "2025-06-01T00:00:00+00:00")
+        inside_new = _memory_item("CognitiveMemory/personal/new", "2026-06-01T00:00:00+00:00")
+        contexts = []
+
+        def item_search(context_filter="", name_filter="", kind_filter=""):
+            contexts.append(context_filter)
+            if context_filter == "CognitiveMemory/personal":
+                return [inside_new, inside_old]
+            return [inside_new, inside_old, outside_oldest]
+
+        mock_item_search.side_effect = item_search
+
+        from kumiho.mcp_server import tool_memory_retrieve
+        result = tool_memory_retrieve(
+            project="CognitiveMemory", mode="first", space_paths=["personal"],
+        )
+        assert result["item_krefs"] == [inside_old.kref.uri]
+        assert result["spaces_used"] == ["CognitiveMemory/personal"]
+        assert contexts == ["CognitiveMemory/personal"]
+
+        # Nothing in scope passes: empty, never the older out-of-scope item.
+        contexts.clear()
+        result = tool_memory_retrieve(
+            project="CognitiveMemory", mode="first", space_paths=["personal"],
+            memory_types=["decision"],
+        )
+        assert result == {"item_krefs": [], "revision_krefs": [], "spaces_used": []}
+        assert contexts == ["CognitiveMemory/personal"]
+
+        # With a query the relevance search is scoped the same way.
+        mock_search.return_value = [_search_hit(inside_new, 0.9)]
+        contexts.clear()
+        result = tool_memory_retrieve(
+            project="CognitiveMemory", query="the first thing", mode="first",
+            space_paths=["personal"],
+        )
+        assert {c.kwargs["context"] for c in mock_search.call_args_list} == {
+            "CognitiveMemory/personal"
+        }
+        assert result["item_krefs"] == [inside_new.kref.uri]
+        assert contexts == []
+
+    @patch('kumiho.get_project')
+    @patch('kumiho.auto_configure_from_discovery')
+    @patch('kumiho.item_search')
+    @patch('kumiho.search')
+    def test_query_returns_oldest_relevant_match_not_oldest_item(
+        self, mock_search, mock_item_search, mock_configure, mock_get_project,
+    ):
+        mock_get_project.return_value = MockProject("CognitiveMemory")
+        unrelated_oldest = _memory_item("CognitiveMemory/work/ancient", "2024-01-01T00:00:00+00:00")
+        best_newer = _memory_item("CognitiveMemory/auth/jwt", "2026-05-01T00:00:00+00:00")
+        weaker_older = _memory_item("CognitiveMemory/auth/sessions", "2025-03-01T00:00:00+00:00")
+        mock_item_search.return_value = [unrelated_oldest, best_newer, weaker_older]
+        hits = [_search_hit(best_newer, 0.9), _search_hit(weaker_older, 0.4)]
+        # Hits past the widened pool (max(limit * 4, 20)) are never resolved.
+        beyond = [
+            _search_hit(_memory_item(f"CognitiveMemory/auth/far-{i}", "2020-01-01T00:00:00+00:00"), 0.01)
+            for i in range(25)
+        ]
+        mock_search.return_value = hits + [
+            _search_hit(_memory_item(f"CognitiveMemory/auth/mid-{i}", "2026-08-01T00:00:00+00:00"), 0.3)
+            for i in range(18)
+        ] + beyond
+
+        from kumiho.mcp_server import tool_memory_retrieve
+        # Auto-detect: no mode, a query containing "first".
+        result = tool_memory_retrieve(
+            project="CognitiveMemory", query="first auth decision", mode="",
+        )
+
+        assert result == {
+            "item_krefs": [weaker_older.kref.uri],
+            "revision_krefs": [weaker_older.returned_rev.kref.uri],
+            "spaces_used": ["CognitiveMemory/auth"],
+        }
+        assert mock_search.call_args.args[0] == "first auth decision"
+        mock_item_search.assert_not_called()
+        assert all(hit.item.resolved == 0 for hit in beyond)
+        assert best_newer.resolved == 0  # stopped at the oldest passing
+
+    @patch('kumiho.get_project')
+    @patch('kumiho.auto_configure_from_discovery')
+    @patch('kumiho.item_search')
+    @patch('kumiho.search')
+    def test_memory_types_filters_query_and_listing_paths(
+        self, mock_search, mock_item_search, mock_configure, mock_get_project,
+    ):
+        mock_get_project.return_value = MockProject("CognitiveMemory")
+        old_fact = _memory_item("CognitiveMemory/auth/fact", "2025-01-01T00:00:00+00:00", "fact")
+        new_decision = _memory_item("CognitiveMemory/auth/decision", "2026-01-01T00:00:00+00:00", "decision")
+        mock_search.return_value = [_search_hit(old_fact, 0.9), _search_hit(new_decision, 0.8)]
+        listed_decision = _memory_item("CognitiveMemory/misc/decision", "2024-01-01T00:00:00+00:00", "decision")
+        mock_item_search.return_value = [old_fact, listed_decision]
+
+        from kumiho.mcp_server import tool_memory_retrieve
+        result = tool_memory_retrieve(
+            project="CognitiveMemory", query="auth", mode="first",
+            memory_types=["decision"],
+        )
+        assert result["item_krefs"] == [new_decision.kref.uri]
+        mock_item_search.assert_not_called()
+
+        # No relevant hit passes: the scoped listing, like search and latest.
+        result = tool_memory_retrieve(
+            project="CognitiveMemory", query="auth", mode="first",
+            memory_types=["preference"],
+        )
+        assert result == {"item_krefs": [], "revision_krefs": [], "spaces_used": []}
+
+        # A revision-less item cannot satisfy a type filter.
+        bare = _memory_item("CognitiveMemory/misc/bare", "2023-01-01T00:00:00+00:00")
+        bare.get_revision_by_tag = lambda tag: None
+        mock_item_search.return_value = [bare, listed_decision]
+        result = tool_memory_retrieve(
+            project="CognitiveMemory", mode="first", memory_types=["decision"],
+        )
+        assert result["item_krefs"] == [listed_decision.kref.uri]
+        # ...but without a filter it is still returned, as before.
+        result = tool_memory_retrieve(project="CognitiveMemory", mode="first")
+        assert result == {
+            "item_krefs": [bare.kref.uri], "revision_krefs": [],
+            "spaces_used": ["CognitiveMemory/misc"],
+        }
 
 
 class TestSpaceRegistry:
