@@ -3411,7 +3411,7 @@ TOOLS: List[Dict[str, Any]] = [
                 },
                 "mode": {
                     "type": "string",
-                    "description": "search (default): relevance-ranked | latest: newest first by last update; with a query, relevant matches ordered by date | first: oldest",
+                    "description": "search (default): relevance-ranked | latest: newest first by last update; with a query, relevant matches ordered by date | first: the single oldest memory; with a query, the oldest relevant match",
                     "default": "search",
                 },
                 "include_revision_metadata": {
