@@ -113,7 +113,7 @@ Attributes:
 __version__ = "0.13.2"
 
 import contextvars
-from typing import Any, Dict, List, Optional, Iterator, Tuple
+from typing import Any, Dict, List, Mapping, Optional, Iterator, Sequence, Tuple, Union
 
 # Import the main classes to make them available at the package level.
 from .base import KumihoObject, KumihoError, SearchResult
@@ -126,6 +126,17 @@ from .bundle import (
     RESERVED_KINDS,
 )
 from .event import Event, EventCapabilities
+from .evaluation import (
+    ChoiceAnswer,
+    EvaluationAnswer,
+    EvaluationFragment,
+    EvaluationQuestion,
+    EvaluationResult,
+    EvaluationUsage,
+    FragmentEvaluation,
+    NoulAnswer,
+    ScoreAnswer,
+)
 from .space import Space
 from .kref import Kref, KrefValidationError, validate_kref, is_valid_kref
 from .edge import (
@@ -754,6 +765,97 @@ def score_revisions(
     return get_client().score_revisions(query, revision_krefs, score_fields=score_fields)
 
 
+def evaluate(
+    query: str,
+    fragments: Sequence[Union[EvaluationFragment, Mapping[str, Any]]],
+    questions: Sequence[Union[EvaluationQuestion, Mapping[str, Any]]],
+    *,
+    extra_context: str = "",
+    mode: str = "",
+    rubric_version: str = "",
+    timeout_ms: Optional[int] = None,
+    allow_cache: bool = True,
+) -> EvaluationResult:
+    """Judge prepared text fragments against caller-supplied questions.
+
+    Evaluation asks a server-managed provider how each fragment stands up to
+    each question — is this relevant to the query, which category does it fall
+    into, how would you rate it. It is the ranking step the memory layer runs
+    over candidates it has already retrieved; it is not a search.
+
+    Availability:
+        Kumiho Cloud, paid tiers only. A self-hosted CE server does not
+        implement the RPC and answers UNIMPLEMENTED; a tenant without the
+        entitlement gets PERMISSION_DENIED, or a ``"not_entitled"`` result
+        when the server prefers to answer in-band.
+
+    The graph is not involved: nothing here takes a kref, and nothing is read,
+    written or tagged. What leaves the server for the provider is exactly
+    ``query``, ``extra_context``, each question's ``instructions`` and
+    ``criteria``, and each fragment's ``text`` and ``metadata`` — never the
+    fragment ids, which the server replaces with private labels.
+
+    Args:
+        query: What the caller is trying to answer or do. Sent verbatim.
+        fragments: The text to judge, at most 64 per call, each either an
+            :class:`~kumiho.evaluation.EvaluationFragment` or a mapping with
+            keys ``"id"``, ``"text"`` and optional ``"metadata"``.
+        questions: What to ask of each fragment, at most 8 per call, each
+            either an :class:`~kumiho.evaluation.EvaluationQuestion` or a
+            mapping with keys ``"id"``, ``"type"``, ``"instructions"`` and
+            optional ``"criteria"`` / ``"levels"``. The literal placeholder
+            ``{fragment}`` is passed through for the server to render.
+        extra_context: Optional extra framing (constraints, current date).
+        mode: ``""`` (server default), ``"batched"`` or ``"per_fragment"``.
+        rubric_version: Opaque caller-owned version string, folded into the
+            cache key and echoed back.
+        timeout_ms: Overall deadline hint for the server, which also sets this
+            call's gRPC deadline.
+        allow_cache: When False the cached response is bypassed, though the
+            fresh one is still cached.
+
+    Returns:
+        EvaluationResult: Status, one
+        :class:`~kumiho.evaluation.FragmentEvaluation` per request fragment in
+        request order, and the token usage for the call.
+
+    Raises:
+        ValueError: If the query is empty, a fragment id is empty or repeated,
+            a question id contains ``__``, or a question type is unknown
+            (all client-side).
+        grpc.RpcError: UNIMPLEMENTED on CE, PERMISSION_DENIED without the
+            entitlement, DEADLINE_EXCEEDED, or any other server error.
+
+    Example:
+        >>> result = kumiho.evaluate(
+        ...     query="What did we decide about the release cadence?",
+        ...     fragments=[
+        ...         {"id": "m1", "text": "We ship on the first Tuesday."},
+        ...         {"id": "m2", "text": "The logo is green."},
+        ...     ],
+        ...     questions=[{
+        ...         "id": "relevant",
+        ...         "type": "noul",
+        ...         "instructions": "Does {fragment} answer the query?",
+        ...     }],
+        ... )
+        >>> result.status
+        'ok'
+        >>> result.by_id()["m1"].answers["relevant"].noul
+        0.91
+    """
+    return get_client().evaluate(
+        query,
+        fragments,
+        questions,
+        extra_context=extra_context,
+        mode=mode,
+        rubric_version=rubric_version,
+        timeout_ms=timeout_ms,
+        allow_cache=allow_cache,
+    )
+
+
 def get_item(kref: str) -> Item:
     """Get an item by its kref URI.
 
@@ -1246,6 +1348,16 @@ __all__ = [
     "Kref",
     "Event",
     "ProjectLimitError",
+    # Evaluation types
+    "EvaluationFragment",
+    "EvaluationQuestion",
+    "EvaluationResult",
+    "FragmentEvaluation",
+    "EvaluationUsage",
+    "EvaluationAnswer",
+    "NoulAnswer",
+    "ChoiceAnswer",
+    "ScoreAnswer",
     # Bundle classes
     "Bundle",
     "BundleMember",
@@ -1304,6 +1416,7 @@ __all__ = [
     "analyze_project_deletion",
     "item_search",
     "search",
+    "evaluate",
     "SearchResult",
     "get_item",
     "get_bundle",
@@ -1320,7 +1433,7 @@ __all__ = [
 ]
 
 # Remove typing imports from public namespace
-del Any, Dict, List, Optional, Iterator, Tuple
+del Any, Dict, List, Mapping, Optional, Iterator, Sequence, Tuple, Union
 
 
 _auto_configure_from_env_if_requested()
