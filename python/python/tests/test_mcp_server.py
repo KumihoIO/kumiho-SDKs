@@ -773,9 +773,10 @@ class TestMemoryRetrieveLatestMode:
     def test_empty_query_orders_by_published_not_newest_revision(
         self, mock_item_search, mock_configure, mock_get_project,
     ):
-        """modified_at bounds the key from above; the key itself is the
-        returned (published) revision's date, and early stopping must not
-        cut an item that ranks below the bound but above the key."""
+        """The ordering key is the date of the revision actually returned —
+        the published one — not the item's modified_at and not the newest
+        revision on the item.  ``pinned`` is the newest item by modified_at
+        but its published revision is the oldest, so it must not lead."""
         mock_get_project.return_value = MockProject("CognitiveMemory")
         pinned = self._item(
             "published-pinned-old", "2026-08-01T00:00:00+00:00",
@@ -799,7 +800,10 @@ class TestMemoryRetrieveLatestMode:
 
         assert result["item_krefs"] == [fresh.kref.uri]
         assert result["revision_krefs"] == [fresh.returned_rev.kref.uri]
-        assert stale.resolved == 0  # bound 06-01 < accepted 07-01: stopped
+        # The whole (tiny) window is resolved, ``pinned`` included: its
+        # published date is what demotes it, and that is only knowable after
+        # the resolution.
+        assert [item.resolved for item in (pinned, fresh, stale)] == [1, 1, 1]
 
     # -- (c) space_paths and memory_types ----------------------------------
 
@@ -810,12 +814,25 @@ class TestMemoryRetrieveLatestMode:
     def test_honors_space_paths_and_memory_types_without_cross_space_fallback(
         self, mock_search, mock_item_search, mock_configure, mock_get_project,
     ):
+        """``space_paths`` isolation, against a server that over-returns.
+
+        ``context_filter`` is a string prefix on the server, so scoping to
+        ``facts`` also hands back ``facts-archive`` — a different space whose
+        name merely starts the same way.  The listing here returns exactly
+        what CE returns, and only the SDK-side filter keeps it out.
+        """
         mock_get_project.return_value = MockProject("CognitiveMemory")
         in_space_decision = self._item(
             "decision", "2026-03-01T00:00:00+00:00", mem_type="decision",
         )
         in_space_fact = self._item(
             "fact", "2026-04-01T00:00:00+00:00", mem_type="fact",
+        )
+        # Newer than everything in scope, and a prefix match on the context:
+        # if isolation slips, this is what comes back first.
+        lookalike = self._item(
+            "leaked", "2026-09-01T00:00:00+00:00", space="facts-archive",
+            mem_type="decision",
         )
         other_space = self._item(
             "elsewhere", "2026-09-01T00:00:00+00:00", space="other",
@@ -826,8 +843,10 @@ class TestMemoryRetrieveLatestMode:
         def item_search(context_filter="", name_filter="", kind_filter=""):
             contexts.append(context_filter)
             if context_filter == "CognitiveMemory/facts":
-                return [in_space_decision, in_space_fact]
-            return [in_space_decision, in_space_fact, other_space]
+                # The prefix filter's real output: the space AND its
+                # same-prefixed neighbour.
+                return [in_space_decision, in_space_fact, lookalike]
+            return [in_space_decision, in_space_fact, lookalike, other_space]
 
         mock_item_search.side_effect = item_search
 
@@ -846,7 +865,8 @@ class TestMemoryRetrieveLatestMode:
         )
         assert result["item_krefs"] == [in_space_decision.kref.uri]
 
-        # Nothing in scope matches: empty, never the newer out-of-scope item.
+        # Nothing in scope matches: empty, never the newer out-of-scope item,
+        # and never a second listing widened to the whole project.
         contexts.clear()
         result = tool_memory_retrieve(
             project="CognitiveMemory", mode="latest", space_paths=["facts"],
@@ -856,8 +876,12 @@ class TestMemoryRetrieveLatestMode:
         assert result["created_at"] == []
         assert contexts == ["CognitiveMemory/facts"]
 
-        # With a query the relevance search is scoped the same way.
-        mock_search.return_value = [self._hit(in_space_fact, 0.4)]
+        # With a query the relevance search is scoped the same way -- and the
+        # hits it returns are filtered by the same rule, since the server
+        # scores whatever its prefix filter admitted.
+        mock_search.return_value = [
+            self._hit(lookalike, 0.9), self._hit(in_space_fact, 0.4),
+        ]
         result = tool_memory_retrieve(
             project="CognitiveMemory", query="facts", mode="latest",
             space_paths=["facts"],
@@ -866,6 +890,7 @@ class TestMemoryRetrieveLatestMode:
             "CognitiveMemory/facts"
         }
         assert result["item_krefs"] == [in_space_fact.kref.uri]
+        assert result["spaces_used"] == ["CognitiveMemory/facts"]
 
     # -- (d) limit, created_at alignment, missing timestamps ---------------
 
@@ -1007,7 +1032,7 @@ class TestMemoryRetrieveLatestMode:
     @patch('kumiho.auto_configure_from_discovery')
     @patch('kumiho.item_search')
     @patch('kumiho.search')
-    def test_modified_at_window_finds_old_restacked_item_and_stops_early(
+    def test_modified_at_window_finds_old_restacked_item(
         self, mock_search, mock_item_search, mock_configure, mock_get_project,
     ):
         """Item created_at alone would window 20 newer-created items and
@@ -1033,17 +1058,25 @@ class TestMemoryRetrieveLatestMode:
 
         assert result["item_krefs"][0] == restacked.kref.uri
         assert result["item_krefs"][1:] == [items[i].kref.uri for i in (456, 455, 454, 453)]
+        # 458 items, at most the window resolved -- and no early stop below
+        # that, which is what test_untrustworthy_modified_at_still_returns_
+        # the_newest_revision shows the walk cannot afford.
         resolved = sum(item.resolved for item in items + [restacked])
-        assert resolved == 5, f"expected an early stop at limit, resolved {resolved}"
+        assert resolved == max(5 * 4, 20), f"window not respected: {resolved}"
 
     @patch('kumiho.get_project')
     @patch('kumiho.auto_configure_from_discovery')
     @patch('kumiho.item_search')
-    def test_untrustworthy_modified_at_disables_early_stop(
+    def test_untrustworthy_modified_at_still_returns_the_newest_revision(
         self, mock_item_search, mock_configure, mock_get_project,
     ):
         """A server whose modified_at never moves past created_at is not an
-        upper bound: once a resolved revision proves it, keep walking."""
+        upper bound on revision dates, and an early stop that trusted it as
+        one starved exactly the item it was meant to find.
+
+        ``hidden`` sits *below* the old stop point, so the stop skipped it --
+        and because it was never resolved it could never disprove the bound
+        either.  The whole window is resolved now, so it comes back."""
         mock_get_project.return_value = MockProject("CognitiveMemory")
 
         def frozen(name, day, rev_created_at):
@@ -1051,17 +1084,19 @@ class TestMemoryRetrieveLatestMode:
             return self._item(name, rev_created_at, created_at=stamp, modified_at=stamp)
 
         n1 = frozen("n1", 5, "2026-06-05T00:00:00+00:00")
-        proof = frozen("proof", 4, "2026-09-01T00:00:00+00:00")
-        n2 = frozen("n2", 3, "2026-06-03T00:00:00+00:00")
-        hidden = frozen("hidden", 1, "2026-08-01T00:00:00+00:00")
-        mock_item_search.return_value = [n1, proof, n2, hidden]
+        n2 = frozen("n2", 4, "2026-06-04T00:00:00+00:00")
+        hidden = frozen("hidden", 1, "2026-09-01T00:00:00+00:00")
+        mock_item_search.return_value = [n1, n2, hidden]
 
         from kumiho.mcp_server import tool_memory_retrieve
         result = tool_memory_retrieve(
             project="CognitiveMemory", mode="latest", limit=2,
         )
 
-        assert result["item_krefs"] == [proof.kref.uri, hidden.kref.uri]
+        assert result["item_krefs"] == [hidden.kref.uri, n1.kref.uri]
+        assert result["created_at"] == [
+            "2026-09-01T00:00:00+00:00", "2026-06-05T00:00:00+00:00",
+        ]
 
     # -- bundles ------------------------------------------------------------
 
@@ -1723,3 +1758,516 @@ def test_tool_memory_store_batch_chunks_over_200_rows():
     assert [n for n, _ in calls] == [200, 50]
     assert [p for _, p in calls] == ["run0:0", "run0:200"]
     assert len(out["stored_krefs"]) == 250
+
+
+
+# ===========================================================================
+# Tests — tool_memory_store(item_kref=...): the explicit revise target
+# ===========================================================================
+#
+# Fuzzy stacking answers "does this capture, which nobody labelled, restate
+# something already stored?".  A correction is not that question: the caller
+# knows which memory it is correcting.  Routing one through the gate cannot
+# work — hosted runs strong-only at 0.75 while a restated same-subject capture
+# measures 0.58-0.68 — and the gate's own scope is a kref *prefix*, so it can
+# reach outside the space the caller meant.  item_kref names the target
+# instead, and nothing about it is inferred.
+
+
+class _RKref:
+    def __init__(self, uri: str) -> None:
+        self.uri = uri
+
+
+class _RRevision:
+    """A revision that enforces the server's two tag rules."""
+
+    def __init__(self, uri: str) -> None:
+        self.kref = _RKref(uri)
+        self.metadata = {}
+        self.created_at = "2026-09-18T00:00:00+00:00"
+        self.tags_applied = []
+        self.frozen = False
+        self.failing_tags = set()
+
+    def tag(self, name: str) -> None:
+        if name in self.failing_tags:
+            raise RuntimeError("tag %r rejected" % name)
+        if self.frozen:
+            # A published revision is immutable; later tags are refused.
+            raise RuntimeError("revision is published and frozen")
+        self.tags_applied.append(name)
+        if name == "published":
+            self.frozen = True
+
+    def create_artifact(self, name, location):
+        return MagicMock()
+
+    def create_edge(self, target, edge_type):
+        edge = MagicMock()
+        edge.target_kref.uri = target.kref.uri
+        return edge
+
+
+class _RItem:
+    """A stored memory item, optionally carrying a published revision."""
+
+    def __init__(self, uri: str, published: bool = True) -> None:
+        self.kref = _RKref(uri)
+        self.item_name = uri.rsplit("/", 1)[-1].split(".")[0]
+        self.kind = "conversation"
+        self.created_at = "2026-01-01T00:00:00+00:00"
+        self.revisions = []
+        self.metadata_written = []
+        self._latest = _RRevision(uri + "?r=1")
+        self._published = self._latest if published else None
+
+    def get_revision_by_tag(self, tag: str):
+        if tag == "published":
+            return self._published
+        if tag == "latest":
+            return self._latest
+        return None
+
+    def create_revision(self, metadata=None, **kwargs):
+        rev = _RRevision("%s?r=%d" % (self.kref.uri, len(self.revisions) + 2))
+        self.revisions.append(rev)
+        self.metadata_written.append(metadata or {})
+        return rev
+
+
+@pytest.fixture
+def revise_graph(monkeypatch):
+    """Run the real ``tool_memory_store`` with only the graph faked."""
+    import kumiho
+    from kumiho import mcp_server
+    seen = {
+        "searches": [],
+        "spaces_ensured": [],
+        "bundles": [],
+        "minted": _RItem("kref://CognitiveMemory/inbox/minted.conversation"),
+        "items": {},
+    }
+
+    monkeypatch.setattr(mcp_server, "_ensure_configured", lambda: True)
+    monkeypatch.setattr(
+        mcp_server, "_get_project_cached", lambda name: MockProject(name),
+    )
+
+    def _ensure_space(project, path):
+        # Record the request, then normalize exactly as the real helper does.
+        seen["spaces_ensured"].append(path)
+        return mcp_server._normalize_space_path("CognitiveMemory", path)
+
+    monkeypatch.setattr(mcp_server, "_ensure_space_path", _ensure_space)
+    monkeypatch.setattr(
+        mcp_server, "_get_or_create_item", lambda p, s, n, k: seen["minted"],
+    )
+    monkeypatch.setattr(mcp_server, "_write_memory_artifact", lambda **kw: "")
+
+    def _bundle(project, space, slug):
+        seen["bundles"].append((space, slug))
+        bundle = MagicMock()
+        bundle.kref.uri = "kref://CognitiveMemory/bundle"
+        return bundle
+
+    monkeypatch.setattr(mcp_server, "_get_or_create_bundle", _bundle)
+
+    def _search(query, **kwargs):
+        seen["searches"].append(query)
+        return []
+
+    monkeypatch.setattr(kumiho, "search", _search)
+
+    def _get_item(uri):
+        if uri not in seen["items"]:
+            raise RuntimeError("NOT_FOUND: " + uri)
+        return seen["items"][uri]
+
+    monkeypatch.setattr(kumiho, "get_item", _get_item)
+    return seen
+
+
+def _store(**kwargs):
+    from kumiho import mcp_server
+    defaults = {
+        "project": "CognitiveMemory",
+        "title": "Favourite colour",
+        "summary": "It is teal, not blue.",
+        "assistant_text": "It is teal, not blue.",
+    }
+    defaults.update(kwargs)
+    return mcp_server.tool_memory_store(**defaults)
+
+
+TARGET_URI = "kref://CognitiveMemory/preferences/colour.conversation"
+
+
+def test_item_kref_revises_the_named_item_without_searching(revise_graph):
+    """The target is named, so the similarity search must not run at all."""
+    target = _RItem(TARGET_URI)
+    revise_graph["items"][TARGET_URI] = target
+
+    result = _store(item_kref=TARGET_URI)
+
+    assert "error" not in result, result
+    assert result["item_kref"] == TARGET_URI
+    assert result["stacked"] is True
+    assert len(target.revisions) == 1
+    assert result["revision_kref"] == target.revisions[0].kref.uri
+    assert revise_graph["searches"] == [], "an explicit target must not be guessed at"
+    assert revise_graph["minted"].revisions == [], "nothing may be minted"
+    # previous_revision_kref points at what the correction supersedes.
+    assert result["previous_revision_kref"] == TARGET_URI + "?r=1"
+
+
+def test_item_kref_accepts_a_revision_kref(revise_graph):
+    """A caller may name the revision it is correcting, selectors and all."""
+    target = _RItem(TARGET_URI)
+    revise_graph["items"][TARGET_URI] = target
+
+    result = _store(item_kref=TARGET_URI + "?r=1&a=chat_io")
+
+    assert "error" not in result, result
+    assert result["item_kref"] == TARGET_URI
+    assert len(target.revisions) == 1
+
+
+def test_unknown_item_kref_is_an_error_not_a_fallback(revise_graph):
+    """Not found must not quietly become "stack" or "mint a new item"."""
+    result = _store(item_kref="kref://CognitiveMemory/preferences/gone.conversation")
+
+    assert "error" in result
+    assert "could not be resolved" in result["error"]
+    assert revise_graph["searches"] == []
+    assert revise_graph["minted"].revisions == []
+
+
+def test_published_moves_only_when_the_target_had_it(revise_graph):
+    """The store never publishes on its own initiative — it only carries an
+    existing published tag forward onto the revision that replaces it."""
+    published = _RItem(TARGET_URI)
+    unpublished_uri = "kref://CognitiveMemory/preferences/draft.conversation"
+    unpublished = _RItem(unpublished_uri, published=False)
+    revise_graph["items"][TARGET_URI] = published
+    revise_graph["items"][unpublished_uri] = unpublished
+
+    _store(item_kref=TARGET_URI)
+    assert published.revisions[0].tags_applied == ["published"]
+
+    out = _store(item_kref=unpublished_uri)
+    assert unpublished.revisions[0].tags_applied == [], (
+        "an unpublished memory stays unpublished when it is revised"
+    )
+    # It still reports what it superseded, from the latest revision.
+    assert out["previous_revision_kref"] == unpublished_uri + "?r=1"
+
+
+def test_caller_tags_come_first_and_published_last(revise_graph):
+    """The server freezes a published revision, so "published" has to be the
+    last tag applied or the classification tags are refused."""
+    target = _RItem(TARGET_URI)
+    revise_graph["items"][TARGET_URI] = target
+
+    _store(item_kref=TARGET_URI, tags=["preference", "published", "personal"])
+
+    assert target.revisions[0].tags_applied == ["preference", "personal", "published"]
+
+
+def test_a_failing_published_tag_is_an_error_on_this_path(revise_graph):
+    """Swallowing it would leave recall serving the text the caller corrected."""
+    target = _RItem(TARGET_URI)
+    revise_graph["items"][TARGET_URI] = target
+    original_create = target.create_revision
+
+    def create_revision(metadata=None, **kwargs):
+        rev = original_create(metadata=metadata, **kwargs)
+        rev.failing_tags = {"published"}
+        return rev
+
+    target.create_revision = create_revision
+    result = _store(item_kref=TARGET_URI, tags=["preference"])
+
+    assert "error" in result
+    assert "published" in result["error"]
+    # The caller's own tag still landed; only the tag move failed.
+    assert target.revisions[0].tags_applied == ["preference"]
+
+
+def test_space_metadata_comes_from_the_item_not_the_hint(revise_graph):
+    """space_hint/space_path are ignored for placement, and no space is
+    created for them — the revision lands in the item's own space."""
+    target = _RItem(TARGET_URI)
+    revise_graph["items"][TARGET_URI] = target
+
+    result = _store(item_kref=TARGET_URI, space_hint="work", space_path="scratch")
+
+    assert result["space_path"] == "/CognitiveMemory/preferences"
+    assert target.metadata_written[0]["space"] == "/CognitiveMemory/preferences"
+    assert revise_graph["spaces_ensured"] == [], "no space may be created from a hint"
+    assert revise_graph["bundles"] == [], (
+        "bundle membership belongs to the item, not to the ignored hint"
+    )
+    assert result["bundle_kref"] == ""
+
+
+def test_edges_are_still_created_from_source_revision_krefs(revise_graph, monkeypatch):
+    import kumiho
+    target = _RItem(TARGET_URI)
+    revise_graph["items"][TARGET_URI] = target
+    source = _RRevision("kref://CognitiveMemory/facts/source.conversation?r=1")
+    monkeypatch.setattr(kumiho, "get_revision", lambda uri: source)
+
+    result = _store(item_kref=TARGET_URI, source_revision_krefs=[source.kref.uri])
+
+    assert result["edges_created"] == [source.kref.uri]
+
+
+def test_default_path_is_unchanged_when_no_item_kref_is_given(revise_graph):
+    """Without item_kref nothing about the existing behaviour moves: the
+    search runs, a new item is minted, the hint makes a space and a bundle,
+    and an untagged store is published as it always was."""
+    result = _store(space_hint="work")
+
+    assert "error" not in result, result
+    assert result["stacked"] is False
+    assert revise_graph["searches"], "the stacking search must still run"
+    assert revise_graph["spaces_ensured"] == ["/CognitiveMemory/work"]
+    assert revise_graph["bundles"] == [("/CognitiveMemory/work", "work")]
+    assert revise_graph["minted"].revisions[0].tags_applied == ["published"]
+    assert "previous_revision_kref" not in result
+
+
+# --- the batch path carries the same key, per capture ----------------------
+
+
+def test_batch_item_kref_revises_per_capture(revise_graph, monkeypatch):
+    import kumiho
+    from kumiho import mcp_server
+    target = _RItem(TARGET_URI)
+    revise_graph["items"][TARGET_URI] = target
+    created = []
+
+    def fake_batch(rows, idempotency_prefix=""):
+        revs = []
+        for row in rows:
+            created.append((row["item_kref"], row["metadata"]))
+            revs.append(_RRevision(row["item_kref"] + "?r=9"))
+        return (revs, [])
+
+    monkeypatch.setattr(kumiho, "batch_create_revisions", fake_batch)
+
+    out = mcp_server.tool_memory_store_batch(
+        captures=[
+            {
+                "type": "preference", "title": "Favourite colour",
+                "content": "It is teal, not blue.", "tags": ["preference"],
+                "item_kref": TARGET_URI + "?r=1", "space_hint": "work",
+            },
+            {"type": "fact", "title": "New thing", "content": "Something else."},
+            {
+                "type": "fact", "title": "Bad target", "content": "x",
+                "item_kref": "kref://CognitiveMemory/preferences/gone.conversation",
+            },
+        ],
+        project="CognitiveMemory",
+        space_path="inbox",
+    )
+
+    revised, minted, missing = out["results"]
+    # (1) the named target, in the target's own space, hint ignored
+    assert revised["item_kref"] == TARGET_URI
+    assert revised["stacked"] is True
+    assert revised["previous_revision_kref"] == TARGET_URI + "?r=1"
+    assert revised["bundle_kref"] == ""
+    assert created[0][0] == TARGET_URI
+    assert created[0][1]["space"] == "/CognitiveMemory/preferences"
+    # (2) an ordinary capture beside it is untouched by any of that
+    assert minted["stacked"] is False
+    assert "previous_revision_kref" not in minted
+    assert minted["item_kref"].startswith("kref://CognitiveMemory/inbox/")
+    # (3) an unresolvable target is a row error, not a new item
+    assert "could not be resolved" in missing["error"]
+    assert len(created) == 2
+
+
+def test_batch_published_moves_only_for_a_published_target(revise_graph, monkeypatch):
+    import kumiho
+    from kumiho import mcp_server
+    unpublished_uri = "kref://CognitiveMemory/preferences/draft.conversation"
+    revise_graph["items"][TARGET_URI] = _RItem(TARGET_URI)
+    revise_graph["items"][unpublished_uri] = _RItem(unpublished_uri, published=False)
+    made = []
+
+    def fake_batch(rows, idempotency_prefix=""):
+        revs = [_RRevision(row["item_kref"] + "?r=9") for row in rows]
+        made.extend(revs)
+        return (revs, [])
+
+    monkeypatch.setattr(kumiho, "batch_create_revisions", fake_batch)
+
+    mcp_server.tool_memory_store_batch(
+        captures=[
+            {"title": "a", "content": "a", "tags": ["preference"],
+             "item_kref": TARGET_URI},
+            {"title": "b", "content": "b", "tags": ["preference"],
+             "item_kref": unpublished_uri},
+        ],
+        project="CognitiveMemory",
+    )
+
+    assert made[0].tags_applied == ["preference", "published"]
+    assert made[1].tags_applied == ["preference"]
+
+
+# ===========================================================================
+# Tests — space_paths isolation against the server's kref-prefix filter
+# ===========================================================================
+#
+# ``context_filter`` is a string prefix on the server, so a request scoped to
+# "9miho" also returns the project-root item "9miho-x": a different memory
+# whose NAME happens to start with the space's name.  Reproduced on CE.
+
+
+def _scoped_item(path, rev_created_at="2026-05-01T00:00:00+00:00"):
+    item = MockItem("kref://" + path + ".conversation")
+    item.kind = "conversation"
+    item.created_at = rev_created_at
+    rev = MockRevision(item.kref.uri + "?r=1")
+    rev.created_at = rev_created_at
+    rev.metadata = {}
+    item.returned_rev = rev
+    item.get_revision_by_tag = lambda tag, _r=rev: _r if tag == "published" else None
+    return item
+
+
+@pytest.mark.parametrize(
+    "context, inside, outside",
+    [
+        # A project-root item whose NAME starts with the space's name.
+        ("9miho", "CognitiveMemory/9miho/note", "CognitiveMemory/9miho-x"),
+        # And the nested case: a sibling space, not a sub-space.
+        ("work", "CognitiveMemory/work/infra/note", "CognitiveMemory/work-infra/note"),
+    ],
+)
+@patch('kumiho.get_project')
+@patch('kumiho.auto_configure_from_discovery')
+@patch('kumiho.item_search')
+@patch('kumiho.search')
+def test_retrieve_drops_prefix_lookalikes_from_every_path(
+    mock_search, mock_item_search, mock_configure, mock_get_project,
+    context, inside, outside,
+):
+    from kumiho import mcp_server
+    mock_get_project.return_value = MockProject("CognitiveMemory")
+    keep = _scoped_item(inside)
+    leak = _scoped_item(outside, "2026-09-01T00:00:00+00:00")
+    mock_item_search.return_value = [leak, keep]  # what the prefix filter returns
+
+    from kumiho.mcp_server import tool_memory_retrieve
+
+    # listing fallback
+    listed = tool_memory_retrieve(project="CognitiveMemory", space_paths=[context])
+    assert listed["item_krefs"] == [keep.kref.uri]
+
+    # latest mode (its own resolution path)
+    latest = tool_memory_retrieve(
+        project="CognitiveMemory", space_paths=[context], mode="latest",
+    )
+    assert latest["item_krefs"] == [keep.kref.uri]
+
+    # first mode (its own walk)
+    first = tool_memory_retrieve(
+        project="CognitiveMemory", space_paths=[context], mode="first",
+    )
+    assert first["item_krefs"] == [keep.kref.uri]
+
+    # relevance search, where the leak would outrank the real hit
+    mock_search.return_value = [_search_hit(leak, 0.9), _search_hit(keep, 0.2)]
+    searched = tool_memory_retrieve(
+        project="CognitiveMemory", query="anything", space_paths=[context],
+    )
+    assert searched["item_krefs"] == [keep.kref.uri]
+    assert searched["spaces_used"] == [
+        mcp_server._kref_space_context(keep.kref.uri)
+    ]
+
+
+def test_stacking_never_picks_a_candidate_outside_the_target_space():
+    """A wrong stack displaces a published revision, so the same check
+    guards the stacking search — in the space the caller actually meant."""
+    import kumiho
+    from kumiho import mcp_server
+    leak = _scoped_item("CognitiveMemory/9miho-x")
+    leak.get_revision = lambda selector: leak.returned_rev
+    leak.returned_rev.metadata = {
+        "memory_type": "summary", "title": "Teal", "summary": "It is teal, not blue",
+    }
+
+    with patch.object(kumiho, "search", lambda q, **kw: [_search_hit(leak, 0.9)]):
+        item, score, runner_up, overlap = mcp_server._find_similar_item(
+            "CognitiveMemory", "/CognitiveMemory/9miho",
+            "Teal It is teal, not blue", "conversation", memory_type="summary",
+            compare_text="Teal It is teal, not blue",
+        )
+
+    assert item is None, "a lookalike space must never be stacked onto"
+    assert (score, runner_up, overlap) == (0.0, 0.0, 0.0)
+
+
+@patch('kumiho.get_project')
+@patch('kumiho.auto_configure_from_discovery')
+@patch('kumiho.item_search')
+def test_most_recent_spelling_selects_latest_mode(
+    mock_item_search, mock_configure, mock_get_project,
+):
+    """'Most Recent' is what an LLM actually types; it used to fall through
+    to search mode, which is blind to a stacked revision's date."""
+    from kumiho import mcp_server
+    mock_get_project.return_value = MockProject("CognitiveMemory")
+    older = _scoped_item("CognitiveMemory/facts/older", "2026-01-01T00:00:00+00:00")
+    newer = _scoped_item("CognitiveMemory/facts/newer", "2026-08-01T00:00:00+00:00")
+    mock_item_search.return_value = [older, newer]
+
+    from kumiho.mcp_server import tool_memory_retrieve
+    for spelling in ("most recent", "Most-Recent", "MOST  RECENT", " most_recent "):
+        result = tool_memory_retrieve(project="CognitiveMemory", mode=spelling)
+        # latest mode is date-ordered and reports created_at; search is not.
+        assert result["item_krefs"] == [newer.kref.uri, older.kref.uri], spelling
+        assert result["created_at"] == [
+            "2026-08-01T00:00:00+00:00", "2026-01-01T00:00:00+00:00",
+        ], spelling
+
+
+@patch('kumiho.get_project')
+@patch('kumiho.auto_configure_from_discovery')
+@patch('kumiho.item_search')
+def test_first_mode_fallback_walk_is_bounded(
+    mock_item_search, mock_configure, mock_get_project,
+):
+    """When the type filter matches nothing the walk used to resolve every
+    item in the project (2,157 resolutions measured)."""
+    from kumiho import mcp_server
+    mock_get_project.return_value = MockProject("CognitiveMemory")
+    items = []
+    for i in range(457):
+        item = _scoped_item("CognitiveMemory/facts/note-%03d" % i)
+        item.resolved = 0
+
+        def get_revision_by_tag(tag, _item=item):
+            if tag == "published":
+                _item.resolved += 1
+                return _item.returned_rev
+            return None
+
+        item.get_revision_by_tag = get_revision_by_tag
+        items.append(item)
+    mock_item_search.return_value = items
+
+    from kumiho.mcp_server import tool_memory_retrieve
+    result = tool_memory_retrieve(
+        project="CognitiveMemory", mode="first", memory_types=["never-matches"],
+    )
+
+    assert result["item_krefs"] == []
+    assert sum(item.resolved for item in items) <= max(5 * 4, 20)

@@ -694,6 +694,19 @@ def _resolve_space_hint_path(project: Project, space_path: str) -> str:
 # Revision stacking
 # ---------------------------------------------------------------------------
 
+# WHAT THIS GATE IS FOR, AND WHAT IT IS NOT FOR. Stacking answers "did this
+# capture arrive without anyone noticing it restates an existing memory?" —
+# a guess, made from search scores, about a caller who did not say. It is
+# NOT the mechanism for a correction. A caller that knows it is revising a
+# specific memory passes ``item_kref`` to tool_memory_store (or the same key
+# per capture to tool_memory_store_batch) and the search below never runs:
+# the target is named, so nothing has to be inferred. That split matters
+# because the gate cannot serve both. The strong band is 0.75 and hosted
+# deployments run strong-only, while the calibration below puts a restated
+# same-subject capture at 0.58-0.68 — so an explicit correction routed
+# through the gate would miss and mint a duplicate, and widening the gate to
+# catch it would displace unrelated neighbours instead.
+
 # Fuzzy-search scores are corpus-relative, so these thresholds were
 # calibrated by replaying real duplicate pairs against a live CE graph
 # (fulltext-only search; hybrid vector search is a STUDIO+ feature).
@@ -1005,6 +1018,17 @@ def _find_similar_item(
     if not results:
         return None, 0.0, 0.0, 0.0
 
+    # ``context`` reaches the server as a string prefix, so a space named
+    # like the target's ("9miho-x" for "9miho") comes back as a candidate.
+    # Stacking onto it would displace a published revision in a space the
+    # caller never addressed, so drop those before picking a best.
+    results = [
+        sr for sr in results
+        if _within_contexts(str(sr.item.kref.uri), [context])
+    ]
+    if not results:
+        return None, 0.0, 0.0, 0.0
+
     best = results[0]
     score = float(getattr(best, "score", 0.0) or 0.0)
     runner_up = (
@@ -1078,8 +1102,10 @@ def _most_recent_items(items: List[Any], cap: int) -> List[Any]:
     recency is the only signal left.
     """
     def _created(item: Any) -> datetime:
-        ts = _parse_timestamp(getattr(item, "created_at", None) or None)
-        return ts.replace(tzinfo=None) if ts and ts.tzinfo else (ts or datetime.min)
+        # _ordering_timestamp, not a bare tzinfo drop: an aware stamp is
+        # converted to UTC first, so mixed offsets compare correctly here
+        # exactly as they do in mode="latest".
+        return _ordering_timestamp(getattr(item, "created_at", None)) or datetime.min
 
     return sorted(items, key=_created, reverse=True)[:cap]
 
@@ -1124,63 +1150,46 @@ def _newest_revisions(
 
     mode="latest" orders by the ``created_at`` of the revision it returns, and
     that time is only known after resolving the revision — 1-2 RPCs per item
-    (see ``_most_recent_items``).  Two things keep this bounded:
+    (see ``_most_recent_items``).  One bound keeps that in hand: a **window**
+    of ``_latest_candidate_pool(limit)`` = ``max(limit * 4, 20)`` items,
+    ordered newest-first by ``Item.modified_at`` (creating a revision advances
+    it, so an old item that received a stacked revision today is still near
+    the front) and falling back to item ``created_at`` where the server does
+    not report it.  Every item in that window is resolved; the caller orders
+    the survivors by their revision's own ``created_at``.
 
-    * ``Item.modified_at`` is an upper bound on every revision's
-      ``created_at`` (creating a revision advances it; verified on a live
-      graph: 0 of 312 items, 131 of them multi-revision, had a resolved
-      revision newer than the item's ``modified_at``).  Walking items by it,
-      newest first, reaches an old item that received a new stacked revision
-      without resolving anything else, and once ``limit`` accepted revisions
-      are all newer than the next item's bound, nothing further down can
-      displace them — so the walk stops early and the result is exact.  If a
-      resolved revision turns out newer than its item's ``modified_at``, the
-      server's field is not a bound and early stopping is switched off.
-    * A hard cap of ``_latest_candidate_pool(limit)`` resolutions.  It binds
-      when ``memory_types`` rejects most of the walk (fewer than ``limit``
-      results can come back even though older matches exist), or when the
-      server does not report ``modified_at``.  Then the walk falls back to
-      item ``created_at`` — the old window — which misses an old item whose
-      only recent change is a new revision, and never stops early because
-      ``created_at`` is not an upper bound.
+    There is deliberately **no early stop**.  Treating ``modified_at`` as an
+    upper bound on revision dates and cutting the walk once ``limit``
+    revisions were newer than the next item's bound looked exact, but it is
+    only sound when the bound holds for the items that were never resolved —
+    and those are precisely the ones the stop skips.  A server whose
+    ``modified_at`` does not track revisions starves the item that should
+    have been first: it sits below the stop point, so the walk never resolves
+    it, so it never disproves the bound.  Resolving the whole window costs at
+    most ``max(limit * 4, 20)`` resolutions either way.
     """
     cap = _latest_candidate_pool(limit)
-    bounds = [_ordering_timestamp(getattr(item, "modified_at", None)) for item in items]
-    exact = bool(items) and all(b is not None for b in bounds)
     keyed = [
         (
-            bound or _ordering_timestamp(getattr(item, "created_at", None)),
+            _ordering_timestamp(getattr(item, "modified_at", None))
+            or _ordering_timestamp(getattr(item, "created_at", None)),
             str(getattr(getattr(item, "kref", None), "uri", "")),
             item,
         )
-        for bound, item in zip(bounds, items)
+        for item in items
     ]
     # kref ascending, then (stable) window key descending with missing last.
     keyed.sort(key=lambda entry: entry[1])
     keyed.sort(key=lambda entry: (entry[0] is not None, entry[0] or datetime.min), reverse=True)
 
     accepted: List[Tuple[Any, Any]] = []
-    accepted_keys: List[datetime] = []
-    for resolved, (bound, _, item) in enumerate(keyed):
-        if resolved >= cap:
-            break
-        if exact and limit > 0 and len(accepted_keys) >= limit:
-            kth_newest = sorted(accepted_keys, reverse=True)[limit - 1]
-            if bound is not None and bound < kth_newest:
-                break
+    for _, _, item in keyed[:cap]:
         try:
             rev = item.get_revision_by_tag("published") or item.get_revision_by_tag("latest")
         except Exception:
             continue
-        key = _ordering_timestamp(getattr(rev, "created_at", None)) if rev else None
-        if exact and key is not None and bound is not None and key > bound:
-            # A server whose modified_at does not track revisions: it is no
-            # bound, so stop trusting it for early exit (the cap still holds).
-            exact = False
         if rev and _matches_memory_types(rev, allowed_types):
             accepted.append((item, rev))
-            if key is not None:
-                accepted_keys.append(key)
     return accepted
 
 
@@ -1213,6 +1222,62 @@ def _kref_space_context(kref_uri: str) -> str:
     kref = Kref(str(kref_uri), validate=False)
     project, space = kref.get_project(), kref.get_space()
     return f"{project}/{space}" if space else project
+
+
+def _kref_space_path(kref_uri: str) -> str:
+    """The item's own space in the leading-slash form the store writes.
+
+    ``kref://CognitiveMemory/personal/prefs.conversation`` gives
+    ``"/CognitiveMemory/personal"`` — what :func:`_normalize_space_path`
+    produces for that same space, so a revision placed by kref records the
+    same ``metadata["space"]`` as one placed by ``space_path``.
+    """
+    return f"/{_kref_space_context(kref_uri)}"
+
+
+def _kref_item_uri(kref_uri: str) -> str:
+    """The item kref behind an item kref *or* a revision kref.
+
+    ``Kref.get_path`` drops the ``?r=`` / ``?t=`` / ``&a=`` selectors, so a
+    caller may name the revision it is correcting and still resolve the item
+    that owns it — without slicing the URI on ``"?"`` by hand.
+    """
+    return f"kref://{Kref(str(kref_uri), validate=False).get_path()}"
+
+
+def _within_contexts(kref_uri: str, contexts: List[str]) -> bool:
+    """True when a kref's own space is, or sits under, one of *contexts*.
+
+    The server's ``context_filter`` is a plain **string** prefix, so asking
+    for ``CognitiveMemory/9miho`` also returns ``9miho-x`` sitting at the
+    project root — a different space whose name merely starts the same way
+    (reproduced on CE).  Comparing path *segments* — equal, or continuing
+    after a ``/`` — keeps genuine sub-spaces and drops the lookalikes.
+    """
+    space = _kref_space_context(kref_uri)
+    return any(space == ctx or space.startswith(f"{ctx}/") for ctx in contexts)
+
+
+def _previous_revision(item: Any) -> Tuple[str, bool]:
+    """``(kref of the revision a new one supersedes, the item was published)``.
+
+    Prefers ``published`` — the revision every recall path resolves first,
+    and the one a correction displaces — and falls back to ``latest`` so a
+    never-published item still reports what came before.  The flag is what
+    decides whether ``published`` may move at all: the tag is never created
+    here, only carried forward.
+    """
+    try:
+        published = item.get_revision_by_tag("published")
+    except Exception:
+        published = None
+    if published is not None:
+        return str(published.kref.uri), True
+    try:
+        latest = item.get_revision_by_tag("latest")
+    except Exception:
+        return "", False
+    return (str(latest.kref.uri) if latest else ""), False
 
 
 def _oldest_items_first(items: List[Any]) -> List[Any]:
@@ -1473,6 +1538,7 @@ def tool_memory_store(
     metadata: Optional[Dict[str, Any]] = None,
     edge_type: str = DERIVED_FROM,
     stack_revisions: bool = True,
+    item_kref: str = "",
 ) -> Dict[str, Any]:
     """Store a memory bundle with minimal inputs.
 
@@ -1480,6 +1546,16 @@ def tool_memory_store(
     item in the same space with similar content and stacks a new revision
     on it instead of creating a duplicate item.  Falls back to creating a
     new item when no similar item is found or the search fails.
+
+    *item_kref* names the memory this store **revises**, as an item kref or
+    as a revision kref (its selectors are stripped).  A correction knows
+    what it corrects, so nothing is guessed: the similarity search is
+    skipped entirely, the new revision lands on that item, and
+    ``space_path``/``space_hint`` no longer decide placement — the item's
+    own space does, and its existing bundle membership is left alone.  An
+    unresolvable kref is an error, never a fallback to stacking or to a new
+    item.  ``published`` moves onto the new revision only when the named
+    item already had a published revision; it is never created here.
     """
     _ensure_configured()
 
@@ -1548,28 +1624,45 @@ def tool_memory_store(
 
     space_root = policy.get("space_root", "/")
 
-    space_from_hint = False
-    if not space_path:
-        hint = space_hint.strip()
-        if hint:
-            segments = [seg for seg in hint.split("/") if seg]
-            slugged = [_slugify(seg) or seg for seg in segments]
-            space_path = "/".join(slugged)
-            space_from_hint = bool(space_path)
-    if space_root and space_root != "/":
-        base_root = space_root.strip("/")
-        if space_path:
-            space_path = f"{base_root}/{space_path}"
-        else:
-            space_path = base_root
+    # --- Explicit revise target -------------------------------------------
+    # The caller names the memory being corrected, so there is nothing to
+    # search for and nowhere else for the revision to go: placement follows
+    # the item, not the hint the caller happened to pass alongside it.
+    revise_target: Optional[Item] = None
+    if item_kref:
+        target_uri = _kref_item_uri(item_kref)
+        try:
+            revise_target = kumiho.get_item(target_uri)
+        except Exception as exc:
+            return {"error": f"item_kref {target_uri} could not be resolved: {exc}"}
+        if revise_target is None:
+            return {"error": f"item_kref {target_uri} could not be resolved"}
 
-    # Hint-derived paths are resolved against existing spaces (exact/stem)
-    # before creation so topic variants converge on one space. An explicit
-    # space_path is honored verbatim, as before.
-    if space_from_hint and space_path and _space_registry_enabled():
-        space_path = _resolve_space_hint_path(project_obj, space_path)
+    if revise_target is not None:
+        normalized_space_path = _kref_space_path(revise_target.kref.uri)
+    else:
+        space_from_hint = False
+        if not space_path:
+            hint = space_hint.strip()
+            if hint:
+                segments = [seg for seg in hint.split("/") if seg]
+                slugged = [_slugify(seg) or seg for seg in segments]
+                space_path = "/".join(slugged)
+                space_from_hint = bool(space_path)
+        if space_root and space_root != "/":
+            base_root = space_root.strip("/")
+            if space_path:
+                space_path = f"{base_root}/{space_path}"
+            else:
+                space_path = base_root
 
-    normalized_space_path = _ensure_space_path(project_obj, space_path)
+        # Hint-derived paths are resolved against existing spaces (exact/stem)
+        # before creation so topic variants converge on one space. An explicit
+        # space_path is honored verbatim, as before.
+        if space_from_hint and space_path and _space_registry_enabled():
+            space_path = _resolve_space_hint_path(project_obj, space_path)
+
+        normalized_space_path = _ensure_space_path(project_obj, space_path)
 
     base_text = title or summary or user_text or assistant_text or "memory"
     stacked = False
@@ -1578,9 +1671,16 @@ def tool_memory_store(
     stack_overlap = 0.0
     previous_revision_kref = ""
     item = None
+    target_was_published = False
+
+    # --- Explicit target: the caller already said which memory this revises ---
+    if revise_target is not None:
+        item = revise_target
+        stacked = True
+        previous_revision_kref, target_was_published = _previous_revision(item)
 
     # --- Revision stacking: search for a similar existing item ---
-    if stack_revisions:
+    elif stack_revisions:
         # Search title AND summary: a capture revisiting the same subject
         # hours later shares its body, not its headline.
         search_query = _build_stack_query(
@@ -1664,28 +1764,53 @@ def tool_memory_store(
         except Exception as exc:
             return {"error": f"Failed to create artifact: {exc}"}
 
-    tag_list = tags or ["published"]
-    for tag in tag_list:
-        if tag == "latest":
-            continue
-        try:
-            revision.tag(tag)
-        except Exception:
-            continue
-
     bundle_kref = ""
-    if bundle_name:
-        bundle_slug = _slugify(bundle_name) or bundle_name
+    if revise_target is not None:
+        # The caller's tags first: the server freezes a published revision
+        # and rejects tags applied after it, so "published" has to go last.
+        # And it goes on at all only when the named item already had a
+        # published revision — revising an unpublished memory leaves it
+        # unpublished, whatever the tags say.
+        for tag in (tags or []):
+            if tag in ("latest", "published"):
+                continue
+            try:
+                revision.tag(tag)
+            except Exception:
+                continue
+        if target_was_published:
+            try:
+                revision.tag("published")
+            except Exception as exc:
+                # Unlike a best-effort classification tag, this *is* the
+                # operation: leaving "published" on the superseded revision
+                # means recall keeps returning the text the caller corrected.
+                return {"error": f"Failed to move the published tag: {exc}"}
+        # Bundle membership belongs to the item and is already whatever the
+        # item's own stores made it; a revision must not file the memory
+        # somewhere new on the strength of a space_hint that was ignored.
     else:
-        bundle_slug = _slugify(space_hint) if space_hint else ""
-    if not bundle_slug:
-        bundle_slug = "topic"
-    try:
-        bundle = _get_or_create_bundle(project_obj, normalized_space_path, bundle_slug)
-        bundle.add_member(item)
-        bundle_kref = bundle.kref.uri
-    except Exception:
-        bundle_kref = ""
+        tag_list = tags or ["published"]
+        for tag in tag_list:
+            if tag == "latest":
+                continue
+            try:
+                revision.tag(tag)
+            except Exception:
+                continue
+
+        if bundle_name:
+            bundle_slug = _slugify(bundle_name) or bundle_name
+        else:
+            bundle_slug = _slugify(space_hint) if space_hint else ""
+        if not bundle_slug:
+            bundle_slug = "topic"
+        try:
+            bundle = _get_or_create_bundle(project_obj, normalized_space_path, bundle_slug)
+            bundle.add_member(item)
+            bundle_kref = bundle.kref.uri
+        except Exception:
+            bundle_kref = ""
 
     edges_created = []
     for source_kref in (source_revision_krefs or []):
@@ -1745,6 +1870,13 @@ def tool_memory_store_batch(
         ``tags``      — optional; defaults to ``["published"]``.
         ``metadata``  — optional pre-validated dict (e.g. ``{"event_date": ...}``).
         ``space_hint``— optional per-capture space override.
+        ``item_kref`` — optional; the memory this capture **revises**, as an
+            item or revision kref.  Same semantics as ``tool_memory_store``'s
+            ``item_kref``: no similarity search, the revision lands on that
+            item in that item's space, ``space_hint`` is ignored, bundle
+            membership is left alone, and ``published`` moves onto the new
+            revision only if the named item already had one.  The row reports
+            ``previous_revision_kref``; an unresolvable kref is a row error.
 
     Returns ``{"results": [per-capture dict | {"error": ...}], "stored_krefs":
     [...], "stacked": <int>}`` — ``results`` is positional (one entry per input
@@ -1781,8 +1913,27 @@ def tool_memory_store_batch(
                 results[i] = {"error": str(exc)}
                 continue
 
-        cap_space = cap.get("space_hint", "") or space_path
-        normalized_space = _ensure_space_path(project_obj, cap_space)
+        # An explicit revise target pins the space to the item's own, so the
+        # per-capture hint is neither consulted nor created (see the
+        # ``item_kref`` note in the docstring).
+        revise_target = None
+        cap_item_kref = str(cap.get("item_kref") or "").strip()
+        if cap_item_kref:
+            target_uri = _kref_item_uri(cap_item_kref)
+            try:
+                revise_target = kumiho.get_item(target_uri)
+            except Exception as exc:
+                results[i] = {
+                    "error": f"item_kref {target_uri} could not be resolved: {exc}"
+                }
+                continue
+            if revise_target is None:
+                results[i] = {"error": f"item_kref {target_uri} could not be resolved"}
+                continue
+            normalized_space = _kref_space_path(revise_target.kref.uri)
+        else:
+            cap_space = cap.get("space_hint", "") or space_path
+            normalized_space = _ensure_space_path(project_obj, cap_space)
 
         final_summary = content
         if len(final_summary) > 2000:
@@ -1796,7 +1947,12 @@ def tool_memory_store_batch(
         stack_score = 0.0
         stack_runner_up = 0.0
         stack_overlap = 0.0
-        if stack_revisions:
+        previous_revision_kref = ""
+        target_was_published = False
+        if revise_target is not None:
+            item = revise_target
+            previous_revision_kref, target_was_published = _previous_revision(item)
+        elif stack_revisions:
             # Title AND summary, same as the single path.
             search_query = _build_stack_query(title, final_summary)
             if search_query.strip():
@@ -1866,6 +2022,9 @@ def tool_memory_store_batch(
             "tags": cap.get("tags"),
             "space": normalized_space,
             "stacked": item is not None,
+            "revise_target": revise_target is not None,
+            "previous_revision_kref": previous_revision_kref,
+            "target_was_published": target_was_published,
             "stack_score": stack_score,
             "stack_runner_up": stack_runner_up,
             "stack_overlap": stack_overlap,
@@ -1905,22 +2064,40 @@ def tool_memory_store_batch(
             results[i] = {"error": failure_by_row.get(row_idx, "batch row rejected")}
             continue
 
-        for tag in (prep["tags"] or ["published"]):
-            if tag == "latest":
-                continue
-            try:
-                rev.tag(tag)
-            except Exception:
-                continue
-
         bundle_kref = ""
-        try:
-            bundle = _get_or_create_bundle(project_obj, prep["space"], "topic")
-            item_obj = prep["item_obj"] or kumiho.get_item(prep["item_kref"])
-            bundle.add_member(item_obj)
-            bundle_kref = bundle.kref.uri
-        except Exception:
-            bundle_kref = ""
+        if prep["revise_target"]:
+            # Caller tags first, "published" last and only when the named
+            # item already had it — see the single path for why.
+            for tag in (prep["tags"] or []):
+                if tag in ("latest", "published"):
+                    continue
+                try:
+                    rev.tag(tag)
+                except Exception:
+                    continue
+            if prep["target_was_published"]:
+                try:
+                    rev.tag("published")
+                except Exception as exc:
+                    results[i] = {"error": f"Failed to move the published tag: {exc}"}
+                    continue
+            # Bundle membership stays as the item's own stores left it.
+        else:
+            for tag in (prep["tags"] or ["published"]):
+                if tag == "latest":
+                    continue
+                try:
+                    rev.tag(tag)
+                except Exception:
+                    continue
+
+            try:
+                bundle = _get_or_create_bundle(project_obj, prep["space"], "topic")
+                item_obj = prep["item_obj"] or kumiho.get_item(prep["item_kref"])
+                bundle.add_member(item_obj)
+                bundle_kref = bundle.kref.uri
+            except Exception:
+                bundle_kref = ""
 
         edges_created: List[str] = []
         for source_kref in source_krefs:
@@ -1944,6 +2121,8 @@ def tool_memory_store_batch(
             "stack_overlap": round(prep["stack_overlap"], 4),
             "stack_mode": prep.get("stack_mode", _stack_mode()),
         }
+        if prep["previous_revision_kref"]:
+            results[i]["previous_revision_kref"] = prep["previous_revision_kref"]
 
     return {"results": results, "stored_krefs": stored_krefs, "stacked": stacked_count}
 
@@ -1996,9 +2175,16 @@ def tool_memory_retrieve(
               result, with ``item_krefs``, ``revision_krefs`` and
               ``spaces_used`` only.
 
-            Matching ignores case and surrounding whitespace.  An empty mode
-            with a query containing "first"/"earliest"/"oldest"/"initial"
-            selects ``"first"``; nothing auto-selects ``"latest"``.
+            Matching ignores case and surrounding whitespace, and folds runs
+            of spaces and hyphens into ``_`` — ``"Most Recent"`` and
+            ``"most-recent"`` both select ``"latest"``.  An empty mode with a
+            query containing "first"/"earliest"/"oldest"/"initial" selects
+            ``"first"``; nothing auto-selects ``"latest"``.
+
+            ``space_paths`` is enforced on every path: the server filters
+            contexts by string prefix, so results are additionally checked
+            path-segment-wise against the requested spaces and their
+            sub-spaces (see ``_within_contexts``).
         unroll_revisions: If True, return ALL revisions of stacked items
             (useful for dream-state or history browsing). If False (default),
             return only the published/latest revision per item.  With
@@ -2043,7 +2229,12 @@ def tool_memory_retrieve(
 
     query_text = (query or "").strip()
     query_lower = query_text.lower()
-    mode_text = (mode or "").strip().lower()
+    # A mode arrives as whatever an LLM typed: "Most Recent", "most-recent",
+    # "most  recent".  Fold case, then collapse runs of whitespace and
+    # hyphens into the single underscore the alias sets are written in, so
+    # the spelling a caller reaches for first resolves instead of silently
+    # falling through to search.
+    mode_text = re.sub(r"[\s-]+", "_", (mode or "").strip().lower())
 
     # Auto-detect "first/earliest" mode from query
     if not mode_text and query_lower:
@@ -2067,6 +2258,17 @@ def tool_memory_retrieve(
 
     contexts = [normalize_context(p) for p in spaces] if spaces else [project_name]
     spaces_used: List[str] = []
+
+    def in_scope(kref_uri: str) -> bool:
+        """Drop a hit the server's prefix filter let through by name.
+
+        ``context_filter`` matches the context as a **string** prefix, so
+        scoping to ``9miho`` also returns the project-root item ``9miho-x``
+        (reproduced on CE).  Every path below — search, bundle, listing,
+        latest — is filtered here, so ``space_paths`` means the space and
+        its sub-spaces, nothing that merely spells like them.
+        """
+        return _within_contexts(kref_uri, contexts)
 
     # Build search query from query + keywords + topics
     search_terms = []
@@ -2121,7 +2323,10 @@ def tool_memory_retrieve(
         def first_passing(items: List[Any]) -> Optional[Dict[str, Any]]:
             # Oldest-first, returning the first item whose revision passes
             # the memory_types filter — min() alone would ignore the filter.
-            for item in _oldest_items_first(items):
+            # Bounded by the same window latest mode uses: when the filter
+            # matches nothing the walk would otherwise resolve every item in
+            # the project at 1-2 RPCs each (2,157 resolutions measured).
+            for item in _oldest_items_first(items)[:_latest_candidate_pool(limit)]:
                 try:
                     rev = item.get_revision_by_tag("published") or item.get_revision_by_tag("latest")
                 except Exception:
@@ -2150,6 +2355,8 @@ def tool_memory_retrieve(
                 hits = []
             pool: Dict[str, Any] = {}  # score order; kept for date ties
             for sr in hits[:_latest_candidate_pool(limit)]:
+                if not in_scope(str(sr.item.kref.uri)):
+                    continue
                 pool.setdefault(sr.item.kref.uri, sr.item)
             found = first_passing(list(pool.values()))
             if found:
@@ -2165,6 +2372,8 @@ def tool_memory_retrieve(
                 name_filter=name_filter,
                 kind_filter=memory_item_kind,
             ):
+                if not in_scope(str(item.kref.uri)):
+                    continue
                 listed.setdefault(item.kref.uri, item)
         found = first_passing(sorted(listed.values(), key=lambda item: item.kref.uri))
         return found or {"item_krefs": [], "revision_krefs": [], "spaces_used": []}
@@ -2193,6 +2402,8 @@ def tool_memory_retrieve(
             search_results = relevance_search()
             for sr in search_results[:search_pool]:  # Get extra for filtering
                 try:
+                    if not in_scope(str(sr.item.kref.uri)):
+                        continue
                     hit_space = _kref_space_context(sr.item.kref.uri)
                     if unroll_revisions:
                         # Unroll ALL revisions for stacked items (dream-state,
@@ -2251,6 +2462,8 @@ def tool_memory_retrieve(
                             # bundles must not turn into an RPC storm.
                             if len(results) >= limit * 2:
                                 break
+                            if not in_scope(str(member.item_kref.uri)):
+                                continue
                             if member.item_kref.uri not in [r[0] for r in results]:
                                 item = kumiho.get_item(member.item_kref.uri)
                                 rev = item.get_revision_by_tag("published") or item.get_revision_by_tag("latest")
@@ -2264,11 +2477,14 @@ def tool_memory_retrieve(
     if not results:
         pooled: Dict[str, Any] = {}  # latest mode: every context's items
         for context in contexts:
-            items = kumiho.item_search(
-                context_filter=context,
-                name_filter=name_filter,
-                kind_filter=memory_item_kind,
-            )
+            items = [
+                item for item in kumiho.item_search(
+                    context_filter=context,
+                    name_filter=name_filter,
+                    kind_filter=memory_item_kind,
+                )
+                if in_scope(str(item.kref.uri))
+            ]
             if items:
                 spaces_used.append(context)
             if is_latest:
@@ -2294,31 +2510,12 @@ def tool_memory_retrieve(
                 results.append((item.kref.uri, rev.kref.uri, 0.0))
                 remember_created(rev)
 
-        # Last resort: search entire project — but ONLY when the caller
-        # did NOT explicitly scope to specific spaces.  When space_paths
-        # are provided the caller expects isolation; falling back to the
-        # whole project would leak cross-space data (e.g. memories from
-        # one benchmark entry appearing in another's recall).
-        if not results and contexts != [project_name] and not spaces:
-            items = kumiho.item_search(
-                context_filter=project_name,
-                name_filter="",
-                kind_filter=memory_item_kind,
-            )
-            if items:
-                spaces_used.append(project_name)
-            if is_latest:
-                for item, rev in _newest_revisions(items, limit, allowed_types):
-                    results.append((item.kref.uri, rev.kref.uri, 0.0))
-                    remember_created(rev)
-            else:
-                for item in _most_recent_items(items, limit * 2):
-                    try:
-                        rev = item.get_revision_by_tag("published") or item.get_revision_by_tag("latest")
-                        if rev and _matches_memory_types(rev, allowed_types):
-                            results.append((item.kref.uri, rev.kref.uri, 0.0))
-                    except Exception:
-                        continue
+        # There is deliberately no widen-to-the-whole-project last resort.
+        # ``contexts`` is ``[project_name]`` exactly when ``spaces`` is
+        # empty, so the listing above already covered the whole project in
+        # that case; and when the caller DID scope to spaces, widening would
+        # leak cross-space data (memories from one benchmark entry appearing
+        # in another's recall), which is the thing space_paths is for.
 
     # Dedupe: when unrolling, dedup by revision_kref so stacked revisions
     # survive.  Otherwise dedup by item_kref — one slot per memory item.
@@ -3411,7 +3608,16 @@ TOOLS: List[Dict[str, Any]] = [
                 },
                 "mode": {
                     "type": "string",
-                    "description": "search (default): relevance-ranked | latest: newest first by last update; with a query, relevant matches ordered by date | first: the single oldest memory; with a query, the oldest relevant match",
+                    "description": (
+                        "search (default): relevance-ranked | latest (aliases: "
+                        "newest, recent, most_recent): newest first by the "
+                        "returned revision's date; with a query, the top "
+                        "max(limit*4, 20) relevance hits ordered by date | "
+                        "first (aliases: earliest, oldest, initial): the single "
+                        "oldest memory — at most one result and no scores; with "
+                        "a query, the oldest relevant match. Case, spaces and "
+                        "hyphens are ignored ('Most Recent' = most_recent)."
+                    ),
                     "default": "search",
                 },
                 "include_revision_metadata": {

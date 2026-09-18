@@ -191,10 +191,14 @@ class _FakeItem:
 
     def __init__(
         self, name: str, memory_type: str = "summary",
-        title: str = "", summary: str = "",
+        title: str = "", summary: str = "", space: str = "work",
     ) -> None:
         self.item_name = name
-        self.kref = _FakeKref(f"kref://CognitiveMemory/work/{name}.conversation")
+        # The candidate has to actually live in the space the search was
+        # scoped to: _find_similar_item now drops hits from outside it,
+        # because the server matches a context by string prefix and hands
+        # back neighbouring spaces whose names merely start the same way.
+        self.kref = _FakeKref(f"kref://CognitiveMemory/{space}/{name}.conversation")
         self._rev = _FakeRevision(memory_type, title, summary)
 
     def get_revision_by_tag(self, tag: str) -> Optional[_FakeRevision]:
@@ -267,6 +271,7 @@ def test_two_captures_on_one_subject_stack() -> None:
     """Different titles, same subject -> the second lands on the first's item."""
     existing = _FakeItem(
         "kumiho-plugins-pr-64-39be818a", title=DUP_TITLE_A, summary=DUP_BODY_A,
+        space="work/kumiho-sdks",
     )
     spy = _SearchSpy([_FakeSearchResult(existing, 0.60)])
 
@@ -289,6 +294,7 @@ def test_two_captures_on_unrelated_subjects_do_not_stack() -> None:
     """A same-type neighbour in the same space must still mint a new item."""
     neighbour = _FakeItem(
         "plugins-pr-64-39be818a", title=DUP_TITLE_A, summary=DUP_BODY_A,
+        space="work/kumiho-sdks",
     )
     # Score high enough for the middle band, and the type agrees: only the
     # lexical gate stands between this and a displaced published revision.
@@ -428,8 +434,12 @@ def test_search_retries_with_the_title_alone() -> None:
 
 def test_runner_up_is_reported() -> None:
     """The margin is not gated on, but it must stay inspectable."""
-    top = _FakeItem("top", title=UNRELATED_TITLE, summary=UNRELATED_BODY)
-    second = _FakeItem("second", title=DUP_TITLE_A, summary=DUP_BODY_A)
+    top = _FakeItem(
+        "top", title=UNRELATED_TITLE, summary=UNRELATED_BODY, space="decisions",
+    )
+    second = _FakeItem(
+        "second", title=DUP_TITLE_A, summary=DUP_BODY_A, space="decisions",
+    )
     spy = _SearchSpy([
         _FakeSearchResult(top, 0.5998), _FakeSearchResult(second, 0.5063),
     ])
