@@ -12,9 +12,46 @@ class EdgeDirection(int, metaclass=_enum_type_wrapper.EnumTypeWrapper):
     OUTGOING: _ClassVar[EdgeDirection]
     INCOMING: _ClassVar[EdgeDirection]
     BOTH: _ClassVar[EdgeDirection]
+
+class EvaluationMode(int, metaclass=_enum_type_wrapper.EnumTypeWrapper):
+    __slots__ = ()
+    EVALUATION_MODE_UNSPECIFIED: _ClassVar[EvaluationMode]
+    EVALUATION_MODE_PER_FRAGMENT: _ClassVar[EvaluationMode]
+    EVALUATION_MODE_BATCHED: _ClassVar[EvaluationMode]
+
+class QuestionType(int, metaclass=_enum_type_wrapper.EnumTypeWrapper):
+    __slots__ = ()
+    QUESTION_TYPE_UNSPECIFIED: _ClassVar[QuestionType]
+    QUESTION_TYPE_NOUL: _ClassVar[QuestionType]
+    QUESTION_TYPE_CHOICE: _ClassVar[QuestionType]
+    QUESTION_TYPE_SCORE: _ClassVar[QuestionType]
+
+class EvaluationStatus(int, metaclass=_enum_type_wrapper.EnumTypeWrapper):
+    __slots__ = ()
+    EVALUATION_STATUS_UNSPECIFIED: _ClassVar[EvaluationStatus]
+    EVALUATION_STATUS_OK: _ClassVar[EvaluationStatus]
+    EVALUATION_STATUS_PARTIAL: _ClassVar[EvaluationStatus]
+    EVALUATION_STATUS_OVER_LIMIT: _ClassVar[EvaluationStatus]
+    EVALUATION_STATUS_NOT_ENTITLED: _ClassVar[EvaluationStatus]
+    EVALUATION_STATUS_PROVIDER_UNAVAILABLE: _ClassVar[EvaluationStatus]
+    EVALUATION_STATUS_INVALID_REQUEST: _ClassVar[EvaluationStatus]
 OUTGOING: EdgeDirection
 INCOMING: EdgeDirection
 BOTH: EdgeDirection
+EVALUATION_MODE_UNSPECIFIED: EvaluationMode
+EVALUATION_MODE_PER_FRAGMENT: EvaluationMode
+EVALUATION_MODE_BATCHED: EvaluationMode
+QUESTION_TYPE_UNSPECIFIED: QuestionType
+QUESTION_TYPE_NOUL: QuestionType
+QUESTION_TYPE_CHOICE: QuestionType
+QUESTION_TYPE_SCORE: QuestionType
+EVALUATION_STATUS_UNSPECIFIED: EvaluationStatus
+EVALUATION_STATUS_OK: EvaluationStatus
+EVALUATION_STATUS_PARTIAL: EvaluationStatus
+EVALUATION_STATUS_OVER_LIMIT: EvaluationStatus
+EVALUATION_STATUS_NOT_ENTITLED: EvaluationStatus
+EVALUATION_STATUS_PROVIDER_UNAVAILABLE: EvaluationStatus
+EVALUATION_STATUS_INVALID_REQUEST: EvaluationStatus
 
 class Kref(_message.Message):
     __slots__ = ("uri",)
@@ -1294,3 +1331,156 @@ class TenantUsageResponse(_message.Message):
     node_limit: int
     tenant_id: str
     def __init__(self, node_count: _Optional[int] = ..., node_limit: _Optional[int] = ..., tenant_id: _Optional[str] = ...) -> None: ...
+
+class EvaluationTaskContext(_message.Message):
+    __slots__ = ("query", "extra_context")
+    QUERY_FIELD_NUMBER: _ClassVar[int]
+    EXTRA_CONTEXT_FIELD_NUMBER: _ClassVar[int]
+    query: str
+    extra_context: str
+    def __init__(self, query: _Optional[str] = ..., extra_context: _Optional[str] = ...) -> None: ...
+
+class EvaluationFragment(_message.Message):
+    __slots__ = ("fragment_id", "text", "metadata")
+    class MetadataEntry(_message.Message):
+        __slots__ = ("key", "value")
+        KEY_FIELD_NUMBER: _ClassVar[int]
+        VALUE_FIELD_NUMBER: _ClassVar[int]
+        key: str
+        value: str
+        def __init__(self, key: _Optional[str] = ..., value: _Optional[str] = ...) -> None: ...
+    FRAGMENT_ID_FIELD_NUMBER: _ClassVar[int]
+    TEXT_FIELD_NUMBER: _ClassVar[int]
+    METADATA_FIELD_NUMBER: _ClassVar[int]
+    fragment_id: str
+    text: str
+    metadata: _containers.ScalarMap[str, str]
+    def __init__(self, fragment_id: _Optional[str] = ..., text: _Optional[str] = ..., metadata: _Optional[_Mapping[str, str]] = ...) -> None: ...
+
+class EvaluationQuestion(_message.Message):
+    __slots__ = ("question_id", "type", "instructions", "criteria", "criteria_levels")
+    class CriteriaEntry(_message.Message):
+        __slots__ = ("key", "value")
+        KEY_FIELD_NUMBER: _ClassVar[int]
+        VALUE_FIELD_NUMBER: _ClassVar[int]
+        key: str
+        value: str
+        def __init__(self, key: _Optional[str] = ..., value: _Optional[str] = ...) -> None: ...
+    QUESTION_ID_FIELD_NUMBER: _ClassVar[int]
+    TYPE_FIELD_NUMBER: _ClassVar[int]
+    INSTRUCTIONS_FIELD_NUMBER: _ClassVar[int]
+    CRITERIA_FIELD_NUMBER: _ClassVar[int]
+    CRITERIA_LEVELS_FIELD_NUMBER: _ClassVar[int]
+    question_id: str
+    type: QuestionType
+    instructions: str
+    criteria: _containers.ScalarMap[str, str]
+    criteria_levels: _containers.RepeatedScalarFieldContainer[str]
+    def __init__(self, question_id: _Optional[str] = ..., type: _Optional[_Union[QuestionType, str]] = ..., instructions: _Optional[str] = ..., criteria: _Optional[_Mapping[str, str]] = ..., criteria_levels: _Optional[_Iterable[str]] = ...) -> None: ...
+
+class EvaluateRequest(_message.Message):
+    __slots__ = ("task", "fragments", "questions", "mode", "rubric_version", "timeout_ms", "allow_cache")
+    TASK_FIELD_NUMBER: _ClassVar[int]
+    FRAGMENTS_FIELD_NUMBER: _ClassVar[int]
+    QUESTIONS_FIELD_NUMBER: _ClassVar[int]
+    MODE_FIELD_NUMBER: _ClassVar[int]
+    RUBRIC_VERSION_FIELD_NUMBER: _ClassVar[int]
+    TIMEOUT_MS_FIELD_NUMBER: _ClassVar[int]
+    ALLOW_CACHE_FIELD_NUMBER: _ClassVar[int]
+    task: EvaluationTaskContext
+    fragments: _containers.RepeatedCompositeFieldContainer[EvaluationFragment]
+    questions: _containers.RepeatedCompositeFieldContainer[EvaluationQuestion]
+    mode: EvaluationMode
+    rubric_version: str
+    timeout_ms: int
+    allow_cache: bool
+    def __init__(self, task: _Optional[_Union[EvaluationTaskContext, _Mapping]] = ..., fragments: _Optional[_Iterable[_Union[EvaluationFragment, _Mapping]]] = ..., questions: _Optional[_Iterable[_Union[EvaluationQuestion, _Mapping]]] = ..., mode: _Optional[_Union[EvaluationMode, str]] = ..., rubric_version: _Optional[str] = ..., timeout_ms: _Optional[int] = ..., allow_cache: bool = ...) -> None: ...
+
+class NoulAnswer(_message.Message):
+    __slots__ = ("noul",)
+    NOUL_FIELD_NUMBER: _ClassVar[int]
+    noul: float
+    def __init__(self, noul: _Optional[float] = ...) -> None: ...
+
+class ChoiceAnswer(_message.Message):
+    __slots__ = ("choice", "probabilities", "confidence")
+    class ProbabilitiesEntry(_message.Message):
+        __slots__ = ("key", "value")
+        KEY_FIELD_NUMBER: _ClassVar[int]
+        VALUE_FIELD_NUMBER: _ClassVar[int]
+        key: str
+        value: float
+        def __init__(self, key: _Optional[str] = ..., value: _Optional[float] = ...) -> None: ...
+    CHOICE_FIELD_NUMBER: _ClassVar[int]
+    PROBABILITIES_FIELD_NUMBER: _ClassVar[int]
+    CONFIDENCE_FIELD_NUMBER: _ClassVar[int]
+    choice: str
+    probabilities: _containers.ScalarMap[str, float]
+    confidence: float
+    def __init__(self, choice: _Optional[str] = ..., probabilities: _Optional[_Mapping[str, float]] = ..., confidence: _Optional[float] = ...) -> None: ...
+
+class ScoreAnswer(_message.Message):
+    __slots__ = ("score", "legend", "probabilities", "confidence")
+    SCORE_FIELD_NUMBER: _ClassVar[int]
+    LEGEND_FIELD_NUMBER: _ClassVar[int]
+    PROBABILITIES_FIELD_NUMBER: _ClassVar[int]
+    CONFIDENCE_FIELD_NUMBER: _ClassVar[int]
+    score: float
+    legend: _containers.RepeatedScalarFieldContainer[str]
+    probabilities: _containers.RepeatedScalarFieldContainer[float]
+    confidence: float
+    def __init__(self, score: _Optional[float] = ..., legend: _Optional[_Iterable[str]] = ..., probabilities: _Optional[_Iterable[float]] = ..., confidence: _Optional[float] = ...) -> None: ...
+
+class EvaluationAnswer(_message.Message):
+    __slots__ = ("question_id", "noul", "choice", "score")
+    QUESTION_ID_FIELD_NUMBER: _ClassVar[int]
+    NOUL_FIELD_NUMBER: _ClassVar[int]
+    CHOICE_FIELD_NUMBER: _ClassVar[int]
+    SCORE_FIELD_NUMBER: _ClassVar[int]
+    question_id: str
+    noul: NoulAnswer
+    choice: ChoiceAnswer
+    score: ScoreAnswer
+    def __init__(self, question_id: _Optional[str] = ..., noul: _Optional[_Union[NoulAnswer, _Mapping]] = ..., choice: _Optional[_Union[ChoiceAnswer, _Mapping]] = ..., score: _Optional[_Union[ScoreAnswer, _Mapping]] = ...) -> None: ...
+
+class FragmentEvaluation(_message.Message):
+    __slots__ = ("fragment_id", "answers", "error")
+    FRAGMENT_ID_FIELD_NUMBER: _ClassVar[int]
+    ANSWERS_FIELD_NUMBER: _ClassVar[int]
+    ERROR_FIELD_NUMBER: _ClassVar[int]
+    fragment_id: str
+    answers: _containers.RepeatedCompositeFieldContainer[EvaluationAnswer]
+    error: str
+    def __init__(self, fragment_id: _Optional[str] = ..., answers: _Optional[_Iterable[_Union[EvaluationAnswer, _Mapping]]] = ..., error: _Optional[str] = ...) -> None: ...
+
+class EvaluationUsage(_message.Message):
+    __slots__ = ("input_tokens", "output_tokens", "provider_requests", "cached_fragments", "month_tokens_used", "month_tokens_limit")
+    INPUT_TOKENS_FIELD_NUMBER: _ClassVar[int]
+    OUTPUT_TOKENS_FIELD_NUMBER: _ClassVar[int]
+    PROVIDER_REQUESTS_FIELD_NUMBER: _ClassVar[int]
+    CACHED_FRAGMENTS_FIELD_NUMBER: _ClassVar[int]
+    MONTH_TOKENS_USED_FIELD_NUMBER: _ClassVar[int]
+    MONTH_TOKENS_LIMIT_FIELD_NUMBER: _ClassVar[int]
+    input_tokens: int
+    output_tokens: int
+    provider_requests: int
+    cached_fragments: int
+    month_tokens_used: int
+    month_tokens_limit: int
+    def __init__(self, input_tokens: _Optional[int] = ..., output_tokens: _Optional[int] = ..., provider_requests: _Optional[int] = ..., cached_fragments: _Optional[int] = ..., month_tokens_used: _Optional[int] = ..., month_tokens_limit: _Optional[int] = ...) -> None: ...
+
+class EvaluateResponse(_message.Message):
+    __slots__ = ("status", "fragments", "usage", "model_id", "rubric_version", "message")
+    STATUS_FIELD_NUMBER: _ClassVar[int]
+    FRAGMENTS_FIELD_NUMBER: _ClassVar[int]
+    USAGE_FIELD_NUMBER: _ClassVar[int]
+    MODEL_ID_FIELD_NUMBER: _ClassVar[int]
+    RUBRIC_VERSION_FIELD_NUMBER: _ClassVar[int]
+    MESSAGE_FIELD_NUMBER: _ClassVar[int]
+    status: EvaluationStatus
+    fragments: _containers.RepeatedCompositeFieldContainer[FragmentEvaluation]
+    usage: EvaluationUsage
+    model_id: str
+    rubric_version: str
+    message: str
+    def __init__(self, status: _Optional[_Union[EvaluationStatus, str]] = ..., fragments: _Optional[_Iterable[_Union[FragmentEvaluation, _Mapping]]] = ..., usage: _Optional[_Union[EvaluationUsage, _Mapping]] = ..., model_id: _Optional[str] = ..., rubric_version: _Optional[str] = ..., message: _Optional[str] = ...) -> None: ...
