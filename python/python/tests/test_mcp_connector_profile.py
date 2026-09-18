@@ -1227,8 +1227,12 @@ def offline_store(monkeypatch: pytest.MonkeyPatch) -> Dict[str, Any]:
         mcp_server, "_get_project_cached",
         lambda name: types.SimpleNamespace(name=name),
     )
+    # Project-prefixed, as the real _ensure_space_path always returns: the
+    # stacking search is scoped on this value and now checks that a
+    # candidate's kref really sits in that space.
     monkeypatch.setattr(
-        mcp_server, "_ensure_space_path", lambda project, path: "/decisions"
+        mcp_server, "_ensure_space_path",
+        lambda project, path: "/CognitiveMemory/decisions",
     )
     monkeypatch.setattr(mcp_server, "_get_or_create_item", lambda p, s, n, k: minted)
     monkeypatch.setattr(mcp_server, "_write_memory_artifact", lambda **kw: "")
@@ -1432,8 +1436,12 @@ def test_a_bound_client_receives_the_store(monkeypatch: pytest.MonkeyPatch) -> N
         "auto_configure_from_discovery",
         lambda *a, **k: reached.append("auto_configure"),
     )
+    # Project-prefixed, as the real _ensure_space_path always returns: the
+    # stacking search is scoped on this value and now checks that a
+    # candidate's kref really sits in that space.
     monkeypatch.setattr(
-        mcp_server, "_ensure_space_path", lambda project, path: "/decisions"
+        mcp_server, "_ensure_space_path",
+        lambda project, path: "/CognitiveMemory/decisions",
     )
     monkeypatch.setattr(
         mcp_server,

@@ -8,6 +8,114 @@
 > what produced the gaps backfilled in KumihoIO/kumiho-SDKs#155 and #157.
 
 
+## kumiho 0.13.2 (September 2026) — Corrections Name What They Correct ✍️
+
+When you tell an assistant it got something wrong, the memory it already
+stored has to change. Until now the store had no way to be told *which* one.
+It looked for a similar-looking memory and, if the resemblance was strong
+enough, filed the new text as a revision of it; otherwise it created a second
+memory beside the first. Both outcomes are wrong for a correction. The first
+is a guess, and the second leaves the stale version exactly where recall will
+find it.
+
+The guess could not be tuned into a right answer either. The similarity gate
+was calibrated on real captures: a restated memory about the same subject
+scores 0.58-0.68, while hosted deployments run the gate in strong-only mode at
+0.75. A correction goes through that gate and misses. Widening it to catch
+corrections would start displacing unrelated memories that merely sit in the
+same topic. And the search the gate runs is scoped by a *prefix*, so it could
+reach into a differently-named space and revise something there.
+
+So this release stops guessing when it does not have to. A caller that knows
+which memory it is correcting says so.
+
+### ✨ What changed
+
+- **`item_kref` names the memory being revised.** `tool_memory_store` takes
+  it as a keyword; `tool_memory_store_batch` takes the same key per capture.
+  Give it an item kref or a revision kref — if you have the kref of the
+  revision you are correcting, that works, its selectors are stripped for you.
+  Then nothing is inferred: the similarity search does not run, the new text
+  becomes a revision of that item, and the item's own space is where it lands
+  and what gets recorded in its metadata. Any `space_path` or `space_hint`
+  passed alongside is ignored for placement, and the item's bundle membership
+  is left exactly as it was. The result reads like a stacked store — `stacked`
+  true, and `previous_revision_kref` pointing at what the correction
+  supersedes. Batch rows report `previous_revision_kref` on this path; they
+  never had the field at all.
+- **A kref that does not resolve is an error.** It does not quietly fall back
+  to searching, and it does not mint a new memory. A correction aimed at
+  nothing should say so, not scatter.
+- **The `published` tag follows the correction — and only then.** `published`
+  is the approval marker: revisions are immutable once published, downstream
+  consumers rely on them not changing, and the server keeps a single active
+  `published` tag per item, moving it when another revision is tagged. Recall
+  resolves `published` before `latest`, so a correction that does not move the
+  tag is invisible. When the named item already had a published revision, the
+  new one takes it — your own tags are applied first and `published` last,
+  because the server freezes a published revision and refuses tags applied
+  after it. When the item had no published revision, nothing is published.
+  **Nothing is ever published on the store's own initiative.** The tag is only
+  ever carried forward, never created, and only when a caller revised a
+  specific item that already had one.
+- **On this path, a failed `published` call is a failed store.** Elsewhere a
+  tag that will not apply is swallowed as best-effort. Here it is the whole
+  point of the call: if the tag stays on the old revision, recall keeps
+  serving the text you just corrected. You get an error instead of a success
+  that did not happen.
+- **`item_kref` is not in the `kumiho_memory_store` MCP schema.** kumiho-memory's
+  reflect is the caller that fills it, from a capture that says what it
+  revises. A model calling the tool directly still has only the old surface.
+
+### 🐛 Also fixed
+
+- **`space_paths` was not actually isolating spaces.** The server filters by
+  context as a plain string prefix, so asking for `9miho` also returned
+  project-root memories whose *name* starts with `9miho-`, and asking for
+  `work` returned memories from `work-infra`. Retrieval now checks each
+  result's space one path segment at a time — on the search, bundle, listing
+  and latest paths alike — so a real sub-space still counts and a lookalike
+  does not. The stacking search is checked the same way, which closes the
+  other half of the problem: a store could otherwise displace a published
+  revision in a space nobody addressed.
+- **`mode="latest"` could hide the very memory you asked for.** 0.13.1 walked
+  items by `modified_at`, treating it as an upper bound on revision dates, and
+  stopped early once enough results were newer than the next item's bound.
+  That reasoning has a hole: it is only sound if the bound holds for the items
+  the stop never resolves. On a server whose `modified_at` does not advance
+  with a new revision, the item that should have come back first sits *below*
+  the stop point — so it is never resolved, so it never disproves the bound,
+  so it never appears. The early stop is gone. The window is the same as
+  before: the `max(limit * 4, 20)` items with the newest `modified_at`
+  (falling back to item `created_at`) are resolved, and results are ordered by
+  their revision's own date. The cost is bounded by that window either way.
+- **`mode="first"` could resolve the whole project.** When the `memory_types`
+  filter matched nothing, the fallback walked every scoped item at 1-2 RPCs
+  each — 2,157 resolutions measured. It is bounded by the same window now.
+- **`"most recent"` did not select latest mode.** Only the exact alias
+  spellings did, so the phrasing a model reaches for first fell through to
+  search. Mode text is now lowercased, stripped, and runs of spaces and
+  hyphens folded to `_` before the aliases are matched.
+- **An unreachable fallback removed.** A widen-to-the-whole-project branch in
+  retrieval required both `contexts != [project_name]` and no `space_paths` —
+  conditions that cannot both hold. It is deleted; the scoped listing above it
+  already covered the case.
+- `_most_recent_items` now normalizes timestamps to UTC the way every other
+  ordering path does, instead of discarding the offset.
+
+### 📋 Upgrading
+
+Nothing to do. A store without `item_kref` behaves exactly as it did in
+0.13.1, including the `tags or ["published"]` default for an untagged new
+memory. Retrieval results change only where they were wrong: scoped queries no
+longer include same-prefixed spaces, and latest mode no longer omits an item
+the early stop had skipped.
+
+Downstream, kumiho-memory's `kumiho_memory_reflect` gains a `revises` capture
+field that passes `item_kref` through — a separate PR. The hosted connector at
+`mcp.kumiho.cloud` picks both up when its pins move.
+
+
 ## kumiho 0.13.1 (September 2026) — Retrieval Modes That Do What They Say 🕒
 
 `kumiho_memory_retrieve` advertised three modes in its schema — search, first

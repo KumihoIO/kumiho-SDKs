@@ -12,6 +12,80 @@ in descending version order, which is also descending date order.
 narrative — why a change mattered and what you have to do about it. This file is
 its terse companion. Entries belong in both.
 
+## [0.13.2] - 2026-09-18
+
+### Added
+- **`item_kref` on `tool_memory_store`, and `"item_kref"` per capture on
+  `tool_memory_store_batch`** — the memory this store *revises*, given as an
+  item kref or a revision kref (selectors are stripped). A correction knows
+  what it corrects, so nothing is inferred: the similarity search is skipped,
+  the new revision is created on that item, `space_path`/`space_hint` no
+  longer decide placement (the item's own space does, and it is what
+  `metadata["space"]` records), and the item's existing bundle membership is
+  left alone. An unresolvable kref is an error — never a fall back to stacking
+  or to a new item. The result has the shape of a stacked store: `stacked`
+  true and `previous_revision_kref` pointing at the item's published revision,
+  or its latest one when it had never been published. Batch rows gain
+  `previous_revision_kref` on this path; they had no such field.
+- **The `published` tag moves with the correction, and only then.** When the
+  named item already had a published revision, the caller's tags are applied
+  first and `published` last — the server freezes a published revision and
+  rejects tags applied after it. An item with no published revision is not
+  published. A failing `published` call is returned as an error on this path
+  (it is the operation the caller asked for), while the default path keeps
+  swallowing tag failures as before. `item_kref` is not in the
+  `kumiho_memory_store` MCP schema; kumiho-memory's reflect is its caller.
+
+### Fixed
+- **`space_paths` leaked items from same-prefixed spaces.** The server's
+  `context_filter` is a plain string prefix, so `space_paths=["9miho"]`
+  returned project-root items whose *name* begins `9miho-`, and `["work"]`
+  returned items from `work-infra`. `tool_memory_retrieve` now checks each
+  result's own space path-segment-wise against the requested contexts — on
+  the search, bundle, listing and latest paths alike — keeping genuine
+  sub-spaces and dropping the lookalikes. The same check guards the stacking
+  search, so a store can no longer displace a published revision in a space
+  the caller never addressed.
+- **`mode="latest"` could starve the item it exists to find.** The walk
+  treated `Item.modified_at` as an upper bound on revision dates and stopped
+  early once `limit` results were newer than the next item's bound. That is
+  only sound if the bound holds for the items it never resolves — and a
+  server whose `modified_at` does not track revisions hides exactly those: an
+  item below the stop point is never resolved, so it never disproves the
+  bound, so it never comes back. There is no early stop now. The bounded
+  window is unchanged: the `max(limit * 4, 20)` items with the newest
+  `modified_at` (falling back to item `created_at`) are resolved, and the
+  results are ordered by their revision's own `created_at`.
+- **`mode="first"` could resolve the whole project.** When the `memory_types`
+  filter matched nothing, the listing fallback walked every scoped item at 1-2
+  RPCs each (2,157 resolutions measured). It is bounded by the same
+  `max(limit * 4, 20)` window as the other modes.
+- **Mode spellings with spaces or hyphens fell through to search.** `mode` is
+  now lowercased, stripped, and runs of spaces and hyphens folded to `_`
+  before the alias lookup, so `"most recent"` and `"Most-Recent"` select
+  latest.
+- **`_most_recent_items` dropped `tzinfo` instead of converting.** It now uses
+  the same `_ordering_timestamp` normalization as the other ordering paths, so
+  mixed UTC offsets compare correctly.
+
+### Removed
+- An unreachable widen-to-the-whole-project fallback in `tool_memory_retrieve`
+  (`not results and contexts != [project_name] and not spaces`). `contexts`
+  differs from `[project_name]` exactly when `spaces` is non-empty, so the two
+  conditions could never both hold. The scoped listing above it already covers
+  the unscoped case.
+
+### Notes
+- Nothing is published on the store's own initiative. `published` moves only
+  when a caller names a specific item to revise and that item already had a
+  published revision; the tag is carried forward onto the replacement, never
+  created. A store with no `item_kref` behaves exactly as in 0.13.1,
+  including the long-standing `tags or ["published"]` default for an untagged
+  new memory.
+- Downstream: kumiho-memory's `kumiho_memory_reflect` gains a `revises`
+  capture field that passes `item_kref` through (separate PR). The hosted
+  connector picks both up when its pins move.
+
 ## [0.13.1] - 2026-09-17
 
 ### Fixed
