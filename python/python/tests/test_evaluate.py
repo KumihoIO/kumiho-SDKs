@@ -12,11 +12,62 @@ from __future__ import annotations
 from unittest.mock import MagicMock
 
 import pytest
+import grpc
 
 import kumiho
 from kumiho.proto import kumiho_pb2
 
 import mock_helpers
+
+
+@pytest.mark.parametrize("code", [
+    grpc.StatusCode.DEADLINE_EXCEEDED,
+    grpc.StatusCode.UNAVAILABLE,
+    grpc.StatusCode.INTERNAL,
+])
+def test_review_regression_paid_evaluate_is_not_retried(monkeypatch, code):
+    from kumiho.client import _ClientCallDetails, _TransientRetryInterceptor
+
+    interceptor = _TransientRetryInterceptor()
+    monkeypatch.setattr("kumiho.client.time.sleep", lambda _: None)
+    response = MagicMock()
+    response.code.return_value = code
+    continuation = MagicMock(return_value=response)
+    details = _ClientCallDetails(
+        method="/kumiho.KumihoService/Evaluate", timeout=1.0, metadata=(),
+        credentials=None, wait_for_ready=False, compression=None,
+    )
+    assert interceptor.intercept_unary_unary(continuation, details, object()) is response
+    assert continuation.call_count == 1, "Evaluate has no provider idempotency guarantee"
+
+
+def test_review_regression_other_rpcs_keep_transient_retries(monkeypatch):
+    from kumiho.client import _ClientCallDetails, _TransientRetryInterceptor
+
+    interceptor = _TransientRetryInterceptor()
+    monkeypatch.setattr("kumiho.client.time.sleep", lambda _: None)
+    response = MagicMock()
+    response.code.return_value = grpc.StatusCode.UNAVAILABLE
+    continuation = MagicMock(return_value=response)
+    details = _ClientCallDetails(
+        method="/kumiho.KumihoService/GetProjects", timeout=1.0, metadata=(),
+        credentials=None, wait_for_ready=False, compression=None,
+    )
+    interceptor.intercept_unary_unary(continuation, details, object())
+    assert continuation.call_count == interceptor.max_attempts
+
+
+def test_review_regression_zero_timeout_keeps_server_default_budget(mock_client):
+    _, stub = mock_client
+    _ok(stub)
+    kumiho.evaluate(
+        query="q",
+        fragments=[{"id": "a", "text": "text"}],
+        questions=[{"id": "q", "type": "noul", "instructions": "Relevant?"}],
+        timeout_ms=0,
+    )
+    assert stub.Evaluate.call_args.args[0].timeout_ms == 0
+    assert "timeout" not in stub.Evaluate.call_args.kwargs
 
 
 @pytest.fixture

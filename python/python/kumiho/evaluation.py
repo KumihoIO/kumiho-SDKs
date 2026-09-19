@@ -116,10 +116,11 @@ class FragmentEvaluation:
 
     Attributes:
         fragment_id: The caller's own id for this fragment.
-        answers: Question id to answer. Empty when ``error`` is set.
+        answers: Question id to valid answer. Can be incomplete when ``error``
+            is set; callers must check for each required question.
         error: Per-fragment failure, e.g. the provider request carrying this
             fragment failed while others succeeded (the ``"partial"`` status).
-            Empty when the fragment was answered.
+            Empty when every requested question was answered successfully.
     """
 
     fragment_id: str

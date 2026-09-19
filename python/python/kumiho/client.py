@@ -2564,7 +2564,8 @@ class _Client:
             in request order, and the token usage for the call. Check
             :attr:`~kumiho.evaluation.EvaluationResult.status` before the
             answers — ``"partial"`` means some fragments carry an ``error``
-            instead of answers.
+            or incomplete answers. Valid answers are retained alongside
+            a per-fragment error when only some questions succeeded.
 
         Raises:
             ValueError: If the query is empty, a fragment id is empty or
@@ -2640,6 +2641,7 @@ class _Client:
         )
         if timeout_ms is not None:
             req.timeout_ms = timeout_ms
+        if timeout_ms:
             deadline = timeout_ms / 1000.0 + _EVALUATE_DEADLINE_MARGIN_SECS
             resp = self.stub.Evaluate(req, timeout=deadline)
         else:
@@ -2821,6 +2823,15 @@ class _TransientRetryInterceptor(grpc.UnaryUnaryClientInterceptor):
     def intercept_unary_unary(self, continuation, client_call_details, request):
         last_response = None
         client_call_details = self._with_default_timeout(client_call_details)
+
+        # Evaluate can already have incurred an upstream charge when its gRPC
+        # response is lost. Without an idempotency key, retrying it here can
+        # duplicate both the charge and the caller's entire deadline budget.
+        if client_call_details.method in (
+            "/kumiho.KumihoService/Evaluate",
+            b"/kumiho.KumihoService/Evaluate",
+        ):
+            return continuation(client_call_details, request)
 
         for attempt in range(self.max_attempts):
             response = continuation(client_call_details, request)
