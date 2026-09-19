@@ -345,6 +345,11 @@ class KumihoServiceStub(object):
                 request_serializer=kumiho__pb2.SetDeprecatedRequest.SerializeToString,
                 response_deserializer=kumiho__pb2.StatusResponse.FromString,
                 _registered_method=True)
+        self.Evaluate = channel.unary_unary(
+                '/kumiho.KumihoService/Evaluate',
+                request_serializer=kumiho__pb2.EvaluateRequest.SerializeToString,
+                response_deserializer=kumiho__pb2.EvaluateResponse.FromString,
+                _registered_method=True)
 
 
 class KumihoServiceServicer(object):
@@ -739,6 +744,15 @@ class KumihoServiceServicer(object):
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
+    def Evaluate(self, request, context):
+        """--- Evaluation (Kumiho Cloud, paid tiers only) -----------------------
+        Judge prepared fragments against caller-supplied questions using a
+        server-managed evaluation provider. Not available in self-hosted CE.
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
 
 def add_KumihoServiceServicer_to_server(servicer, server):
     rpc_method_handlers = {
@@ -1051,6 +1065,11 @@ def add_KumihoServiceServicer_to_server(servicer, server):
                     servicer.SetDeprecated,
                     request_deserializer=kumiho__pb2.SetDeprecatedRequest.FromString,
                     response_serializer=kumiho__pb2.StatusResponse.SerializeToString,
+            ),
+            'Evaluate': grpc.unary_unary_rpc_method_handler(
+                    servicer.Evaluate,
+                    request_deserializer=kumiho__pb2.EvaluateRequest.FromString,
+                    response_serializer=kumiho__pb2.EvaluateResponse.SerializeToString,
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
@@ -2728,6 +2747,33 @@ class KumihoService(object):
             '/kumiho.KumihoService/SetDeprecated',
             kumiho__pb2.SetDeprecatedRequest.SerializeToString,
             kumiho__pb2.StatusResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def Evaluate(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/kumiho.KumihoService/Evaluate',
+            kumiho__pb2.EvaluateRequest.SerializeToString,
+            kumiho__pb2.EvaluateResponse.FromString,
             options,
             channel_credentials,
             insecure,

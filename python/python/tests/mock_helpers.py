@@ -244,6 +244,85 @@ def mock_search_request(
         include_artifact_metadata=include_artifact_metadata
     )
 
+def mock_noul_answer(question_id, noul):
+    """Build an EvaluationAnswer carrying a NoulAnswer."""
+    return kumiho_pb2.EvaluationAnswer(
+        question_id=question_id,
+        noul=kumiho_pb2.NoulAnswer(noul=noul),
+    )
+
+
+def mock_choice_answer(question_id, choice, probabilities=None, confidence=0.0):
+    """Build an EvaluationAnswer carrying a ChoiceAnswer."""
+    return kumiho_pb2.EvaluationAnswer(
+        question_id=question_id,
+        choice=kumiho_pb2.ChoiceAnswer(
+            choice=choice,
+            probabilities=probabilities or {},
+            confidence=confidence,
+        ),
+    )
+
+
+def mock_score_answer(question_id, score, legend=None, probabilities=None, confidence=0.0):
+    """Build an EvaluationAnswer carrying a ScoreAnswer."""
+    return kumiho_pb2.EvaluationAnswer(
+        question_id=question_id,
+        score=kumiho_pb2.ScoreAnswer(
+            score=score,
+            legend=legend or [],
+            probabilities=probabilities or [],
+            confidence=confidence,
+        ),
+    )
+
+
+def mock_fragment_evaluation(fragment_id, answers=None, error=""):
+    """Build one FragmentEvaluation; `answers` are EvaluationAnswer protos."""
+    return kumiho_pb2.FragmentEvaluation(
+        fragment_id=fragment_id,
+        answers=answers or [],
+        error=error,
+    )
+
+
+def mock_evaluation_usage(
+    input_tokens=0,
+    output_tokens=0,
+    provider_requests=0,
+    cached_fragments=0,
+    month_tokens_used=0,
+    month_tokens_limit=-1,
+):
+    return kumiho_pb2.EvaluationUsage(
+        input_tokens=input_tokens,
+        output_tokens=output_tokens,
+        provider_requests=provider_requests,
+        cached_fragments=cached_fragments,
+        month_tokens_used=month_tokens_used,
+        month_tokens_limit=month_tokens_limit,
+    )
+
+
+def mock_evaluate_response(
+    status=kumiho_pb2.EVALUATION_STATUS_OK,
+    fragments=None,
+    usage=None,
+    model_id="",
+    rubric_version="",
+    message="",
+):
+    """Build an EvaluateResponse; `fragments` are FragmentEvaluation protos."""
+    return kumiho_pb2.EvaluateResponse(
+        status=status,
+        fragments=fragments or [],
+        usage=usage if usage is not None else mock_evaluation_usage(),
+        model_id=model_id,
+        rubric_version=rubric_version,
+        message=message,
+    )
+
+
 def mock_batch_create_revisions_response(results=None, failures=None):
     """Build a BatchCreateRevisionsResponse: `results` are RevisionResponse
     protos positional with the request (failed rows = empty stubs), `failures`

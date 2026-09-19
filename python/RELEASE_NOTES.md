@@ -8,6 +8,104 @@
 > what produced the gaps backfilled in KumihoIO/kumiho-SDKs#155 and #157.
 
 
+## kumiho 0.14.0 (September 2026) — `evaluate()`: Judging What Recall Found 🧪
+
+Recall has always had to choose its own width. Ask for five memories and you
+get the five the vector search liked best — which is the right five only when
+the query happens to sit where the embedding is sharp. Widen it to twenty and
+the good ones are in there, along with fifteen that merely share vocabulary.
+There was no step between "retrieved" and "returned" that could tell those
+apart, so the width had to be the answer.
+
+This release adds that step. `kumiho.evaluate()` takes text you already have
+and questions you write, and asks a server-managed provider to answer them
+per fragment. It is not a search and it is not a retrieval — it judges what
+you hand it, nothing more.
+
+```python
+result = kumiho.evaluate(
+    query="What did we decide about the release cadence?",
+    fragments=[
+        {"id": "m1", "text": "We ship on the first Tuesday."},
+        {"id": "m2", "text": "The logo is green."},
+    ],
+    questions=[{
+        "id": "relevant",
+        "type": "noul",
+        "instructions": "Does {fragment} answer the query?",
+    }],
+)
+result.by_id()["m1"].answers["relevant"].noul
+```
+
+### ✨ What changed
+
+- **`kumiho.evaluate(...)`, and `Client.evaluate(...)` behind it.** Positional
+  `query`, `fragments` and `questions`; keyword `extra_context`, `mode`,
+  `rubric_version`, `timeout_ms` and `allow_cache`. Three question types:
+  `"noul"` gives a float in [0, 1], `"choice"` picks a named option and
+  reports the odds over all of them, `"score"` returns a level with the
+  legend it indexes. You get one `FragmentEvaluation` per fragment in request
+  order, and `result.by_id()` if you would rather have them keyed by your own
+  id.
+- **Your ids never leave the server.** What the provider sees is the query,
+  `extra_context`, each question's instructions and criteria, and each
+  fragment's text and metadata. Fragment ids are replaced with the server's
+  own private labels before the request is built — which is also why the
+  literal `{fragment}` placeholder in your instructions is passed through
+  untouched rather than rendered here. Write it and let the server fill it.
+- **Frozen dataclasses, or plain dicts, whichever you have.**
+  `EvaluationFragment` and `EvaluationQuestion` are re-exported from
+  `kumiho`, and mappings with the same keys build exactly the same request.
+  The result types — `EvaluationResult`, `FragmentEvaluation`,
+  `EvaluationUsage`, `NoulAnswer`, `ChoiceAnswer`, `ScoreAnswer` — are
+  exported too.
+- **`usage` tells you where the month stands.** Input and output tokens,
+  provider requests actually sent, fragments served from cache and therefore
+  not metered, and the monthly total after this call against its limit
+  (`-1` for unlimited). Reading it is how a caller decides whether to widen
+  the next recall or narrow it.
+- **The client checks only what it can check cheaply.** A non-empty query,
+  non-empty unique fragment ids, a known question type, and no `__` in a
+  question id — the server reserves that for its own per-fragment ids. Those
+  are the mistakes worth catching before a call costs provider tokens.
+  Everything about shape and size is the server's call, because it is the
+  only side that knows the current limits. Mode and question type are
+  translated rather than forwarded: a typo in either would otherwise arrive
+  as the enum's zero value and quietly change what you asked for.
+- **`timeout_ms` sets both deadlines.** The server gets it as its own hint,
+  and the gRPC call gets it plus a two-second margin, so a slow-but-answering
+  server's status — including a non-OK one — reaches you instead of being
+  overwritten by `DEADLINE_EXCEEDED`.
+
+### ⚠️ Availability
+
+Evaluation is a **Kumiho Cloud feature on paid tiers**. There is nothing to
+configure and nothing new to authenticate; the entitlement rides on the
+credentials you already use.
+
+- **Self-hosted CE, and any server older than this RPC**, does not implement
+  it and answers `UNIMPLEMENTED`.
+- **A tenant without the entitlement** gets `PERMISSION_DENIED`, or an
+  in-band `"not_entitled"` result when the server prefers to answer that way.
+  Branch on `result.status` if you want to treat the in-band form as data.
+- Both raise `grpc.RpcError` the way every other RPC's failures do. The SDK
+  has no exception hierarchy to fit them into and this release does not
+  invent one.
+
+### 📋 Upgrading
+
+Nothing to do. `evaluate()` is new surface; no existing call changes
+behaviour, and the generated stubs move only by the `Evaluate` additions and
+the descriptor offsets they shift.
+
+There is deliberately **no MCP tool** for this. Evaluation is the ranking step
+the memory layer runs over candidates it has already retrieved — its caller is
+kumiho-memory's recall path, not a model holding a tool list. The other
+language SDKs do not have `evaluate` yet; the proto is shared, the bindings
+are not.
+
+
 ## kumiho 0.13.2 (September 2026) — Corrections Name What They Correct ✍️
 
 When you tell an assistant it got something wrong, the memory it already

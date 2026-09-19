@@ -42,7 +42,7 @@ import os
 import random
 import sys
 import time
-from typing import Any, Dict, Iterator, List, Optional, Sequence, Tuple, Union, TYPE_CHECKING
+from typing import Any, Dict, Iterator, List, Mapping, Optional, Sequence, Tuple, Union, TYPE_CHECKING
 from urllib.parse import urlparse
 
 import grpc
@@ -129,6 +129,12 @@ from .base import PagedList, SearchResult
 
 if TYPE_CHECKING:
     from .bundle import Bundle, BundleMember, BundleRevisionHistory
+    from .evaluation import (
+        EvaluationAnswer,
+        EvaluationFragment,
+        EvaluationQuestion,
+        EvaluationResult,
+    )
 
 
 _LOGGER = logging.getLogger("kumiho.client")
@@ -138,6 +144,128 @@ _FORCE_REFRESH_ENV = "KUMIHO_FORCE_DISCOVERY_REFRESH"
 
 class ProjectLimitError(Exception):
     """Raised when guardrails block project creation (e.g., max projects reached)."""
+
+
+# --- Evaluation vocabulary -------------------------------------------------
+#
+# The wire enums are spelled as short strings in the Python API. Question types
+# and modes are translated here because a typo in either cannot reach the
+# server as an error — it would silently become the zero value and change what
+# the call does. Statuses come back the other way and are derived from the
+# enum name, so a status this SDK predates still reports something truthful
+# rather than raising.
+
+_QUESTION_TYPES: "Dict[str, kumiho_pb2.QuestionType]" = {
+    "noul": kumiho_pb2.QUESTION_TYPE_NOUL,
+    "choice": kumiho_pb2.QUESTION_TYPE_CHOICE,
+    "score": kumiho_pb2.QUESTION_TYPE_SCORE,
+}
+
+_EVALUATION_MODES: "Dict[str, kumiho_pb2.EvaluationMode]" = {
+    "": kumiho_pb2.EVALUATION_MODE_UNSPECIFIED,
+    "batched": kumiho_pb2.EVALUATION_MODE_BATCHED,
+    "per_fragment": kumiho_pb2.EVALUATION_MODE_PER_FRAGMENT,
+}
+
+# Added to the caller's timeout_ms when deriving the gRPC deadline. The server
+# clamps timeout_ms to its own maximum and answers within it; the deadline only
+# has to outlast that answer's trip back, so a non-OK status arrives as a
+# response rather than as DEADLINE_EXCEEDED.
+_EVALUATE_DEADLINE_MARGIN_SECS = 2.0
+
+
+def _evaluation_status_name(status: int) -> str:
+    """Render an ``EvaluationStatus`` enum value as its short lowercase name."""
+    try:
+        name = kumiho_pb2.EvaluationStatus.Name(status)
+    except ValueError:
+        return "unspecified"
+    return name[len("EVALUATION_STATUS_"):].lower()
+
+
+def _evaluation_answer(pb_answer: Any) -> Optional["EvaluationAnswer"]:
+    """Map one ``EvaluationAnswer`` message to its dataclass, or None if unset."""
+    from .evaluation import ChoiceAnswer, NoulAnswer, ScoreAnswer
+
+    kind = pb_answer.WhichOneof("value")
+    if kind == "noul":
+        return NoulAnswer(noul=pb_answer.noul.noul)
+    if kind == "choice":
+        return ChoiceAnswer(
+            choice=pb_answer.choice.choice,
+            probabilities=dict(pb_answer.choice.probabilities),
+            confidence=pb_answer.choice.confidence,
+        )
+    if kind == "score":
+        return ScoreAnswer(
+            score=pb_answer.score.score,
+            legend=list(pb_answer.score.legend),
+            probabilities=list(pb_answer.score.probabilities),
+            confidence=pb_answer.score.confidence,
+        )
+    return None
+
+
+def _evaluation_fragment_pb(
+    index: int,
+    fragment: Union["EvaluationFragment", Mapping[str, Any]],
+) -> Any:
+    """Build an ``EvaluationFragment`` message from a dataclass or a mapping."""
+    if isinstance(fragment, Mapping):
+        fragment_id = fragment.get("id", "")
+        text = fragment.get("text", "")
+        metadata = fragment.get("metadata") or {}
+    else:
+        fragment_id = fragment.fragment_id
+        text = fragment.text
+        metadata = fragment.metadata or {}
+
+    if not fragment_id:
+        raise ValueError(f"fragments[{index}] has an empty fragment id (client-side)")
+
+    return kumiho_pb2.EvaluationFragment(
+        fragment_id=fragment_id,
+        text=text,
+        metadata=metadata,
+    )
+
+
+def _evaluation_question_pb(
+    index: int,
+    question: Union["EvaluationQuestion", Mapping[str, Any]],
+) -> Any:
+    """Build an ``EvaluationQuestion`` message from a dataclass or a mapping."""
+    if isinstance(question, Mapping):
+        question_id = question.get("id", "")
+        question_type = question.get("type", "")
+        instructions = question.get("instructions", "")
+        criteria = question.get("criteria") or {}
+        levels = question.get("levels") or []
+    else:
+        question_id = question.question_id
+        question_type = question.type
+        instructions = question.instructions
+        criteria = question.criteria or {}
+        levels = question.levels or []
+
+    if "__" in question_id:
+        raise ValueError(
+            f"questions[{index}] id '{question_id}' contains '__', which the "
+            f"server reserves for its own per-fragment question ids (client-side)"
+        )
+    if question_type not in _QUESTION_TYPES:
+        raise ValueError(
+            f"questions[{index}] has unknown type '{question_type}'. "
+            f"Use one of: {', '.join(sorted(_QUESTION_TYPES))}."
+        )
+
+    return kumiho_pb2.EvaluationQuestion(
+        question_id=question_id,
+        type=_QUESTION_TYPES[question_type],
+        instructions=instructions,
+        criteria=criteria,
+        criteria_levels=levels,
+    )
 
 
 class _Client:
@@ -2363,6 +2491,193 @@ class _Client:
             tier=resp.tier,
         )
 
+    # Evaluation
+
+    def evaluate(
+        self,
+        query: str,
+        fragments: Sequence[Union["EvaluationFragment", Mapping[str, Any]]],
+        questions: Sequence[Union["EvaluationQuestion", Mapping[str, Any]]],
+        *,
+        extra_context: str = "",
+        mode: str = "",
+        rubric_version: str = "",
+        timeout_ms: Optional[int] = None,
+        allow_cache: bool = True,
+    ) -> "EvaluationResult":
+        """Judge prepared text fragments against caller-supplied questions.
+
+        Evaluation asks a server-managed provider how each fragment stands up
+        to each question — is this relevant to the query, which category does
+        it fall into, how would you rate it. It is the ranking step the memory
+        layer runs over candidates it has already retrieved; it is not a
+        search, and it has no opinion about where the text came from.
+
+        Availability:
+            Kumiho Cloud, paid tiers only. A self-hosted CE server does not
+            implement the RPC and answers UNIMPLEMENTED; a tenant without the
+            entitlement gets PERMISSION_DENIED, or an ``"not_entitled"``
+            result when the server prefers to answer in-band.
+
+        The graph is not involved. ``Evaluate`` never reads, writes or tags
+        anything: you hand it text and it hands back judgments. Nothing here
+        takes a kref.
+
+        What leaves the server for the provider is exactly ``query``,
+        ``extra_context``, each question's ``instructions`` and ``criteria``,
+        and each fragment's ``text`` and ``metadata``. Fragment ids do not —
+        the server substitutes private labels (``F01``, ``F02``, ...) and keeps
+        the mapping to itself, so ids are safe to make meaningful and
+        ``metadata`` is not: treat that as content, because it is billed and
+        sent like content.
+
+        Args:
+            query: What the caller is trying to answer or do. Sent verbatim.
+            fragments: The text to judge, at most 64 per call, each either an
+                :class:`~kumiho.evaluation.EvaluationFragment` or a mapping
+                with keys ``"id"``, ``"text"`` and optional ``"metadata"``.
+            questions: What to ask of each fragment, at most 8 per call, each
+                either an :class:`~kumiho.evaluation.EvaluationQuestion` or a
+                mapping with keys ``"id"``, ``"type"``, ``"instructions"`` and
+                optional ``"criteria"`` / ``"levels"``. ``instructions`` and
+                ``criteria`` may contain the literal placeholder
+                ``{fragment}``; it is passed through untouched for the server
+                to render per fragment.
+            extra_context: Optional extra framing — constraints, the current
+                date, workspace hints. Omitted from the provider request when
+                empty.
+            mode: ``""`` leaves the choice to the server (currently batched),
+                ``"batched"`` packs fragments into as few provider requests as
+                token limits allow, ``"per_fragment"`` sends one request each.
+            rubric_version: Opaque caller-owned version string. Folded into the
+                cache key and echoed back, so a rubric change can be rolled
+                forward or back without colliding with cached judgments.
+            timeout_ms: Overall deadline hint for the server, which clamps it
+                to its own maximum. Also sets this call's gRPC deadline, with a
+                small margin so the server's own answer wins the race.
+            allow_cache: When False the cached response is bypassed, though the
+                fresh one is still cached.
+
+        Returns:
+            EvaluationResult: The status, one
+            :class:`~kumiho.evaluation.FragmentEvaluation` per request fragment
+            in request order, and the token usage for the call. Check
+            :attr:`~kumiho.evaluation.EvaluationResult.status` before the
+            answers — ``"partial"`` means some fragments carry an ``error``
+            or incomplete answers. Valid answers are retained alongside
+            a per-fragment error when only some questions succeeded.
+
+        Raises:
+            ValueError: If the query is empty, a fragment id is empty or
+                repeated, a question id contains ``__``, or a question type is
+                not one of ``"noul"``, ``"choice"``, ``"score"``
+                (all client-side).
+            grpc.RpcError: UNIMPLEMENTED on CE and on servers predating the
+                RPC, PERMISSION_DENIED for a tenant without the entitlement,
+                DEADLINE_EXCEEDED when ``timeout_ms`` runs out, or any other
+                server error.
+
+        Example:
+            >>> result = client.evaluate(
+            ...     query="What did we decide about the release cadence?",
+            ...     fragments=[
+            ...         {"id": "m1", "text": "We ship on the first Tuesday."},
+            ...         {"id": "m2", "text": "The logo is green."},
+            ...     ],
+            ...     questions=[{
+            ...         "id": "relevant",
+            ...         "type": "noul",
+            ...         "instructions": "Does {fragment} answer the query?",
+            ...     }],
+            ...     timeout_ms=8000,
+            ... )
+            >>> result.status
+            'ok'
+            >>> result.by_id()["m1"].answers["relevant"].noul
+            0.91
+        """
+        from .evaluation import (
+            EvaluationResult,
+            EvaluationUsage,
+            FragmentEvaluation,
+        )
+
+        if not query or not query.strip():
+            raise ValueError("evaluate() requires a non-empty query (client-side)")
+        if mode not in _EVALUATION_MODES:
+            raise ValueError(
+                f"Unknown evaluation mode '{mode}'. Use one of: "
+                f"{', '.join(repr(name) for name in sorted(_EVALUATION_MODES))}."
+            )
+
+        pb_fragments = []
+        seen_ids = set()
+        for index, fragment in enumerate(fragments):
+            pb_fragment = _evaluation_fragment_pb(index, fragment)
+            if pb_fragment.fragment_id in seen_ids:
+                raise ValueError(
+                    f"fragments[{index}] repeats fragment id "
+                    f"'{pb_fragment.fragment_id}'; ids must be unique within a "
+                    f"request (client-side)"
+                )
+            seen_ids.add(pb_fragment.fragment_id)
+            pb_fragments.append(pb_fragment)
+
+        pb_questions = [
+            _evaluation_question_pb(index, question)
+            for index, question in enumerate(questions)
+        ]
+
+        req = kumiho_pb2.EvaluateRequest(
+            task=kumiho_pb2.EvaluationTaskContext(
+                query=query,
+                extra_context=extra_context,
+            ),
+            fragments=pb_fragments,
+            questions=pb_questions,
+            mode=_EVALUATION_MODES[mode],
+            rubric_version=rubric_version,
+            allow_cache=allow_cache,
+        )
+        if timeout_ms is not None:
+            req.timeout_ms = timeout_ms
+        if timeout_ms:
+            deadline = timeout_ms / 1000.0 + _EVALUATE_DEADLINE_MARGIN_SECS
+            resp = self.stub.Evaluate(req, timeout=deadline)
+        else:
+            resp = self.stub.Evaluate(req)
+
+        evaluations = []
+        for pb_evaluation in resp.fragments:
+            answers = {}
+            for pb_answer in pb_evaluation.answers:
+                answer = _evaluation_answer(pb_answer)
+                if answer is not None:
+                    answers[pb_answer.question_id] = answer
+            evaluations.append(
+                FragmentEvaluation(
+                    fragment_id=pb_evaluation.fragment_id,
+                    answers=answers,
+                    error=pb_evaluation.error,
+                )
+            )
+
+        return EvaluationResult(
+            status=_evaluation_status_name(resp.status),
+            fragments=evaluations,
+            usage=EvaluationUsage(
+                input_tokens=resp.usage.input_tokens,
+                output_tokens=resp.usage.output_tokens,
+                provider_requests=resp.usage.provider_requests,
+                cached_fragments=resp.usage.cached_fragments,
+                month_tokens_used=resp.usage.month_tokens_used,
+                month_tokens_limit=resp.usage.month_tokens_limit,
+            ),
+            model_id=resp.model_id,
+            rubric_version=resp.rubric_version,
+            message=resp.message,
+        )
+
 
 class _ClientCallDetails(grpc.ClientCallDetails):
     """Mutable wrapper that lets us override metadata on outbound RPCs."""
@@ -2508,6 +2823,15 @@ class _TransientRetryInterceptor(grpc.UnaryUnaryClientInterceptor):
     def intercept_unary_unary(self, continuation, client_call_details, request):
         last_response = None
         client_call_details = self._with_default_timeout(client_call_details)
+
+        # Evaluate can already have incurred an upstream charge when its gRPC
+        # response is lost. Without an idempotency key, retrying it here can
+        # duplicate both the charge and the caller's entire deadline budget.
+        if client_call_details.method in (
+            "/kumiho.KumihoService/Evaluate",
+            b"/kumiho.KumihoService/Evaluate",
+        ):
+            return continuation(client_call_details, request)
 
         for attempt in range(self.max_attempts):
             response = continuation(client_call_details, request)

@@ -12,6 +12,53 @@ in descending version order, which is also descending date order.
 narrative — why a change mattered and what you have to do about it. This file is
 its terse companion. Entries belong in both.
 
+## [0.14.0] - 2026-09-19
+
+### Added
+- **`kumiho.evaluate(query, fragments, questions, ...)`** and
+  `Client.evaluate(...)` — judge prepared text fragments against
+  caller-supplied questions using a server-managed evaluation provider. It is
+  a ranking step over candidates the caller already holds, not a search: it
+  takes no kref and it never reads, writes or tags the graph. Keyword
+  arguments are `extra_context`, `mode` (`""`, `"batched"`,
+  `"per_fragment"`), `rubric_version`, `timeout_ms` and `allow_cache`.
+  `timeout_ms` sets both the server's deadline hint and this call's gRPC
+  deadline, the latter with a two-second margin so the server's own answer —
+  including a non-OK status — wins the race against `DEADLINE_EXCEEDED`.
+- **Value types in `kumiho.evaluation`, re-exported from `kumiho`** —
+  `EvaluationFragment`, `EvaluationQuestion`, `EvaluationResult`,
+  `FragmentEvaluation`, `EvaluationUsage`, the `EvaluationAnswer` union and
+  its members `NoulAnswer`, `ChoiceAnswer` and `ScoreAnswer`, all frozen
+  dataclasses. Fragments and questions are accepted as these types or as
+  plain mappings; both build the same request. `EvaluationResult.by_id()`
+  keys the per-fragment results by the caller's own fragment id.
+- **Fragment ids stay on this side of the wire.** What leaves the server for
+  the provider is the query, `extra_context`, each question's instructions
+  and criteria, and each fragment's text and metadata. Ids are replaced with
+  the server's own private labels, and the literal `{fragment}` placeholder
+  in `instructions` passes through untouched for the server to render.
+- **Client-side validation stops an obviously bad call before it costs
+  tokens**: a non-empty query, non-empty unique fragment ids, a known
+  question type, and no `__` in a question id, which the server reserves for
+  its per-fragment ids. Shape and size limits are left to the server, the
+  only side that can judge them. Mode and question type are translated here
+  rather than passed through, because a typo in either would otherwise reach
+  the server as the zero value and silently change what the call does.
+  Statuses are derived from the enum name in the other direction, so a status
+  this SDK predates reports `"unspecified"` rather than raising.
+- **`Evaluate` in the generated Python stubs**, regenerated from kumiho-proto
+  with the same grpcio-tools 1.76.0 / protobuf 6.31.1 the checked-in gencode
+  headers name.
+
+### Notes
+- Evaluation is a Kumiho Cloud feature on paid tiers. A self-hosted CE server
+  does not implement the RPC and answers `UNIMPLEMENTED`; a tenant without
+  the entitlement gets `PERMISSION_DENIED`, or a `"not_entitled"` result when
+  the server answers in-band. Both surface as `grpc.RpcError`, the way every
+  other RPC's failures do.
+- There is no MCP tool for `evaluate`. The memory layer is its caller, not an
+  end user.
+
 ## [0.13.2] - 2026-09-18
 
 ### Added
