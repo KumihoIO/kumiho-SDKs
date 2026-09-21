@@ -101,8 +101,8 @@ Note:
     in its graph database.
 
 See Also:
-    - Kumiho documentation: https://docs.kumiho.cloud
-    - GitHub: https://github.com/kumihoclouds/kumiho-python
+    - Kumiho documentation: https://docs.kumiho.io
+    - GitHub: https://github.com/KumihoIO/kumiho-SDKs/tree/main/python/python
 
 Attributes:
     __version__ (str): The current version of the kumiho package.

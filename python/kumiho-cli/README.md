@@ -248,8 +248,8 @@ echo "password" | kumiho-cli login --email user@example.com
 ### Install from source
 
 ```bash
-git clone https://github.com/kumihoclouds/kumiho-python.git
-cd kumiho-python/kumiho-cli
+git clone https://github.com/KumihoIO/kumiho-SDKs.git
+cd kumiho-SDKs/python/kumiho-cli
 pip install -e ".[dev]"
 ```
 
@@ -279,8 +279,8 @@ chmod 600 ~/.kumiho/kumiho_authentication.json
 
 - [Kumiho Cloud](https://kumiho.io)
 - [Documentation](https://docs.kumiho.io)
-- [Python SDK](https://github.com/kumihoclouds/kumiho-python)
-- [Issue Tracker](https://github.com/kumihoclouds/kumiho-python/issues)
+- [Python SDK](https://github.com/KumihoIO/kumiho-SDKs/tree/main/python/python)
+- [Issue Tracker](https://github.com/KumihoIO/kumiho-SDKs/issues)
 
 ## License
 

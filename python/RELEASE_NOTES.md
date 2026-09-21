@@ -8,6 +8,97 @@
 > what produced the gaps backfilled in KumihoIO/kumiho-SDKs#155 and #157.
 
 
+## kumiho 0.14.2 (September 2026) — Search Packets: One RPC for a Memory Query 📦
+
+A memory query made three kinds of round trip before anything was ranked: a
+project lookup to confirm the project exists, the search itself, and — since
+0.14.1 — a batch call to resolve each hit's current revision. All three answer
+questions the server can settle while it is already running the search. This
+release lets it.
+
+### ✨ What changed
+
+- **`Search` can validate the memory project and return each hit's current
+  revision.** `kumiho.search()` and `Client.search()` take `memory_project`
+  and `memory_revision_limit` (default 100, sent only when `memory_project`
+  is set). A supporting server checks the exact, non-deprecated project under
+  the authenticated tenant and attaches the `published` revision — else
+  `latest` — to the leading hits. `SearchResult` gains `memory_revision` and
+  `memory_revision_resolved`; the returned page carries
+  `memory_project_validated`.
+- **`tool_memory_retrieve(..., include_resolved_metadata=True)` uses them**
+  for a query in search and latest mode without `unroll_revisions`. With the
+  server's acknowledgement the project lookup is skipped, and only hits whose
+  packet came back unhydrated go through 0.14.1's batch resolution. A hit the
+  server resolved to *no accessible revision* is a different answer from an
+  unhydrated one, and it is not fetched again.
+- **The acknowledgement is required, not assumed.** An older server ignores
+  protobuf fields it does not know, so silence is never read as validation:
+  without `memory_project_validated` the project check runs as before, and a
+  missing project returns the same error it always did.
+- **`Client.close()`** releases a client's gRPC channel once its borrowers are
+  finished. The hosted connector pools clients and retires them; until now a
+  retired client's channel had no way to be closed.
+- **`python/proto` is pinned to the kumiho-proto commit that adds the `Search`
+  fields**, and the stubs are regenerated with the same protobuf 6.31.1
+  toolchain as 0.14.0.
+
+### 📋 Upgrading
+
+Nothing to do for existing callers. The new `search()` arguments default to
+off, and ranking, metadata, type/space filters, latest ordering and the
+pattern fallback are unchanged. Operators should deploy a server that supports
+the packets before releasing clients that rely on them.
+
+Search and Evaluate stay separate in the memory layer. Graph and sibling
+processing still runs between them, so evaluation never judges a partial
+candidate set.
+
+The SDK suite ran 463 passed / 100 skipped, and 48 paired recalls against a
+local CE server kept evidence, order and metadata identical.
+
+
+## kumiho 0.14.1 (September 2026) — Memory Retrieval Resolves Tags in Batches 🧺
+
+Memory retrieval resolved each search hit's current revision one item at a
+time — `published`, then `latest` when there was none — and then dropped the
+revision metadata the memory layer needs next, so the same revisions were
+fetched twice. With a wide candidate pool those round trips add up.
+
+### ✨ What changed
+
+- **`include_resolved_metadata=True` on `tool_memory_retrieve`.** Internal and
+  opt-in: the `kumiho_memory_retrieve` MCP schema does not change. The
+  response gains `resolved_metadata`, keyed by the exact revision kref and
+  limited to the final results, each entry carrying `metadata`, `created_at`
+  and `tags`.
+- **Batched resolution on that path.** In-scope hits are resolved with
+  `batch_get_revisions` in chunks of at most 100 items: `published` first,
+  then `latest` only for the items that have no published revision. It does
+  not apply with `unroll_revisions`.
+- **A failed batch costs one attempt, not every recall.** If the batch call
+  fails — an older server, for instance — the per-item path runs instead and
+  batch attempts are suppressed for 60 seconds on that client. The back-off is
+  keyed weakly by client, so it lives exactly as long as the channel it
+  describes.
+- **MCP annotations for six kumiho-memory tools** that current kumiho-memory
+  exposes and the SDK had not annotated: `kumiho_memory_record_experience`,
+  `kumiho_memory_record_outcome`, `kumiho_memory_prepare_patterns`,
+  `kumiho_memory_store_pattern`, `kumiho_memory_check_pattern` and
+  `kumiho_memory_validate_insight_response`. The hosted connector's curated
+  tool allowlist is unchanged.
+
+### 📋 Upgrading
+
+Nothing to do. A caller that does not pass the flag gets the same ranking,
+filters and response shape as 0.14.0. The batched path needs a server with the
+current-tag batch resolution fix.
+
+The SDK suite ran 459 passed / 100 skipped, and 48 paired recalls on one CE
+server returned identical evidence, order and metadata through the individual
+and the batched lookup.
+
+
 ## kumiho 0.14.0 (September 2026) — `evaluate()`: Judging What Recall Found 🧪
 
 Recall has always had to choose its own width. Ask for five memories and you

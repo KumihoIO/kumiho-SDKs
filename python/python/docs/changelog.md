@@ -12,6 +12,67 @@ in descending version order, which is also descending date order.
 narrative — why a change mattered and what you have to do about it. This file is
 its terse companion. Entries belong in both.
 
+## [0.14.2] - 2026-09-21
+
+### Added
+- **`memory_project` and `memory_revision_limit` on `kumiho.search()` and
+  `Client.search()`** — additive `Search` request fields. A supporting server
+  validates the named project (exact, non-deprecated, under the authenticated
+  tenant) and attaches each leading hit's current revision — `published`,
+  else `latest` — to the result. `SearchResult` gains `memory_revision` and
+  `memory_revision_resolved`, and the returned page carries
+  `memory_project_validated`. `memory_revision_limit` (default 100) is sent
+  only when `memory_project` is set.
+- **`Client.close()`** — releases the client's gRPC channel once every
+  borrower is finished, so a pool that retires clients can close their
+  channels.
+
+### Changed
+- **`tool_memory_retrieve(..., include_resolved_metadata=True)` uses search
+  packets** for a query in search and latest mode without
+  `unroll_revisions`. When the server acknowledges
+  `memory_project_validated`, the separate project lookup is skipped, and
+  only hits whose packet was not hydrated go through the 0.14.1 batch
+  resolution. A hit the server resolved to no accessible revision is not
+  fetched again. An older server ignores the new fields and sends no
+  acknowledgement, so the project check and the batch path run as before; a
+  missing project returns the same error either way. Ranking, metadata,
+  type/space filters, latest ordering and the pattern fallback are unchanged.
+- **`python/proto` is pinned to the kumiho-proto commit that adds the `Search`
+  fields**, and the Python stubs are regenerated with the same protobuf
+  6.31.1 toolchain as 0.14.0.
+
+### Notes
+- Deploy a server that supports the packets before clients rely on them.
+  Search and Evaluate stay separate in the memory layer: graph and sibling
+  processing still runs between them, so evaluation never sees a partial
+  candidate set.
+
+## [0.14.1] - 2026-09-21
+
+### Added
+- **`include_resolved_metadata` on `tool_memory_retrieve`** — internal and
+  opt-in; the `kumiho_memory_retrieve` MCP schema is unchanged. The response
+  gains `resolved_metadata`, keyed by the exact revision kref and limited to
+  the final results, each entry carrying `metadata`, `created_at` and `tags`,
+  so the memory layer does not fetch the same revisions again.
+- **Batched tag resolution on that path.** In-scope search hits are resolved
+  with `batch_get_revisions` in chunks of at most 100 items: `published`
+  first, then `latest` only for items that have no published revision. It
+  does not apply with `unroll_revisions`. If the batch call fails, the
+  per-item resolution runs instead and batch attempts are suppressed for 60
+  seconds on that client.
+- **MCP annotations for six kumiho-memory tools**:
+  `kumiho_memory_record_experience`, `kumiho_memory_record_outcome`,
+  `kumiho_memory_prepare_patterns`, `kumiho_memory_store_pattern`,
+  `kumiho_memory_check_pattern` and `kumiho_memory_validate_insight_response`.
+  The hosted connector's tool allowlist is unchanged.
+
+### Notes
+- A caller that does not pass the flag gets the same ranking, filters and
+  response shape as 0.14.0.
+- The batched path needs a server with the current-tag batch resolution fix.
+
 ## [0.14.0] - 2026-09-19
 
 ### Added
