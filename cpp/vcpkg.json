@@ -3,7 +3,7 @@
   "name": "kumiho-cpp",
   "version": "1.0.0",
   "description": "C++ client library for the Kumiho asset management and versioning platform",
-  "homepage": "https://github.com/kumihoclouds/kumiho-cpp",
+  "homepage": "https://github.com/KumihoIO/kumiho-SDKs/tree/main/cpp",
   "license": "Apache-2.0",
   "supports": "!uwp",
   "dependencies": [
