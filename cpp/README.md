@@ -46,8 +46,8 @@ Modern C++ client library for the Kumiho asset management and versioning platfor
 vcpkg install grpc protobuf gtest
 
 # Clone and build
-git clone https://github.com/kumihoclouds/kumiho-cpp.git
-cd kumiho-cpp
+git clone https://github.com/KumihoIO/kumiho-SDKs.git
+cd kumiho-SDKs/cpp
 mkdir build && cd build
 cmake .. -DCMAKE_TOOLCHAIN_FILE=[vcpkg root]/scripts/buildsystems/vcpkg.cmake
 cmake --build . --config Release
@@ -541,5 +541,5 @@ Apache License 2.0 - see [LICENSE](LICENSE) for details.
 
 - [Kumiho Clouds](https://kumiho.io)
 - [API Documentation](https://docs.kumiho.io/cpp)
-- [Python SDK](https://github.com/kumihoclouds/kumiho-python)
-- [Issue Tracker](https://github.com/kumihoclouds/kumiho-cpp/issues)
+- [Python SDK](https://github.com/KumihoIO/kumiho-SDKs/tree/main/python/python)
+- [Issue Tracker](https://github.com/KumihoIO/kumiho-SDKs/issues)

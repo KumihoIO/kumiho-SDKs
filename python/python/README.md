@@ -347,17 +347,17 @@ pytest tests/ --cov=kumiho
 
 ## License
 
-MIT - See [LICENSE](https://github.com/kumihoclouds/kumiho-python/blob/main/LICENSE) for details.
+MIT - See [LICENSE](https://github.com/KumihoIO/kumiho-SDKs/blob/main/python/python/LICENSE) for details.
 
 ## Contributing
 
-Contributions are welcome! See [CONTRIBUTING.md](https://github.com/kumihoclouds/kumiho-python/blob/main/CONTRIBUTING.md) for guidelines.
+Contributions are welcome! See [CONTRIBUTING.md](https://github.com/KumihoIO/kumiho-SDKs/blob/main/python/python/docs/contributing.md) for guidelines.
 
 ## Links
 
 - **Website**: [kumiho.io](https://kumiho.io)
 - **Documentation**: [docs.kumiho.io](https://docs.kumiho.io)
-- **GitHub**: [github.com/kumihoclouds/kumiho-python](https://github.com/kumihoclouds/kumiho-python)
+- **GitHub**: [github.com/KumihoIO/kumiho-SDKs](https://github.com/KumihoIO/kumiho-SDKs/tree/main/python/python)
 - **PyPI**: [pypi.org/project/kumiho](https://pypi.org/project/kumiho)
 
 

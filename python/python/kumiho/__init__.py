@@ -102,7 +102,7 @@ Note:
 
 See Also:
     - Kumiho documentation: https://docs.kumiho.cloud
-    - GitHub: https://github.com/kumihoclouds/kumiho-python
+    - GitHub: https://github.com/KumihoIO/kumiho-SDKs/tree/main/python/python
 
 Attributes:
     __version__ (str): The current version of the kumiho package.
