@@ -101,7 +101,7 @@ Note:
     in its graph database.
 
 See Also:
-    - Kumiho documentation: https://docs.kumiho.cloud
+    - Kumiho documentation: https://docs.kumiho.io
     - GitHub: https://github.com/KumihoIO/kumiho-SDKs/tree/main/python/python
 
 Attributes:
