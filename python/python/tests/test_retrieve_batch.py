@@ -78,3 +78,59 @@ def test_batch_failure_backoff_is_per_client(monkeypatch):
     monkeypatch.setattr(kumiho, 'get_client', lambda: other)
     assert m._batch_memory_tags_or_fallback(['kref://p/s/a.kind']) is None
     assert failed.call_count == 2
+
+
+def test_packet_avoids_project_and_revision_rpc(monkeypatch):
+    from kumiho.base import PagedList
+    key = 'kref://p/s/a.conversation'
+    rows = PagedList([NS(item=NS(kref=NS(uri=key)), score=.9,
+        memory_revision=rev(key, summary='same evidence'), memory_revision_resolved=True)])
+    rows.memory_project_validated = True
+    monkeypatch.setattr(m, '_ensure_configured', lambda: None)
+    project = Mock(side_effect=AssertionError('unnecessary project RPC'))
+    batch = Mock(side_effect=AssertionError('unnecessary revision RPC'))
+    monkeypatch.setattr(kumiho, 'get_project', project)
+    monkeypatch.setattr(kumiho, 'batch_get_revisions', batch)
+    search = Mock(return_value=rows)
+    monkeypatch.setattr(kumiho, 'search', search)
+    result = m.tool_memory_retrieve(project='p', query='test', include_resolved_metadata=True)
+    assert result['revision_krefs'] == [key+'?r=1']
+    assert result['resolved_metadata'][key+'?r=1']['metadata']['summary'] == 'same evidence'
+    assert search.call_args.kwargs['memory_project'] == 'p'
+    project.assert_not_called()
+    batch.assert_not_called()
+
+
+def test_old_server_does_not_bypass_missing_project(monkeypatch):
+    key = 'kref://p/s/a.conversation'
+    monkeypatch.setattr(m, '_ensure_configured', lambda: None)
+    project = Mock(return_value=None)
+    monkeypatch.setattr(kumiho, 'get_project', project)
+    monkeypatch.setattr(kumiho, 'search', lambda *a, **kw: [NS(item=NS(kref=NS(uri=key)), score=.9)])
+    result = m.tool_memory_retrieve(project='p', query='test', include_resolved_metadata=True)
+    assert result == {'error': "Project 'p' not found"}
+    project.assert_called_once_with('p')
+
+
+def test_packet_empty_still_uses_existing_pattern_fallback(monkeypatch):
+    from kumiho.base import PagedList
+    rows = PagedList([])
+    rows.memory_project_validated = True
+    monkeypatch.setattr(m, '_ensure_configured', lambda: None)
+    project = Mock(side_effect=AssertionError('already validated'))
+    monkeypatch.setattr(kumiho, 'get_project', project)
+    monkeypatch.setattr(kumiho, 'search', lambda *a, **kw: rows)
+    listing = Mock(return_value=[])
+    monkeypatch.setattr(kumiho, 'item_search', listing)
+    result = m.tool_memory_retrieve(project='p', query='test', include_resolved_metadata=True)
+    assert result['revision_krefs'] == []
+    listing.assert_called_once()
+    project.assert_not_called()
+
+
+def test_client_close_releases_owned_channel():
+    from kumiho.client import _Client
+    client = _Client.__new__(_Client)
+    client.channel = Mock()
+    client.close()
+    client.channel.close.assert_called_once_with()

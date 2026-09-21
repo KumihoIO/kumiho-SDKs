@@ -110,7 +110,7 @@ Attributes:
     PUBLISHED_TAG (str): Standard tag name for published revisions.
 """
 
-__version__ = "0.14.1"
+__version__ = "0.14.2"
 
 import contextvars
 from typing import Any, Dict, List, Mapping, Optional, Iterator, Sequence, Tuple, Union
@@ -676,6 +676,8 @@ def search(
     include_deprecated: bool = False,
     include_revision_metadata: bool = False,
     include_artifact_metadata: bool = False,
+    memory_project: str = "",
+    memory_revision_limit: int = 100,
 ) -> List[SearchResult]:
     """Full-text fuzzy search across items (Google-like search).
 
@@ -728,6 +730,8 @@ def search(
         include_deprecated=include_deprecated,
         include_revision_metadata=include_revision_metadata,
         include_artifact_metadata=include_artifact_metadata,
+        memory_project=memory_project,
+        memory_revision_limit=memory_revision_limit,
     )
 
 

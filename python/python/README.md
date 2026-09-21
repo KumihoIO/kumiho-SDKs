@@ -371,3 +371,18 @@ filters, and revision unrolling semantics are preserved. On batch failure,
 individual resolution remains available and batch attempts back off for 60
 seconds on that client. Deploy a server with the current-tag batch fix first.
 The public MCP tool schema is unchanged; older callers retain their response.
+
+
+### Opt-in memory search packets
+
+Memory retrieval with `include_resolved_metadata=True` uses Search's additive
+`memory_project` and `memory_revision_limit` fields for ordinary query search
+and latest mode. Supporting servers validate the exact non-deprecated project
+under the authenticated tenant and attach current published/latest revisions to
+leading hits. The acknowledgement `memory_project_validated` is required before
+skipping the legacy project preflight; older servers keep the previous path.
+A resolved hit with no accessible revision is distinct from an unhydrated hit.
+Ranking, metadata, type/space filters and pattern fallbacks remain unchanged.
+Deploy the server support before releasing clients. Search and Evaluate remain
+separate at the memory orchestration layer; graph/sibling processing still runs
+before evaluation, so this change does not evaluate an incomplete candidate set.
