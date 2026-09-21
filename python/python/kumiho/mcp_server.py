@@ -59,6 +59,7 @@ import threading
 import time
 import traceback
 import unicodedata
+import weakref
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence, Set, Tuple
@@ -2127,6 +2128,46 @@ def tool_memory_store_batch(
     return {"results": results, "stored_krefs": stored_krefs, "stacked": stacked_count}
 
 
+# A failed batch on an older server must not add retry delay to every recall.
+# Weak client keys bind compatibility to the actual credential/channel lifetime.
+_batch_recall_backoff = weakref.WeakKeyDictionary()
+_batch_recall_lock = threading.Lock()
+
+
+def _batch_memory_tags_or_fallback(keys: List[str]):
+    client = kumiho.get_client()
+    now = time.monotonic()
+    with _batch_recall_lock:
+        if _batch_recall_backoff.get(client, 0) > now:
+            return None
+    try:
+        return _batch_resolve_memory_tags(keys)
+    except Exception:
+        with _batch_recall_lock:
+            _batch_recall_backoff[client] = time.monotonic() + 60
+        return None
+
+
+def _batch_resolve_memory_tags(item_krefs: List[str]) -> Dict[str, Any]:
+    """Resolve published first, latest only for missing items, in <=100 batches."""
+    resolved = {}
+    for start in range(0, len(item_krefs), 100):
+        chunk = item_krefs[start:start + 100]
+        revisions, _ = kumiho.batch_get_revisions(item_krefs=chunk, tag="published", allow_partial=True)
+        for rev in revisions:
+            item = rev.kref.uri.split("?", 1)[0]
+            if item in chunk:
+                resolved[item] = rev
+        missing = [key for key in chunk if key not in resolved]
+        if missing:
+            revisions, _ = kumiho.batch_get_revisions(item_krefs=missing, tag="latest", allow_partial=True)
+            for rev in revisions:
+                item = rev.kref.uri.split("?", 1)[0]
+                if item in missing:
+                    resolved[item] = rev
+    return resolved
+
+
 def tool_memory_retrieve(
     project: str = "CognitiveMemory",
     query: str = "",
@@ -2140,6 +2181,7 @@ def tool_memory_retrieve(
     include_revision_metadata: bool = True,
     unroll_revisions: bool = False,
     memory_types: Optional[List[str]] = None,
+    include_resolved_metadata: bool = False,
 ) -> Dict[str, Any]:
     """Retrieve memory krefs using fuzzy search with bundle and fallback support.
 
@@ -2383,7 +2425,15 @@ def tool_memory_retrieve(
     # and reports it; other modes record it and never read it.
     revision_created: Dict[str, Optional[str]] = {}
 
+    resolved_metadata: Dict[str, Any] = {}
+
     def remember_created(rev: Any) -> None:
+        if include_resolved_metadata:
+            resolved_metadata[rev.kref.uri] = {
+                "metadata": dict(rev.metadata or {}),
+                "created_at": getattr(rev, "created_at", ""),
+                "tags": list(getattr(rev, "tags", []) or []),
+            }
         value = getattr(rev, "created_at", None)
         revision_created[rev.kref.uri] = value if isinstance(value, str) and value else None
 
@@ -2400,6 +2450,16 @@ def tool_memory_retrieve(
     if combined_query:
         try:
             search_results = relevance_search()
+            batch = None
+            if include_resolved_metadata and not unroll_revisions:
+                keys = list(dict.fromkeys(str(sr.item.kref.uri)
+                    for sr in search_results[:search_pool] if in_scope(str(sr.item.kref.uri))))
+                try:
+                    batch = _batch_memory_tags_or_fallback(keys)
+                except Exception:
+                    # Older servers may not implement BatchGetRevisions.
+                    # Restore the historical per-item path on any batch failure.
+                    batch = None
             for sr in search_results[:search_pool]:  # Get extra for filtering
                 try:
                     if not in_scope(str(sr.item.kref.uri)):
@@ -2424,10 +2484,10 @@ def tool_memory_retrieve(
                     # Default: return only published/latest per item.
                     # For stacked items this avoids flooding recall slots
                     # with older revisions that share the same search score.
-                    rev = (
+                    rev = (batch.get(str(sr.item.kref.uri)) if batch is not None else (
                         sr.item.get_revision_by_tag("published")
                         or sr.item.get_revision_by_tag("latest")
-                    )
+                    ))
                     if rev and _matches_memory_types(rev, allowed_types):
                         results.append((sr.item.kref.uri, rev.kref.uri, sr.score))
                         remember_created(rev)
@@ -2547,6 +2607,10 @@ def tool_memory_retrieve(
         "spaces_used": list(dict.fromkeys(spaces_used)),
         "scores": [score for _, _, score in final],
     }
+    if include_resolved_metadata:
+        response["resolved_metadata"] = {
+            rev: resolved_metadata[rev] for _, rev, _ in final if rev in resolved_metadata
+        }
     if is_latest:
         # Aligned with revision_krefs, so a caller can state how recent each is.
         response["created_at"] = [revision_created.get(rev) for _, rev, _ in final]
@@ -4910,6 +4974,36 @@ TOOL_ANNOTATIONS: Dict[str, Dict[str, Any]] = {
     "kumiho_chat_clear": {
         "title": "Clear the chat buffer",
         "readOnlyHint": False, "destructiveHint": True,
+        "idempotentHint": True, "openWorldHint": False,
+    },
+    "kumiho_memory_record_experience": {
+        "title": "Record an experience",
+        "readOnlyHint": False, "destructiveHint": False,
+        "idempotentHint": False, "openWorldHint": False,
+    },
+    "kumiho_memory_record_outcome": {
+        "title": "Record an experience outcome",
+        "readOnlyHint": False, "destructiveHint": False,
+        "idempotentHint": False, "openWorldHint": False,
+    },
+    "kumiho_memory_prepare_patterns": {
+        "title": "Prepare pattern evidence",
+        "readOnlyHint": True, "destructiveHint": False,
+        "idempotentHint": True, "openWorldHint": False,
+    },
+    "kumiho_memory_store_pattern": {
+        "title": "Store a pattern candidate",
+        "readOnlyHint": False, "destructiveHint": False,
+        "idempotentHint": False, "openWorldHint": False,
+    },
+    "kumiho_memory_check_pattern": {
+        "title": "Check pattern applicability",
+        "readOnlyHint": True, "destructiveHint": False,
+        "idempotentHint": True, "openWorldHint": False,
+    },
+    "kumiho_memory_validate_insight_response": {
+        "title": "Validate insight citations",
+        "readOnlyHint": True, "destructiveHint": False,
         "idempotentHint": True, "openWorldHint": False,
     },
     # -- kumiho-memory: lifecycle -------------------------------------------
