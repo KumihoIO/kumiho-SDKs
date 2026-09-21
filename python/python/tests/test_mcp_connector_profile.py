@@ -183,13 +183,16 @@ EXPECTED_ANNOTATED_TOOLS = {
     "kumiho_delete_artifact", "kumiho_delete_edge", "kumiho_untag_revision",
     "kumiho_set_metadata", "kumiho_deprecate_item", "kumiho_add_bundle_member",
     "kumiho_remove_bundle_member", "kumiho_get_bundle_members",
-    # kumiho-memory (18)
+    # kumiho-memory (24)
     "kumiho_chat_add", "kumiho_chat_get", "kumiho_chat_clear",
     "kumiho_memory_ingest", "kumiho_memory_add_response",
     "kumiho_memory_consolidate", "kumiho_memory_recall",
     "kumiho_memory_discover_edges", "kumiho_memory_store_execution",
     "kumiho_memory_engage", "kumiho_memory_reflect", "kumiho_memory_dream_state",
     "kumiho_memory_space_profile", "kumiho_memory_decompose",
+    "kumiho_memory_record_experience", "kumiho_memory_record_outcome",
+    "kumiho_memory_prepare_patterns", "kumiho_memory_store_pattern",
+    "kumiho_memory_check_pattern", "kumiho_memory_validate_insight_response",
     "kumiho_code_why", "kumiho_code_ingest", "kumiho_code_capture",
     "kumiho_code_mine_session",
 }
@@ -197,7 +200,7 @@ EXPECTED_ANNOTATED_TOOLS = {
 
 def test_the_annotation_table_covers_every_known_tool() -> None:
     assert set(TOOL_ANNOTATIONS) == EXPECTED_ANNOTATED_TOOLS
-    assert len(TOOL_ANNOTATIONS) == 63
+    assert len(TOOL_ANNOTATIONS) == 69
 
 
 def test_every_tool_in_the_merged_list_has_an_annotation() -> None:

@@ -359,3 +359,15 @@ Contributions are welcome! See [CONTRIBUTING.md](https://github.com/kumihoclouds
 - **Documentation**: [docs.kumiho.io](https://docs.kumiho.io)
 - **GitHub**: [github.com/kumihoclouds/kumiho-python](https://github.com/kumihoclouds/kumiho-python)
 - **PyPI**: [pypi.org/project/kumiho](https://pypi.org/project/kumiho)
+
+
+#### Efficient memory retrieval (0.14.1)
+
+The internal `tool_memory_retrieve(..., include_resolved_metadata=True)` path
+resolves current `published` tags in batches of at most 100 items, then resolves
+`latest` only for missing items. Returned `resolved_metadata` is keyed by the
+exact revision kref and restricted to final results. Search order, type/space
+filters, and revision unrolling semantics are preserved. On batch failure,
+individual resolution remains available and batch attempts back off for 60
+seconds on that client. Deploy a server with the current-tag batch fix first.
+The public MCP tool schema is unchanged; older callers retain their response.
