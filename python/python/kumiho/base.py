@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING, TypeVar, List, Optional
 if TYPE_CHECKING:
     from .client import _Client
     from .item import Item
+    from .revision import Revision
 
 T = TypeVar('T')
 
@@ -46,6 +47,8 @@ class SearchResult:
     item: "Item"
     score: float
     matched_in: List[str]
+    memory_revision: Optional["Revision"] = None
+    memory_revision_resolved: bool = False
 
     def __repr__(self) -> str:
         return f"SearchResult(item={self.item.name!r}, score={self.score:.3f}, matched_in={self.matched_in})"

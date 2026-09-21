@@ -633,6 +633,10 @@ class _Client:
             raise
         return Project(resp, self)
 
+    def close(self) -> None:
+        """Release this client's gRPC channel after all borrowers are finished."""
+        self.channel.close()
+
     def get_projects(self, include_deprecated: bool = False) -> List[Project]:
         req = GetProjectsRequest(include_deprecated=include_deprecated)
         resp = self.stub.GetProjects(req)
@@ -1077,6 +1081,8 @@ class _Client:
         include_deprecated: bool = False,
         include_revision_metadata: bool = False,
         include_artifact_metadata: bool = False,
+        memory_project: str = "",
+        memory_revision_limit: int = 100,
         page_size: Optional[int] = None,
         cursor: Optional[str] = None,
         min_score: float = 0.0,
@@ -1129,6 +1135,8 @@ class _Client:
             min_score=min_score,
             include_revision_metadata=include_revision_metadata,
             include_artifact_metadata=include_artifact_metadata,
+            memory_project=memory_project,
+            memory_revision_limit=memory_revision_limit if memory_project else 0,
         )
         resp = self.stub.Search(req)
 
@@ -1137,16 +1145,24 @@ class _Client:
                 item=Item(r.item, self),
                 score=r.score,
                 matched_in=list(r.matched_in),
+                memory_revision=Revision(r.memory_revision, self) if r.HasField("memory_revision") else None,
+                memory_revision_resolved=r.memory_revision_resolved,
             )
             for r in resp.results
         ]
 
         if resp.HasField("pagination"):
-            return PagedList(
+            page = PagedList(
                 results,
                 next_cursor=resp.pagination.next_cursor,
                 total_count=resp.pagination.total_count
             )
+            page.memory_project_validated = resp.memory_project_validated
+            return page
+        if memory_project:
+            page = PagedList(results)
+            page.memory_project_validated = resp.memory_project_validated
+            return page
         return results
 
     def score_revisions(

@@ -2245,9 +2245,18 @@ def tool_memory_retrieve(
     _ensure_configured()
 
     project_name = project or "CognitiveMemory"
-    project_obj = kumiho.get_project(project_name)
-    if not project_obj:
-        return {"error": f"Project '{project_name}' not found"}
+    packet_mode = (
+        include_resolved_metadata and bool((query or "").strip())
+        and not unroll_revisions
+        and re.sub(r"[\s-]+", "_", (mode or "").strip().lower())
+        in ({"search"} | _LATEST_MODE_ALIASES)
+    )
+    project_checked = False
+    project_missing = False
+    if not packet_mode:
+        if not kumiho.get_project(project_name):
+            return {"error": f"Project '{project_name}' not found"}
+        project_checked = True
 
     def to_list(value: Any) -> List[str]:
         if not value:
@@ -2327,14 +2336,27 @@ def tool_memory_retrieve(
         # Search each space context separately so space_paths filtering
         # is honoured.  When no space_paths are specified, contexts
         # defaults to [project_name] which searches everything.
+        nonlocal project_checked, project_missing
         hits: List[Any] = []
+        def search_context(ctx, deep):
+            nonlocal project_checked, project_missing
+            extra = {"memory_project": project_name,
+                     "memory_revision_limit": min(1000, _latest_candidate_pool(limit) if is_latest else limit * 2)} if packet_mode else {}
+            rows = kumiho.search(combined_query, context=ctx, kind=memory_item_kind,
+                                 include_revision_metadata=deep, **extra)
+            if packet_mode and not project_checked:
+                if getattr(rows, "memory_project_validated", False) is True:
+                    project_checked = True
+                else:
+                    # An older server ignores new protobuf fields. Do not treat
+                    # that as successful validation or skip its legacy checks.
+                    project_missing = not bool(kumiho.get_project(project_name))
+                    project_checked = True
+            return [] if project_missing else rows
         for ctx in contexts:
-            hits.extend(kumiho.search(
-                combined_query,
-                context=ctx,
-                kind=memory_item_kind,
-                include_revision_metadata=include_revision_metadata,
-            ))
+            hits.extend(search_context(ctx, include_revision_metadata))
+        if project_missing:
+            return []
         # The deep search variant (include_revision_metadata=True) can
         # return zero results on some deployments even when the plain
         # item search matches (observed in production: every deep query
@@ -2344,12 +2366,7 @@ def tool_memory_retrieve(
         # item in the project.
         if not hits and include_revision_metadata:
             for ctx in contexts:
-                hits.extend(kumiho.search(
-                    combined_query,
-                    context=ctx,
-                    kind=memory_item_kind,
-                    include_revision_metadata=False,
-                ))
+                hits.extend(search_context(ctx, False))
             if hits:
                 logger.warning(
                     "tool_memory_retrieve: deep search returned 0 results "
@@ -2455,7 +2472,15 @@ def tool_memory_retrieve(
                 keys = list(dict.fromkeys(str(sr.item.kref.uri)
                     for sr in search_results[:search_pool] if in_scope(str(sr.item.kref.uri))))
                 try:
-                    batch = _batch_memory_tags_or_fallback(keys)
+                    resolved = {
+                        str(sr.item.kref.uri): sr.memory_revision
+                        for sr in search_results[:search_pool]
+                        if getattr(sr, "memory_revision_resolved", False) is True
+                        and str(sr.item.kref.uri) in keys
+                    }
+                    pending = [key for key in keys if key not in resolved]
+                    fetched = _batch_memory_tags_or_fallback(pending) if pending else {}
+                    batch = {**resolved, **fetched} if fetched is not None else None
                 except Exception:
                     # Older servers may not implement BatchGetRevisions.
                     # Restore the historical per-item path on any batch failure.
@@ -2500,6 +2525,13 @@ def tool_memory_retrieve(
                 type(exc).__name__, exc,
             )
             # Fall through to bundle/pattern search
+
+    if packet_mode and not project_checked:
+        # Search failed before acknowledging validation: preserve the existing
+        # missing-project contract before bundle/listing fallbacks.
+        project_missing = not bool(kumiho.get_project(project_name))
+    if project_missing:
+        return {"error": f"Project '{project_name}' not found"}
 
     # Secondary: Bundle-based search if specified and fuzzy didn't find enough
     if bundles and len(results) < limit:
