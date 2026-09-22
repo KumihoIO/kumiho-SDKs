@@ -1813,14 +1813,44 @@ def tool_memory_store(
         except Exception:
             bundle_kref = ""
 
+    # Batch only direct revision krefs. Tag/time selectors resolve dynamically
+    # in get_revision, and older servers may not implement BatchGetRevisions.
+    # Keep the read window small: finish each group of edges before validating
+    # the next, so a fetched source is not held across the entire provenance
+    # list. CreateEdge can acknowledge a missing target, so the read remains
+    # the existence gate for edges_created.
+    sources = list(source_revision_krefs or [])
     edges_created = []
-    for source_kref in (source_revision_krefs or []):
-        try:
-            source_rev = kumiho.get_revision(source_kref)
-            edge = revision.create_edge(source_rev, edge_type)
-            edges_created.append(edge.target_kref.uri)
-        except Exception:
-            continue
+    for start in range(0, len(sources), 8):
+        source_chunk = sources[start:start + 8]
+        direct_sources = list(dict.fromkeys(
+            ref for ref in source_chunk
+            if isinstance(ref, str) and re.fullmatch(r"kref://[^?]+\?r=\d+", ref)
+        ))
+        batched_sources: Dict[str, Revision] = {}
+        if len(direct_sources) >= 2:
+            try:
+                resolved, _ = kumiho.batch_get_revisions(
+                    revision_krefs=direct_sources, allow_partial=True,
+                )
+                batched_sources = {rev.kref.uri: rev for rev in resolved}
+            except Exception:
+                # A read-only fallback preserves the old per-source behavior
+                # on older servers or partial batch failures.
+                pass
+
+        for source_kref in source_chunk:
+            try:
+                # A batch miss still takes the old single-read path. That keeps
+                # the per-source failure behavior and catches a revision that
+                # appeared between the batch read and this edge's turn.
+                source_rev = batched_sources.get(source_kref)
+                if source_rev is None:
+                    source_rev = kumiho.get_revision(source_kref)
+                edge = revision.create_edge(source_rev, edge_type)
+                edges_created.append(edge.target_kref.uri)
+            except Exception:
+                continue
 
     result = {
         "space_path": normalized_space_path,

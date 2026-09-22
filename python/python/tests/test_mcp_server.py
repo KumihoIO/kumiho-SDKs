@@ -2023,6 +2023,124 @@ def test_edges_are_still_created_from_source_revision_krefs(revise_graph, monkey
     assert result["edges_created"] == [source.kref.uri]
 
 
+def test_source_revisions_batch_preserves_order_duplicates_and_missing(revise_graph, monkeypatch):
+    import kumiho
+
+    target = _RItem(TARGET_URI)
+    revise_graph["items"][TARGET_URI] = target
+    first = _RRevision("kref://CognitiveMemory/facts/first.conversation?r=1")
+    second = _RRevision("kref://CognitiveMemory/facts/second.conversation?r=2")
+    missing = "kref://CognitiveMemory/facts/missing.conversation?r=1"
+    selector = "kref://CognitiveMemory/facts/dynamic.conversation?t=published"
+    dynamic = _RRevision("kref://CognitiveMemory/facts/dynamic.conversation?r=3")
+    batch_calls = []
+    single_calls = []
+
+    def batch_get(*, revision_krefs, allow_partial):
+        batch_calls.append((revision_krefs, allow_partial))
+        return [second, first], [missing]  # Server ordering is not guaranteed.
+
+    def get_one(uri):
+        single_calls.append(uri)
+        if uri == selector:
+            return dynamic
+        if uri == missing:
+            raise RuntimeError("source not found")
+        raise AssertionError("unexpected single lookup: " + uri)
+
+    monkeypatch.setattr(kumiho, "batch_get_revisions", batch_get)
+    monkeypatch.setattr(kumiho, "get_revision", get_one)
+    out = _store(
+        item_kref=TARGET_URI,
+        source_revision_krefs=[
+            first.kref.uri, missing, second.kref.uri, first.kref.uri, selector,
+        ],
+    )
+
+    assert batch_calls == [(
+        [first.kref.uri, missing, second.kref.uri], True,
+    )]
+    assert single_calls == [missing, selector]
+    assert out["edges_created"] == [
+        first.kref.uri, second.kref.uri, first.kref.uri, dynamic.kref.uri,
+    ]
+
+
+def test_source_revision_batch_failure_falls_back_to_single_reads(revise_graph, monkeypatch):
+    import kumiho
+
+    target = _RItem(TARGET_URI)
+    revise_graph["items"][TARGET_URI] = target
+    first = _RRevision("kref://CognitiveMemory/facts/first.conversation?r=1")
+    second = _RRevision("kref://CognitiveMemory/facts/second.conversation?r=1")
+    seen = []
+
+    def batch_get(**kwargs):
+        raise RuntimeError("old server: UNIMPLEMENTED")
+
+    def get_one(uri):
+        seen.append(uri)
+        if uri == first.kref.uri:
+            return first
+        raise RuntimeError("source not found")
+
+    monkeypatch.setattr(kumiho, "batch_get_revisions", batch_get)
+    monkeypatch.setattr(kumiho, "get_revision", get_one)
+    out = _store(
+        item_kref=TARGET_URI,
+        source_revision_krefs=[first.kref.uri, second.kref.uri],
+    )
+
+    assert seen == [first.kref.uri, second.kref.uri]
+    assert out["edges_created"] == [first.kref.uri]
+
+
+def test_source_revision_batch_uses_bounded_windows(revise_graph, monkeypatch):
+    import kumiho
+
+    revise_graph["items"][TARGET_URI] = _RItem(TARGET_URI)
+    sources = [
+        _RRevision(f"kref://CognitiveMemory/facts/source-{n}.conversation?r=1")
+        for n in range(101)
+    ]
+    calls = []
+    events = []
+
+    def batch_get(*, revision_krefs, allow_partial):
+        calls.append(revision_krefs)
+        events.append(("batch", tuple(revision_krefs)))
+        assert allow_partial is True
+        assert len(revision_krefs) <= 8
+        by_uri = {rev.kref.uri: rev for rev in sources}
+        return [by_uri[uri] for uri in reversed(revision_krefs)], []
+
+    original_create_edge = _RRevision.create_edge
+
+    def create_edge(self, target, edge_type):
+        events.append(("edge", target.kref.uri))
+        return original_create_edge(self, target, edge_type)
+
+    monkeypatch.setattr(_RRevision, "create_edge", create_edge)
+    monkeypatch.setattr(kumiho, "batch_get_revisions", batch_get)
+    monkeypatch.setattr(
+        kumiho, "get_revision",
+        lambda uri: (_ for _ in ()).throw(AssertionError("unnecessary single read")),
+    )
+    out = _store(
+        item_kref=TARGET_URI,
+        source_revision_krefs=[rev.kref.uri for rev in sources],
+    )
+
+    assert [len(chunk) for chunk in calls] == [8] * 12 + [5]
+    expected_events = []
+    for start in range(0, len(sources), 8):
+        chunk = sources[start:start + 8]
+        expected_events.append(("batch", tuple(rev.kref.uri for rev in chunk)))
+        expected_events.extend(("edge", rev.kref.uri) for rev in chunk)
+    assert events == expected_events
+    assert out["edges_created"] == [rev.kref.uri for rev in sources]
+
+
 def test_default_path_is_unchanged_when_no_item_kref_is_given(revise_graph):
     """Without item_kref nothing about the existing behaviour moves: the
     search runs, a new item is minted, the hint makes a space and a bundle,
