@@ -12,6 +12,15 @@ in descending version order, which is also descending date order.
 narrative — why a change mattered and what you have to do about it. This file is
 its terse companion. Entries belong in both.
 
+## [0.14.3] - 2026-09-23
+
+### Changed
+- **`tool_memory_store` batches direct provenance revision reads** in windows
+  of eight before creating their edges. Multiple direct revision references
+  use `batch_get_revisions`; selectors, batch failures, and missing revisions
+  retain the per-reference lookup fallback. Store calls without provenance
+  are unchanged.
+
 ## [0.14.2] - 2026-09-21
 
 ### Added

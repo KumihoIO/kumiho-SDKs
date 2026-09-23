@@ -8,6 +8,30 @@
 > what produced the gaps backfilled in KumihoIO/kumiho-SDKs#155 and #157.
 
 
+## kumiho 0.14.3 (September 2026) — Bounded Batched Store Provenance Reads 🧺
+
+When a stored memory names source revisions, the SDK used to resolve every
+source with its own request before adding the provenance edge. A larger source
+list therefore waited on many sequential reads.
+
+### ✨ What changed
+
+- **`tool_memory_store` resolves direct revision sources in batches of up to
+  eight.** It reads each bounded group before creating that group's edges.
+  Tag and time selectors still use the existing per-source resolver. Servers
+  without batch support and partial or missing batch results keep the
+  per-source fallback, including a fresh lookup for a batch miss.
+- **Stores without source revisions are unchanged.** Edge creation continues
+  only after a source revision has been verified, preserving the existing
+  missing-source behavior.
+
+### 📋 Upgrading
+
+No caller changes are required. The batch path is used only for multiple
+direct revision references and falls back to individual reads when needed.
+The SDK tests cover bounded batches, fallback behavior, and edge creation.
+
+
 ## kumiho 0.14.2 (September 2026) — Search Packets: One RPC for a Memory Query 📦
 
 A memory query made three kinds of round trip before anything was ranked: a
