@@ -115,6 +115,20 @@ def cmd_inspect(args: argparse.Namespace) -> None:
 def cmd_whoami(args: argparse.Namespace) -> None:
     creds = _load_credentials()
     if not creds:
+        # A browser sign-in (kumiho-auth login --oauth, kumiho >= 0.15) is not
+        # a Firebase credential; read its summary from the same file.
+        try:
+            data = json.loads(_credentials_path().read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            data = None
+        if isinstance(data, dict) and data.get("auth_type") == "oauth":
+            oauth = data.get("oauth") if isinstance(data.get("oauth"), dict) else {}
+            print(f"Email: {data.get('email') or '<unknown>'}")
+            print(f"Sign-in: OAuth ({oauth.get('issuer') or 'unknown issuer'})")
+            if data.get("cp_expires_at"):
+                print(f"Access token expires: {time.ctime(int(data['cp_expires_at']))} (refreshed automatically)")
+            print(f"Credentials Path: {_credentials_path()}")
+            return
         print("Not logged in.")
         return
 

@@ -4,13 +4,17 @@ This guide covers authentication methods for the Kumiho Python SDK.
 
 ## Overview
 
-Kumiho Cloud uses **Firebase Authentication** for identity management. The authentication flow works as follows:
+Kumiho Cloud accepts two sign-ins, both ending in a control-plane JWT that the
+SDK uses for discovery and gRPC calls:
 
-1. User authenticates with Firebase via email/password
-2. Firebase issues an ID token
-3. SDK exchanges the token with Kumiho Control Plane
-4. Control Plane returns tenant info and a region-scoped JWT
-5. SDK connects to the appropriate regional server
+- **Email and password** (`kumiho-auth login`):
+  1. User authenticates with Firebase via email/password
+  2. Firebase issues an ID token
+  3. SDK exchanges the token with Kumiho Control Plane
+  4. Control Plane returns tenant info and a region-scoped JWT
+  5. SDK connects to the appropriate regional server
+- **Browser sign-in** (`kumiho-auth login --oauth`): the control plane's OAuth
+  authorization server issues the JWT directly, with a rotating refresh token.
 
 ## CLI Authentication
 
@@ -22,10 +26,46 @@ kumiho-auth login
 
 This prompts for your Kumiho Cloud email and password in the terminal. After successful login, credentials are cached in `~/.kumiho/kumiho_authentication.json`.
 
+### Browser Sign-In (OAuth)
+
+```bash
+kumiho-auth login --oauth
+```
+
+This opens the Kumiho consent page in your browser, where you continue with
+Google or email. The SDK registers itself as a public OAuth client, receives the
+authorization code on a `127.0.0.1` port and exchanges it with a PKCE
+verifier; no password passes through the terminal. The access token is a
+control-plane JWT and is refreshed automatically with a rotating refresh token.
+
+The browser must run on the same machine, because the consent page redirects
+to `127.0.0.1` there. Over SSH, forward a fixed port first:
+
+```bash
+ssh -L 8765:127.0.0.1:8765 remote-host
+kumiho-auth login --oauth --no-browser --port 8765   # on remote-host
+```
+
+| Option | Effect |
+|--------|--------|
+| `--no-browser` | Print the sign-in URL instead of opening a browser |
+| `--port PORT` | Listen for the redirect on this `127.0.0.1` port (default: any free port) |
+| `--client-name NAME` | Application name shown on the consent page |
+| `--timeout SECONDS` | How long to wait for the sign-in (default 300) |
+
+Refresh tokens rotate, and presenting one that was already used revokes the
+grant. Every refresh therefore runs under a lock next to the credential file,
+so several processes sharing `~/.kumiho` rotate once, not once each. The
+server rotates before it answers, so a refresh whose answer is lost (network
+drop, server error, a killed process) leaves a spent token behind and the next
+refresh asks you to sign in again. SDKs older than 0.15.0 cannot refresh OAuth
+credentials.
+
 ### Cached Credentials
 
 The cached credentials include:
-- Firebase refresh token (for automatic token renewal)
+- The refresh token: Firebase for email/password, or the OAuth refresh token
+  for a browser sign-in (`"auth_type": "oauth"`)
 - Control Plane JWT (region-scoped access token)
 - Token expiration times
 
@@ -77,8 +117,8 @@ kumiho.connect()
 
 The following authentication methods are planned but not yet implemented:
 
-- **Browser-based OAuth flow**: Opening kumiho.io login page
-- **Firebase popup authentication**: Google, GitHub, Microsoft SSO
+- **Further identity providers**: GitHub and Microsoft SSO (Google is available
+  through the browser sign-in)
 - **Service account authentication**: For automated pipelines
 
 ## Discovery Flow

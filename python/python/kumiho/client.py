@@ -471,11 +471,12 @@ class _Client:
         #
         # The retry interceptor is outermost so a retry re-executes the full
         # chain including fresh correlation IDs and auth headers.
+        injector = _MetadataInjector(metadata) if metadata else None
         channel = grpc.intercept_channel(channel, _CorrelationIdInterceptor())
         if enable_auto_login:
-            channel = grpc.intercept_channel(channel, _AutoLoginInterceptor())
-        if metadata:
-            channel = grpc.intercept_channel(channel, _MetadataInjector(metadata))
+            channel = grpc.intercept_channel(channel, _AutoLoginInterceptor(injector))
+        if injector is not None:
+            channel = grpc.intercept_channel(channel, injector)
         channel = grpc.intercept_channel(channel, _TransientRetryInterceptor())
 
         self.channel = channel
@@ -2751,6 +2752,15 @@ class _MetadataInjector(
     def __init__(self, metadata: Sequence[Tuple[str, str]]) -> None:
         self._metadata = tuple(metadata)
 
+    def update_authorization(self, token: str) -> None:
+        """Send *token* as the bearer on every later call of this channel.
+
+        The auto-login interceptor calls this after a refresh, so one expiry
+        costs one failed RPC instead of one per call for the channel's life.
+        """
+        others = tuple((k, v) for k, v in self._metadata if k.lower() != "authorization")
+        self._metadata = others + (("authorization", f"Bearer {token}"),)
+
     def intercept_unary_unary(self, continuation, client_call_details, request):
         _LOGGER.debug(f"Injecting metadata (keys: {[k for k, v in self._metadata]})")
         updated = _augment_call_details(client_call_details, self._metadata)
@@ -2950,6 +2960,11 @@ class _AutoLoginInterceptor(
 ):
     """Client interceptor that automatically refreshes credentials on auth failures."""
 
+    def __init__(self, injector: Optional["_MetadataInjector"] = None) -> None:
+        # The injector that stamps the bearer onto every call of this channel;
+        # a refreshed token is handed to it so later calls stop failing.
+        self._injector = injector
+
     def intercept_unary_unary(self, continuation, client_call_details, request):
         response = continuation(client_call_details, request)
 
@@ -2980,9 +2995,7 @@ class _AutoLoginInterceptor(
                     )
                     try:
                         from . import auth_cli
-                        new_token, _ = auth_cli.ensure_token(interactive=interactive, force_refresh=True)
-                        
-                        # Update the authorization header with the new token
+
                         existing_metadata: List[Tuple[str, str]] = []
                         for k, v in (client_call_details.metadata or []):
                             if isinstance(v, str):
@@ -2992,6 +3005,20 @@ class _AutoLoginInterceptor(
                             else:
                                 # memoryview or other buffer-like object
                                 existing_metadata.append((k, bytes(v).decode("utf-8")))
+                        # Name the token the server refused, so a rotating
+                        # OAuth refresh happens only if nobody replaced it yet.
+                        rejected_token: Optional[str] = None
+                        for k, v in existing_metadata:
+                            if k.lower() == "authorization" and v.lower().startswith("bearer "):
+                                rejected_token = v[7:].strip()
+                        new_token, _ = auth_cli.ensure_token(
+                            interactive=interactive,
+                            force_refresh=True,
+                            rejected_token=rejected_token,
+                        )
+                        if self._injector is not None:
+                            self._injector.update_authorization(new_token)
+
                         # Remove old authorization header
                         existing_metadata = [(k, v) for k, v in existing_metadata if k.lower() != "authorization"]
                         # Add new token

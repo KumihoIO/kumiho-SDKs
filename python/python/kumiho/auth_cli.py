@@ -13,6 +13,8 @@ from typing import Optional, Tuple
 
 import requests
 
+from . import oauth_login
+
 CONFIG_ENV = "KUMIHO_CONFIG_DIR"
 API_KEY_ENV = "KUMIHO_FIREBASE_API_KEY"
 PROJECT_ENV = "KUMIHO_FIREBASE_PROJECT_ID"
@@ -85,11 +87,14 @@ def _default_repo_root() -> Path:
 
 
 def _load_credentials() -> Optional[Credentials]:
+    """Load Firebase (email/password) credentials; OAuth logins return None."""
     try:
         data = json.loads(_credentials_path().read_text(encoding="utf-8"))
     except FileNotFoundError:
         return None
     except json.JSONDecodeError:
+        return None
+    if not isinstance(data, dict) or data.get("auth_type") == oauth_login.AUTH_TYPE_OAUTH:
         return None
 
     try:
@@ -120,8 +125,17 @@ def _save_credentials(creds: Credentials) -> None:
         "control_plane_token": creds.control_plane_token,
         "cp_expires_at": creds.cp_expires_at,
     }
-    path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
-    os.chmod(path, 0o600)
+    # Same lock and atomic replace as an OAuth refresh, so neither can
+    # overwrite the other half-way; replacing an OAuth login retires its grant.
+    try:
+        with oauth_login.credentials_lock(path):
+            previous = oauth_login.read_credentials_file(path)
+            oauth_login.write_credentials_file(path, payload)
+    except oauth_login.OAuthLoginError as exc:
+        raise TokenAcquisitionError(str(exc)) from exc
+    if oauth_login.is_oauth_credentials(previous):
+        assert previous is not None
+        oauth_login.revoke_refresh_token(previous["oauth"])
 
 
 def _token_preview(token: str) -> str:
@@ -228,11 +242,28 @@ def ensure_token(
     *,
     interactive: bool = True,
     force_refresh: bool = False,
+    rejected_token: Optional[str] = None,
 ) -> Tuple[str, str]:
     """Ensure a usable Firebase ID token exists.
 
-    Returns the token and a short description of the source.
+    Returns the token and a short description of the source. A browser OAuth
+    login (``kumiho-auth login --oauth``) is refreshed with its rotating
+    refresh token; an email/password login keeps the Firebase flow.
+
+    *rejected_token* is the bearer a server just refused. With OAuth, a forced
+    refresh rotates the refresh token only when the stored access token is
+    still that one; otherwise the newer stored token is returned.
     """
+
+    oauth_data = oauth_login.read_credentials_file(_credentials_path())
+    if oauth_login.is_oauth_credentials(oauth_data):
+        assert oauth_data is not None
+        return _ensure_oauth_token(
+            oauth_data,
+            interactive=interactive,
+            force_refresh=force_refresh,
+            rejected_token=rejected_token,
+        )
 
     creds = _load_credentials()
     if not force_refresh and creds and creds.is_valid():
@@ -289,7 +320,76 @@ def ensure_token(
     return new_creds.control_plane_token or new_creds.id_token, "interactive login"
 
 
+def _grace_seconds() -> int:
+    return int(os.getenv(TOKEN_GRACE_ENV, DEFAULT_TOKEN_GRACE_SECONDS))
+
+
+def _control_plane_issuer() -> str:
+    return os.getenv(CONTROL_PLANE_API_ENV, DEFAULT_CONTROL_PLANE_API_URL).rstrip("/")
+
+
+def _ensure_oauth_token(
+    data: dict,
+    *,
+    interactive: bool,
+    force_refresh: bool,
+    rejected_token: Optional[str] = None,
+) -> Tuple[str, str]:
+    grace = _grace_seconds()
+    if not force_refresh and oauth_login.access_token_is_fresh(data, grace):
+        return str(data["control_plane_token"]), "cached oauth credentials"
+    try:
+        token = oauth_login.refresh_access_token(
+            _credentials_path(),
+            grace_seconds=grace,
+            force_refresh=force_refresh,
+            rejected_token=rejected_token,
+        )
+        _log_token(token, "oauth refresh")
+        return token, "refreshed oauth credentials"
+    except oauth_login.OAuthGrantRevoked as exc:
+        if not interactive:
+            raise TokenAcquisitionError(
+                f"Kumiho OAuth sign-in is no longer valid ({exc}). "
+                "Run 'kumiho-auth login --oauth' to sign in again."
+            ) from exc
+        oauth = data["oauth"]
+        try:
+            # Sign in again with the authorization server that issued the
+            # grant, not whatever the environment names now.
+            payload = oauth_login.login(
+                _credentials_path(),
+                str(oauth.get("issuer") or _control_plane_issuer()),
+                client_name=str(oauth.get("client_name") or oauth_login.DEFAULT_CLIENT_NAME),
+            )
+        except oauth_login.OAuthLoginError as login_exc:
+            raise TokenAcquisitionError(f"Kumiho OAuth sign-in failed: {login_exc}") from login_exc
+        return str(payload["control_plane_token"]), "interactive oauth login"
+    except oauth_login.OAuthLoginError as exc:
+        # A transient refresh failure must not discard a token that still works.
+        if oauth_login.access_token_is_fresh(data, 0):
+            print(f"[kumiho-auth] OAuth refresh failed, using current token: {exc}", file=sys.stderr)
+            return str(data["control_plane_token"]), "cached oauth credentials"
+        raise TokenAcquisitionError(f"Kumiho OAuth token refresh failed: {exc}") from exc
+
+
 def cmd_login(args: argparse.Namespace) -> None:
+    if args.oauth:
+        try:
+            payload = oauth_login.login(
+                _credentials_path(),
+                _control_plane_issuer(),
+                client_name=args.client_name,
+                open_browser=not args.no_browser,
+                timeout=args.timeout,
+                port=args.port,
+            )
+        except oauth_login.OAuthLoginError as exc:
+            raise TokenAcquisitionError(str(exc)) from exc
+        who = f" as {payload['email']}" if payload.get("email") else ""
+        print(f"[kumiho-auth] Signed in with OAuth{who}. Credentials cached at {_credentials_path()}")
+        return
+
     api_key = args.api_key or _resolve_api_key(None)
     project_id = args.project_id or _resolve_project_id(None)
 
@@ -306,6 +406,19 @@ def cmd_login(args: argparse.Namespace) -> None:
 
 
 def cmd_refresh(args: argparse.Namespace) -> None:
+    oauth_data = oauth_login.read_credentials_file(_credentials_path())
+    if oauth_login.is_oauth_credentials(oauth_data):
+        try:
+            oauth_login.refresh_access_token(
+                _credentials_path(), grace_seconds=_grace_seconds(), force_refresh=True
+            )
+        except oauth_login.OAuthLoginError as exc:
+            raise TokenAcquisitionError(
+                f"{exc}. Run 'kumiho-auth login --oauth' to sign in again."
+            ) from exc
+        print("[kumiho-auth] Token refreshed.")
+        return
+
     creds = _load_credentials()
     if not creds:
         raise TokenAcquisitionError("No cached credentials to refresh. Run 'kumiho-auth login' first.")
@@ -333,9 +446,42 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="KumihoClouds token helper")
     sub = parser.add_subparsers(dest="command", required=True)
 
-    login = sub.add_parser("login", help="Obtain and store a KumihoClouds ID token using email/password")
+    login = sub.add_parser(
+        "login",
+        help="Sign in and cache credentials (email/password, or --oauth for browser sign-in)",
+    )
     login.add_argument("--api-key", help="KumihoClouds API key (defaults to KUMIHO_FIREBASE_API_KEY)")
     login.add_argument("--project-id", help="KumihoClouds project ID (optional)")
+    login.add_argument(
+        "--oauth",
+        action="store_true",
+        help="sign in on the Kumiho consent page in your browser (OAuth + PKCE) instead of typing a password",
+    )
+    login.add_argument(
+        "--no-browser",
+        action="store_true",
+        help="with --oauth: print the sign-in URL instead of opening a browser",
+    )
+    login.add_argument(
+        "--client-name",
+        default=oauth_login.DEFAULT_CLIENT_NAME,
+        help="with --oauth: application name shown on the consent page",
+    )
+    login.add_argument(
+        "--timeout",
+        type=float,
+        default=oauth_login.DEFAULT_LOGIN_TIMEOUT_SECONDS,
+        help="with --oauth: seconds to wait for the browser sign-in (default %(default)s)",
+    )
+    login.add_argument(
+        "--port",
+        type=int,
+        default=0,
+        help=(
+            "with --oauth: fixed 127.0.0.1 port for the sign-in redirect (default: any "
+            "free port). Over SSH, forward it first: ssh -L PORT:127.0.0.1:PORT host"
+        ),
+    )
     login.set_defaults(func=cmd_login)
 
     refresh = sub.add_parser("refresh", help="Refresh the cached KumihoClouds ID token using the stored refresh token")
