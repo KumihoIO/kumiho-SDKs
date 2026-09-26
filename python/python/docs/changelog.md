@@ -12,20 +12,27 @@ in descending version order, which is also descending date order.
 narrative — why a change mattered and what you have to do about it. This file is
 its terse companion. Entries belong in both.
 
-## [0.15.0] - Unreleased
+## [0.15.0] - 2026-09-26
 
 ### Added
 - **`kumiho-auth login --oauth`** — browser sign-in through the control-plane
   OAuth authorization server (dynamic client registration, loopback redirect
-  on `127.0.0.1`, PKCE S256). Options: `--no-browser`, `--client-name`,
-  `--timeout`.
+  on `127.0.0.1`, PKCE S256, RFC 9207 `iss` check). Options: `--no-browser`,
+  `--port`, `--client-name`, `--timeout`.
 - **`kumiho.oauth_login`** — the flow behind it, plus rotating refresh-token
   handling under a cross-process lock.
+- **`ensure_token(rejected_token=...)`** — a forced OAuth refresh rotates only
+  when the stored token is the one a server rejected.
 
 ### Changed
 - **`ensure_token()` and `kumiho-auth refresh` refresh OAuth credentials**
   (`"auth_type": "oauth"` in `kumiho_authentication.json`). Email/password
-  credentials are unchanged.
+  credentials refresh as before.
+- **The gRPC auto-login retry passes the rejected token and updates the
+  channel's bearer**, so later calls use the refreshed token.
+- **Email/password credential writes take the credential lock and replace the
+  file atomically**; replacing a browser sign-in revokes its grant.
+- **`kumiho-cli whoami` reports a browser sign-in.**
 
 ## [0.14.3] - 2026-09-23
 

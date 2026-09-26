@@ -125,8 +125,17 @@ def _save_credentials(creds: Credentials) -> None:
         "control_plane_token": creds.control_plane_token,
         "cp_expires_at": creds.cp_expires_at,
     }
-    path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
-    os.chmod(path, 0o600)
+    # Same lock and atomic replace as an OAuth refresh, so neither can
+    # overwrite the other half-way; replacing an OAuth login retires its grant.
+    try:
+        with oauth_login.credentials_lock(path):
+            previous = oauth_login.read_credentials_file(path)
+            oauth_login.write_credentials_file(path, payload)
+    except oauth_login.OAuthLoginError as exc:
+        raise TokenAcquisitionError(str(exc)) from exc
+    if oauth_login.is_oauth_credentials(previous):
+        assert previous is not None
+        oauth_login.revoke_refresh_token(previous["oauth"])
 
 
 def _token_preview(token: str) -> str:
@@ -233,19 +242,27 @@ def ensure_token(
     *,
     interactive: bool = True,
     force_refresh: bool = False,
+    rejected_token: Optional[str] = None,
 ) -> Tuple[str, str]:
     """Ensure a usable Firebase ID token exists.
 
     Returns the token and a short description of the source. A browser OAuth
     login (``kumiho-auth login --oauth``) is refreshed with its rotating
     refresh token; an email/password login keeps the Firebase flow.
+
+    *rejected_token* is the bearer a server just refused. With OAuth, a forced
+    refresh rotates the refresh token only when the stored access token is
+    still that one; otherwise the newer stored token is returned.
     """
 
     oauth_data = oauth_login.read_credentials_file(_credentials_path())
     if oauth_login.is_oauth_credentials(oauth_data):
         assert oauth_data is not None
         return _ensure_oauth_token(
-            oauth_data, interactive=interactive, force_refresh=force_refresh
+            oauth_data,
+            interactive=interactive,
+            force_refresh=force_refresh,
+            rejected_token=rejected_token,
         )
 
     creds = _load_credentials()
@@ -312,7 +329,11 @@ def _control_plane_issuer() -> str:
 
 
 def _ensure_oauth_token(
-    data: dict, *, interactive: bool, force_refresh: bool
+    data: dict,
+    *,
+    interactive: bool,
+    force_refresh: bool,
+    rejected_token: Optional[str] = None,
 ) -> Tuple[str, str]:
     grace = _grace_seconds()
     if not force_refresh and oauth_login.access_token_is_fresh(data, grace):
@@ -322,22 +343,28 @@ def _ensure_oauth_token(
             _credentials_path(),
             grace_seconds=grace,
             force_refresh=force_refresh,
-            seen_access_token=data.get("control_plane_token"),
+            rejected_token=rejected_token,
         )
         _log_token(token, "oauth refresh")
         return token, "refreshed oauth credentials"
     except oauth_login.OAuthGrantRevoked as exc:
-        if interactive:
+        if not interactive:
+            raise TokenAcquisitionError(
+                f"Kumiho OAuth sign-in is no longer valid ({exc}). "
+                "Run 'kumiho-auth login --oauth' to sign in again."
+            ) from exc
+        oauth = data["oauth"]
+        try:
+            # Sign in again with the authorization server that issued the
+            # grant, not whatever the environment names now.
             payload = oauth_login.login(
                 _credentials_path(),
-                _control_plane_issuer(),
-                client_name=str(data["oauth"].get("client_name") or oauth_login.DEFAULT_CLIENT_NAME),
+                str(oauth.get("issuer") or _control_plane_issuer()),
+                client_name=str(oauth.get("client_name") or oauth_login.DEFAULT_CLIENT_NAME),
             )
-            return str(payload["control_plane_token"]), "interactive oauth login"
-        raise TokenAcquisitionError(
-            f"Kumiho OAuth sign-in is no longer valid ({exc}). "
-            "Run 'kumiho-auth login --oauth' to sign in again."
-        ) from exc
+        except oauth_login.OAuthLoginError as login_exc:
+            raise TokenAcquisitionError(f"Kumiho OAuth sign-in failed: {login_exc}") from login_exc
+        return str(payload["control_plane_token"]), "interactive oauth login"
     except oauth_login.OAuthLoginError as exc:
         # A transient refresh failure must not discard a token that still works.
         if oauth_login.access_token_is_fresh(data, 0):
@@ -355,6 +382,7 @@ def cmd_login(args: argparse.Namespace) -> None:
                 client_name=args.client_name,
                 open_browser=not args.no_browser,
                 timeout=args.timeout,
+                port=args.port,
             )
         except oauth_login.OAuthLoginError as exc:
             raise TokenAcquisitionError(str(exc)) from exc
@@ -444,6 +472,15 @@ def build_parser() -> argparse.ArgumentParser:
         type=float,
         default=oauth_login.DEFAULT_LOGIN_TIMEOUT_SECONDS,
         help="with --oauth: seconds to wait for the browser sign-in (default %(default)s)",
+    )
+    login.add_argument(
+        "--port",
+        type=int,
+        default=0,
+        help=(
+            "with --oauth: fixed 127.0.0.1 port for the sign-in redirect (default: any "
+            "free port). Over SSH, forward it first: ssh -L PORT:127.0.0.1:PORT host"
+        ),
     )
     login.set_defaults(func=cmd_login)
 

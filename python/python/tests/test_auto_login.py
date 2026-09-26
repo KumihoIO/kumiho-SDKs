@@ -76,7 +76,9 @@ class TestAutoLoginInterceptor:
                 lambda details, request: response, _call_details(), MagicMock(),
             )
 
-        mock_ensure.assert_called_once_with(interactive=False, force_refresh=True)
+        mock_ensure.assert_called_once_with(
+            interactive=False, force_refresh=True, rejected_token=None
+        )
         # Failed silent refresh returns the original response instead of hanging.
         assert result is response
 

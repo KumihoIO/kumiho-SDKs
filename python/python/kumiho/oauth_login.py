@@ -6,11 +6,13 @@ authorization server — the same consent page the hosted MCP connector at
 terminal. The flow follows RFC 8252 for native apps:
 
 1. Read the authorization server metadata (RFC 8414) and check its issuer.
-2. Register a public client once via dynamic client registration (RFC 7591)
-   with the loopback redirect ``http://127.0.0.1/callback``; the server ignores
-   the port when matching loopback redirects (RFC 8252 §7.3).
-3. Listen on an ephemeral ``127.0.0.1`` port, open the consent page with a
-   PKCE S256 challenge and a random ``state``, and wait for the redirect.
+2. Register a public client via dynamic client registration (RFC 7591) with
+   the loopback redirect ``http://127.0.0.1/callback``; the server ignores the
+   port when matching loopback redirects (RFC 8252 §7.3).
+3. Listen on ``127.0.0.1`` (an ephemeral port unless one is given), open the
+   consent page with a PKCE S256 challenge and a random ``state``, and wait for
+   the redirect. The browser must run on this machine, or reach this port
+   through a forwarded one.
 4. Exchange the code for an access token (a control-plane JWT that discovery
    and kumiho-server accept directly) and a rotating refresh token.
 
@@ -19,6 +21,9 @@ The result is stored in ``kumiho_authentication.json`` with
 Refresh tokens rotate and a reused one revokes the whole grant, so every
 refresh happens under a cross-process lock and always presents the newest
 refresh token on disk: the MCP server, hooks and other hosts share this file.
+The server rotates before it answers, so a refresh whose response is lost
+still leaves a spent token behind; refreshing only when a token is actually
+due keeps that window rare.
 """
 from __future__ import annotations
 
@@ -30,6 +35,7 @@ import http.server
 import json
 import os
 import secrets
+import socketserver
 import sys
 import threading
 import time
@@ -47,11 +53,23 @@ DEFAULT_CLIENT_NAME = "Kumiho SDK"
 REDIRECT_PATH = "/callback"
 REGISTERED_REDIRECT_URI = f"http://127.0.0.1{REDIRECT_PATH}"
 DEFAULT_LOGIN_TIMEOUT_SECONDS = 300
-LOCK_TIMEOUT_SECONDS = 30.0
-HTTP_TIMEOUT_SECONDS = 15
-#: A token another process minted this recently is reused by a forced refresh
-#: instead of rotating again (see :func:`refresh_access_token`).
+#: (connect, read) for every request to the authorization server.
+HTTP_TIMEOUT = (5, 15)
+#: Longer than one refresh can take, so a waiter outlasts the holder.
+LOCK_TIMEOUT_SECONDS = 45.0
+#: Without an identified rejected token, a forced refresh reuses a token
+#: minted this recently instead of rotating again.
 RECENT_REFRESH_SECONDS = 30
+
+
+def _no_netrc_auth(request: requests.PreparedRequest) -> requests.PreparedRequest:
+    """A no-op auth that stops ``requests`` from adding ``~/.netrc`` Basic auth.
+
+    The token endpoint rejects any request carrying an Authorization header
+    (public clients only), so a netrc entry for the host would break sign-in.
+    Proxy settings from the environment still apply.
+    """
+    return request
 
 
 class OAuthLoginError(RuntimeError):
@@ -69,6 +87,7 @@ class ServerMetadata:
     token_endpoint: str
     registration_endpoint: Optional[str]
     revocation_endpoint: Optional[str]
+    iss_parameter_supported: bool = False
 
 
 @dataclass(frozen=True)
@@ -103,7 +122,7 @@ def fetch_server_metadata(issuer: str) -> ServerMetadata:
     issuer = _require_secure_url(issuer.rstrip("/"), "issuer")
     url = f"{issuer}/.well-known/oauth-authorization-server"
     try:
-        resp = requests.get(url, timeout=HTTP_TIMEOUT_SECONDS)
+        resp = requests.get(url, timeout=HTTP_TIMEOUT, auth=_no_netrc_auth)
         resp.raise_for_status()
         data = resp.json()
     except (requests.RequestException, ValueError) as exc:
@@ -134,6 +153,8 @@ def fetch_server_metadata(issuer: str) -> ServerMetadata:
         token_endpoint=endpoint("token_endpoint", True) or "",
         registration_endpoint=endpoint("registration_endpoint", False),
         revocation_endpoint=endpoint("revocation_endpoint", False),
+        iss_parameter_supported=data.get("authorization_response_iss_parameter_supported")
+        is True,
     )
 
 
@@ -151,7 +172,10 @@ def register_client(metadata: ServerMetadata, client_name: str) -> str:
     }
     try:
         resp = requests.post(
-            metadata.registration_endpoint, json=body, timeout=HTTP_TIMEOUT_SECONDS
+            metadata.registration_endpoint,
+            json=body,
+            timeout=HTTP_TIMEOUT,
+            auth=_no_netrc_auth,
         )
         data = resp.json()
     except (requests.RequestException, ValueError) as exc:
@@ -179,23 +203,38 @@ padding:0 1rem;color:#222}}</style></head><body><h1>{title}</h1><p>{body}</p>
 </body></html>"""
 
 
-class _CallbackServer(http.server.HTTPServer):
-    """Loopback listener that captures exactly one matching redirect."""
+class _CallbackServer(socketserver.ThreadingMixIn, http.server.HTTPServer):
+    """Loopback listener that captures exactly one matching redirect.
 
-    def __init__(self, expected_state: str) -> None:
-        super().__init__(("127.0.0.1", 0), _CallbackHandler)
+    Each connection gets its own thread, so a stalled local connection cannot
+    hold the genuine redirect in the backlog.
+    """
+
+    daemon_threads = True
+
+    def __init__(self, expected_state: str, port: int = 0) -> None:
+        super().__init__(("127.0.0.1", port), _CallbackHandler)
         self.expected_state = expected_state
         self.result: Optional[Dict[str, str]] = None
         self.done = threading.Event()
+        self._claim = threading.Lock()
 
     @property
     def redirect_uri(self) -> str:
         return f"http://127.0.0.1:{self.server_address[1]}{REDIRECT_PATH}"
 
+    def claim(self, params: Dict[str, str]) -> bool:
+        with self._claim:
+            if self.done.is_set():
+                return False
+            self.result = params
+            self.done.set()
+            return True
+
 
 class _CallbackHandler(http.server.BaseHTTPRequestHandler):
     server: _CallbackServer
-    # Drop idle connections (browser preconnects) instead of blocking the loop.
+    # Drop idle connections (browser preconnects) instead of holding a thread.
     timeout = 5
 
     def do_GET(self) -> None:  # noqa: N802 - http.server API
@@ -208,12 +247,14 @@ class _CallbackHandler(http.server.BaseHTTPRequestHandler):
             # A redirect without our state is not ours; keep waiting for it.
             self._reply(400, "Sign-in not recognised", "This redirect does not match the sign-in in progress.")
             return
-        self.server.result = params
-        self.server.done.set()
+        if not self.server.claim(params):
+            self._reply(404, "Not found", "This sign-in has already been received.")
+            return
         if "error" in params:
             self._reply(400, "Sign-in was not completed", "You can close this window and return to the terminal.")
         else:
-            self._reply(200, "Kumiho is connected", "You can close this window and return to the terminal.")
+            # The code exchange happens after this page; the terminal reports it.
+            self._reply(200, "Sign-in received", "You can close this window. The terminal shows when Kumiho is connected.")
 
     def _reply(self, status: int, title: str, body: str) -> None:
         page = _PAGE.format(title=html.escape(title), body=html.escape(body)).encode("utf-8")
@@ -236,13 +277,14 @@ def _describe_error(resp: Optional[requests.Response], data: Any) -> str:
     return f"HTTP {resp.status_code}" if resp is not None else "no response"
 
 
-def _token_request(metadata_token_endpoint: str, form: Dict[str, str]) -> OAuthTokens:
+def _token_request(token_endpoint: str, form: Dict[str, str]) -> OAuthTokens:
     try:
         resp = requests.post(
-            metadata_token_endpoint,
+            token_endpoint,
             data=form,
             headers={"Accept": "application/json"},
-            timeout=HTTP_TIMEOUT_SECONDS,
+            timeout=HTTP_TIMEOUT,
+            auth=_no_netrc_auth,
         )
     except requests.RequestException as exc:
         raise OAuthLoginError(f"token request failed: {exc}") from exc
@@ -273,12 +315,16 @@ def browser_login(
     *,
     open_browser: bool = True,
     timeout: float = DEFAULT_LOGIN_TIMEOUT_SECONDS,
+    port: int = 0,
     announce: Callable[[str], None] = lambda message: print(message, file=sys.stderr, flush=True),
 ) -> OAuthTokens:
     """Run the consent-page round trip and return the issued tokens."""
     verifier, challenge = _pkce_pair()
     state = secrets.token_urlsafe(32)
-    server = _CallbackServer(state)
+    try:
+        server = _CallbackServer(state, port)
+    except OSError as exc:
+        raise OAuthLoginError(f"cannot listen on 127.0.0.1:{port}: {exc}") from exc
     server.timeout = 1.0
     try:
         redirect_uri = server.redirect_uri
@@ -295,8 +341,8 @@ def browser_login(
         )
         authorize_url = f"{metadata.authorization_endpoint}?{query}"
         announce(
-            "[kumiho-auth] Sign in to Kumiho Cloud in your browser. If it does not open, "
-            f"visit:\n{authorize_url}"
+            "[kumiho-auth] Sign in to Kumiho Cloud in a browser on this machine. "
+            f"If none opens, visit:\n{authorize_url}"
         )
         if open_browser:
             with contextlib.suppress(Exception):
@@ -313,29 +359,37 @@ def browser_login(
     finally:
         server.server_close()
 
+    # RFC 9207: check the issuer before trusting anything else in the response,
+    # and require it when the server says it always sends one.
+    iss = result.get("iss")
+    if iss is None:
+        if metadata.iss_parameter_supported:
+            raise OAuthLoginError("authorization response is missing the iss parameter")
+    elif iss.rstrip("/") != metadata.issuer:
+        raise OAuthLoginError("authorization response came from an unexpected issuer")
     if "error" in result:
         desc = result.get("error_description")
         raise OAuthLoginError(
             f"sign-in was not completed: {result['error']}" + (f" ({desc})" if desc else "")
         )
-    # RFC 9207: when the server reports its issuer, it must be the one we asked.
-    iss = result.get("iss")
-    if iss is not None and iss.rstrip("/") != metadata.issuer:
-        raise OAuthLoginError("authorization response came from an unexpected issuer")
     code = result.get("code")
     if not code:
         raise OAuthLoginError("authorization response did not include a code")
 
-    return _token_request(
-        metadata.token_endpoint,
-        {
-            "grant_type": "authorization_code",
-            "code": code,
-            "redirect_uri": redirect_uri,
-            "client_id": client_id,
-            "code_verifier": verifier,
-        },
-    )
+    try:
+        return _token_request(
+            metadata.token_endpoint,
+            {
+                "grant_type": "authorization_code",
+                "code": code,
+                "redirect_uri": redirect_uri,
+                "client_id": client_id,
+                "code_verifier": verifier,
+            },
+        )
+    except OAuthGrantRevoked as exc:
+        # A rejected code is a failed login, not a revoked grant.
+        raise OAuthLoginError(f"sign-in could not be completed: {exc}") from exc
 
 
 # ---------------------------------------------------------------------------
@@ -346,9 +400,12 @@ def browser_login(
 @contextlib.contextmanager
 def credentials_lock(path: Path, timeout: float = LOCK_TIMEOUT_SECONDS) -> Iterator[None]:
     """Hold an exclusive cross-process lock beside the credential file."""
-    path.parent.mkdir(parents=True, exist_ok=True)
     lock_path = path.with_name(path.name + ".lock")
-    fd = os.open(str(lock_path), os.O_RDWR | os.O_CREAT, 0o600)
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        fd = os.open(str(lock_path), os.O_RDWR | os.O_CREAT, 0o600)
+    except OSError as exc:
+        raise OAuthLoginError(f"cannot open {lock_path}: {exc}") from exc
     deadline = time.monotonic() + timeout
     try:
         while True:
@@ -397,16 +454,24 @@ def read_credentials_file(path: Path) -> Optional[Dict[str, Any]]:
 
 
 def write_credentials_file(path: Path, payload: Dict[str, Any]) -> None:
-    """Replace the credential file atomically with owner-only permissions."""
-    path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_name(f"{path.name}.{os.getpid()}.{secrets.token_hex(4)}.tmp")
-    fd = os.open(str(tmp), os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    """Replace the credential file with owner-only permissions.
+
+    Normally an atomic replace. Windows refuses to replace a file that another
+    process holds open (a plain reader, an antivirus scan); after waiting that
+    out, fall back to rewriting in place rather than dropping the content — a
+    rotated refresh token that never reaches disk costs the whole grant.
+    Raises :class:`OAuthLoginError` when nothing could be written.
+    """
+    content = json.dumps(payload, indent=2)
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        tmp = path.with_name(f"{path.name}.{os.getpid()}.{secrets.token_hex(4)}.tmp")
+        fd = os.open(str(tmp), os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    except OSError as exc:
+        raise OAuthLoginError(f"cannot write {path}: {exc}") from exc
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as fh:
-            json.dump(payload, fh, indent=2)
-        # Windows refuses to replace a file another process has open for a
-        # moment (a plain reader). Losing a rotated refresh token here would
-        # break the grant, so wait that reader out.
+            fh.write(content)
         for attempt in range(40):
             try:
                 os.replace(tmp, path)
@@ -415,6 +480,14 @@ def write_credentials_file(path: Path, payload: Dict[str, Any]) -> None:
                 if os.name != "nt" or attempt == 39:
                     raise
                 time.sleep(0.05)
+    except OSError as replace_error:
+        with contextlib.suppress(OSError):
+            os.unlink(tmp)
+        try:
+            with open(path, "w", encoding="utf-8") as fh:
+                fh.write(content)
+        except OSError:
+            raise OAuthLoginError(f"cannot write {path}: {replace_error}") from replace_error
     except BaseException:
         with contextlib.suppress(OSError):
             os.unlink(tmp)
@@ -481,13 +554,17 @@ def refresh_access_token(
     *,
     grace_seconds: int,
     force_refresh: bool = False,
-    seen_access_token: Optional[str] = None,
+    rejected_token: Optional[str] = None,
 ) -> str:
     """Return a usable access token, rotating the refresh token if needed.
 
     Runs under :func:`credentials_lock` and re-reads the file inside it, so a
     refresh another process just completed is reused instead of repeated with
     an already-rotated refresh token (which would revoke the whole grant).
+
+    A forced refresh (the server rejected a token) rotates only when the file
+    still holds that token. Pass it as *rejected_token*; without it, a token
+    minted in the last :data:`RECENT_REFRESH_SECONDS` is reused.
     """
     with credentials_lock(path):
         data = read_credentials_file(path)
@@ -498,12 +575,10 @@ def refresh_access_token(
         if access_token_is_fresh(data, grace_seconds):
             if not force_refresh:
                 return str(current)
-            # A forced refresh reuses a token another process rotated in
-            # after the caller last looked, or one minted moments ago.
-            issued_at = int(data.get("cp_issued_at") or 0)
-            if (seen_access_token and current != seen_access_token) or (
-                time.time() - issued_at < RECENT_REFRESH_SECONDS
-            ):
+            if rejected_token is not None:
+                if current != rejected_token:
+                    return str(current)
+            elif time.time() - int(data.get("cp_issued_at") or 0) < RECENT_REFRESH_SECONDS:
                 return str(current)
 
         oauth = data["oauth"]
@@ -531,13 +606,16 @@ def login(
     client_name: str = DEFAULT_CLIENT_NAME,
     open_browser: bool = True,
     timeout: float = DEFAULT_LOGIN_TIMEOUT_SECONDS,
+    port: int = 0,
 ) -> Dict[str, Any]:
     """Sign in through the browser and store OAuth credentials at *path*."""
     metadata = fetch_server_metadata(issuer)
     # A fresh registration per login: a cached client_id the server has since
     # dropped would fail on the consent page, where this process cannot see it.
     client_id = register_client(metadata, client_name)
-    tokens = browser_login(metadata, client_id, open_browser=open_browser, timeout=timeout)
+    tokens = browser_login(
+        metadata, client_id, open_browser=open_browser, timeout=timeout, port=port
+    )
     payload = build_credentials(metadata, client_id, client_name, tokens)
     with credentials_lock(path):
         previous = read_credentials_file(path)
@@ -562,7 +640,8 @@ def revoke_refresh_token(oauth: Dict[str, Any]) -> bool:
                 "token_type_hint": "refresh_token",
                 "client_id": str(oauth.get("client_id") or ""),
             },
-            timeout=HTTP_TIMEOUT_SECONDS,
+            timeout=HTTP_TIMEOUT,
+            auth=_no_netrc_auth,
         )
     except (OAuthLoginError, requests.RequestException):
         return False

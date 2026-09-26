@@ -70,6 +70,7 @@ class FakeAuthorizationServer:
                             "registration_endpoint": f"{base}/api/oauth/register",
                             "revocation_endpoint": f"{base}/api/oauth/revoke",
                             "code_challenge_methods_supported": ["S256"],
+                            "authorization_response_iss_parameter_supported": True,
                         },
                     )
                 else:
@@ -254,7 +255,9 @@ def test_browser_login_reports_denied_consent(fake_as, cred_path):
     def deny(message: str) -> None:
         url = message.split("\n", 1)[1]
         params = {k: v[0] for k, v in parse_qs(urlsplit(url).query).items()}
-        query = urlencode({"error": "access_denied", "state": params["state"]})
+        query = urlencode(
+            {"error": "access_denied", "state": params["state"], "iss": fake_as.base}
+        )
         threading.Thread(
             target=lambda: requests.get(f"{params['redirect_uri']}?{query}", timeout=5),
             daemon=True,

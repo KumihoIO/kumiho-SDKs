@@ -19,21 +19,38 @@ connector uses.
 ### ✨ What changed
 
 - **`kumiho-auth login --oauth` signs in through the browser.** It registers a
-  public client with the control plane's authorization server, listens on an
-  ephemeral `127.0.0.1` port, opens the Kumiho consent page (Google or email)
-  with a PKCE S256 challenge, and exchanges the returned code. `--no-browser`
-  prints the URL instead of opening it, `--client-name` sets the application
-  name the consent page shows, and `--timeout` bounds the wait (300 s).
+  public client with the control plane's authorization server, listens on
+  `127.0.0.1`, opens the Kumiho consent page (Google or email) with a PKCE S256
+  challenge, checks the RFC 9207 `iss` the server sends, and exchanges the
+  returned code. The browser must run on the same machine, because the consent
+  page redirects to `127.0.0.1`. `--no-browser` only skips opening it;
+  `--port` fixes the listener port so it can be forwarded over SSH
+  (`ssh -L PORT:127.0.0.1:PORT`). `--client-name` sets the application name
+  the consent page shows, and `--timeout` bounds the wait (300 s).
 - **OAuth logins refresh themselves.** The access token is a control-plane JWT
   that discovery and kumiho-server already accept. `ensure_token()` — and with
   it the SDK bootstrap, `auto_configure_from_discovery()` and the gRPC
   `UNAUTHENTICATED` retry — rotates the refresh token when the access token
   nears expiry. `kumiho-auth refresh` does the same on demand.
-- **Refresh is safe across processes.** A reused refresh token revokes the
+- **Concurrent refreshes rotate once.** A reused refresh token revokes the
   whole grant, so every refresh runs under a lock beside the credential file
   and re-reads it first: a token another process just rotated is reused, not
-  rotated again. The credential file is replaced atomically, owner-only.
-- **A new login revokes the grant it replaces**, best effort.
+  rotated again. A server rejection rotates only if the stored token is still
+  the one rejected (`ensure_token(rejected_token=...)`), and the gRPC channel
+  adopts the refreshed token instead of failing once per call. Email/password
+  logins now take the same lock and atomic replace.
+- **A new login revokes the grant it replaces**, best effort — including an
+  email/password login that replaces a browser sign-in.
+- `kumiho-cli whoami` reports a browser sign-in.
+
+### ⚠️ Known limitation
+
+The authorization server rotates a refresh token before it answers. If that
+answer never arrives — a network drop, a server error after rotation, a process
+killed mid-refresh — the stored refresh token is already spent, and the next
+refresh revokes the grant: sign in again. The SDK keeps this rare by refreshing
+only when a token is due or was rejected; a server-side grace period for the
+immediately previous token would remove it.
 
 ### 📋 Upgrading
 
