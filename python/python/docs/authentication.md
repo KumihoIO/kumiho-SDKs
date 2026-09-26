@@ -22,6 +22,29 @@ kumiho-auth login
 
 This prompts for your Kumiho Cloud email and password in the terminal. After successful login, credentials are cached in `~/.kumiho/kumiho_authentication.json`.
 
+### Browser Sign-In (OAuth)
+
+```bash
+kumiho-auth login --oauth
+```
+
+This opens the Kumiho consent page in your browser, where you continue with
+Google or email. The SDK registers itself as a public OAuth client, receives the
+authorization code on an ephemeral `127.0.0.1` port and exchanges it with a PKCE
+verifier; no password passes through the terminal. The access token is a
+control-plane JWT and is refreshed automatically with a rotating refresh token.
+
+| Option | Effect |
+|--------|--------|
+| `--no-browser` | Print the sign-in URL instead of opening a browser |
+| `--client-name NAME` | Application name shown on the consent page |
+| `--timeout SECONDS` | How long to wait for the sign-in (default 300) |
+
+Refresh tokens rotate, and presenting one that was already used revokes the
+grant. Every refresh therefore runs under a lock next to the credential file,
+so several processes sharing `~/.kumiho` can refresh concurrently. SDKs older
+than 0.15.0 cannot refresh OAuth credentials.
+
 ### Cached Credentials
 
 The cached credentials include:
@@ -77,7 +100,6 @@ kumiho.connect()
 
 The following authentication methods are planned but not yet implemented:
 
-- **Browser-based OAuth flow**: Opening kumiho.io login page
 - **Firebase popup authentication**: Google, GitHub, Microsoft SSO
 - **Service account authentication**: For automated pipelines
 

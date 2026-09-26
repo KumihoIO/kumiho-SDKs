@@ -8,6 +8,43 @@
 > what produced the gaps backfilled in KumihoIO/kumiho-SDKs#155 and #157.
 
 
+## kumiho 0.15.0 (September 2026) — Browser Sign-In with OAuth 🔑
+
+`kumiho-auth login` asked for an email and password in the terminal. That
+cannot work where no one is at a terminal prompt — an agent running setup on
+the user's behalf, for instance — and it never offered the Google sign-in the
+web consent page has. This release adds the same OAuth sign-in the hosted MCP
+connector uses.
+
+### ✨ What changed
+
+- **`kumiho-auth login --oauth` signs in through the browser.** It registers a
+  public client with the control plane's authorization server, listens on an
+  ephemeral `127.0.0.1` port, opens the Kumiho consent page (Google or email)
+  with a PKCE S256 challenge, and exchanges the returned code. `--no-browser`
+  prints the URL instead of opening it, `--client-name` sets the application
+  name the consent page shows, and `--timeout` bounds the wait (300 s).
+- **OAuth logins refresh themselves.** The access token is a control-plane JWT
+  that discovery and kumiho-server already accept. `ensure_token()` — and with
+  it the SDK bootstrap, `auto_configure_from_discovery()` and the gRPC
+  `UNAUTHENTICATED` retry — rotates the refresh token when the access token
+  nears expiry. `kumiho-auth refresh` does the same on demand.
+- **Refresh is safe across processes.** A reused refresh token revokes the
+  whole grant, so every refresh runs under a lock beside the credential file
+  and re-reads it first: a token another process just rotated is reused, not
+  rotated again. The credential file is replaced atomically, owner-only.
+- **A new login revokes the grant it replaces**, best effort.
+
+### 📋 Upgrading
+
+Nothing changes for existing logins: `kumiho-auth login` without `--oauth`
+still uses email and password, and Firebase credentials refresh as before.
+OAuth credentials are stored in `~/.kumiho/kumiho_authentication.json` with
+`"auth_type": "oauth"`. An SDK older than 0.15.0 can use the stored access token
+until it expires (one hour) but cannot refresh it; upgrade every tool that
+shares `~/.kumiho` before switching to `--oauth`.
+
+
 ## kumiho 0.14.3 (September 2026) — Bounded Batched Store Provenance Reads 🧺
 
 When a stored memory names source revisions, the SDK used to resolve every
