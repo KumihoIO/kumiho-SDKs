@@ -32,6 +32,25 @@ fn no_space_item_at_project_root() {
 }
 
 #[test]
+fn dotted_item_name_keeps_only_the_text_after_the_last_dot_as_kind() {
+    // Item names may contain dots; kinds never do.
+    let k = Kref::new("kref://proj/characters/a.b.c.model").unwrap();
+    assert_eq!(k.item_name(), "a.b.c.model");
+    assert_eq!(k.kind(), "model");
+    assert_eq!(k.space(), "characters");
+
+    let root = Kref::new("kref://proj/rootitem.v2.model").unwrap();
+    assert_eq!(root.item_name(), "rootitem.v2.model");
+    assert_eq!(root.kind(), "model");
+    assert_eq!(root.space(), "");
+
+    assert_eq!(
+        Kref::new("kref://proj/characters/noext").unwrap().kind(),
+        ""
+    );
+}
+
+#[test]
 fn hangul_kref_is_valid() {
     let uri = "kref://CognitiveMemory/Skills/mg-char-이지수.skill";
     assert!(is_valid_kref(uri));

@@ -21,6 +21,8 @@ struct Recorded {
     last_item: Option<pb::CreateItemRequest>,
     last_revision_kref: String,
     saw_correlation_id: bool,
+    /// Every GetItem request the server has seen, in arrival order.
+    get_item_requests: Vec<pb::GetItemRequest>,
 }
 
 #[derive(Clone, Default)]
@@ -213,6 +215,7 @@ impl KumihoService for FakeKumiho {
         req: Request<pb::GetItemRequest>,
     ) -> Result<Response<pb::ItemResponse>, Status> {
         let r = req.into_inner();
+        self.rec.lock().unwrap().get_item_requests.push(r.clone());
         let uri = format!(
             "kref://{}/{}.{}",
             r.parent_path.trim_start_matches('/'),
@@ -623,13 +626,138 @@ async fn integration_resolve_swallows_rpc_error() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn integration_get_item_from_revision() {
     let (_fake, client) = start_server().await;
-    // Non-nested kref so the item-name/kind split is unambiguous.
     let item = client
         .get_item_from_revision("kref://vfx/hero.model?r=3")
         .await
         .unwrap();
     assert_eq!(item.item_name, "hero");
     assert_eq!(item.kind, "model");
+}
+
+/// `(kref, parent_path, item_name, kind)`: item krefs split at the LAST `/`
+/// (project plus nested spaces form the parent path) and the LAST `.` (item
+/// names may contain dots, kinds never do).
+const ITEM_KREF_SPLITS: &[(&str, &str, &str, &str)] = &[
+    (
+        "kref://projectA/modelA.asset",
+        "/projectA",
+        "modelA",
+        "asset",
+    ),
+    (
+        "kref://proj/characters/hero.model",
+        "/proj/characters",
+        "hero",
+        "model",
+    ),
+    (
+        "kref://proj/a/b/c/hero.model",
+        "/proj/a/b/c",
+        "hero",
+        "model",
+    ),
+    (
+        "kref://proj/rootitem.v2.model",
+        "/proj",
+        "rootitem.v2",
+        "model",
+    ),
+    (
+        "kref://proj/characters/a.b.c.model",
+        "/proj/characters",
+        "a.b.c",
+        "model",
+    ),
+    (
+        "kref://proj/characters/hero.model?r=3",
+        "/proj/characters",
+        "hero",
+        "model",
+    ),
+];
+
+fn assert_last_get_item(fake: &FakeKumiho, parent_path: &str, item_name: &str, kind: &str) {
+    let rec = fake.rec.lock().unwrap();
+    let req = rec
+        .get_item_requests
+        .last()
+        .expect("server received GetItem");
+    assert_eq!(
+        (
+            req.parent_path.as_str(),
+            req.item_name.as_str(),
+            req.kind.as_str()
+        ),
+        (parent_path, item_name, kind)
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn get_item_by_kref_splits_at_last_slash_and_last_dot() {
+    let (fake, client) = start_server().await;
+    for &(kref, parent_path, item_name, kind) in ITEM_KREF_SPLITS {
+        fake.rec.lock().unwrap().get_item_requests.clear();
+        let item = client.get_item_by_kref(kref).await.unwrap();
+        assert_last_get_item(&fake, parent_path, item_name, kind);
+        assert_eq!(fake.rec.lock().unwrap().get_item_requests.len(), 1);
+        assert_eq!(item.item_name, item_name, "{kref}");
+        assert_eq!(item.kind, kind, "{kref}");
+    }
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn get_item_from_revision_splits_at_last_slash_and_last_dot() {
+    let (fake, client) = start_server().await;
+    for &(kref, parent_path, item_name, kind) in ITEM_KREF_SPLITS {
+        let item_kref = kref.split('?').next().unwrap();
+        fake.rec.lock().unwrap().get_item_requests.clear();
+        let item = client
+            .get_item_from_revision(&format!("{item_kref}?r=3"))
+            .await
+            .unwrap();
+        assert_last_get_item(&fake, parent_path, item_name, kind);
+        assert_eq!(item.item_name, item_name, "{kref}");
+        assert_eq!(item.kind, kind, "{kref}");
+    }
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn get_bundle_by_kref_splits_at_last_slash_and_last_dot() {
+    let (fake, client) = start_server().await;
+    for (kref, parent_path, bundle_name) in [
+        ("kref://proj/mybundle.bundle", "/proj", "mybundle"),
+        ("kref://proj/sets/mybundle.bundle", "/proj/sets", "mybundle"),
+        (
+            "kref://proj/sets/my.bundle.v2.bundle",
+            "/proj/sets",
+            "my.bundle.v2",
+        ),
+    ] {
+        fake.rec.lock().unwrap().get_item_requests.clear();
+        let bundle = client.get_bundle_by_kref(kref).await.unwrap();
+        assert_last_get_item(&fake, parent_path, bundle_name, "bundle");
+        assert_eq!(bundle.as_item().item_name, bundle_name, "{kref}");
+    }
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn malformed_item_kref_is_rejected_before_any_rpc() {
+    let (fake, client) = start_server().await;
+    for kref in [
+        "kref://proj",
+        "kref://proj/noext",
+        "kref://proj/space/noext",
+    ] {
+        let err = client.get_item_by_kref(kref).await;
+        assert!(
+            matches!(err, Err(kumiho::Error::InvalidArgument(_))),
+            "{kref}: expected InvalidArgument, got {err:?}"
+        );
+    }
+    assert!(
+        fake.rec.lock().unwrap().get_item_requests.is_empty(),
+        "a malformed kref must not reach the server"
+    );
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

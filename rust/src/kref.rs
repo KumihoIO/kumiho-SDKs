@@ -128,10 +128,12 @@ impl Kref {
         }
     }
 
-    /// The item kind (after the first `.` in the item name), or `""`.
+    /// The item kind (after the last `.` in the item name), or `""`.
+    ///
+    /// Item names may contain dots, so `a.b.model` has kind `model`.
     pub fn kind(&self) -> &str {
         let name = self.item_name();
-        name.split_once('.').map(|x| x.1).unwrap_or("")
+        name.rsplit_once('.').map(|x| x.1).unwrap_or("")
     }
 
     /// The revision number from `?r=`, defaulting to `1`.

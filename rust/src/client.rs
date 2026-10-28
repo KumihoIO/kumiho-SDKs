@@ -1695,13 +1695,17 @@ fn map_path(p: pb::RevisionPath) -> RevisionPath {
 }
 
 /// Split an item kref URI into `(parent_path_with_leading_slash, name, kind)`.
+///
+/// The parent path is everything before the LAST `/` (project and nested
+/// spaces); the leaf after it is split at its LAST `.`, because item names may
+/// contain dots while kinds never do.
 fn split_item_kref(kref_uri: &str) -> Result<(String, String, String)> {
     let kref = Kref::new(kref_uri).map_err(|e| Error::KrefValidation(e.0))?;
     let path = kref.path();
     let (space_path, item_name_kind) = path
-        .split_once('/')
+        .rsplit_once('/')
         .ok_or_else(|| Error::InvalidArgument(format!("invalid item kref: {kref_uri}")))?;
-    let (name, kind) = item_name_kind.split_once('.').ok_or_else(|| {
+    let (name, kind) = item_name_kind.rsplit_once('.').ok_or_else(|| {
         Error::InvalidArgument(format!("invalid item name.kind: {item_name_kind}"))
     })?;
     Ok((format!("/{space_path}"), name.to_string(), kind.to_string()))
