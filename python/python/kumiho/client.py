@@ -268,6 +268,29 @@ def _evaluation_question_pb(
     )
 
 
+def _split_item_kref(kref: Kref) -> Tuple[str, str, str]:
+    """Split an item kref into ``(parent_path, item_name, kind)``.
+
+    A kref path is ``project[/space...]/name.kind``. The parent path is the
+    leading ``/`` plus everything before the LAST ``/`` (project and any nested
+    spaces); the leaf after it is ``name.kind``. Item names may contain dots
+    but kinds never do, so the leaf is split at its LAST ``.``.
+
+    Raises:
+        ValueError: If the kref has no ``/`` or its leaf has no ``.``.
+    """
+    item_path = kref.get_path()  # e.g., "projectA/spaceA/modelA.asset"
+    if "/" not in item_path:
+        raise ValueError(f"Invalid item kref format: {kref}")
+
+    space_path, item_name_kind = item_path.rsplit("/", 1)
+    if "." not in item_name_kind:
+        raise ValueError(f"Invalid item name.kind format: {item_name_kind}")
+
+    item_name, kind = item_name_kind.rsplit(".", 1)
+    return f"/{space_path}", item_name, kind  # leading slash on the parent path
+
+
 class _Client:
     """Low-level gRPC client for interacting with the Kumiho Cloud service.
 
@@ -921,18 +944,7 @@ class _Client:
         Returns:
             The Item object.
         """
-        kref = Kref(kref_uri)
-        item_path = kref.get_path()  # e.g., "projectA/modelA.asset"
-        if "/" not in item_path:
-            raise ValueError(f"Invalid item kref format: {kref}")
-        
-        space_path, item_name_kind = item_path.split("/", 1)
-        parent_path = f"/{space_path}"  # Add leading slash
-        if "." not in item_name_kind:
-            raise ValueError(f"Invalid item name.kind format: {item_name_kind}")
-        
-        item_name, kind = item_name_kind.split(".", 1)
-        
+        parent_path, item_name, kind = _split_item_kref(Kref(kref_uri))
         return self.get_item(parent_path, item_name, kind)
 
     def get_bundle_by_kref(self, kref_uri: str) -> "Bundle":
@@ -971,12 +983,8 @@ class _Client:
             )
         
         # Re-fetch as Bundle to get the Bundle wrapper with bundle-specific methods
-        kref = Kref(kref_uri)
-        item_path = kref.get_path()
-        space_path, item_name_kind = item_path.split("/", 1)
-        parent_path = f"/{space_path}"
-        bundle_name, _ = item_name_kind.split(".", 1)
-        
+        parent_path, bundle_name, _ = _split_item_kref(Kref(kref_uri))
+
         # Use GetItem to get the raw response and wrap as Bundle
         req = GetItemRequest(parent_path=parent_path, item_name=bundle_name, kind="bundle")
         resp = self.stub.GetItem(req)
@@ -1341,17 +1349,7 @@ class _Client:
         # First get the revision to find its item relationship
         revision = self.get_revision(revision_kref)
         # Parse the item_kref to extract parent_path, item_name, and kind
-        item_path = revision.item_kref.get_path()  # e.g., "space/item.kind"
-        if "/" not in item_path:
-            raise ValueError(f"Invalid item kref format: {revision.item_kref}")
-        
-        parent_path, item_name_kind = item_path.split("/", 1)
-        parent_path = f"/{parent_path}"  # Add leading slash
-        if "." not in item_name_kind:
-            raise ValueError(f"Invalid item name.kind format: {item_name_kind}")
-        
-        item_name, kind = item_name_kind.split(".", 1)
-        
+        parent_path, item_name, kind = _split_item_kref(revision.item_kref)
         return self.get_item(parent_path, item_name, kind)
 
     def get_revisions(self, item_kref: Kref) -> List[Revision]:

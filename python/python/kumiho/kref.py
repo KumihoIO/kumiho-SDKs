@@ -328,7 +328,8 @@ class Kref(str):
         name = self.get_item_name()
         if "." not in name:
             return ""
-        return name.split(".", 1)[1]
+        # Item names may contain dots; the kind is the text after the last one.
+        return name.rsplit(".", 1)[1]
 
     def get_revision(self) -> int:
         """Extract the revision number from the URI query string.
