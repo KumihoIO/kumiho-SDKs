@@ -106,10 +106,11 @@ func (k Kref) ItemName() string {
 	return ""
 }
 
-// Kind returns the item kind (after the first "." in the item name), or "".
+// Kind returns the item kind (after the last "." in the item name), or "".
+// Item names may contain dots, so "a.b.model" has kind "model".
 func (k Kref) Kind() string {
 	name := k.ItemName()
-	if i := strings.IndexByte(name, '.'); i >= 0 {
+	if i := strings.LastIndexByte(name, '.'); i >= 0 {
 		return name[i+1:]
 	}
 	return ""

@@ -29,6 +29,7 @@ type fakeServer struct {
 	lastItemReq      *pb.CreateItemRequest
 	lastRevisionKref string
 	sawCorrelationID bool
+	getItemReqs      []*pb.GetItemRequest
 }
 
 func (s *fakeServer) recordCorrelation(ctx context.Context) {
@@ -88,6 +89,9 @@ func (s *fakeServer) GetRevision(ctx context.Context, req *pb.KrefRequest) (*pb.
 }
 
 func (s *fakeServer) GetItem(ctx context.Context, req *pb.GetItemRequest) (*pb.ItemResponse, error) {
+	s.mu.Lock()
+	s.getItemReqs = append(s.getItemReqs, req)
+	s.mu.Unlock()
 	uri := "kref://" + strings.TrimPrefix(req.GetParentPath(), "/") + "/" + req.GetItemName() + "." + req.GetKind()
 	return &pb.ItemResponse{
 		Kref:     &pb.Kref{Uri: uri},
@@ -253,13 +257,122 @@ func TestIntegrationResolveSwallowsRPCError(t *testing.T) {
 
 func TestIntegrationGetItemFromRevision(t *testing.T) {
 	_, client := startFake(t)
-	// Non-nested kref so the item-name/kind split is unambiguous.
 	item, err := client.GetItemFromRevision(context.Background(), "kref://vfx/hero.model?r=3")
 	if err != nil {
 		t.Fatalf("GetItemFromRevision: %v", err)
 	}
 	if item.ItemName != "hero" || item.Kind != "model" {
 		t.Errorf("item = %+v", item)
+	}
+}
+
+// itemKrefSplits pins how item krefs map onto GetItem requests: the parent path
+// is everything before the LAST "/", the name everything before the LAST ".".
+var itemKrefSplits = []struct {
+	name, kref, parentPath, itemName, kind string
+}{
+	{"root level", "kref://projectA/modelA.asset", "/projectA", "modelA", "asset"},
+	{"nested space", "kref://proj/characters/hero.model", "/proj/characters", "hero", "model"},
+	{"deeply nested space", "kref://proj/a/b/c/hero.model", "/proj/a/b/c", "hero", "model"},
+	{"dotted name at root", "kref://proj/rootitem.v2.model", "/proj", "rootitem.v2", "model"},
+	{"nested and dotted", "kref://proj/characters/a.b.c.model", "/proj/characters", "a.b.c", "model"},
+	{"revision suffix ignored", "kref://proj/characters/hero.model?r=3", "/proj/characters", "hero", "model"},
+}
+
+// takeLastGetItem returns the most recent GetItem request the server received
+// and forgets all recorded ones.
+func (s *fakeServer) takeLastGetItem(t *testing.T) *pb.GetItemRequest {
+	t.Helper()
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if len(s.getItemReqs) == 0 {
+		t.Fatal("server received no GetItem request")
+	}
+	req := s.getItemReqs[len(s.getItemReqs)-1]
+	s.getItemReqs = nil
+	return req
+}
+
+func TestIntegrationGetItemByKrefSplitsAtLastSlashAndLastDot(t *testing.T) {
+	fake, client := startFake(t)
+	for _, tc := range itemKrefSplits {
+		t.Run(tc.name, func(t *testing.T) {
+			item, err := client.GetItemByKref(context.Background(), tc.kref)
+			if err != nil {
+				t.Fatalf("GetItemByKref(%q): %v", tc.kref, err)
+			}
+			req := fake.takeLastGetItem(t)
+			if req.GetParentPath() != tc.parentPath || req.GetItemName() != tc.itemName || req.GetKind() != tc.kind {
+				t.Errorf("GetItem(%q, %q, %q), want (%q, %q, %q)",
+					req.GetParentPath(), req.GetItemName(), req.GetKind(), tc.parentPath, tc.itemName, tc.kind)
+			}
+			if item.ItemName != tc.itemName || item.Kind != tc.kind {
+				t.Errorf("item = %+v", item)
+			}
+		})
+	}
+}
+
+func TestIntegrationGetItemFromRevisionSplitsAtLastSlashAndLastDot(t *testing.T) {
+	fake, client := startFake(t)
+	for _, tc := range itemKrefSplits {
+		t.Run(tc.name, func(t *testing.T) {
+			itemKref, _, _ := strings.Cut(tc.kref, "?")
+			item, err := client.GetItemFromRevision(context.Background(), itemKref+"?r=3")
+			if err != nil {
+				t.Fatalf("GetItemFromRevision(%q): %v", itemKref, err)
+			}
+			req := fake.takeLastGetItem(t)
+			if req.GetParentPath() != tc.parentPath || req.GetItemName() != tc.itemName || req.GetKind() != tc.kind {
+				t.Errorf("GetItem(%q, %q, %q), want (%q, %q, %q)",
+					req.GetParentPath(), req.GetItemName(), req.GetKind(), tc.parentPath, tc.itemName, tc.kind)
+			}
+			if item.ItemName != tc.itemName || item.Kind != tc.kind {
+				t.Errorf("item = %+v", item)
+			}
+		})
+	}
+}
+
+func TestIntegrationGetBundleByKrefSplitsAtLastSlashAndLastDot(t *testing.T) {
+	fake, client := startFake(t)
+	cases := []struct{ name, kref, parentPath, bundleName string }{
+		{"root level", "kref://proj/mybundle.bundle", "/proj", "mybundle"},
+		{"nested space", "kref://proj/sets/mybundle.bundle", "/proj/sets", "mybundle"},
+		{"nested and dotted", "kref://proj/sets/my.bundle.v2.bundle", "/proj/sets", "my.bundle.v2"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			bundle, err := client.GetBundleByKref(context.Background(), tc.kref)
+			if err != nil {
+				t.Fatalf("GetBundleByKref(%q): %v", tc.kref, err)
+			}
+			req := fake.takeLastGetItem(t)
+			if req.GetParentPath() != tc.parentPath || req.GetItemName() != tc.bundleName || req.GetKind() != "bundle" {
+				t.Errorf("GetItem(%q, %q, %q), want (%q, %q, %q)",
+					req.GetParentPath(), req.GetItemName(), req.GetKind(), tc.parentPath, tc.bundleName, "bundle")
+			}
+			if bundle.ItemName != tc.bundleName {
+				t.Errorf("bundle item name = %q, want %q", bundle.ItemName, tc.bundleName)
+			}
+		})
+	}
+}
+
+func TestIntegrationMalformedItemKrefIsRejectedBeforeAnyRPC(t *testing.T) {
+	fake, client := startFake(t)
+	for _, kref := range []string{"kref://proj", "kref://proj/noext", "kref://proj/space/noext"} {
+		_, err := client.GetItemByKref(context.Background(), kref)
+		var iae *kumiho.InvalidArgumentError
+		if !errors.As(err, &iae) {
+			t.Errorf("GetItemByKref(%q) error = %v, want *InvalidArgumentError", kref, err)
+		}
+	}
+	fake.mu.Lock()
+	n := len(fake.getItemReqs)
+	fake.mu.Unlock()
+	if n != 0 {
+		t.Errorf("a malformed kref reached the server (%d GetItem requests)", n)
 	}
 }
 
