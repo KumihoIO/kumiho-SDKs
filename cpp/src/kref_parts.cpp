@@ -14,6 +14,7 @@
 
 #include <algorithm>
 #include <array>
+#include <string_view>
 #include <utility>
 
 #include "kumiho/error.hpp"
@@ -23,7 +24,7 @@ namespace api {
 
 namespace {
 
-const std::string kScheme = "kref://";
+constexpr std::string_view kScheme = "kref://";
 constexpr std::size_t kMaxKrefBytes = 1024;
 constexpr std::size_t kMaxKrefSegments = 32;
 constexpr std::size_t kMaxTagBytes = 1024;
@@ -319,6 +320,8 @@ const char* toString(KrefShape shape) {
     return "";
 }
 
+namespace detail {
+
 bool splitLeaf(const std::string& leaf, std::string& name, std::string& kind) {
     // Item names may contain dots; kinds never do.
     const std::size_t dot = leaf.rfind('.');
@@ -350,10 +353,12 @@ KrefLexical splitKref(const std::string& uri) {
     return lex;
 }
 
+} // namespace detail
+
 KrefParts parseKref(const std::string& uri) {
     KrefParts parts;
     parts.uri = uri;
-    const KrefLexical lex = splitKref(uri);
+    const detail::KrefLexical lex = detail::splitKref(uri);
     parts.path = lex.path;
     parts.parent = lex.parent;
     parts.leaf = lex.leaf;

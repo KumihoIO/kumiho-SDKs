@@ -458,11 +458,15 @@ TEST_F(KumihoUnitTest, ResolveItemKrefFallbackToFirstArtifact) {
 // The shared kref conformance corpus (spec/kref/vectors.json): the GetItem
 // requests the client sends, case by case.
 //
-// sdk_current_request is what the SDK sent at a7f155e; sdk_fix_request is what
-// the structured parser makes of the same kref. A request may differ only where
-// the corpus proves it server-equivalent, or where owner decision 2 refuses a
-// leaf with no '.' before sending. Only krefs today's Python SDK accepts are
-// replayed here: this SDK does not validate krefs, and that is unchanged.
+// sdk_current_request is what the PYTHON SDK sent at a7f155e, the corpus's
+// cross-SDK baseline; sdk_fix_request is what the structured parser makes of
+// the same kref. This SDK's own a7f155e already split an item kref at its last
+// '/' (it used the first '.', and no validation), so the only request this SDK
+// changed is the one for a dotted item name, where the leaf is now split at its
+// LAST '.'. Against the baseline a request may differ only where the corpus
+// proves it server-equivalent, or where owner decision 2 refuses a leaf with no
+// '.' before sending. Only krefs today's Python SDK accepts are replayed here:
+// this SDK does not validate krefs, and that is unchanged.
 // ---------------------------------------------------------------------------
 namespace {
 
@@ -502,7 +506,7 @@ void expectChangeAllowed(const Json& c, const std::string& slot) {
     const Json& fixed = c.at("sdk_fix_request").at(slot);
     const auto cur = tupleOf(current);
     const auto fix = tupleOf(fixed);
-    if (cur && fix && *cur == *fix) return;  // byte-identical to a7f155e
+    if (cur && fix && *cur == *fix) return;  // the same request as the Python baseline
     if (cur && fix) {
         const Json& eq = c.at("server_equivalent_old_new");
         const bool equivalent = !eq.is_null() && !eq.at(slot).is_null() &&
@@ -625,6 +629,43 @@ TEST_F(KrefVectorsRequestTest, GetBundleByKrefFetchesTheBundleTheKrefNames) {
         }
     }
     EXPECT_EQ(bundles, 7);
+}
+
+// Server-returned item krefs are not checked by the server's own read RPCs, so
+// one can hold a space segment that ends in whitespace or an empty segment. This
+// SDK does not validate krefs, and at a7f155e it already split at the last '/'
+// and sent every segment as it was, so the request for such a kref is the same
+// one a7f155e sent: kumiho-server's normalize_space_path then decides the space.
+TEST_F(KrefVectorsRequestTest, ServerKrefsKeepTheRequestA7f155eSent) {
+    const std::vector<std::pair<std::string, ItemTuple>> cases = {
+        {"kref://p/s /x.k", {"/p/s ", "x", "k"}},
+        {"kref://p/s\t/x.k", {"/p/s\t", "x", "k"}},
+        {"kref://p/s\xc2\xa0/x.k", {"/p/s\xc2\xa0", "x", "k"}},
+        {"kref://p/s\xe3\x80\x80/x.k", {"/p/s\xe3\x80\x80", "x", "k"}},
+        {"kref://p//x.k", {"/p/", "x", "k"}},
+        {"kref://p/s//x.k", {"/p/s/", "x", "k"}},
+        {"kref://p /s/x.k", {"/p /s", "x", "k"}},
+    };
+    for (const auto& [kref, want] : cases) {
+        SCOPED_TRACE(kref);
+        sent.clear();
+        EXPECT_NO_THROW(client->getItemFromRevision(kref + "?r=3"));
+        ASSERT_EQ(sent.size(), 1u);
+        EXPECT_EQ(sent[0], want);
+        sent.clear();
+        EXPECT_NO_THROW(client->getItemByKref(kref));
+        ASSERT_EQ(sent.size(), 1u);
+        EXPECT_EQ(sent[0], want);
+    }
+}
+
+TEST_F(KrefVectorsRequestTest, AHugeRevisionDoesNotBreakTheLookup) {
+    const std::string huge(5000, '1');
+    EXPECT_NO_THROW(client->getItemByKref("kref://p/s/x.k?r=" + huge));
+    ASSERT_EQ(sent.size(), 1u);
+    EXPECT_EQ(sent[0], (ItemTuple{"/p/s", "x", "k"}));
+    // The revision accessor reads the number without throwing.
+    EXPECT_NO_THROW(kumiho::api::Kref("kref://p/s/x.k?r=" + huge).getRevision());
 }
 
 int main(int argc, char** argv) {

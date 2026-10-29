@@ -5,8 +5,13 @@
  * Every one of the corpus's 133 cases goes through the structured parser,
  * kumiho::api::parseKref: the kernel verdict, the error_class, every field of
  * the reading and the GetItem tuple are checked here, together with the Kref
- * accessors (decision 3 of 2026-10-29: getItemName()/getKind() split at the LAST
- * '.') and the rule that validation is never stricter than before.
+ * accessors and the rule that validation is never stricter than before.
+ *
+ * Owner decision 3 of 2026-10-29 changes two C++ accessors, and both are pinned
+ * here: Kref::getKind() reads the text after the LAST '.' of the leaf, and
+ * Kref::getItemName() (and its alias getProductName()) reads the text before it.
+ * a7f155e split both at the FIRST '.', so `my.file.v2.k` was item `my`, kind
+ * `file.v2.k`; it is now item `my.file.v2`, kind `k`, like the kernel.
  *
  * The requests the client sends for these cases are checked against the same
  * corpus in test_api.cpp, which has the mock gRPC stub.
@@ -17,6 +22,8 @@
 #include <optional>
 #include <set>
 #include <string>
+#include <type_traits>
+#include <utility>
 #include <vector>
 
 #include <kumiho/error.hpp>
@@ -135,4 +142,89 @@ TEST(KrefVectors, KindSplitsAtTheLastDot) {
     EXPECT_EQ(Kref("kref://p/s/x.tar.gz").getItemName(), "x.tar");
     EXPECT_EQ(Kref("kref://p/s/x").getKind(), "");
     EXPECT_EQ(Kref("kref://p/s/x").getItemName(), "");
+}
+
+// ---------------------------------------------------------------------------
+// The lexical helpers are implementation detail, not public API.
+// ---------------------------------------------------------------------------
+
+namespace {
+
+template <typename T, typename = void>
+struct HasPublicSplitKref : std::false_type {};
+template <typename T>
+struct HasPublicSplitKref<T, std::void_t<decltype(kumiho::api::splitKref(std::declval<T>()))>>
+    : std::true_type {};
+
+template <typename T, typename = void>
+struct HasPublicSplitLeaf : std::false_type {};
+template <typename T>
+struct HasPublicSplitLeaf<
+    T, std::void_t<decltype(kumiho::api::splitLeaf(std::declval<T>(), std::declval<std::string&>(),
+                                                   std::declval<std::string&>()))>>
+    : std::true_type {};
+
+static_assert(!HasPublicSplitKref<std::string>::value,
+              "splitKref lives in kumiho::api::detail, not in the public namespace");
+static_assert(!HasPublicSplitLeaf<std::string>::value,
+              "splitLeaf lives in kumiho::api::detail, not in the public namespace");
+
+}  // namespace
+
+TEST(KrefDetail, TheLexicalSplitCutsAtTheLastSlashAndTheLastDot) {
+    const auto lex = kumiho::api::detail::splitKref("kref://p/a/b/my.file.k?r=2");
+    EXPECT_EQ(lex.path, "p/a/b/my.file.k");
+    EXPECT_EQ(lex.parent, std::optional<std::string>("p/a/b"));
+    EXPECT_EQ(lex.leaf, std::optional<std::string>("my.file.k"));
+    EXPECT_EQ(lex.leaf_name, std::optional<std::string>("my.file"));
+    EXPECT_EQ(lex.leaf_kind, std::optional<std::string>("k"));
+
+    std::string name, kind;
+    EXPECT_TRUE(kumiho::api::detail::splitLeaf("a.b.c", name, kind));
+    EXPECT_EQ(name, "a.b");
+    EXPECT_EQ(kind, "c");
+    EXPECT_FALSE(kumiho::api::detail::splitLeaf("nodot", name, kind));
+}
+
+// ---------------------------------------------------------------------------
+// Huge and odd input never throws and never overflows.
+// ---------------------------------------------------------------------------
+
+TEST(KrefVectors, ARevisionPastU64IsRefusedNotThrown) {
+    for (const std::size_t digits : {20u, 21u, 4300u, 4301u, 100000u}) {
+        const std::string uri = "kref://p/s/x.k?r=" + std::string(digits, '9');
+        KrefParts parts;
+        ASSERT_NO_THROW(parts = parseKref(uri)) << digits << " digits";
+        EXPECT_EQ(parts.error_class, KrefErrorClass::RevisionNumber) << digits << " digits";
+        EXPECT_FALSE(parts.revision.has_value());
+        // The request comes from the textual split alone.
+        const auto tuple = parts.getItemTuple();
+        EXPECT_EQ(tuple.parent_path, "/p/s");
+        EXPECT_EQ(tuple.item_name, "x");
+        EXPECT_EQ(tuple.kind, "k");
+    }
+    EXPECT_EQ(parseKref("kref://p/s/x.k?r=18446744073709551615").revision,
+              std::optional<std::uint64_t>(UINT64_MAX));
+    EXPECT_FALSE(parseKref("kref://p/s/x.k?r=18446744073709551616").revision.has_value());
+}
+
+TEST(KrefVectors, ParseKrefNeverThrowsOnOddInput) {
+    std::string longPath = "kref://";
+    for (int i = 0; i < 5000; ++i) longPath += "a/";
+    longPath += "x.k";
+    const std::vector<std::string> inputs = {
+        std::string(),
+        "kref://",
+        std::string(1, '\0'),
+        "kref://p/s/x.k?r=",
+        longPath,
+        "kref://p/s/x.k?" + std::string(3000, '&'),
+        "kref://\xe3\x80\x80",
+        "kref://p/s/\xff.k",
+    };
+    for (const std::string& uri : inputs) {
+        KrefParts parts;
+        ASSERT_NO_THROW(parts = parseKref(uri));
+        EXPECT_EQ(parts.uri, uri);
+    }
 }

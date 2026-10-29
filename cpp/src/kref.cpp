@@ -22,7 +22,7 @@ namespace api {
 Kref::Kref(const std::string& uri) : std::string(uri) {}
 
 std::string Kref::getPath() const {
-    return splitKref(*this).path;
+    return detail::splitKref(*this).path;
 }
 
 std::string Kref::getProject() const {
@@ -63,12 +63,12 @@ std::string Kref::getSpace() const {
 // LAST '.' (the same split as KrefParts::getItemTuple()).
 std::string Kref::getItemName() const {
     std::string name, kind;
-    return splitLeaf(getFullItemName(), name, kind) ? name : "";
+    return detail::splitLeaf(getFullItemName(), name, kind) ? name : "";
 }
 
 std::string Kref::getKind() const {
     std::string name, kind;
-    return splitLeaf(getFullItemName(), name, kind) ? kind : "";
+    return detail::splitLeaf(getFullItemName(), name, kind) ? kind : "";
 }
 
 std::string Kref::getFullItemName() const {

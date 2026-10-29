@@ -62,6 +62,8 @@ struct KrefItemTuple {
     std::string kind;         ///< the leaf after its last '.'
 };
 
+namespace detail {
+
 /** The purely textual split of a kref: no grammar is applied. */
 struct KrefLexical {
     std::string path;                       ///< after the first "://", before the first '?'
@@ -88,6 +90,8 @@ bool splitLeaf(const std::string& leaf, std::string& name, std::string& kind);
  * dots; kinds never do.
  */
 KrefLexical splitKref(const std::string& uri);
+
+} // namespace detail
 
 /**
  * @brief A kref read once: the kernel's reading plus the textual split.
