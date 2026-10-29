@@ -399,3 +399,24 @@ def test_kref_accessors_never_raise_on_a_huge_revision_in_other_places():
     kref = Kref(HUGE_REVISION)
     assert kref.get_item_name() == "x.k"
     assert kref.get_kind() == "k"
+
+
+# kumiho-server trims with Rust `str::trim`, i.e. the Unicode White_Space
+# property. Pin the whole table so a later edit cannot drop one silently.
+RUST_WHITE_SPACE = (
+    [0x09, 0x0A, 0x0B, 0x0C, 0x0D, 0x20, 0x85, 0xA0, 0x1680]
+    + list(range(0x2000, 0x200B))
+    + [0x2028, 0x2029, 0x202F, 0x205F, 0x3000]
+)
+
+
+def test_the_server_whitespace_table_is_rusts_white_space():
+    assert len(RUST_WHITE_SPACE) == 25
+    assert set(kref_module._SERVER_WHITESPACE) == {chr(c) for c in RUST_WHITE_SPACE}
+
+
+@pytest.mark.parametrize("code", RUST_WHITE_SPACE, ids=lambda c: f"U+{c:04X}")
+def test_every_server_whitespace_keeps_the_a7f155e_node(code):
+    uri = f"kref://p/s{chr(code)}/x.k"
+    request = parse_kref(uri).get_item_request()
+    assert server_key(request) == server_key(a7f155e_request(uri))
