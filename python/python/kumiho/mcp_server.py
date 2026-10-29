@@ -5160,10 +5160,10 @@ _ANNOTATION_FIELDS = (
     "openWorldHint",
 )
 
-# ``ToolAnnotations`` and ``Tool.title`` arrived after the oldest mcp this
-# package supports (>=1.10.0), and mcp 2.x renamed model fields wholesale. Both
-# are detected by introspection rather than by version, exactly as
-# ``_MCP_HAS_DECORATORS`` is: an old or vendored SDK then serves unannotated
+# ``ToolAnnotations`` and ``Tool.title`` may be missing on an older or vendored
+# mcp than this package supports (>=1.21.1), and mcp 2.x renamed model fields
+# wholesale. Both are detected by introspection rather than by version, exactly
+# as ``_MCP_HAS_DECORATORS`` is: an old or vendored SDK then serves unannotated
 # tools instead of failing to construct.
 if MCP_AVAILABLE:
     try:
@@ -5439,8 +5439,8 @@ def _validate_tool_input(name: str, arguments: dict) -> Optional[str]:
 
     Returns the client-facing error message, or ``None`` when the arguments
     are acceptable. Only the mcp 2.x branch calls this; on 1.x the SDK does it
-    for us (see ``_MCP_HAS_DECORATORS``) — but only from mcp 1.10.0, which is
-    why that is the declared floor in pyproject rather than a rounder number.
+    for us (see ``_MCP_HAS_DECORATORS``) — but only from mcp 1.10.0 (the
+    declared floor in pyproject is higher still; see the comment there).
 
     The schema is read from :data:`TOOLS` rather than off a constructed
     ``Tool`` model on purpose. mcp 2.0 renamed the model fields camelCase to

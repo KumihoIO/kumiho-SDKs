@@ -8,6 +8,28 @@
 > what produced the gaps backfilled in KumihoIO/kumiho-SDKs#155 and #157.
 
 
+## Unreleased — mcp Floor Raised to 1.21.1 🔧
+
+- **The `mcp` extra now requires `mcp>=1.21.1,<3` (was `>=1.10.0,<3`).** pydantic
+  2.14.0 removed `eval_type_backport` from its private `_typing_extra` module,
+  and every mcp from 1.2.0 through 1.21.0 imports that name when `mcp` is first
+  imported. With the newest pydantic, `import mcp` raised `ImportError`, so
+  `kumiho-mcp` could not start and the MCP test modules failed to collect. mcp
+  1.21.1 is the first release that no longer imports it; the whole suite passes
+  on every mcp 1.x from 1.21.1 through 1.30.0 and on mcp 2.0.0 and 2.3.0, all
+  with pydantic 2.14.1. Tool-input validation (`validate_input`, from mcp
+  1.10.0) is kept.
+
+### 📋 Upgrading
+
+A fresh `pip install kumiho[mcp]` or `pip install -U` is unaffected: pip already
+picks a current mcp. **If you pinned mcp between 1.10.0 and 1.21.0, the
+resolver now refuses the pin** — move it to 1.21.1 or later. Those mcp versions
+still import on pydantic 2.13 and earlier, but one extra cannot say "pydantic
+below 2.14, only for old mcp", so the supported range stops at the first mcp
+that works with every pydantic.
+
+
 ## kumiho 0.14.3 (September 2026) — Bounded Batched Store Provenance Reads 🧺
 
 When a stored memory names source revisions, the SDK used to resolve every
