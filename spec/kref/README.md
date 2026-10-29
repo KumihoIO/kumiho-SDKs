@@ -21,7 +21,7 @@ in `tests/data/kref-vectors.json`.
 | adapter | kumiho-db `f013b04c` | `crates/kumiho-db-adapter/src/...` |
 | server | kumiho-server `0e4906c` | `src/...` |
 | SDK | this repo, `a7f155e` | `python/python/kumiho/...` |
-| fix | branch `fix/kref-split-last-segment-20261029`, `175981b` | as SDK |
+| fix | branch `fix/kref-structured-parser-20261029` | as SDK, plus `parse_kref` and `KrefParts` in `kref.py` |
 
 ## 1. Who decides
 
@@ -158,6 +158,10 @@ This is the kernel's split (`catalog_components.rs:200-203`). kumiho-server uses
 
 SDKs must not hand-split krefs with `split('/', 1)` or `split('.', 1)`. They should use one parser that implements this section and passes the corpus.
 
+### Strings without `://`
+
+The textual split starts after the first `://`. A string without one is its own path, and the SDKs keep what their path accessor returned at `a7f155e`: Python and C++ return the whole string, query included, while Go and Rust still cut it at the first `?`. No validated kref lacks the scheme (`no-scheme` is refused by every validator), so this only decides what the path accessors return for an unvalidated string. The corpus has no such input, and each SDK's own tests pin its behavior.
+
 ## 6. Compatibility with kumiho-server and the current SDK
 
 ### What kumiho-server enforces
@@ -212,6 +216,18 @@ The generator computes that string for the current and the fixed request of ever
 
 kumiho-db refuses the old request for nested items, dotted names and dotted spaces (`kumiho_db_old: "INVALID_ARGUMENT: the kref names no item"`) and accepts the new one.
 
+### Item krefs only a server can return
+
+The corpus holds krefs the SDK validators accept, and no validator accepts a space segment that ends in whitespace or an empty segment. An item kref that the server returns is not validated by the Python client when it reads it (`get_item_from_revision` splits `revision.item_kref`), so it can still be one: `kref://p/s /x.k` or `kref://p//x.k`. Splitting these at the last `/` is not server-equivalent. `normalize_space_path` (`item.rs:14-31`) trims whitespace and `/` from the parent, so `("/p/s ", "x", "k")` is looked up as `kref://p/s/x.k` and `("/p/", "x", "k")` as `kref://p/x.k`. Those are different nodes from the ones `a7f155e`'s `("/p", "s /x", "k")` and `("/p", "/x", "k")` reached.
+
+**Rule.** An SDK that splits an item kref it has not validated sends the §5 split only when kumiho-server builds the same key for it as for `a7f155e`'s request. Otherwise it sends `a7f155e`'s shape: the project as the parent, and everything after it up to the last `.` as the name. Python implements this in `KrefParts.get_item_request()`; `get_item_tuple()` stays the pure §5 split that the corpus records. The legacy `kref:///s/x.k` passes the test, because `("//s", "x", "k")` and `("/", "s/x", "k")` build the same key.
+
+The other SDKs meet the rule in their own way, and each has a test for it:
+
+- **Rust and Go** validate every item kref before they split it, as at `a7f155e`, so such a kref is refused before any request.
+- **C++** does not validate. At `a7f155e` it already split at the last `/` and sent every segment as it was, so its request is unchanged.
+- **Dart** has not changed since `a7f155e`: it drops empty segments and sends the rest as they are.
+
 ### Flagged cases
 
 1. **`get_bundle_by_kref` re-fetch is NOT equivalent for `bundle-dotted-name` and `bundle-in-dotted-space`.** For `kref://p/s/my.set.bundle` the current SDK re-fetches `kref://p/s/my.bundle`. For `kref://p/s.v1/set.bundle` it re-fetches `kref://p/s.bundle`. Those are different nodes from the one it first looked up. Today's call therefore returns a different bundle, if one exists under that name, or NOT_FOUND. The fix fetches the bundle the kref names. This changes which node the server returns, so the owner must decide whether it ships.
@@ -225,13 +241,16 @@ kumiho-db refuses the old request for nested items, dotted names and dotted spac
 
    If the owner requires zero new client-side refusals, the fix must keep sending this request instead of raising.
 
+   The owner kept the refusal (2026-10-29). It has one more visible consequence: `Project.get_item(name, kind)` builds `kref://project/name.kind`, so a kind that contains `/` (for example `image/png`) gives the leaf `png`, which has no `.`, and is refused before sending. A kind containing `/` is not valid.
+
 ### Public accessors whose output changes (fix branch)
 
-Only `Kref.get_kind()` changes, and only for dotted item names. For example, `kref://p/s/my.file.v2.k` changed from `file.v2.k` to `k`. The corpus records each change in `sdk_fix_accessor_changes`.
+Only the kind accessor changes (`Kref.get_kind()`, `Kref::kind()`, `Kref.Kind()`, `Kref::getKind()`), and only for dotted item names. For example, `kref://p/s/my.file.v2.k` changed from `file.v2.k` to `k`. The corpus records each change in `sdk_fix_accessor_changes`. Owner decision 3 (2026-10-29) keeps this.
 
 - **Python:** no production caller of `get_kind()` or `get_item_name()` in the SDK, kumiho-cli, the MCP server, kumiho-memory or kumiho-plugins. Only `tests/test_kref.py` and docstrings use them.
 - **Rust:** `Kref::kind()` gates event classification in the dashboard (`dashboard/src/live.rs:102`). Today, events for dotted names are misclassified there.
 - **Go:** `Kref.Kind()` has test callers only.
+- **C++:** one more accessor changes. `Kref::getItemName()` and its alias `getProductName()` split at the first `.` at `a7f155e` as well, so `my.file.v2.k` was item `my`. They now split at the last `.` like `getKind()`, and the owner kept that too. The SDK has no caller of either (`Item::getItemName()` and `Item::getKind()` read the response, not the kref).
 
 For an item that kumiho-server stored with a dotted kind, `get_kind()` matched the stored `kind` before the fix and does not after it. Neither split can be right for both a dotted name and a dotted kind, because that server's krefs do not determine the pair. The kernel grammar decides in favour of the dotted name.
 
@@ -272,7 +291,7 @@ An SDK's validator must accept at least every case where `sdk_current_accepts` i
 
 **Regenerating.** Run `python spec/kref/tools/gen_vectors.py` from the repository root. It does four things:
 
-- It executes the snapshotted `kref.py` of `a7f155e` and of the fix branch (`tools/snapshots/`).
+- It executes the snapshotted `kref.py` of `a7f155e` (`tools/snapshots/`) and the working tree's `python/python/kumiho/kref.py`, so the corpus records what the Python SDK being tested sends and there is no second copy to go stale.
 - It ports the kernel, server and adapter rules it cites.
 - It asserts the hand-written `valid` and `error_class` of every case.
 - It refuses to write the corpus if they disagree.
