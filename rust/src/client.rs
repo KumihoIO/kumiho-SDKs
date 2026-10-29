@@ -765,13 +765,13 @@ impl Client {
 
     /// Get an item by its kref URI.
     pub async fn get_item_by_kref(&self, kref_uri: &str) -> Result<Item> {
-        let (parent_path, name, kind) = split_item_kref(kref_uri)?;
+        let (parent_path, name, kind) = item_tuple(kref_uri)?;
         self.get_item(&parent_path, &name, &kind).await
     }
 
     /// Get a bundle by its kref URI (verifies kind == `bundle`).
     pub async fn get_bundle_by_kref(&self, kref_uri: &str) -> Result<Bundle> {
-        let (parent_path, name, kind) = split_item_kref(kref_uri)?;
+        let (parent_path, name, kind) = item_tuple(kref_uri)?;
         if kind != "bundle" {
             return Err(Error::InvalidArgument(format!(
                 "'{kref_uri}' is not a bundle (kind='{kind}')"
@@ -1694,21 +1694,11 @@ fn map_path(p: pb::RevisionPath) -> RevisionPath {
     }
 }
 
-/// Split an item kref URI into `(parent_path_with_leading_slash, name, kind)`.
-///
-/// The parent path is everything before the LAST `/` (project and nested
-/// spaces); the leaf after it is split at its LAST `.`, because item names may
-/// contain dots while kinds never do.
-fn split_item_kref(kref_uri: &str) -> Result<(String, String, String)> {
+/// Validate `kref_uri`, then read the `GetItem` request `(parent_path, name, kind)`
+/// from its [`KrefParts`](crate::KrefParts): the one split used for every item lookup.
+fn item_tuple(kref_uri: &str) -> Result<(String, String, String)> {
     let kref = Kref::new(kref_uri).map_err(|e| Error::KrefValidation(e.0))?;
-    let path = kref.path();
-    let (space_path, item_name_kind) = path
-        .rsplit_once('/')
-        .ok_or_else(|| Error::InvalidArgument(format!("invalid item kref: {kref_uri}")))?;
-    let (name, kind) = item_name_kind.rsplit_once('.').ok_or_else(|| {
-        Error::InvalidArgument(format!("invalid item name.kind: {item_name_kind}"))
-    })?;
-    Ok((format!("/{space_path}"), name.to_string(), kind.to_string()))
+    kref.parts().get_item_tuple()
 }
 
 /// Parse `?t=`/`?tag=`/`?time=` query params from a kref; returns `(base, tag, time)`.

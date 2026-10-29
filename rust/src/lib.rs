@@ -50,6 +50,7 @@ mod discovery;
 mod edge;
 mod error;
 mod kref;
+mod kref_parts;
 mod models;
 mod token_loader;
 
@@ -61,6 +62,7 @@ pub use edge::{
 };
 pub use error::{Error, Result};
 pub use kref::{is_valid_kref, validate_kref, Kref, KrefValidationError};
+pub use kref_parts::{parse_kref, KrefErrorClass, KrefParts, KrefShape};
 pub use models::artifact::Artifact;
 pub use models::bundle::{Bundle, BundleMember, BundleRevisionHistory, RESERVED_KINDS};
 pub use models::event::{Event, EventCapabilities};

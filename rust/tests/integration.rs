@@ -780,3 +780,198 @@ async fn integration_find_all_paths_to() {
     let one = src.find_path_to(&dst, None, 0).await.unwrap();
     assert!(one.is_some());
 }
+
+// ---------------------------------------------------------------------------
+// The shared kref conformance corpus (spec/kref/vectors.json): the GetItem
+// requests the client sends, case by case.
+//
+// `sdk_current_request` is what the SDK sent at a7f155e; `sdk_fix_request` is
+// what the structured parser makes of the same kref. A request may differ only
+// where the corpus proves it server-equivalent, or where owner decision 2
+// refuses a leaf with no '.' before sending.
+// ---------------------------------------------------------------------------
+
+mod corpus {
+    use super::*;
+    use kumiho::Error;
+    use serde_json::Value;
+
+    pub fn cases() -> Vec<Value> {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("..")
+            .join("spec")
+            .join("kref")
+            .join("vectors.json");
+        let text =
+            std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("{}: {e}", path.display()));
+        serde_json::from_str::<Value>(&text).unwrap()["cases"]
+            .as_array()
+            .unwrap()
+            .clone()
+    }
+
+    pub fn id(case: &Value) -> &str {
+        case["id"].as_str().unwrap()
+    }
+
+    pub fn input(case: &Value) -> &str {
+        case["input"].as_str().unwrap()
+    }
+
+    /// `(parent_path, item_name, kind)` of a corpus request, `None` for an error entry.
+    pub fn tuple(request: &Value) -> Option<(String, String, String)> {
+        request.get("rpc")?;
+        Some((
+            request["parent_path"].as_str().unwrap().to_string(),
+            request["item_name"].as_str().unwrap().to_string(),
+            request["kind"].as_str().unwrap().to_string(),
+        ))
+    }
+
+    pub fn sent(fake: &FakeKumiho) -> Vec<(String, String, String)> {
+        fake.rec
+            .lock()
+            .unwrap()
+            .get_item_requests
+            .iter()
+            .map(|r| (r.parent_path.clone(), r.item_name.clone(), r.kind.clone()))
+            .collect()
+    }
+
+    /// Owner decision 2: a leaf with no '.' where an item is required is refused.
+    pub const REFUSED_BY_DECISION_2: &[&str] = &["dotted-space-leaf-without-dot"];
+
+    /// A request that differs from a7f155e's must be one the owner decisions allow.
+    pub fn assert_change_allowed(case: &Value, slot: &str) {
+        let current = &case["sdk_current_request"][slot];
+        let fixed = &case["sdk_fix_request"][slot];
+        if current == fixed {
+            return; // byte-identical to a7f155e
+        }
+        match (tuple(current), tuple(fixed)) {
+            (Some(_), Some(_)) => {
+                let eq = &case["server_equivalent_old_new"][slot]["equivalent"];
+                let decision_1_bundle = slot == "get_bundle_by_kref_refetch"
+                    && ["bundle-dotted-name", "bundle-in-dotted-space"].contains(&id(case));
+                assert!(
+                    eq == true || decision_1_bundle,
+                    "{}: {slot} changed but is not server-equivalent",
+                    id(case)
+                );
+            }
+            (Some(_), None) => assert!(
+                REFUSED_BY_DECISION_2.contains(&id(case)),
+                "{}: {slot} is newly refused",
+                id(case)
+            ),
+            (None, Some(_)) => panic!("{}: {slot} now sends where a7f155e raised", id(case)),
+            (None, None) => {} // both raise; only the wording differs
+        }
+    }
+
+    pub fn assert_error(res: &Result<impl std::fmt::Debug, Error>, case: &Value, validation: bool) {
+        match res {
+            Err(Error::KrefValidation(_)) if validation => {}
+            Err(Error::InvalidArgument(_)) if !validation => {}
+            other => panic!("{}: unexpected result {other:?}", id(case)),
+        }
+    }
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn corpus_get_item_by_kref_requests() {
+    let (fake, client) = start_server().await;
+    let mut sent_cases = 0;
+    for case in corpus::cases() {
+        let input = corpus::input(&case);
+        fake.rec.lock().unwrap().get_item_requests.clear();
+        let res = client.get_item_by_kref(input).await;
+        let sent = corpus::sent(&fake);
+
+        if kumiho::Kref::new(input).is_err() {
+            // Validation is unchanged: still refused before any RPC.
+            corpus::assert_error(&res, &case, true);
+            assert!(sent.is_empty(), "{}", corpus::id(&case));
+            continue;
+        }
+        match corpus::tuple(&case["sdk_fix_request"]["get_item_by_kref"]) {
+            Some(want) => {
+                res.unwrap_or_else(|e| panic!("{}: {e}", corpus::id(&case)));
+                assert_eq!(sent, vec![want], "{}", corpus::id(&case));
+                sent_cases += 1;
+            }
+            None => {
+                corpus::assert_error(&res, &case, false);
+                assert!(
+                    sent.is_empty(),
+                    "{}: refused before sending",
+                    corpus::id(&case)
+                );
+            }
+        }
+        corpus::assert_change_allowed(&case, "get_item_by_kref");
+    }
+    assert!(sent_cases > 50, "only {sent_cases} requests were sent");
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn corpus_get_item_from_revision_requests() {
+    let (fake, client) = start_server().await;
+    for case in corpus::cases() {
+        let input = corpus::input(&case);
+        // The mock's GetRevision names the part of the kref before '?' as the
+        // item kref, so use item krefs without a query.
+        if input.contains('?') || kumiho::Kref::new(input).is_err() {
+            continue;
+        }
+        fake.rec.lock().unwrap().get_item_requests.clear();
+        let res = client.get_item_from_revision(&format!("{input}?r=3")).await;
+        let sent = corpus::sent(&fake);
+        match corpus::tuple(&case["sdk_fix_request"]["get_item_by_kref"]) {
+            Some(want) => {
+                res.unwrap_or_else(|e| panic!("{}: {e}", corpus::id(&case)));
+                assert_eq!(sent, vec![want], "{}", corpus::id(&case));
+            }
+            None => {
+                corpus::assert_error(&res, &case, false);
+                assert!(sent.is_empty(), "{}", corpus::id(&case));
+            }
+        }
+    }
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn corpus_get_bundle_by_kref_requests() {
+    let (fake, client) = start_server().await;
+    let mut bundles = 0;
+    for case in corpus::cases() {
+        let input = corpus::input(&case);
+        if kumiho::Kref::new(input).is_err() {
+            continue;
+        }
+        fake.rec.lock().unwrap().get_item_requests.clear();
+        let res = client.get_bundle_by_kref(input).await;
+        let sent = corpus::sent(&fake);
+        let lookup = corpus::tuple(&case["sdk_fix_request"]["get_item_by_kref"]);
+        let refetch = corpus::tuple(&case["sdk_fix_request"]["get_bundle_by_kref_refetch"]);
+        match (lookup, refetch) {
+            (Some(_), Some(want)) => {
+                // A bundle: the bundle the kref names is the one fetched.
+                let bundle = res.unwrap_or_else(|e| panic!("{}: {e}", corpus::id(&case)));
+                assert_eq!(sent, vec![want.clone()], "{}", corpus::id(&case));
+                assert_eq!(bundle.as_item().item_name, want.1, "{}", corpus::id(&case));
+                corpus::assert_change_allowed(&case, "get_bundle_by_kref_refetch");
+                bundles += 1;
+            }
+            _ => {
+                // Not a bundle, or no item at all: refused before sending.
+                corpus::assert_error(&res, &case, false);
+                assert!(sent.is_empty(), "{}", corpus::id(&case));
+            }
+        }
+    }
+    assert_eq!(
+        bundles, 7,
+        "the corpus has seven bundle krefs this SDK accepts"
+    );
+}
