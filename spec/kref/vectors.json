@@ -5,7 +5,7 @@
     "kernel": "kumiho-db f013b04c: src/kernel/commands/catalog/reads.rs:143-164 parse_kref, src/kernel/model/catalog.rs:136-237 KrefQuery, src/kernel/keys/catalog_components.rs:17-205, src/kernel/keys/tag_rules.rs:8-32",
     "server": "kumiho-server 0e4906c: src/utils.rs:56-79 is_valid_kref, src/item.rs:14-31 normalize_space_path, src/item.rs:436-456 get_item",
     "sdk_current": "kumiho SDKs a7f155e: python/python/kumiho/kref.py:70-123 _KREF_PATTERN/validate_kref, client.py:915-981 get_item_by_kref/get_bundle_by_kref, client.py:1284-1330 get_revision, client.py:1859-1888 resolve",
-    "sdk_fix": "branch fix/kref-split-last-segment-20261029 175981b: client.py:271-291 _split_item_kref, kref.py:332 get_kind"
+    "sdk_fix": "branch fix/kref-structured-parser-20261029: python/python/kumiho/kref.py parse_kref / KrefParts.get_item_request / Kref.get_kind, executed live by gen_vectors.py; client.py get_item_by_kref, get_bundle_by_kref, get_item_from_revision"
   },
   "fields": {
     "valid / error_class / kernel_error": "kumiho-db kernel parse_kref verdict and exact message",

@@ -8,8 +8,9 @@ Inputs (all pinned, read-only):
   * spec/kref/tools/snapshots/kref_a7f155e.py  - python/python/kumiho/kref.py at
     origin/main a7f155e (the CURRENT Python SDK client-side grammar), executed
     as-is with its protobuf import stubbed.
-  * spec/kref/tools/snapshots/kref_fix.py      - the same file on the kref split
-    fix branch (only get_kind() differs).
+  * python/python/kumiho/kref.py (the working tree)  - the fix branch's own
+    kref.py, executed live, so the corpus records what the SDK being tested
+    sends, not a copy of it. There is no second snapshot to go stale.
   * The kumiho-db kernel parser (src/kernel/model/catalog.rs,
     src/kernel/keys/catalog_components.rs, src/kernel/commands/catalog/reads.rs
     at kumiho-db f013b04c) is ported in `Kernel` below. The port is checked
@@ -46,12 +47,14 @@ def _load_sdk(path: Path, name: str):
     source = path.read_text(encoding="utf-8")
     source = source.replace("from .proto import kumiho_pb2", "kumiho_pb2 = None")
     module = types.ModuleType(name)
+    # dataclasses resolves string annotations through sys.modules.
+    sys.modules[name] = module
     exec(compile(source, str(path), "exec"), module.__dict__)
     return module
 
 
 SDK_CUR = _load_sdk(HERE / "snapshots" / "kref_a7f155e.py", "kref_a7f155e")
-SDK_FIX = _load_sdk(HERE / "snapshots" / "kref_fix.py", "kref_fix")
+SDK_FIX = _load_sdk(HERE.parents[2] / "python" / "python" / "kumiho" / "kref.py", "kref_fix")
 
 
 def _err(exc: Exception) -> dict:
@@ -83,16 +86,9 @@ def cur_bundle_refetch(kref_uri: str):
 
 
 def fix_split(kref_uri: str):
-    """Fix branch client.py:271-291 _split_item_kref, verbatim logic."""
-    kref = SDK_FIX.Kref(kref_uri)
-    item_path = kref.get_path()
-    if "/" not in item_path:
-        raise ValueError(f"Invalid item kref format: {kref}")
-    space_path, item_name_kind = item_path.rsplit("/", 1)
-    if "." not in item_name_kind:
-        raise ValueError(f"Invalid item name.kind format: {item_name_kind}")
-    item_name, kind = item_name_kind.rsplit(".", 1)
-    return f"/{space_path}", item_name, kind
+    """The fix branch's client.get_item_by_kref: ``Kref(uri)`` validates, then the
+    request is ``parts.get_item_request()`` (kref.py ``KrefParts``)."""
+    return SDK_FIX.Kref(kref_uri).parts.get_item_request()
 
 
 def fix_bundle_refetch(kref_uri: str):
@@ -752,8 +748,10 @@ def main() -> None:
             "sdk_current": "kumiho SDKs a7f155e: python/python/kumiho/kref.py:70-123 _KREF_PATTERN/"
                            "validate_kref, client.py:915-981 get_item_by_kref/get_bundle_by_kref, "
                            "client.py:1284-1330 get_revision, client.py:1859-1888 resolve",
-            "sdk_fix": "branch fix/kref-split-last-segment-20261029 175981b: client.py:271-291 "
-                       "_split_item_kref, kref.py:332 get_kind",
+            "sdk_fix": "branch fix/kref-structured-parser-20261029: python/python/kumiho/kref.py "
+                       "parse_kref / KrefParts.get_item_request / Kref.get_kind, executed live by "
+                       "gen_vectors.py; client.py get_item_by_kref, get_bundle_by_kref, "
+                       "get_item_from_revision",
         },
         "fields": {
             "valid / error_class / kernel_error": "kumiho-db kernel parse_kref verdict and exact message",
