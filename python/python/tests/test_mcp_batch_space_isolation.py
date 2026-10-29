@@ -8,8 +8,12 @@ call raised, so captures with perfectly good hints were lost with the bad one.
 
 The contract pinned here:
 
-* a capture whose space cannot be created becomes ``{"error": ...}`` at its own
-  position and the remaining captures are still written in the one batch call;
+* a capture whose space the server refuses with INVALID_ARGUMENT becomes
+  ``{"error": ...}`` at its own position and the remaining captures are still
+  written in the one batch call;
+* every other failure (UNAVAILABLE, DEADLINE_EXCEEDED, UNAUTHENTICATED,
+  PERMISSION_DENIED, RESOURCE_EXHAUSTED, a non-gRPC exception) is not about one
+  capture and still raises exactly as it always did;
 * hints that resolve today keep EXACTLY the space path and request they always
   had.  The batch path does not slugify hints (the single-capture path does), so
   ``"Alpha/Beta Gamma"`` still creates spaces ``Alpha`` and ``Beta Gamma``.
@@ -44,6 +48,17 @@ class _ServerProject:
 
     name = PROJECT
 
+    #: Segment names that make ``create_space`` fail with something other than
+    #: a per-name refusal: a StatusCode, or an exception instance.
+    FAILURES = {
+        "boom": RuntimeError("transport exploded"),
+        "unavailable": grpc.StatusCode.UNAVAILABLE,
+        "deadline": grpc.StatusCode.DEADLINE_EXCEEDED,
+        "unauth": grpc.StatusCode.UNAUTHENTICATED,
+        "denied": grpc.StatusCode.PERMISSION_DENIED,
+        "exhausted": grpc.StatusCode.RESOURCE_EXHAUSTED,
+    }
+
     def __init__(self) -> None:
         self.created: list[tuple[str, str]] = []
         self.attempted: list[tuple[str, str]] = []
@@ -51,8 +66,11 @@ class _ServerProject:
 
     def create_space(self, name: str, parent_path: str = "/") -> object:
         self.attempted.append((name, parent_path))
-        if name == "boom":
-            raise RuntimeError("transport exploded")
+        failure = self.FAILURES.get(name)
+        if isinstance(failure, grpc.StatusCode):
+            raise _FakeRpcError(failure, f"{failure.name} for {name!r}")
+        if failure is not None:
+            raise failure
         if not name or name != name.strip():
             raise _FakeRpcError(
                 grpc.StatusCode.INVALID_ARGUMENT,
@@ -151,12 +169,40 @@ def test_every_capture_failing_returns_errors_and_writes_nothing(batch_env):
     assert batch_env["batch_calls"] == []
 
 
-def test_a_non_grpc_failure_is_isolated_too(batch_env):
-    out = _store_batch([_capture("boom", "boom"), _capture("fine", "fine")])
+def test_invalid_argument_is_the_only_failure_that_is_isolated(batch_env):
+    out = _store_batch([_capture("bad", "x / y"), _capture("fine", "fine")])
 
-    assert out["results"][0]["error"].endswith("transport exploded")
+    assert "INVALID_ARGUMENT" in out["results"][0]["error"]
     assert out["results"][1]["revision_kref"]
-    assert len(batch_env["batch_calls"][0]) == 1
+    assert len(batch_env["batch_calls"]) == 1
+
+
+def test_a_non_grpc_exception_still_raises(batch_env):
+    with pytest.raises(RuntimeError, match="transport exploded"):
+        _store_batch([_capture("boom", "boom"), _capture("fine", "fine")])
+
+    assert batch_env["batch_calls"] == []
+
+
+@pytest.mark.parametrize(
+    "hint, code",
+    [
+        ("unavailable", grpc.StatusCode.UNAVAILABLE),
+        ("deadline", grpc.StatusCode.DEADLINE_EXCEEDED),
+        ("unauth", grpc.StatusCode.UNAUTHENTICATED),
+        ("denied", grpc.StatusCode.PERMISSION_DENIED),
+        ("exhausted", grpc.StatusCode.RESOURCE_EXHAUSTED),
+    ],
+)
+def test_outage_auth_and_quota_failures_still_raise(batch_env, hint, code):
+    """Not a problem with one capture: the call fails as it always did."""
+    with pytest.raises(grpc.RpcError) as caught:
+        _store_batch([_capture("first", hint), _capture("fine", "fine")])
+
+    assert caught.value.code() is code
+    assert batch_env["batch_calls"] == []
+    # It stopped at the first capture instead of retrying the RPC for each.
+    assert batch_env["project"].attempted == [(hint, "/CognitiveMemory")]
 
 
 def test_a_failed_hint_is_not_remembered_as_an_existing_space(batch_env):

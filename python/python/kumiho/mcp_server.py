@@ -523,14 +523,21 @@ def _normalize_space_path(project_name: str, space_path: str) -> str:
     return f"/{project_name}/{path}"
 
 
-def _exception_detail(exc: BaseException) -> str:
-    """``CODE: details`` for a gRPC error (its ``str`` is a multi-line dump), else ``str(exc)``."""
-    if isinstance(exc, grpc.RpcError):
-        try:
-            return f"{exc.code().name}: {exc.details()}"
-        except Exception:  # noqa: BLE001 - fall back to the plain text
-            pass
-    return str(exc) or type(exc).__name__
+def _refused_space_detail(exc: BaseException) -> Optional[str]:
+    """``INVALID_ARGUMENT: details`` when the server refused a space name, else ``None``.
+
+    Only that code says this one name is unusable.  Everything else (an outage,
+    auth, quota, a non-gRPC error) is not about a single capture and is left to
+    propagate as it always did.
+    """
+    if not isinstance(exc, grpc.RpcError):
+        return None
+    try:
+        if exc.code() != grpc.StatusCode.INVALID_ARGUMENT:
+            return None
+        return f"INVALID_ARGUMENT: {exc.details()}"
+    except Exception:  # noqa: BLE001 - an error we cannot read is not isolated
+        return None
 
 
 def _ensure_space_path(project: Project, space_path: str) -> str:
@@ -1976,16 +1983,17 @@ def tool_memory_store_batch(
             cap_space = cap.get("space_hint", "") or space_path
             # The hint is used verbatim here (no slugify, unlike the single
             # path) so every hint that resolves today keeps its exact space.
-            # One the server refuses -- edge whitespace, an empty segment --
-            # must cost only this capture, not the siblings in the batch.
+            # One the server refuses as INVALID_ARGUMENT -- edge whitespace, an
+            # empty segment -- must cost only this capture, not the siblings in
+            # the batch.  Any other failure is not about this capture and raises.
             try:
                 normalized_space = _ensure_space_path(project_obj, cap_space)
-            except Exception as exc:  # noqa: BLE001 - isolate per capture
+            except grpc.RpcError as exc:
+                refused = _refused_space_detail(exc)
+                if refused is None:
+                    raise
                 results[i] = {
-                    "error": (
-                        f"space {cap_space!r} could not be created: "
-                        f"{_exception_detail(exc)}"
-                    )
+                    "error": f"space {cap_space!r} could not be created: {refused}"
                 }
                 continue
 
