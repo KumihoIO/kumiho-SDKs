@@ -234,3 +234,68 @@ fn kind_splits_at_the_last_dot() {
     assert_eq!(Kref::new("kref://p/s/x.tar.gz").unwrap().kind(), "gz");
     assert_eq!(Kref::new("kref://p/s/x").unwrap().kind(), "");
 }
+
+#[test]
+fn error_class_displays_as_its_corpus_spelling() {
+    let mut seen = std::collections::BTreeSet::new();
+    for case in cases() {
+        let Some(class) = parse_kref(input(&case)).error_class else {
+            continue;
+        };
+        assert_eq!(
+            class.to_string(),
+            case["error_class"].as_str().unwrap(),
+            "{}",
+            id(&case)
+        );
+        assert_eq!(format!("{class}"), class.as_str());
+        seen.insert(class.to_string());
+    }
+    assert_eq!(seen.len(), 11, "the corpus exercises every error class");
+}
+
+#[test]
+fn a_revision_past_u64_is_refused_without_a_panic() {
+    for digits in [20, 21, 4300, 4301, 100_000] {
+        let uri = format!("kref://p/s/x.k?r={}", "9".repeat(digits));
+        let parts = parse_kref(&uri);
+        assert_eq!(
+            parts.error_class.map(|c| c.as_str()),
+            Some("revision_number"),
+            "{digits} digits"
+        );
+        assert_eq!(parts.revision, None);
+        // The request comes from the textual split alone.
+        assert_eq!(
+            parts.get_item_tuple().unwrap(),
+            ("/p/s".to_string(), "x".to_string(), "k".to_string())
+        );
+    }
+    assert_eq!(
+        parse_kref("kref://p/s/x.k?r=18446744073709551615").revision,
+        Some(u64::MAX)
+    );
+    assert_eq!(
+        parse_kref("kref://p/s/x.k?r=18446744073709551616").revision,
+        None
+    );
+}
+
+#[test]
+fn parse_kref_never_panics_on_odd_input() {
+    let long_path = format!("kref://{}x.k", "a/".repeat(5000));
+    let many_amps = format!("kref://p/s/x.k?{}", "&".repeat(3000));
+    for uri in [
+        "",
+        "kref://",
+        "\u{0}",
+        "kref://p/s/x.k?r=",
+        long_path.as_str(),
+        many_amps.as_str(),
+        "kref://\u{3000}\u{3000}",
+    ] {
+        let parts = parse_kref(uri);
+        assert_eq!(parts.uri, uri);
+        let _ = parts.get_item_tuple();
+    }
+}

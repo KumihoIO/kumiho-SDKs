@@ -975,3 +975,61 @@ async fn corpus_get_bundle_by_kref_requests() {
         "the corpus has seven bundle krefs this SDK accepts"
     );
 }
+
+// ---------------------------------------------------------------------------
+// Server-returned item krefs and huge inputs.
+//
+// A kref the server returns is not checked by the server's own read RPCs, so
+// it can hold a space segment that ends in whitespace or an empty segment. The
+// Rust client validates every item kref before it splits it (`Kref::new`), as
+// it did at a7f155e, so those krefs are refused before any RPC and never reach
+// `normalize_space_path`, which would move such a parent to another space.
+// ---------------------------------------------------------------------------
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn get_item_from_revision_refuses_server_krefs_the_validator_refuses() {
+    let (fake, client) = start_server().await;
+    for item_kref in [
+        "kref://p/s /x.k",
+        "kref://p/s\t/x.k",
+        "kref://p/s\u{a0}/x.k",
+        "kref://p/s\u{3000}/x.k",
+        "kref://p/a/b /x.k",
+        "kref://p//x.k",
+        "kref://p/s//x.k",
+        "kref://p /s/x.k",
+    ] {
+        let res = client
+            .get_item_from_revision(&format!("{item_kref}?r=3"))
+            .await;
+        assert!(
+            matches!(res, Err(kumiho::Error::KrefValidation(_))),
+            "{item_kref:?}: expected KrefValidation, got {res:?}"
+        );
+    }
+    assert!(
+        corpus::sent(&fake).is_empty(),
+        "a refused kref must not reach the server"
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn get_item_by_kref_with_a_huge_revision_still_looks_the_item_up() {
+    let (fake, client) = start_server().await;
+    let huge = "1".repeat(5000);
+    client
+        .get_item_by_kref(&format!("kref://p/s/x.k?r={huge}"))
+        .await
+        .unwrap();
+    client
+        .get_bundle_by_kref(&format!("kref://p/s/x.bundle?r={huge}"))
+        .await
+        .unwrap();
+    assert_eq!(
+        corpus::sent(&fake),
+        vec![
+            ("/p/s".to_string(), "x".to_string(), "k".to_string()),
+            ("/p/s".to_string(), "x".to_string(), "bundle".to_string()),
+        ]
+    );
+}

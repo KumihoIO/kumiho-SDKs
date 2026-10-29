@@ -33,7 +33,36 @@ static SEGMENT: Lazy<Regex> =
     Lazy::new(|| Regex::new(r"^\w[\w.\-]*$").expect("segment regex is valid"));
 
 /// Why the kernel refuses a kref, in the order it checks.
+///
+/// The enum is `#[non_exhaustive]`: a later kernel may add a class, so a
+/// `match` outside this crate needs a wildcard arm.
+///
+/// ```compile_fail,E0004
+/// use kumiho::KrefErrorClass::*;
+/// fn rank(class: kumiho::KrefErrorClass) -> u8 {
+///     match class {
+///         Scheme => 1,
+///         FragmentOrPercent => 2,
+///         TagReservedChar => 3,
+///         Path => 4,
+///         QueryPair => 5,
+///         UnknownKey => 6,
+///         DuplicateKey => 7,
+///         RAndT => 8,
+///         RevisionNumber => 9,
+///         Tag => 10,
+///         Artifact => 11,
+///     }
+/// }
+/// ```
+///
+/// It displays as its corpus spelling:
+///
+/// ```
+/// assert_eq!(kumiho::KrefErrorClass::RevisionNumber.to_string(), "revision_number");
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum KrefErrorClass {
     /// Not `kref://` (the scheme is case-sensitive).
     Scheme,
@@ -59,6 +88,12 @@ pub enum KrefErrorClass {
     Artifact,
 }
 
+impl std::fmt::Display for KrefErrorClass {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
 impl KrefErrorClass {
     /// The corpus spelling, for example `"revision_number"`.
     pub fn as_str(self) -> &'static str {
@@ -80,7 +115,23 @@ impl KrefErrorClass {
 
 /// A namespace a base can satisfy, in the order the kernel parser and the
 /// resolver try them.
+///
+/// The enum is `#[non_exhaustive]`: a later kernel may add a namespace, so a
+/// `match` outside this crate needs a wildcard arm.
+///
+/// ```compile_fail,E0004
+/// use kumiho::KrefShape::*;
+/// fn rank(shape: kumiho::KrefShape) -> u8 {
+///     match shape {
+///         RootItem => 1,
+///         Item => 2,
+///         Space => 3,
+///         Project => 4,
+///     }
+/// }
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum KrefShape {
     /// An item directly under the project: exactly two segments.
     RootItem,
@@ -117,7 +168,33 @@ impl KrefShape {
 /// The textual split (`path`, `parent`, `leaf`, `leaf_name`, `leaf_kind`) does
 /// not depend on the kernel's verdict. [`KrefParts::get_item_tuple`] uses it,
 /// so a kref this SDK passes through to the backend still yields its request.
+///
+/// The struct is `#[non_exhaustive]`: it is read through [`parse_kref`], never
+/// built by hand, so a later field is not a breaking change.
+///
+/// ```compile_fail,E0639
+/// let parts = kumiho::KrefParts {
+///     uri: String::new(),
+///     error_class: None,
+///     base: None,
+///     shapes: Vec::new(),
+///     project: None,
+///     space_path: None,
+///     item_name: None,
+///     kind: None,
+///     is_project_root_item: None,
+///     revision: None,
+///     tag: None,
+///     artifact: None,
+///     path: String::new(),
+///     parent: None,
+///     leaf: None,
+///     leaf_name: None,
+///     leaf_kind: None,
+/// };
+/// ```
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct KrefParts {
     /// The string that was parsed.
     pub uri: String,
