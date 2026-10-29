@@ -146,12 +146,12 @@ func TestSplitItemKrefAtLastSlashAndLastDot(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			parentPath, itemName, kind, err := splitItemKref(tc.kref)
+			parentPath, itemName, kind, err := itemTuple(tc.kref)
 			if err != nil {
-				t.Fatalf("splitItemKref(%q): %v", tc.kref, err)
+				t.Fatalf("itemTuple(%q): %v", tc.kref, err)
 			}
 			if parentPath != tc.parentPath || itemName != tc.itemName || kind != tc.kind {
-				t.Errorf("splitItemKref(%q) = (%q, %q, %q), want (%q, %q, %q)",
+				t.Errorf("itemTuple(%q) = (%q, %q, %q), want (%q, %q, %q)",
 					tc.kref, parentPath, itemName, kind, tc.parentPath, tc.itemName, tc.kind)
 			}
 		})
@@ -160,10 +160,10 @@ func TestSplitItemKrefAtLastSlashAndLastDot(t *testing.T) {
 
 func TestSplitItemKrefRejectsMalformed(t *testing.T) {
 	for _, kref := range []string{"kref://proj", "kref://proj/noext", "kref://proj/space/noext"} {
-		_, _, _, err := splitItemKref(kref)
+		_, _, _, err := itemTuple(kref)
 		var iae *InvalidArgumentError
 		if !errors.As(err, &iae) {
-			t.Errorf("splitItemKref(%q) error = %v, want *InvalidArgumentError", kref, err)
+			t.Errorf("itemTuple(%q) error = %v, want *InvalidArgumentError", kref, err)
 		}
 	}
 }

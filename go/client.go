@@ -481,25 +481,11 @@ func isAllDigits(s string) bool {
 	return len(s) > 0
 }
 
-// splitItemKref splits an item kref URI into (parentPath, name, kind).
-//
-// The parent path is everything before the LAST "/" (project and nested
-// spaces); the leaf after it is split at its LAST ".", because item names may
-// contain dots while kinds never do.
-func splitItemKref(krefURI string) (parentPath, name, kind string, err error) {
+// itemTuple validates krefURI, then reads the GetItem request (parentPath,
+// name, kind) from its KrefParts: the one split used for every item lookup.
+func itemTuple(krefURI string) (parentPath, name, kind string, err error) {
 	if verr := ValidateKref(krefURI); verr != nil {
 		return "", "", "", verr
 	}
-	k := Kref(krefURI)
-	path := k.Path()
-	slash := strings.LastIndexByte(path, '/')
-	if slash < 0 {
-		return "", "", "", &InvalidArgumentError{Msg: "invalid item kref: " + krefURI}
-	}
-	spacePath, nameKind := path[:slash], path[slash+1:]
-	dot := strings.LastIndexByte(nameKind, '.')
-	if dot < 0 {
-		return "", "", "", &InvalidArgumentError{Msg: "invalid item name.kind: " + nameKind}
-	}
-	return "/" + spacePath, nameKind[:dot], nameKind[dot+1:], nil
+	return ParseKref(krefURI).GetItemTuple()
 }

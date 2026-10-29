@@ -201,7 +201,7 @@ func (c *Client) GetItem(ctx context.Context, parentPath, itemName, kind string)
 
 // GetItemByKref gets an item by its kref URI.
 func (c *Client) GetItemByKref(ctx context.Context, krefURI string) (*Item, error) {
-	parent, name, kind, err := splitItemKref(krefURI)
+	parent, name, kind, err := itemTuple(krefURI)
 	if err != nil {
 		return nil, err
 	}
@@ -219,7 +219,7 @@ func (c *Client) GetItemFromRevision(ctx context.Context, revisionKref string) (
 
 // GetBundleByKref gets a bundle by kref URI (verifies kind == bundle).
 func (c *Client) GetBundleByKref(ctx context.Context, krefURI string) (*Bundle, error) {
-	parent, name, kind, err := splitItemKref(krefURI)
+	parent, name, kind, err := itemTuple(krefURI)
 	if err != nil {
 		return nil, err
 	}
