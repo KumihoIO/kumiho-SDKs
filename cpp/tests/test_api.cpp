@@ -12,6 +12,11 @@
 #include <cstdlib> // For getenv
 #include <iomanip> // For std::put_time
 #include <sstream> // For std::ostringstream
+#include <optional>
+#include <set>
+#include <vector>
+
+#include "kref_vectors.hpp"
 
 using ::testing::_;
 using ::testing::Return;
@@ -448,6 +453,180 @@ TEST_F(KumihoUnitTest, ResolveItemKrefFallbackToFirstArtifact) {
     ASSERT_TRUE(location.has_value());
     EXPECT_EQ(location.value(), "/path/to/artifact1");
 }
+
+// ---------------------------------------------------------------------------
+// The shared kref conformance corpus (spec/kref/vectors.json): the GetItem
+// requests the client sends, case by case.
+//
+// sdk_current_request is what the SDK sent at a7f155e; sdk_fix_request is what
+// the structured parser makes of the same kref. A request may differ only where
+// the corpus proves it server-equivalent, or where owner decision 2 refuses a
+// leaf with no '.' before sending. Only krefs today's Python SDK accepts are
+// replayed here: this SDK does not validate krefs, and that is unchanged.
+// ---------------------------------------------------------------------------
+namespace {
+
+using Json = nlohmann::json;
+using ::testing::AnyNumber;
+using ::testing::Invoke;
+
+struct ItemTuple {
+    std::string parent_path, item_name, kind;
+    bool operator==(const ItemTuple& o) const {
+        return parent_path == o.parent_path && item_name == o.item_name && kind == o.kind;
+    }
+};
+
+std::ostream& operator<<(std::ostream& os, const ItemTuple& t) {
+    return os << "(" << t.parent_path << ", " << t.item_name << ", " << t.kind << ")";
+}
+
+// A corpus request entry that is a GetItem request (not an error or a skip).
+std::optional<ItemTuple> tupleOf(const Json& request) {
+    if (!request.contains("rpc")) return std::nullopt;
+    return ItemTuple{request.at("parent_path").get<std::string>(),
+                     request.at("item_name").get<std::string>(),
+                     request.at("kind").get<std::string>()};
+}
+
+// Owner decision 2: a leaf with no '.' where an item is required is refused.
+const std::set<std::string> kRefusedByDecision2 = {"dotted-space-leaf-without-dot"};
+// Owner decision 1: a7f155e re-fetched a different node.
+const std::set<std::string> kBundleRefetchFixedByDecision1 = {"bundle-dotted-name",
+                                                              "bundle-in-dotted-space"};
+
+// A request that differs from a7f155e's must be one the owner decisions allow.
+void expectChangeAllowed(const Json& c, const std::string& slot) {
+    const auto id = c.at("id").get<std::string>();
+    const Json& current = c.at("sdk_current_request").at(slot);
+    const Json& fixed = c.at("sdk_fix_request").at(slot);
+    const auto cur = tupleOf(current);
+    const auto fix = tupleOf(fixed);
+    if (cur && fix && *cur == *fix) return;  // byte-identical to a7f155e
+    if (cur && fix) {
+        const Json& eq = c.at("server_equivalent_old_new");
+        const bool equivalent = !eq.is_null() && !eq.at(slot).is_null() &&
+                                eq.at(slot).at("equivalent").get<bool>();
+        const bool decision1 =
+            slot == "get_bundle_by_kref_refetch" && kBundleRefetchFixedByDecision1.count(id) > 0;
+        EXPECT_TRUE(equivalent || decision1)
+            << id << ": " << slot << " changed " << *cur << " -> " << *fix
+            << " but is not server-equivalent";
+    } else if (cur && !fix) {
+        EXPECT_TRUE(kRefusedByDecision2.count(id) > 0) << id << ": " << slot << " is newly refused";
+    } else if (!cur && fix) {
+        ADD_FAILURE() << id << ": " << slot << " now sends where a7f155e raised";
+    }
+}
+
+}  // namespace
+
+class KrefVectorsRequestTest : public KumihoUnitTest {
+protected:
+    // Record every GetItem request and answer with an item of the requested kind.
+    void SetUp() override {
+        KumihoUnitTest::SetUp();
+        EXPECT_CALL(*mock_stub, GetItem(_, _, _))
+            .Times(AnyNumber())
+            .WillRepeatedly(Invoke([this](grpc::ClientContext*, const kumiho::GetItemRequest& req,
+                                          kumiho::ItemResponse* resp) {
+                sent.push_back({req.parent_path(), req.item_name(), req.kind()});
+                resp->set_item_name(req.item_name());
+                resp->set_kind(req.kind());
+                resp->set_name(req.item_name() + "." + req.kind());
+                return grpc::Status::OK;
+            }));
+        EXPECT_CALL(*mock_stub, GetRevision(_, _, _))
+            .Times(AnyNumber())
+            .WillRepeatedly(Invoke([this](grpc::ClientContext*, const kumiho::KrefRequest& req,
+                                          kumiho::RevisionResponse* resp) {
+                // The part of the kref before '?' is the item kref.
+                const std::string uri = req.kref().uri();
+                resp->mutable_kref()->set_uri(uri);
+                resp->mutable_item_kref()->set_uri(uri.substr(0, uri.find('?')));
+                resp->set_number(3);
+                return grpc::Status::OK;
+            }));
+    }
+
+    std::vector<ItemTuple> sent;
+};
+
+TEST_F(KrefVectorsRequestTest, GetItemByKrefSendsTheCorpusRequest) {
+    int sentCases = 0;
+    for (const auto& c : kumiho_test::loadKrefVectors()) {
+        if (!c.at("sdk_current_accepts").get<bool>()) continue;
+        const auto id = c.at("id").get<std::string>();
+        SCOPED_TRACE(id);
+        sent.clear();
+        const auto want = tupleOf(c.at("sdk_fix_request").at("get_item_by_kref"));
+        if (want) {
+            EXPECT_NO_THROW(client->getItemByKref(c.at("input").get<std::string>()));
+            ASSERT_EQ(sent.size(), 1u);
+            EXPECT_EQ(sent[0], *want);
+            ++sentCases;
+        } else {
+            // Refused before sending, with the same error type as before.
+            EXPECT_THROW(client->getItemByKref(c.at("input").get<std::string>()),
+                         kumiho::api::ValidationError);
+            EXPECT_TRUE(sent.empty());
+        }
+        expectChangeAllowed(c, "get_item_by_kref");
+    }
+    EXPECT_EQ(sentCases, 51);
+}
+
+TEST_F(KrefVectorsRequestTest, GetItemFromRevisionSendsTheCorpusRequest) {
+    for (const auto& c : kumiho_test::loadKrefVectors()) {
+        const auto input = c.at("input").get<std::string>();
+        if (!c.at("sdk_current_accepts").get<bool>() || input.find('?') != std::string::npos) continue;
+        SCOPED_TRACE(c.at("id").get<std::string>());
+        sent.clear();
+        const auto want = tupleOf(c.at("sdk_fix_request").at("get_item_by_kref"));
+        if (want) {
+            EXPECT_NO_THROW(client->getItemFromRevision(input + "?r=3"));
+            ASSERT_EQ(sent.size(), 1u);
+            EXPECT_EQ(sent[0], *want);
+        } else {
+            EXPECT_THROW(client->getItemFromRevision(input + "?r=3"), kumiho::api::ValidationError);
+            EXPECT_TRUE(sent.empty());
+        }
+    }
+}
+
+TEST_F(KrefVectorsRequestTest, GetBundleByKrefFetchesTheBundleTheKrefNames) {
+    int bundles = 0;
+    for (const auto& c : kumiho_test::loadKrefVectors()) {
+        if (!c.at("sdk_current_accepts").get<bool>()) continue;
+        const auto id = c.at("id").get<std::string>();
+        SCOPED_TRACE(id);
+        sent.clear();
+        const auto input = c.at("input").get<std::string>();
+        const auto lookup = tupleOf(c.at("sdk_fix_request").at("get_item_by_kref"));
+        const auto refetch = tupleOf(c.at("sdk_fix_request").at("get_bundle_by_kref_refetch"));
+        if (lookup && refetch) {
+            // A bundle: one GetItem to look the item up, one to fetch the Bundle
+            // wrapper; both name the bundle the kref names.
+            std::shared_ptr<kumiho::api::Bundle> bundle;
+            EXPECT_NO_THROW(bundle = client->getBundleByKref(input));
+            ASSERT_EQ(sent.size(), 2u);
+            EXPECT_EQ(sent[0], *refetch);
+            EXPECT_EQ(sent[1], *refetch);
+            expectChangeAllowed(c, "get_bundle_by_kref_refetch");
+            ++bundles;
+        } else if (lookup) {
+            // Not a bundle: the lookup is sent, then the call is refused.
+            EXPECT_THROW(client->getBundleByKref(input), kumiho::api::ValidationError);
+            ASSERT_EQ(sent.size(), 1u);
+            EXPECT_EQ(sent[0], *lookup);
+        } else {
+            EXPECT_THROW(client->getBundleByKref(input), kumiho::api::ValidationError);
+            EXPECT_TRUE(sent.empty());
+        }
+    }
+    EXPECT_EQ(bundles, 7);
+}
+
 int main(int argc, char** argv) {
     ::testing::InitGoogleTest(&argc, argv);
     return RUN_ALL_TESTS();

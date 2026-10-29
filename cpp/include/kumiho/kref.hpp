@@ -82,6 +82,10 @@ public:
 
     /**
      * @brief Get the base item name (without kind).
+     *
+     * The leaf is split at its LAST '.', like the kumiho-db kernel: item names
+     * may contain dots, kinds never do (`a.b.model` is item `a.b`, kind `model`).
+     * See kumiho/kref_parts.hpp for the structured parser.
      * @return The item name, or empty if this is a space-level kref.
      */
     std::string getItemName() const;
@@ -90,7 +94,7 @@ public:
     std::string getProductName() const { return getItemName(); }
 
     /**
-     * @brief Get the item kind.
+     * @brief Get the item kind: the text after the LAST '.' of the leaf.
      * @return The item kind (e.g., "model", "texture"), or empty.
      */
     std::string getKind() const;
