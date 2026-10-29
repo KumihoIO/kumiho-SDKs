@@ -12,6 +12,16 @@ in descending version order, which is also descending date order.
 narrative — why a change mattered and what you have to do about it. This file is
 its terse companion. Entries belong in both.
 
+## [Unreleased]
+
+### Fixed
+- **`tool_memory_store_batch` no longer loses the whole batch to one bad space
+  hint.** A hint the server refuses (edge whitespace such as `"alpha / beta"`, an
+  empty segment such as `"a//b"`) used to raise out of the per-capture space step
+  and fail the call. It now becomes `{"error": ...}` for that capture alone and
+  the other captures are written in the same batch. Hints that worked are sent
+  unchanged: the batch path still does not slugify.
+
 ## [0.14.3] - 2026-09-23
 
 ### Changed

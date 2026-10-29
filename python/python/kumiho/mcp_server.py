@@ -523,6 +523,16 @@ def _normalize_space_path(project_name: str, space_path: str) -> str:
     return f"/{project_name}/{path}"
 
 
+def _exception_detail(exc: BaseException) -> str:
+    """``CODE: details`` for a gRPC error (its ``str`` is a multi-line dump), else ``str(exc)``."""
+    if isinstance(exc, grpc.RpcError):
+        try:
+            return f"{exc.code().name}: {exc.details()}"
+        except Exception:  # noqa: BLE001 - fall back to the plain text
+            pass
+    return str(exc) or type(exc).__name__
+
+
 def _ensure_space_path(project: Project, space_path: str) -> str:
     normalized = _normalize_space_path(project.name, space_path)
     known_key = _tenant_key(normalized)
@@ -1964,7 +1974,20 @@ def tool_memory_store_batch(
             normalized_space = _kref_space_path(revise_target.kref.uri)
         else:
             cap_space = cap.get("space_hint", "") or space_path
-            normalized_space = _ensure_space_path(project_obj, cap_space)
+            # The hint is used verbatim here (no slugify, unlike the single
+            # path) so every hint that resolves today keeps its exact space.
+            # One the server refuses -- edge whitespace, an empty segment --
+            # must cost only this capture, not the siblings in the batch.
+            try:
+                normalized_space = _ensure_space_path(project_obj, cap_space)
+            except Exception as exc:  # noqa: BLE001 - isolate per capture
+                results[i] = {
+                    "error": (
+                        f"space {cap_space!r} could not be created: "
+                        f"{_exception_detail(exc)}"
+                    )
+                }
+                continue
 
         final_summary = content
         if len(final_summary) > 2000:
