@@ -175,6 +175,13 @@ MAX_KREF_SEGMENTS = 32
 MAX_TAG_BYTES = 1024
 MAX_ARTIFACT_NAME_BYTES = 256
 _MAX_REVISION = 2**64 - 1
+# Other_Alphabetic code points whose category is So: circled and squared letters.
+_OTHER_ALPHABETIC_SYMBOLS = (
+    (0x24B6, 0x24E9),
+    (0x1F130, 0x1F149),
+    (0x1F150, 0x1F169),
+    (0x1F170, 0x1F189),
+)
 
 
 class _Lexical(NamedTuple):
@@ -195,8 +202,11 @@ def _lexical(uri: str) -> _Lexical:
     has no ``.``, and ``parent`` and ``leaf`` are ``None`` when the path has no
     ``/``.
     """
-    path = uri.split("://", 1)[1] if "://" in uri else uri
-    path = path.split("?", 1)[0]
+    if "://" in uri:
+        path = uri.split("://", 1)[1].split("?", 1)[0]
+    else:
+        # No scheme: the whole string is the path, as get_path() always returned it.
+        path = uri
     parent: Optional[str] = None
     leaf: Optional[str] = None
     if "/" in path:
@@ -212,15 +222,17 @@ def _lexical(uri: str) -> _Lexical:
 def _is_word(ch: str) -> bool:
     """The kernel's word class: Alphabetic, Mark, Nd, Pc and Join_Control.
 
-    Approximated with Unicode general categories (L*, M*, Nd, Nl, Pc, U+200C,
-    U+200D). The corpus pins it; what this SDK accepts is decided by
-    :func:`validate_kref`, not by this class.
+    Built from the Unicode general categories (L*, M*, Nd, Nl, Pc, U+200C,
+    U+200D) plus the Other_Alphabetic symbols that are neither letters nor marks
+    (the circled and squared Latin letters). The corpus pins it; what this SDK
+    accepts is decided by :func:`validate_kref`, not by this class.
     """
     category = unicodedata.category(ch)
     return (
         category[0] in "LM"
         or category in ("Nd", "Nl", "Pc")
         or ch in "‌‍"
+        or any(first <= ord(ch) <= last for first, last in _OTHER_ALPHABETIC_SYMBOLS)
     )
 
 

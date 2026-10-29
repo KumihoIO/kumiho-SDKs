@@ -394,3 +394,15 @@ def test_get_kind_splits_at_the_last_dot():
     assert Kref("kref://p/s/my.file.v2.k").get_kind() == "k"
     assert Kref("kref://p/s/x.tar.gz").get_kind() == "gz"
     assert Kref("kref://p/s/x").get_kind() == ""
+
+
+def test_get_path_of_a_scheme_less_kref_is_the_whole_string():
+    # Unchanged from a7f155e: without "://" the string is its own path.
+    assert Kref("p/x.k?r=2", validate=False).get_path() == "p/x.k?r=2"
+    assert Kref("kref://p/x.k?r=2").get_path() == "p/x.k"
+
+
+def test_circled_letters_are_word_characters_like_in_the_kernel():
+    # U+24B6 is Other_Alphabetic (category So): the kernel reads it as a letter.
+    assert _parse("kref://p/s/Ⓐ.k").valid
+    assert not _parse("kref://p/s/🦊.k").valid
