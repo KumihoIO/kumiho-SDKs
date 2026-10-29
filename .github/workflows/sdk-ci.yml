@@ -1,5 +1,9 @@
 # SDK CI — builds and tests the Go, Rust and Python SDKs on pull requests.
 #
+# spec/** is a path filter too: the Python, Rust and Go suites read the shared
+# kref corpus spec/kref/vectors.json from the repository root, so a change to
+# the grammar or the corpus has to run them.
+#
 # The Go SDK ships generated protobuf (go/kumihopb), so it needs no submodule
 # or protoc. The Rust SDK generates protobuf at build time via build.rs
 # (tonic-build), so it needs the rust/proto submodule and protoc on PATH.
@@ -14,6 +18,7 @@ on:
       - 'go/**'
       - 'rust/**'
       - 'python/**'
+      - 'spec/**'
       - '.github/workflows/sdk-ci.yml'
   push:
     branches: [main]
@@ -21,6 +26,7 @@ on:
       - 'go/**'
       - 'rust/**'
       - 'python/**'
+      - 'spec/**'
       - '.github/workflows/sdk-ci.yml'
 
 permissions:

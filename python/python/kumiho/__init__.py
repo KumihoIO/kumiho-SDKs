@@ -110,7 +110,7 @@ Attributes:
     PUBLISHED_TAG (str): Standard tag name for published revisions.
 """
 
-__version__ = "0.14.4"
+__version__ = "0.15.0"
 
 import contextvars
 from typing import Any, Dict, List, Mapping, Optional, Iterator, Sequence, Tuple, Union
@@ -138,7 +138,7 @@ from .evaluation import (
     ScoreAnswer,
 )
 from .space import Space
-from .kref import Kref, KrefValidationError, validate_kref, is_valid_kref
+from .kref import Kref, KrefParts, KrefValidationError, parse_kref, validate_kref, is_valid_kref
 from .edge import (
     Edge,
     EdgeType,
@@ -1374,6 +1374,8 @@ __all__ = [
     "validate_kref",
     "validate_edge_type",
     "is_valid_kref",
+    "parse_kref",
+    "KrefParts",
     "is_valid_edge_type",
     # Connection
     "connect",

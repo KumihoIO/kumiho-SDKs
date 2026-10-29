@@ -4,7 +4,12 @@
 //!
 //! The validation rules here mirror the Python gold standard exactly so that
 //! all SDKs accept and reject the same set of URIs.
+//!
+//! Splitting a kref into parent path, item name and kind is the job of the one
+//! structured parser, [`crate::parse_kref`] (see `kref_parts.rs`); the accessors
+//! below read the same split.
 
+use crate::kref_parts::{lexical, parse_kref, KrefParts};
 use crate::pb;
 use once_cell::sync::Lazy;
 use regex::Regex;
@@ -99,8 +104,13 @@ impl Kref {
 
     /// The path component (after `kref://`, before any `?` query).
     pub fn path(&self) -> &str {
-        let after = self.0.split_once("://").map(|x| x.1).unwrap_or(&self.0);
-        after.split('?').next().unwrap_or(after)
+        lexical(&self.0).path
+    }
+
+    /// This kref read once by [`parse_kref`]: the kernel's reading plus its
+    /// textual split. [`KrefParts::get_item_tuple`] is the `GetItem` request.
+    pub fn parts(&self) -> KrefParts {
+        parse_kref(&self.0)
     }
 
     /// The project name (first path segment).
@@ -121,17 +131,14 @@ impl Kref {
 
     /// The item name including kind (e.g. `hero.model`), or `""` if none.
     pub fn item_name(&self) -> &str {
-        let p = self.path();
-        match p.rsplit_once('/') {
-            Some((_, last)) => last,
-            None => "",
-        }
+        lexical(&self.0).leaf.unwrap_or("")
     }
 
-    /// The item kind (after the first `.` in the item name), or `""`.
+    /// The item kind (after the last `.` in the item name), or `""`.
+    ///
+    /// Item names may contain dots, so `a.b.model` has kind `model`.
     pub fn kind(&self) -> &str {
-        let name = self.item_name();
-        name.split_once('.').map(|x| x.1).unwrap_or("")
+        lexical(&self.0).leaf_kind.unwrap_or("")
     }
 
     /// The revision number from `?r=`, defaulting to `1`.

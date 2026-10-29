@@ -68,16 +68,11 @@ func (k Kref) URI() string { return string(k) }
 func (k Kref) String() string { return string(k) }
 
 // Path returns the path component (after "kref://", before any "?").
-func (k Kref) Path() string {
-	s := string(k)
-	if i := strings.Index(s, "://"); i >= 0 {
-		s = s[i+3:]
-	}
-	if i := strings.IndexByte(s, '?'); i >= 0 {
-		s = s[:i]
-	}
-	return s
-}
+func (k Kref) Path() string { return splitLexical(string(k)).path }
+
+// Parts returns this kref read once by ParseKref: the kernel's reading plus its
+// textual split. KrefParts.GetItemTuple is the GetItem request for it.
+func (k Kref) Parts() KrefParts { return ParseKref(string(k)) }
 
 // Project returns the first path segment.
 func (k Kref) Project() string {
@@ -99,18 +94,17 @@ func (k Kref) Space() string {
 
 // ItemName returns the last path segment (e.g. "hero.model"), or "".
 func (k Kref) ItemName() string {
-	p := k.Path()
-	if i := strings.LastIndexByte(p, '/'); i >= 0 {
-		return p[i+1:]
+	if leaf := splitLexical(string(k)).leaf; leaf != nil {
+		return *leaf
 	}
 	return ""
 }
 
-// Kind returns the item kind (after the first "." in the item name), or "".
+// Kind returns the item kind (after the last "." in the item name), or "".
+// Item names may contain dots, so "a.b.model" has kind "model".
 func (k Kref) Kind() string {
-	name := k.ItemName()
-	if i := strings.IndexByte(name, '.'); i >= 0 {
-		return name[i+1:]
+	if kind := splitLexical(string(k)).leafKind; kind != nil {
+		return *kind
 	}
 	return ""
 }

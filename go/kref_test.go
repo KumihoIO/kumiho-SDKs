@@ -1,6 +1,9 @@
 package kumiho
 
-import "testing"
+import (
+	"errors"
+	"testing"
+)
 
 func TestParseFullArtifactKref(t *testing.T) {
 	k, err := NewKref("kref://film-2024/characters/hero.model?r=3&a=mesh")
@@ -121,5 +124,60 @@ func TestEdgeTypeValidation(t *testing.T) {
 func TestNewKrefRejectsInvalid(t *testing.T) {
 	if _, err := NewKref("not-a-kref"); err == nil {
 		t.Error("expected error for invalid kref")
+	}
+}
+
+// Item krefs split at the LAST "/" (project plus nested spaces form the parent
+// path) and the LAST "." (item names may contain dots, kinds never do).
+func TestSplitItemKrefAtLastSlashAndLastDot(t *testing.T) {
+	cases := []struct {
+		name       string
+		kref       string
+		parentPath string
+		itemName   string
+		kind       string
+	}{
+		{"root level", "kref://projectA/modelA.asset", "/projectA", "modelA", "asset"},
+		{"nested space", "kref://proj/characters/hero.model", "/proj/characters", "hero", "model"},
+		{"deeply nested space", "kref://proj/a/b/c/hero.model", "/proj/a/b/c", "hero", "model"},
+		{"dotted name at root", "kref://proj/rootitem.v2.model", "/proj", "rootitem.v2", "model"},
+		{"nested and dotted", "kref://proj/characters/a.b.c.model", "/proj/characters", "a.b.c", "model"},
+		{"revision suffix ignored", "kref://proj/characters/hero.model?r=3", "/proj/characters", "hero", "model"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			parentPath, itemName, kind, err := itemTuple(tc.kref)
+			if err != nil {
+				t.Fatalf("itemTuple(%q): %v", tc.kref, err)
+			}
+			if parentPath != tc.parentPath || itemName != tc.itemName || kind != tc.kind {
+				t.Errorf("itemTuple(%q) = (%q, %q, %q), want (%q, %q, %q)",
+					tc.kref, parentPath, itemName, kind, tc.parentPath, tc.itemName, tc.kind)
+			}
+		})
+	}
+}
+
+func TestSplitItemKrefRejectsMalformed(t *testing.T) {
+	for _, kref := range []string{"kref://proj", "kref://proj/noext", "kref://proj/space/noext"} {
+		_, _, _, err := itemTuple(kref)
+		var iae *InvalidArgumentError
+		if !errors.As(err, &iae) {
+			t.Errorf("itemTuple(%q) error = %v, want *InvalidArgumentError", kref, err)
+		}
+	}
+}
+
+func TestKindIsTextAfterLastDot(t *testing.T) {
+	cases := []struct{ kref, itemName, kind string }{
+		{"kref://proj/characters/hero.model", "hero.model", "model"},
+		{"kref://proj/characters/a.b.c.model", "a.b.c.model", "model"},
+		{"kref://proj/characters/noext", "noext", ""},
+	}
+	for _, tc := range cases {
+		k := Kref(tc.kref)
+		if k.ItemName() != tc.itemName || k.Kind() != tc.kind {
+			t.Errorf("%s: ItemName=%q Kind=%q, want %q %q", tc.kref, k.ItemName(), k.Kind(), tc.itemName, tc.kind)
+		}
 	}
 }

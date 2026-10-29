@@ -278,9 +278,10 @@ class KrefEdgeCasesTest : public ::testing::Test {};
 TEST_F(KrefEdgeCasesTest, ProductNameWithMultipleDots) {
     Kref kref("kref://proj/group/file.v001.exr.texture");
     
-    // First dot separates name from type
-    EXPECT_EQ(kref.getProductName(), "file");
-    EXPECT_EQ(kref.getType(), "v001.exr.texture");
+    // Item names may contain dots and kinds never do: the LAST dot separates
+    // name from type (like the kumiho-db kernel).
+    EXPECT_EQ(kref.getProductName(), "file.v001.exr");
+    EXPECT_EQ(kref.getType(), "texture");
 }
 
 // Test hyphenated names

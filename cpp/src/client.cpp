@@ -21,6 +21,7 @@
 #include "kumiho/bundle.hpp"
 #include "kumiho/event.hpp"
 #include "kumiho/error.hpp"
+#include "kumiho/kref_parts.hpp"
 #include "kumiho/token_loader.hpp"
 #include "kumiho/discovery.hpp"
 #include <grpcpp/grpcpp.h>
@@ -674,26 +675,9 @@ std::shared_ptr<Item> Client::getItem(const std::string& parent_path, const std:
 }
 
 std::shared_ptr<Item> Client::getItemByKref(const std::string& kref_uri) {
-    Kref kref(kref_uri);
-    std::string path = kref.getPath();
-    
-    size_t slash_pos = path.rfind('/');
-    if (slash_pos == std::string::npos) {
-        throw ValidationError("Invalid item kref format: " + kref_uri);
-    }
-    
-    std::string space_path = "/" + path.substr(0, slash_pos);
-    std::string item_name_kind = path.substr(slash_pos + 1);
-    
-    size_t dot_pos = item_name_kind.find('.');
-    if (dot_pos == std::string::npos) {
-        throw ValidationError("Invalid item name.kind format: " + item_name_kind);
-    }
-    
-    std::string item_name = item_name_kind.substr(0, dot_pos);
-    std::string kind = item_name_kind.substr(dot_pos + 1);
-
-    return getItem(space_path, item_name, kind);
+    // The one split used for every item lookup (see kumiho/kref_parts.hpp).
+    const KrefItemTuple tuple = parseKref(kref_uri).getItemTuple();
+    return getItem(tuple.parent_path, tuple.item_name, tuple.kind);
 }
 
 std::shared_ptr<Item> Client::getItemFromRevision(const std::string& revision_kref) {
@@ -1735,8 +1719,12 @@ std::shared_ptr<Bundle> Client::getBundle(const std::string& parent_path, const 
 }
 
 std::shared_ptr<Bundle> Client::getBundleByKref(const std::string& kref_uri) {
+    // Read the kref once: the lookup and the re-fetch both name the bundle it
+    // names, however many dots its name or its spaces hold.
+    const KrefItemTuple tuple = parseKref(kref_uri).getItemTuple();
+
     // Verify the referenced item is a bundle.
-    auto item = getItemByKref(kref_uri);
+    auto item = getItem(tuple.parent_path, tuple.item_name, tuple.kind);
     if (item->getKind() != "bundle") {
         throw ValidationError(
             "Item '" + kref_uri + "' is not a bundle (kind='" + item->getKind() + "'). "
@@ -1744,22 +1732,7 @@ std::shared_ptr<Bundle> Client::getBundleByKref(const std::string& kref_uri) {
         );
     }
 
-    // Parse the kref path: parent space path (with leading '/') is everything
-    // before the last '/', and the bundle name is the last segment before '.'.
-    Kref kref(kref_uri);
-    std::string path = kref.getPath();
-    size_t slash_pos = path.rfind('/');
-    if (slash_pos == std::string::npos) {
-        throw ValidationError("Invalid bundle kref format: " + kref_uri);
-    }
-
-    std::string parent_path = "/" + path.substr(0, slash_pos);
-    std::string item_name_kind = path.substr(slash_pos + 1);
-    size_t dot_pos = item_name_kind.find('.');
-    std::string bundle_name =
-        (dot_pos == std::string::npos) ? item_name_kind : item_name_kind.substr(0, dot_pos);
-
-    return getBundle(parent_path, bundle_name);
+    return getBundle(tuple.parent_path, tuple.item_name);
 }
 
 BundleMemberResult Client::addBundleMember(const Kref& bundle_kref, const Kref& item_kref, const Metadata& metadata) {

@@ -8,6 +8,83 @@
 > what produced the gaps backfilled in KumihoIO/kumiho-SDKs#155 and #157.
 
 
+## kumiho 0.15.0 (October 2026) — Item Krefs Read by One Parser 🧭
+
+An item kref names its parent path, its item name and its kind, and the SDK cut
+it into those three with `split("/", 1)` and `split(".", 1)`. That is right for
+`kref://project/hero.model` and wrong for almost every other item: an item in
+a nested space was looked up under a name that contained a `/`, and an item
+whose name contains a dot was looked up under a kind that contained a `.`.
+kumiho-db refuses both requests; kumiho-server only found them because it joins
+the pieces back together. The SDK now reads a kref once, with the grammar that
+kumiho-db and every Kumiho SDK share (`spec/kref/README.md`), and every item
+lookup uses that reading.
+
+### ✨ What changed
+
+- **Nested spaces and dotted names are looked up as the kref names them.**
+  `kref://p/a/b/x.k` is item `x` of kind `k` in `/p/a/b`; `kref://p/s/my.file.v2.k`
+  is item `my.file.v2` of kind `k` in `/p/s`. `get_item_by_kref`,
+  `get_item_from_revision`, `get_bundle_by_kref`, `kumiho.get_item`,
+  `kumiho.get_bundle`, `Project.get_item`, `Project.get_bundle` and
+  `Space.get_bundle` all use the same split. kumiho-server resolves the new
+  requests to the same node as the old ones, and kumiho-db accepts them.
+- **`get_bundle_by_kref` fetches the bundle the kref names.** It looked the bundle
+  up correctly and then re-fetched it under the text before the *first* dot, so
+  `kref://p/s/my.set.bundle` came back as `my.bundle` (or not found), and
+  `kref://p/s.v1/set.bundle` as `s.bundle`. The lookup and the re-fetch now
+  use one split.
+- **`Kref.get_kind()` is the text after the last `.`.** `kref://p/s/my.file.v2.k`
+  has kind `k` (it was `file.v2.k`). Item names may contain dots; kinds never do.
+- **`parse_kref()` and `KrefParts` are new.** One call reads a kref into the
+  kumiho-db kernel's verdict (`valid`, `error_class`) and its parts (`project`,
+  `space_path`, `item_name`, `kind`, `revision`, `tag`, `artifact`), and
+  `get_item_request()` is the `GetItem` request for it. `parse_kref` never
+  raises, whatever the string; the kernel's reading is computed the first time
+  you read it. Client-side validation (`validate_kref`, `Kref(...)`) is
+  unchanged: it accepts and refuses exactly what it did. The two refusals
+  below come from the split, after validation.
+- **Requests for krefs the server returns keep the shape they had.**
+  `get_item_from_revision` splits the item kref the server sent back. If a space
+  segment of that kref ends in whitespace or the kref holds an empty trailing
+  segment, kumiho-server would move the new request to a different space, so the
+  SDK sends the request it sent before for those krefs.
+
+### ⚠️ Refused before sending
+
+Two item krefs that used to be sent are now refused with `ValueError`, before
+any request, because they do not name an item:
+
+- **An item kref with no kind.** `kref://p/s.v1/x` has a last segment without a
+  `.`, so it names the space `p/s.v1/x`, not an item. It used to be sent as
+  item `s`, kind `v1/x`.
+- **A kind that contains `/`.** `Project.get_item("x", "image/png")` builds
+  `kref://project/x.image/png`, whose last segment is `png`. Kinds containing
+  `/` are not valid and are refused before sending. It used to be sent as
+  item `x`, kind `image/png`.
+- **An item kref with an empty last segment.** `get_item_from_revision` on a
+  revision whose item kref ends in `/` (`kref://p/s/x.k/`) now raises
+  `ValueError`. It used to send item `s/x`, kind `k/`, which no server can
+  create, so the call could only end in a gRPC `NOT_FOUND`.
+
+### 📋 Upgrading
+
+Most callers need nothing. If your code derives an item name or kind from a
+kref, read this:
+
+- **`Kref.get_kind()` on a dotted item name changed.** If you relied on
+  `kref://p/s/my.file.v2.k` giving `file.v2.k`, use the text after the *last*
+  dot, which is what `get_kind()` returns now. `get_item_name()` is unchanged: it
+  still returns the whole last segment (`my.file.v2.k`); take
+  `parse_kref(uri).item_name` for the name without the kind (`my.file.v2`).
+- **An item stored with a dotted kind** (kind `tar.gz`, say) has the kref
+  `kref://p/s/x.tar.gz`, which the kernel grammar reads as item `x.tar`, kind
+  `gz`. For the stored kind, read `Item.kind` from the server, not the kref.
+- **Do not split krefs by hand** with `split("/", 1)` or `split(".", 1)`; use
+  `parse_kref`.
+- **A kind with `/` or an item kref without a kind** now raises `ValueError`
+  where it used to send a request the server could not match to a real item.
+
 ## kumiho 0.14.4 (October 2026) — One Bad Space Hint No Longer Loses a Batch 🧯
 
 `kumiho_memory_reflect` sends two or more captures through

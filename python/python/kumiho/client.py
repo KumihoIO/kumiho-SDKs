@@ -55,7 +55,7 @@ from .proto import kumiho_pb2
 from .proto import kumiho_pb2_grpc
 from .event import Event
 from .space import Space
-from .kref import Kref
+from .kref import Kref, parse_kref
 from .proto.kumiho_pb2 import (
     BatchCreateRevisionsRequest,
     BatchGetRevisionsRequest,
@@ -921,18 +921,7 @@ class _Client:
         Returns:
             The Item object.
         """
-        kref = Kref(kref_uri)
-        item_path = kref.get_path()  # e.g., "projectA/modelA.asset"
-        if "/" not in item_path:
-            raise ValueError(f"Invalid item kref format: {kref}")
-        
-        space_path, item_name_kind = item_path.split("/", 1)
-        parent_path = f"/{space_path}"  # Add leading slash
-        if "." not in item_name_kind:
-            raise ValueError(f"Invalid item name.kind format: {item_name_kind}")
-        
-        item_name, kind = item_name_kind.split(".", 1)
-        
+        parent_path, item_name, kind = Kref(kref_uri).parts.get_item_request()
         return self.get_item(parent_path, item_name, kind)
 
     def get_bundle_by_kref(self, kref_uri: str) -> "Bundle":
@@ -959,24 +948,22 @@ class _Client:
             >>> members = bundle.get_members()
         """
         from .bundle import Bundle
-        
+
+        # Read the kref once; the lookup and the re-fetch both name the bundle
+        # it names, however many dots its name or its spaces hold.
+        parent_path, bundle_name, kind = Kref(kref_uri).parts.get_item_request()
+
         # First get the item
-        item = self.get_item_by_kref(kref_uri)
-        
+        item = self.get_item(parent_path, bundle_name, kind)
+
         # Verify it's a bundle
         if item.kind != "bundle":
             raise ValueError(
                 f"Item '{kref_uri}' is not a bundle (kind='{item.kind}'). "
                 f"Use get_item() for non-bundle items."
             )
-        
-        # Re-fetch as Bundle to get the Bundle wrapper with bundle-specific methods
-        kref = Kref(kref_uri)
-        item_path = kref.get_path()
-        space_path, item_name_kind = item_path.split("/", 1)
-        parent_path = f"/{space_path}"
-        bundle_name, _ = item_name_kind.split(".", 1)
-        
+
+        # Re-fetch as Bundle to get the Bundle wrapper with bundle-specific methods.
         # Use GetItem to get the raw response and wrap as Bundle
         req = GetItemRequest(parent_path=parent_path, item_name=bundle_name, kind="bundle")
         resp = self.stub.GetItem(req)
@@ -1340,18 +1327,8 @@ class _Client:
         """
         # First get the revision to find its item relationship
         revision = self.get_revision(revision_kref)
-        # Parse the item_kref to extract parent_path, item_name, and kind
-        item_path = revision.item_kref.get_path()  # e.g., "space/item.kind"
-        if "/" not in item_path:
-            raise ValueError(f"Invalid item kref format: {revision.item_kref}")
-        
-        parent_path, item_name_kind = item_path.split("/", 1)
-        parent_path = f"/{parent_path}"  # Add leading slash
-        if "." not in item_name_kind:
-            raise ValueError(f"Invalid item name.kind format: {item_name_kind}")
-        
-        item_name, kind = item_name_kind.split(".", 1)
-        
+        # Read the item_kref once for parent_path, item_name, and kind
+        parent_path, item_name, kind = parse_kref(revision.item_kref).get_item_request()
         return self.get_item(parent_path, item_name, kind)
 
     def get_revisions(self, item_kref: Kref) -> List[Revision]:

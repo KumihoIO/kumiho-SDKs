@@ -21,6 +21,8 @@ struct Recorded {
     last_item: Option<pb::CreateItemRequest>,
     last_revision_kref: String,
     saw_correlation_id: bool,
+    /// Every GetItem request the server has seen, in arrival order.
+    get_item_requests: Vec<pb::GetItemRequest>,
 }
 
 #[derive(Clone, Default)]
@@ -213,6 +215,7 @@ impl KumihoService for FakeKumiho {
         req: Request<pb::GetItemRequest>,
     ) -> Result<Response<pb::ItemResponse>, Status> {
         let r = req.into_inner();
+        self.rec.lock().unwrap().get_item_requests.push(r.clone());
         let uri = format!(
             "kref://{}/{}.{}",
             r.parent_path.trim_start_matches('/'),
@@ -623,13 +626,138 @@ async fn integration_resolve_swallows_rpc_error() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn integration_get_item_from_revision() {
     let (_fake, client) = start_server().await;
-    // Non-nested kref so the item-name/kind split is unambiguous.
     let item = client
         .get_item_from_revision("kref://vfx/hero.model?r=3")
         .await
         .unwrap();
     assert_eq!(item.item_name, "hero");
     assert_eq!(item.kind, "model");
+}
+
+/// `(kref, parent_path, item_name, kind)`: item krefs split at the LAST `/`
+/// (project plus nested spaces form the parent path) and the LAST `.` (item
+/// names may contain dots, kinds never do).
+const ITEM_KREF_SPLITS: &[(&str, &str, &str, &str)] = &[
+    (
+        "kref://projectA/modelA.asset",
+        "/projectA",
+        "modelA",
+        "asset",
+    ),
+    (
+        "kref://proj/characters/hero.model",
+        "/proj/characters",
+        "hero",
+        "model",
+    ),
+    (
+        "kref://proj/a/b/c/hero.model",
+        "/proj/a/b/c",
+        "hero",
+        "model",
+    ),
+    (
+        "kref://proj/rootitem.v2.model",
+        "/proj",
+        "rootitem.v2",
+        "model",
+    ),
+    (
+        "kref://proj/characters/a.b.c.model",
+        "/proj/characters",
+        "a.b.c",
+        "model",
+    ),
+    (
+        "kref://proj/characters/hero.model?r=3",
+        "/proj/characters",
+        "hero",
+        "model",
+    ),
+];
+
+fn assert_last_get_item(fake: &FakeKumiho, parent_path: &str, item_name: &str, kind: &str) {
+    let rec = fake.rec.lock().unwrap();
+    let req = rec
+        .get_item_requests
+        .last()
+        .expect("server received GetItem");
+    assert_eq!(
+        (
+            req.parent_path.as_str(),
+            req.item_name.as_str(),
+            req.kind.as_str()
+        ),
+        (parent_path, item_name, kind)
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn get_item_by_kref_splits_at_last_slash_and_last_dot() {
+    let (fake, client) = start_server().await;
+    for &(kref, parent_path, item_name, kind) in ITEM_KREF_SPLITS {
+        fake.rec.lock().unwrap().get_item_requests.clear();
+        let item = client.get_item_by_kref(kref).await.unwrap();
+        assert_last_get_item(&fake, parent_path, item_name, kind);
+        assert_eq!(fake.rec.lock().unwrap().get_item_requests.len(), 1);
+        assert_eq!(item.item_name, item_name, "{kref}");
+        assert_eq!(item.kind, kind, "{kref}");
+    }
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn get_item_from_revision_splits_at_last_slash_and_last_dot() {
+    let (fake, client) = start_server().await;
+    for &(kref, parent_path, item_name, kind) in ITEM_KREF_SPLITS {
+        let item_kref = kref.split('?').next().unwrap();
+        fake.rec.lock().unwrap().get_item_requests.clear();
+        let item = client
+            .get_item_from_revision(&format!("{item_kref}?r=3"))
+            .await
+            .unwrap();
+        assert_last_get_item(&fake, parent_path, item_name, kind);
+        assert_eq!(item.item_name, item_name, "{kref}");
+        assert_eq!(item.kind, kind, "{kref}");
+    }
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn get_bundle_by_kref_splits_at_last_slash_and_last_dot() {
+    let (fake, client) = start_server().await;
+    for (kref, parent_path, bundle_name) in [
+        ("kref://proj/mybundle.bundle", "/proj", "mybundle"),
+        ("kref://proj/sets/mybundle.bundle", "/proj/sets", "mybundle"),
+        (
+            "kref://proj/sets/my.bundle.v2.bundle",
+            "/proj/sets",
+            "my.bundle.v2",
+        ),
+    ] {
+        fake.rec.lock().unwrap().get_item_requests.clear();
+        let bundle = client.get_bundle_by_kref(kref).await.unwrap();
+        assert_last_get_item(&fake, parent_path, bundle_name, "bundle");
+        assert_eq!(bundle.as_item().item_name, bundle_name, "{kref}");
+    }
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn malformed_item_kref_is_rejected_before_any_rpc() {
+    let (fake, client) = start_server().await;
+    for kref in [
+        "kref://proj",
+        "kref://proj/noext",
+        "kref://proj/space/noext",
+    ] {
+        let err = client.get_item_by_kref(kref).await;
+        assert!(
+            matches!(err, Err(kumiho::Error::InvalidArgument(_))),
+            "{kref}: expected InvalidArgument, got {err:?}"
+        );
+    }
+    assert!(
+        fake.rec.lock().unwrap().get_item_requests.is_empty(),
+        "a malformed kref must not reach the server"
+    );
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -651,4 +779,257 @@ async fn integration_find_all_paths_to() {
     // find_path_to returns just the first.
     let one = src.find_path_to(&dst, None, 0).await.unwrap();
     assert!(one.is_some());
+}
+
+// ---------------------------------------------------------------------------
+// The shared kref conformance corpus (spec/kref/vectors.json): the GetItem
+// requests the client sends, case by case.
+//
+// `sdk_current_request` is what the SDK sent at a7f155e; `sdk_fix_request` is
+// what the structured parser makes of the same kref. A request may differ only
+// where the corpus proves it server-equivalent, or where owner decision 2
+// refuses a leaf with no '.' before sending.
+// ---------------------------------------------------------------------------
+
+mod corpus {
+    use super::*;
+    use kumiho::Error;
+    use serde_json::Value;
+
+    pub fn cases() -> Vec<Value> {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("..")
+            .join("spec")
+            .join("kref")
+            .join("vectors.json");
+        let text =
+            std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("{}: {e}", path.display()));
+        serde_json::from_str::<Value>(&text).unwrap()["cases"]
+            .as_array()
+            .unwrap()
+            .clone()
+    }
+
+    pub fn id(case: &Value) -> &str {
+        case["id"].as_str().unwrap()
+    }
+
+    pub fn input(case: &Value) -> &str {
+        case["input"].as_str().unwrap()
+    }
+
+    /// `(parent_path, item_name, kind)` of a corpus request, `None` for an error entry.
+    pub fn tuple(request: &Value) -> Option<(String, String, String)> {
+        request.get("rpc")?;
+        Some((
+            request["parent_path"].as_str().unwrap().to_string(),
+            request["item_name"].as_str().unwrap().to_string(),
+            request["kind"].as_str().unwrap().to_string(),
+        ))
+    }
+
+    pub fn sent(fake: &FakeKumiho) -> Vec<(String, String, String)> {
+        fake.rec
+            .lock()
+            .unwrap()
+            .get_item_requests
+            .iter()
+            .map(|r| (r.parent_path.clone(), r.item_name.clone(), r.kind.clone()))
+            .collect()
+    }
+
+    /// Owner decision 2: a leaf with no '.' where an item is required is refused.
+    pub const REFUSED_BY_DECISION_2: &[&str] = &["dotted-space-leaf-without-dot"];
+
+    /// A request that differs from a7f155e's must be one the owner decisions allow.
+    pub fn assert_change_allowed(case: &Value, slot: &str) {
+        let current = &case["sdk_current_request"][slot];
+        let fixed = &case["sdk_fix_request"][slot];
+        if current == fixed {
+            return; // byte-identical to a7f155e
+        }
+        match (tuple(current), tuple(fixed)) {
+            (Some(_), Some(_)) => {
+                let eq = &case["server_equivalent_old_new"][slot]["equivalent"];
+                let decision_1_bundle = slot == "get_bundle_by_kref_refetch"
+                    && ["bundle-dotted-name", "bundle-in-dotted-space"].contains(&id(case));
+                assert!(
+                    eq == true || decision_1_bundle,
+                    "{}: {slot} changed but is not server-equivalent",
+                    id(case)
+                );
+            }
+            (Some(_), None) => assert!(
+                REFUSED_BY_DECISION_2.contains(&id(case)),
+                "{}: {slot} is newly refused",
+                id(case)
+            ),
+            (None, Some(_)) => panic!("{}: {slot} now sends where a7f155e raised", id(case)),
+            (None, None) => {} // both raise; only the wording differs
+        }
+    }
+
+    pub fn assert_error(res: &Result<impl std::fmt::Debug, Error>, case: &Value, validation: bool) {
+        match res {
+            Err(Error::KrefValidation(_)) if validation => {}
+            Err(Error::InvalidArgument(_)) if !validation => {}
+            other => panic!("{}: unexpected result {other:?}", id(case)),
+        }
+    }
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn corpus_get_item_by_kref_requests() {
+    let (fake, client) = start_server().await;
+    let mut sent_cases = 0;
+    for case in corpus::cases() {
+        let input = corpus::input(&case);
+        fake.rec.lock().unwrap().get_item_requests.clear();
+        let res = client.get_item_by_kref(input).await;
+        let sent = corpus::sent(&fake);
+
+        if kumiho::Kref::new(input).is_err() {
+            // Validation is unchanged: still refused before any RPC.
+            corpus::assert_error(&res, &case, true);
+            assert!(sent.is_empty(), "{}", corpus::id(&case));
+            continue;
+        }
+        match corpus::tuple(&case["sdk_fix_request"]["get_item_by_kref"]) {
+            Some(want) => {
+                res.unwrap_or_else(|e| panic!("{}: {e}", corpus::id(&case)));
+                assert_eq!(sent, vec![want], "{}", corpus::id(&case));
+                sent_cases += 1;
+            }
+            None => {
+                corpus::assert_error(&res, &case, false);
+                assert!(
+                    sent.is_empty(),
+                    "{}: refused before sending",
+                    corpus::id(&case)
+                );
+            }
+        }
+        corpus::assert_change_allowed(&case, "get_item_by_kref");
+    }
+    assert!(sent_cases > 50, "only {sent_cases} requests were sent");
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn corpus_get_item_from_revision_requests() {
+    let (fake, client) = start_server().await;
+    for case in corpus::cases() {
+        let input = corpus::input(&case);
+        // The mock's GetRevision names the part of the kref before '?' as the
+        // item kref, so use item krefs without a query.
+        if input.contains('?') || kumiho::Kref::new(input).is_err() {
+            continue;
+        }
+        fake.rec.lock().unwrap().get_item_requests.clear();
+        let res = client.get_item_from_revision(&format!("{input}?r=3")).await;
+        let sent = corpus::sent(&fake);
+        match corpus::tuple(&case["sdk_fix_request"]["get_item_by_kref"]) {
+            Some(want) => {
+                res.unwrap_or_else(|e| panic!("{}: {e}", corpus::id(&case)));
+                assert_eq!(sent, vec![want], "{}", corpus::id(&case));
+            }
+            None => {
+                corpus::assert_error(&res, &case, false);
+                assert!(sent.is_empty(), "{}", corpus::id(&case));
+            }
+        }
+    }
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn corpus_get_bundle_by_kref_requests() {
+    let (fake, client) = start_server().await;
+    let mut bundles = 0;
+    for case in corpus::cases() {
+        let input = corpus::input(&case);
+        if kumiho::Kref::new(input).is_err() {
+            continue;
+        }
+        fake.rec.lock().unwrap().get_item_requests.clear();
+        let res = client.get_bundle_by_kref(input).await;
+        let sent = corpus::sent(&fake);
+        let lookup = corpus::tuple(&case["sdk_fix_request"]["get_item_by_kref"]);
+        let refetch = corpus::tuple(&case["sdk_fix_request"]["get_bundle_by_kref_refetch"]);
+        match (lookup, refetch) {
+            (Some(_), Some(want)) => {
+                // A bundle: the bundle the kref names is the one fetched.
+                let bundle = res.unwrap_or_else(|e| panic!("{}: {e}", corpus::id(&case)));
+                assert_eq!(sent, vec![want.clone()], "{}", corpus::id(&case));
+                assert_eq!(bundle.as_item().item_name, want.1, "{}", corpus::id(&case));
+                corpus::assert_change_allowed(&case, "get_bundle_by_kref_refetch");
+                bundles += 1;
+            }
+            _ => {
+                // Not a bundle, or no item at all: refused before sending.
+                corpus::assert_error(&res, &case, false);
+                assert!(sent.is_empty(), "{}", corpus::id(&case));
+            }
+        }
+    }
+    assert_eq!(
+        bundles, 7,
+        "the corpus has seven bundle krefs this SDK accepts"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Server-returned item krefs and huge inputs.
+//
+// A kref the server returns is not checked by the server's own read RPCs, so
+// it can hold a space segment that ends in whitespace or an empty segment. The
+// Rust client validates every item kref before it splits it (`Kref::new`), as
+// it did at a7f155e, so those krefs are refused before any RPC and never reach
+// `normalize_space_path`, which would move such a parent to another space.
+// ---------------------------------------------------------------------------
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn get_item_from_revision_refuses_server_krefs_the_validator_refuses() {
+    let (fake, client) = start_server().await;
+    for item_kref in [
+        "kref://p/s /x.k",
+        "kref://p/s\t/x.k",
+        "kref://p/s\u{a0}/x.k",
+        "kref://p/s\u{3000}/x.k",
+        "kref://p/a/b /x.k",
+        "kref://p//x.k",
+        "kref://p/s//x.k",
+        "kref://p /s/x.k",
+    ] {
+        let res = client
+            .get_item_from_revision(&format!("{item_kref}?r=3"))
+            .await;
+        assert!(
+            matches!(res, Err(kumiho::Error::KrefValidation(_))),
+            "{item_kref:?}: expected KrefValidation, got {res:?}"
+        );
+    }
+    assert!(
+        corpus::sent(&fake).is_empty(),
+        "a refused kref must not reach the server"
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn get_item_by_kref_with_a_huge_revision_still_looks_the_item_up() {
+    let (fake, client) = start_server().await;
+    let huge = "1".repeat(5000);
+    client
+        .get_item_by_kref(&format!("kref://p/s/x.k?r={huge}"))
+        .await
+        .unwrap();
+    client
+        .get_bundle_by_kref(&format!("kref://p/s/x.bundle?r={huge}"))
+        .await
+        .unwrap();
+    assert_eq!(
+        corpus::sent(&fake),
+        vec![
+            ("/p/s".to_string(), "x".to_string(), "k".to_string()),
+            ("/p/s".to_string(), "x".to_string(), "bundle".to_string()),
+        ]
+    );
 }

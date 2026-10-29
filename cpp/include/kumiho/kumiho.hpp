@@ -36,6 +36,7 @@
 #include "kumiho/types.hpp"
 #include "kumiho/error.hpp"
 #include "kumiho/kref.hpp"
+#include "kumiho/kref_parts.hpp"
 
 // Entity classes
 #include "kumiho/project.hpp"

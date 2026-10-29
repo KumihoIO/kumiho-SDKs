@@ -64,6 +64,7 @@ target_link_libraries(protobuf_grpc_lib PRIVATE gRPC::grpc++ protobuf::libprotob
 add_library(kumiho
     src/client.cpp
     src/kref.cpp
+    src/kref_parts.cpp
     src/edge.cpp
     src/event.cpp
     src/space.cpp
@@ -121,6 +122,10 @@ if(KUMIHO_BUILD_TESTS)
         GTest::gmock
         GTest::gtest_main
     )
+    # The shared kref conformance corpus (read at run time, never copied).
+    set(KUMIHO_KREF_VECTORS_PATH "${CMAKE_CURRENT_SOURCE_DIR}/../spec/kref/vectors.json")
+    target_compile_definitions(kumiho_tests PRIVATE
+        KUMIHO_KREF_VECTORS_PATH="${KUMIHO_KREF_VECTORS_PATH}")
     gtest_discover_tests(kumiho_tests
         PROPERTIES
             LABELS "unit"
@@ -168,6 +173,22 @@ if(KUMIHO_BUILD_TESTS)
         GTest::gtest_main
     )
     gtest_discover_tests(kumiho_kref_tests
+        PROPERTIES
+            LABELS "unit"
+    )
+
+    # Kref Conformance Tests (spec/kref/vectors.json)
+    add_executable(kumiho_kref_vectors_tests
+        tests/test_kref_vectors.cpp
+    )
+    target_link_libraries(kumiho_kref_vectors_tests PRIVATE
+        kumiho
+        GTest::gtest
+        GTest::gtest_main
+    )
+    target_compile_definitions(kumiho_kref_vectors_tests PRIVATE
+        KUMIHO_KREF_VECTORS_PATH="${KUMIHO_KREF_VECTORS_PATH}")
+    gtest_discover_tests(kumiho_kref_vectors_tests
         PROPERTIES
             LABELS "unit"
     )
@@ -250,7 +271,7 @@ if(KUMIHO_BUILD_TESTS)
     # Exclude them by default for the unit target.
     add_custom_target(run_unit_tests
         COMMAND ${CMAKE_CTEST_COMMAND} -C $<CONFIG> --output-on-failure -LE integration
-        DEPENDS kumiho_tests kumiho_streaming_tests kumiho_kref_tests kumiho_types_tests kumiho_token_tests kumiho_discovery_tests
+        DEPENDS kumiho_tests kumiho_streaming_tests kumiho_kref_tests kumiho_kref_vectors_tests kumiho_types_tests kumiho_token_tests kumiho_discovery_tests
         COMMENT "Running unit tests..."
     )
 

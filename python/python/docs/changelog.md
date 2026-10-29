@@ -12,6 +12,39 @@ in descending version order, which is also descending date order.
 narrative — why a change mattered and what you have to do about it. This file is
 its terse companion. Entries belong in both.
 
+## [0.15.0] - 2026-10-29
+
+### Fixed
+- **Item krefs in nested spaces and with dotted names** (`kref://p/a/b/x.k`,
+  `kref://p/s/my.file.v2.k`) are looked up as the kref names them by
+  `get_item_by_kref`, `get_item_from_revision`, `get_bundle_by_kref`,
+  `kumiho.get_item`, `kumiho.get_bundle`, `Project.get_item`,
+  `Project.get_bundle` and `Space.get_bundle`: the parent path is everything
+  before the last `/`, the item name everything before the last `.`.
+- **`get_bundle_by_kref` re-fetches the bundle the kref names.** It re-fetched
+  under the text before the first dot (`my.set.bundle` came back as
+  `my.bundle`).
+
+### Changed
+- **`Kref.get_kind()` is the text after the last `.`**
+  (`kref://p/s/my.file.v2.k` is kind `k`, was `file.v2.k`).
+- **An item kref with no kind raises `ValueError` before sending**
+  (`kref://p/s.v1/x` names a space), and so does a kind that contains `/`
+  (`Project.get_item("x", "image/png")`): kinds containing `/` are not valid.
+- Requests built from a server-returned item kref whose space ends in
+  whitespace, or that holds an empty trailing segment, keep the shape they had.
+
+### Added
+- **`parse_kref()` and `KrefParts`** — one parser for the kumiho-db kernel's
+  verdict and parts of a kref, and `KrefParts.get_item_request()` for the
+  `GetItem` request. It never raises. The shared grammar and conformance corpus
+  are in `spec/kref/`.
+
+### Upgrading
+- Code that derives an item name or kind from a kref: `get_kind()` of a dotted
+  item name changed; take the stored kind from `Item.kind`, and the name without
+  its kind from `parse_kref(uri).item_name`. See `RELEASE_NOTES.md`.
+
 ## [0.14.4] - 2026-10-29
 
 ### Changed

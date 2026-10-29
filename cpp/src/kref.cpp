@@ -11,6 +11,7 @@
  */
 
 #include "kumiho/kref.hpp"
+#include "kumiho/kref_parts.hpp"
 #include "kumiho/error.hpp"
 #include <sstream>
 #include <cctype>
@@ -21,14 +22,7 @@ namespace api {
 Kref::Kref(const std::string& uri) : std::string(uri) {}
 
 std::string Kref::getPath() const {
-    // Find scheme separator
-    size_t start = find("://");
-    if (start == std::string::npos) return *this;
-    start += 3;
-    
-    // Find query string start
-    size_t end = find('?', start);
-    return substr(start, end - start);
+    return detail::splitKref(*this).path;
 }
 
 std::string Kref::getProject() const {
@@ -65,22 +59,16 @@ std::string Kref::getSpace() const {
     return path.substr(first_slash + 1, last_slash - first_slash - 1);
 }
 
+// Item names may contain dots and kinds never do, so the leaf is split at its
+// LAST '.' (the same split as KrefParts::getItemTuple()).
 std::string Kref::getItemName() const {
-    std::string full = getFullItemName();
-    size_t dot = full.find('.');
-    if (dot == std::string::npos) {
-        return "";
-    }
-    return full.substr(0, dot);
+    std::string name, kind;
+    return detail::splitLeaf(getFullItemName(), name, kind) ? name : "";
 }
 
 std::string Kref::getKind() const {
-    std::string full = getFullItemName();
-    size_t dot = full.find('.');
-    if (dot == std::string::npos) {
-        return "";
-    }
-    return full.substr(dot + 1);
+    std::string name, kind;
+    return detail::splitLeaf(getFullItemName(), name, kind) ? kind : "";
 }
 
 std::string Kref::getFullItemName() const {
