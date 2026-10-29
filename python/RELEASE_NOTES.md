@@ -62,6 +62,10 @@ any request, because they do not name an item:
   `kref://project/x.image/png`, whose last segment is `png`. Kinds containing
   `/` are not valid and are refused before sending. It used to be sent as
   item `x`, kind `image/png`.
+- **An item kref with an empty last segment.** `get_item_from_revision` on a
+  revision whose item kref ends in `/` (`kref://p/s/x.k/`) now raises
+  `ValueError`. It used to send item `s/x`, kind `k/`, which no server can
+  create, so the call could only end in a gRPC `NOT_FOUND`.
 
 ### 📋 Upgrading
 
