@@ -8,7 +8,7 @@
 > what produced the gaps backfilled in KumihoIO/kumiho-SDKs#155 and #157.
 
 
-## kumiho Unreleased (version not yet chosen) — One Bad Space Hint No Longer Loses a Batch 🧯
+## kumiho 0.14.4 (October 2026) — One Bad Space Hint No Longer Loses a Batch 🧯
 
 `kumiho_memory_reflect` sends two or more captures through
 `tool_memory_store_batch`. The batch resolved each capture's space hint before
@@ -36,7 +36,7 @@ failed, so every capture in the batch was lost along with the bad one.
 No caller changes are required. A space the server refused as INVALID_ARGUMENT
 now appears in `results` as an `error` entry instead of as an exception.
 
-## Unreleased — mcp Floor Raised to 1.21.1 🔧
+### 🔧 mcp Floor Raised to 1.21.1
 
 - **The `mcp` extra now requires `mcp>=1.21.1,<3` (was `>=1.10.0,<3`).** pydantic
   2.14.0 removed `eval_type_backport` from its private `_typing_extra` module,
