@@ -120,4 +120,39 @@ void main() {
         client.getItemByKref('kref://p/s.v1/x'), throwsA(isA<ArgumentError>()));
     expect(service.requests, isEmpty);
   });
+  // kumiho-server rebuilds the key it matches as normalize_space_path(parent) +
+  // "/" + name + "." + kind, and normalize_space_path trims whitespace and "/".
+  // A server-returned item kref can hold a space segment that ends in whitespace
+  // or an empty segment. [ItemApi.getItemByKref] has not changed since a7f155e:
+  // it drops empty segments and sends every other segment as it is, so these
+  // requests are byte-identical to the ones a7f155e sent.
+  test('item krefs a server may return keep the request a7f155e sent', () async {
+    const cases = <List<String>>[
+      // kref, parent_path, item_name, kind
+      ['kref://p/s /x.k', '/p/s ', 'x', 'k'],
+      ['kref://p/s	/x.k', '/p/s	', 'x', 'k'],
+      ['kref://p/s /x.k', '/p/s ', 'x', 'k'],
+      ['kref://p/s　/x.k', '/p/s　', 'x', 'k'],
+      ['kref://p//x.k', '/p', 'x', 'k'],
+      ['kref://p/s//x.k', '/p/s', 'x', 'k'],
+      ['kref://p /s/x.k', '/p /s', 'x', 'k'],
+    ];
+    for (final c in cases) {
+      service.requests.clear();
+      await client.getItemByKref(c[0]);
+      expect(service.requests, [
+        [c[1], c[2], c[3]],
+      ], reason: c[0]);
+    }
+  });
+
+  test('a huge revision does not break the lookup', () async {
+    final huge = '1' * 5000;
+    await client.getItemByKref('kref://p/s/x.k?r=$huge');
+    expect(service.requests, [
+      ['/p/s', 'x', 'k'],
+    ]);
+    // The Kref accessor reads the revision without throwing.
+    expect(Kref('kref://p/s/x.k?r=$huge').revision, isNull);
+  });
 }
