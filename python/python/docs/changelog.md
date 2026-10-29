@@ -12,7 +12,7 @@ in descending version order, which is also descending date order.
 narrative — why a change mattered and what you have to do about it. This file is
 its terse companion. Entries belong in both.
 
-## [Unreleased]
+## [0.15.0] - 2026-10-29
 
 ### Fixed
 - **Item krefs in nested spaces and with dotted names** (`kref://p/a/b/x.k`,
@@ -44,6 +44,26 @@ its terse companion. Entries belong in both.
 - Code that derives an item name or kind from a kref: `get_kind()` of a dotted
   item name changed; take the stored kind from `Item.kind`, and the name without
   its kind from `parse_kref(uri).item_name`. See `RELEASE_NOTES.md`.
+
+## [0.14.4] - 2026-10-29
+
+### Changed
+- **The `mcp` extra's floor is raised from `mcp>=1.10.0,<3` to
+  `mcp>=1.21.1,<3`.** pydantic 2.14.0 removed the private
+  `pydantic._internal._typing_extra.eval_type_backport`, which every mcp from
+  1.2.0 through 1.21.0 imports at `import mcp`; with the newest pydantic those
+  releases fail with `ImportError` and `kumiho-mcp` cannot start. mcp 1.21.1
+  dropped the import. The CI and publish floor legs now pin `mcp==1.21.1`.
+  **Installs pinned to mcp 1.10.0 through 1.21.0 will be upgraded.**
+
+### Fixed
+- **`tool_memory_store_batch` no longer loses the whole batch to one bad space
+  hint.** A hint the server refuses with INVALID_ARGUMENT (edge whitespace such
+  as `"alpha / beta"`, an empty segment such as `"a//b"`) used to raise out of the
+  per-capture space step and fail the call. It now becomes `{"error": ...}` for
+  that capture alone and the other captures are written in the same batch. Every
+  other failure there still raises, and hints that worked are sent unchanged: the
+  batch path still does not slugify.
 
 ## [0.14.3] - 2026-09-23
 
