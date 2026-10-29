@@ -14,6 +14,15 @@ its terse companion. Entries belong in both.
 
 ## [Unreleased]
 
+### Changed
+- **The `mcp` extra's floor is raised from `mcp>=1.10.0,<3` to
+  `mcp>=1.21.1,<3`.** pydantic 2.14.0 removed the private
+  `pydantic._internal._typing_extra.eval_type_backport`, which every mcp from
+  1.2.0 through 1.21.0 imports at `import mcp`; with the newest pydantic those
+  releases fail with `ImportError` and `kumiho-mcp` cannot start. mcp 1.21.1
+  dropped the import. The CI and publish floor legs now pin `mcp==1.21.1`.
+  **Installs pinned to mcp 1.10.0 through 1.21.0 will be upgraded.**
+
 ### Fixed
 - **`tool_memory_store_batch` no longer loses the whole batch to one bad space
   hint.** A hint the server refuses with INVALID_ARGUMENT (edge whitespace such
