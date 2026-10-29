@@ -921,7 +921,7 @@ class _Client:
         Returns:
             The Item object.
         """
-        parent_path, item_name, kind = Kref(kref_uri).parts.get_item_tuple()
+        parent_path, item_name, kind = Kref(kref_uri).parts.get_item_request()
         return self.get_item(parent_path, item_name, kind)
 
     def get_bundle_by_kref(self, kref_uri: str) -> "Bundle":
@@ -951,7 +951,7 @@ class _Client:
 
         # Read the kref once; the lookup and the re-fetch both name the bundle
         # it names, however many dots its name or its spaces hold.
-        parent_path, bundle_name, kind = Kref(kref_uri).parts.get_item_tuple()
+        parent_path, bundle_name, kind = Kref(kref_uri).parts.get_item_request()
 
         # First get the item
         item = self.get_item(parent_path, bundle_name, kind)
@@ -1328,7 +1328,7 @@ class _Client:
         # First get the revision to find its item relationship
         revision = self.get_revision(revision_kref)
         # Read the item_kref once for parent_path, item_name, and kind
-        parent_path, item_name, kind = parse_kref(revision.item_kref).get_item_tuple()
+        parent_path, item_name, kind = parse_kref(revision.item_kref).get_item_request()
         return self.get_item(parent_path, item_name, kind)
 
     def get_revisions(self, item_kref: Kref) -> List[Revision]:

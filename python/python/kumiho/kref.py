@@ -34,17 +34,32 @@ Parsing:
     in ``spec/kref/README.md`` that kumiho-db and every Kumiho SDK share, and
     returns a :class:`KrefParts` value. Everything that needs a piece of a kref
     reads it from there: the ``GetItem`` request comes from
-    :meth:`KrefParts.get_item_tuple`, and the :class:`Kref` accessors
-    ``get_item_name()`` and ``get_kind()`` read the same split. A kref's last
-    ``/`` ends the parent path and its last ``.`` ends the item name, so
+    :meth:`KrefParts.get_item_request`, and the :class:`Kref` accessors
+    ``get_item_name()`` and ``get_kind()`` read the same textual split. A kref's
+    last ``/`` ends the parent path and its last ``.`` ends the item name, so
     ``kref://p/a/b/my.file.v2.k`` is item ``my.file.v2`` of kind ``k`` in
     ``/p/a/b``.
+
+    The parser is total and cheap: it never raises, the textual split is cut
+    when it is created, and the kernel's reading (``valid``, ``error_class``,
+    ``revision`` and the rest) is computed the first time one of those
+    attributes is read. A revision with more digits than ``u64::MAX`` has is
+    refused without being converted to an ``int``.
 
     Whether a string is *accepted* is a separate question, answered by
     :func:`validate_kref` and unchanged by the parser: a kref the kernel
     refuses but this SDK accepts (``?r=0``, a 33rd segment, the legacy
-    ``kref:///space`` spelling) is still sent as it always was, and the backend
-    decides.
+    ``kref:///space`` spelling) is still sent, and the backend decides.
+
+    Every request is either the one the SDK sent before the structured parser
+    (a7f155e) or resolves to the same node on kumiho-server. The server joins
+    ``normalize_space_path(parent_path)``, ``/``, the item name, ``.`` and the
+    kind, and ``normalize_space_path`` trims whitespace and ``/``. Where that
+    would move a nested parent to a different space (a space segment that ends
+    in whitespace, an empty trailing segment), the request keeps the shape
+    a7f155e used: the project as the parent and everything after it as the
+    name. The legacy ``kref:///s/x.k`` is sent as ``("//s", "x", "k")``, which
+    the server normalizes to the node a7f155e's ``("/", "s/x", "k")`` named.
 
 Usage::
 
@@ -66,6 +81,7 @@ Usage::
 """
 
 from dataclasses import dataclass
+from functools import cached_property
 from typing import Dict, NamedTuple, Optional, Tuple
 import re
 import unicodedata
@@ -175,6 +191,7 @@ MAX_KREF_SEGMENTS = 32
 MAX_TAG_BYTES = 1024
 MAX_ARTIFACT_NAME_BYTES = 256
 _MAX_REVISION = 2**64 - 1
+_MAX_REVISION_DIGITS = len(str(_MAX_REVISION))
 # Other_Alphabetic code points whose category is So: circled and squared letters.
 _OTHER_ALPHABETIC_SYMBOLS = (
     (0x24B6, 0x24E9),
@@ -302,10 +319,20 @@ def _valid_artifact_name(text: str) -> bool:
 
 
 def _read_revision(text: str) -> Optional[int]:
-    """A revision number: ASCII digits, no leading zero, 1..=u64::MAX."""
-    if text and all(ch in "0123456789" for ch in text) and not text.startswith("0"):
+    """A revision number: ASCII digits, no leading zero, 1..=u64::MAX.
+
+    ``u64::MAX`` has 20 digits, so a longer digit string is out of range and is
+    never converted: ``int()`` refuses strings of thousands of digits, and the
+    answer would be ``None`` anyway.
+    """
+    if (
+        text
+        and len(text) <= _MAX_REVISION_DIGITS
+        and text[0] != "0"
+        and all(ch in "0123456789" for ch in text)
+    ):
         number = int(text)
-        if 1 <= number <= _MAX_REVISION:
+        if number <= _MAX_REVISION:
             return number
     return None
 
@@ -349,12 +376,53 @@ def _read_query(query: Optional[str]):
     return None, revision, tag, artifact
 
 
+# What kumiho-server trims from a GetItem parent path: Rust ``char::is_whitespace``.
+_SERVER_WHITESPACE = (
+    "\t\n\x0b\x0c\r \x85\xa0        "
+    "        　"
+)
+
+
+def _server_normalize_space_path(path: str) -> str:
+    """kumiho-server ``normalize_space_path`` (``src/item.rs:14-31``)."""
+    trimmed = path.strip(_SERVER_WHITESPACE)
+    if not trimmed:
+        return "/"
+    without_trailing = trimmed.rstrip("/")
+    if not without_trailing:
+        return "/"
+    without_leading = without_trailing.lstrip("/")
+    if not without_leading:
+        return "/"
+    return "/" + without_leading
+
+
+def _server_item_key(parent_path: str, item_name: str, kind: str) -> str:
+    """The kref string kumiho-server matches for a ``GetItem`` request.
+
+    ``src/item.rs:443-449``: the normalized parent path without its leading
+    ``/``, then ``/``, the name, ``.`` and the kind. Two requests reach the
+    same node exactly when they build the same string.
+    """
+    base = _server_normalize_space_path(parent_path).lstrip("/")
+    if not base:
+        return f"kref://{item_name}.{kind}"
+    return f"kref://{base}/{item_name}.{kind}"
+
+
 @dataclass(frozen=True)
 class KrefParts:
-    """A kref read once: the kernel's reading plus the textual split.
+    """A kref read once: the textual split now, the kernel's reading on demand.
+
+    The textual split (``path``, ``parent``, ``leaf``, ``leaf_name``,
+    ``leaf_kind``) is cut when the value is created and is independent of the
+    kernel's verdict. It is what :meth:`get_item_request` uses, so a kref this
+    SDK passes through to the backend (for example ``kref://p/s/x.k?r=0``)
+    still yields its request.
 
     The kernel's reading (``valid``, ``error_class``, ``base``, ``shapes`` and
-    the fields below) follows ``spec/kref/README.md``. A kref the kernel
+    the fields below) follows ``spec/kref/README.md``. It is computed the first
+    time one of those attributes is read, and never raises. A kref the kernel
     refuses has ``error_class`` set and no reading: ``base`` and every field are
     ``None`` and ``shapes`` is empty.
 
@@ -362,30 +430,66 @@ class KrefParts:
     shape the base satisfies, in the order ``root_item``, ``item``, ``space``,
     ``project``; ``item_name`` and ``kind`` are ``None`` when that shape is a
     space or a project.
-
-    The textual split (``path``, ``parent``, ``leaf``, ``leaf_name``,
-    ``leaf_kind``) is independent of the kernel's verdict. It is what
-    :meth:`get_item_tuple` uses, so a kref this SDK passes through to the
-    backend (for example ``kref://p/s/x.k?r=0``) still yields its request.
     """
 
     uri: str
-    error_class: Optional[str]
-    base: Optional[str]
-    shapes: Tuple[str, ...]
-    project: Optional[str]
-    space_path: Optional[Tuple[str, ...]]
-    item_name: Optional[str]
-    kind: Optional[str]
-    is_project_root_item: Optional[bool]
-    revision: Optional[int]
-    tag: Optional[str]
-    artifact: Optional[str]
     path: str
     parent: Optional[str]
     leaf: Optional[str]
     leaf_name: Optional[str]
     leaf_kind: Optional[str]
+
+    @cached_property
+    def _kernel(self):
+        """``(error_class, base, shapes, fields)`` from :func:`_read`, once."""
+        return _read(self.uri)
+
+    @property
+    def error_class(self) -> Optional[str]:
+        """The kernel's refusal class, or ``None`` when it accepts the kref."""
+        return self._kernel[0]
+
+    @property
+    def base(self) -> Optional[str]:
+        """The text between the scheme and the first ``?``, when the kernel accepts it."""
+        return self._kernel[1]
+
+    @property
+    def shapes(self) -> Tuple[str, ...]:
+        """Every namespace the base satisfies, in resolver order."""
+        return self._kernel[2]
+
+    @property
+    def project(self) -> Optional[str]:
+        return self._kernel[3]["project"]
+
+    @property
+    def space_path(self) -> Optional[Tuple[str, ...]]:
+        return self._kernel[3]["space_path"]
+
+    @property
+    def item_name(self) -> Optional[str]:
+        return self._kernel[3]["item_name"]
+
+    @property
+    def kind(self) -> Optional[str]:
+        return self._kernel[3]["kind"]
+
+    @property
+    def is_project_root_item(self) -> Optional[bool]:
+        return self._kernel[3]["is_project_root_item"]
+
+    @property
+    def revision(self) -> Optional[int]:
+        return self._kernel[3]["revision"]
+
+    @property
+    def tag(self) -> Optional[str]:
+        return self._kernel[3]["tag"]
+
+    @property
+    def artifact(self) -> Optional[str]:
+        return self._kernel[3]["artifact"]
 
     @property
     def valid(self) -> bool:
@@ -393,17 +497,17 @@ class KrefParts:
         return self.error_class is None
 
     def get_item_tuple(self) -> Tuple[str, str, str]:
-        """The ``GetItem`` request ``(parent_path, item_name, kind)`` for this kref.
+        """The grammar's ``GetItem`` split ``(parent_path, item_name, kind)``.
 
         The parent path is ``/`` plus everything before the LAST ``/`` of the
         path, so it holds the project and every nested space. The leaf after
         it is split at its LAST ``.``: item names may contain dots, kinds never
-        do. The query is dropped.
+        do. The query is dropped. This is the corpus field ``get_item_tuple``;
+        the request the client sends is :meth:`get_item_request`.
 
-        This is the one split used for every item lookup. It depends on the
-        text only, never on the kernel's verdict, so a kref the backend
-        should judge (``?r=0``, the legacy ``kref:///space/x.k`` spelling)
-        is still looked up.
+        It depends on the text only, never on the kernel's verdict, so a kref
+        the backend should judge (``?r=0``, the legacy ``kref:///space/x.k``
+        spelling) is still split.
 
         Raises:
             ValueError: If the path has no ``/`` or its leaf has no ``.``. A
@@ -415,6 +519,32 @@ class KrefParts:
         if self.leaf_name is None or self.leaf_kind is None:
             raise ValueError(f"Invalid item name.kind format: {self.leaf}")
         return f"/{self.parent}", self.leaf_name, self.leaf_kind
+
+    def get_item_request(self) -> Tuple[str, str, str]:
+        """The ``GetItem`` request ``(parent_path, item_name, kind)`` to send.
+
+        This is :meth:`get_item_tuple`, except where kumiho-server would turn
+        it into a different node than the request a7f155e sent for the same
+        kref. The server rebuilds ``parent/name.kind`` after
+        ``normalize_space_path``, which trims whitespace and ``/`` from the
+        parent: a space segment that ends in whitespace (``kref://p/s /x.k``)
+        or an empty trailing segment (``kref://p//x.k``) would be moved to the
+        space ``/p/s`` or ``/p``. For those krefs, which only a server-returned
+        item kref can be (the client validators refuse them), the request keeps
+        a7f155e's shape: the project as the parent, the text between the
+        project and the last ``.`` as the name, and the text after it as the
+        kind. That shape names the node the kref spells.
+
+        Raises:
+            ValueError: As :meth:`get_item_tuple`.
+        """
+        split = self.get_item_tuple()
+        project, _, rest = self.path.partition("/")
+        kind = split[2]
+        a7f155e_shape = (f"/{project}", rest[: -(len(kind) + 1)], kind)
+        if _server_item_key(*split) == _server_item_key(*a7f155e_shape):
+            return split
+        return a7f155e_shape
 
 
 _NO_READING = dict(
@@ -481,29 +611,25 @@ def parse_kref(uri: str) -> KrefParts:
     Never raises: a string the kernel refuses comes back with ``error_class``
     set (one of ``scheme``, ``fragment_or_percent``, ``tag_reserved_char``,
     ``path``, ``query_pair``, ``unknown_key``, ``duplicate_key``, ``r_and_t``,
-    ``revision_number``, ``tag``, ``artifact``).
+    ``revision_number``, ``tag``, ``artifact``). The kernel's reading is
+    computed lazily, the first time one of its attributes is read.
 
     Example::
 
         >>> parts = parse_kref("kref://p/a/b/my.file.k?r=2")
-        >>> parts.get_item_tuple()
+        >>> parts.get_item_request()
         ('/p/a/b', 'my.file', 'k')
         >>> parts.revision
         2
     """
     lexical = _lexical(uri)
-    error, base, shapes, reading = _read(uri)
     return KrefParts(
         uri=uri,
-        error_class=error,
-        base=base,
-        shapes=shapes,
         path=lexical.path,
         parent=lexical.parent,
         leaf=lexical.leaf,
         leaf_name=lexical.leaf_name,
         leaf_kind=lexical.leaf_kind,
-        **reading,
     )
 
 
@@ -587,10 +713,10 @@ class Kref(str):
 
         Returns:
             KrefParts: The kernel's reading of this kref plus its textual split.
-            ``parts.get_item_tuple()`` is the ``GetItem`` request for it.
+            ``parts.get_item_request()`` is the ``GetItem`` request for it.
 
         Example:
-            >>> Kref("kref://project/models/hero.v2.model").parts.get_item_tuple()
+            >>> Kref("kref://project/models/hero.v2.model").parts.get_item_request()
             ('/project/models', 'hero.v2', 'model')
         """
         return parse_kref(str(self))
