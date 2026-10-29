@@ -12,7 +12,7 @@ in descending version order, which is also descending date order.
 narrative — why a change mattered and what you have to do about it. This file is
 its terse companion. Entries belong in both.
 
-## [Unreleased]
+## [0.14.4] - 2026-10-29
 
 ### Changed
 - **The `mcp` extra's floor is raised from `mcp>=1.10.0,<3` to
@@ -22,6 +22,15 @@ its terse companion. Entries belong in both.
   releases fail with `ImportError` and `kumiho-mcp` cannot start. mcp 1.21.1
   dropped the import. The CI and publish floor legs now pin `mcp==1.21.1`.
   **Installs pinned to mcp 1.10.0 through 1.21.0 will be upgraded.**
+
+### Fixed
+- **`tool_memory_store_batch` no longer loses the whole batch to one bad space
+  hint.** A hint the server refuses with INVALID_ARGUMENT (edge whitespace such
+  as `"alpha / beta"`, an empty segment such as `"a//b"`) used to raise out of the
+  per-capture space step and fail the call. It now becomes `{"error": ...}` for
+  that capture alone and the other captures are written in the same batch. Every
+  other failure there still raises, and hints that worked are sent unchanged: the
+  batch path still does not slugify.
 
 ## [0.14.3] - 2026-09-23
 

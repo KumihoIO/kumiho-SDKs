@@ -523,6 +523,23 @@ def _normalize_space_path(project_name: str, space_path: str) -> str:
     return f"/{project_name}/{path}"
 
 
+def _refused_space_detail(exc: BaseException) -> Optional[str]:
+    """``INVALID_ARGUMENT: details`` when the server refused a space name, else ``None``.
+
+    Only that code says this one name is unusable.  Everything else (an outage,
+    auth, quota, a non-gRPC error) is not about a single capture and is left to
+    propagate as it always did.
+    """
+    if not isinstance(exc, grpc.RpcError):
+        return None
+    try:
+        if exc.code() != grpc.StatusCode.INVALID_ARGUMENT:
+            return None
+        return f"INVALID_ARGUMENT: {exc.details()}"
+    except Exception:  # noqa: BLE001 - an error we cannot read is not isolated
+        return None
+
+
 def _ensure_space_path(project: Project, space_path: str) -> str:
     normalized = _normalize_space_path(project.name, space_path)
     known_key = _tenant_key(normalized)
@@ -1964,7 +1981,21 @@ def tool_memory_store_batch(
             normalized_space = _kref_space_path(revise_target.kref.uri)
         else:
             cap_space = cap.get("space_hint", "") or space_path
-            normalized_space = _ensure_space_path(project_obj, cap_space)
+            # The hint is used verbatim here (no slugify, unlike the single
+            # path) so every hint that resolves today keeps its exact space.
+            # One the server refuses as INVALID_ARGUMENT -- edge whitespace, an
+            # empty segment -- must cost only this capture, not the siblings in
+            # the batch.  Any other failure is not about this capture and raises.
+            try:
+                normalized_space = _ensure_space_path(project_obj, cap_space)
+            except grpc.RpcError as exc:
+                refused = _refused_space_detail(exc)
+                if refused is None:
+                    raise
+                results[i] = {
+                    "error": f"space {cap_space!r} could not be created: {refused}"
+                }
+                continue
 
         final_summary = content
         if len(final_summary) > 2000:

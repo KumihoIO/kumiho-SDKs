@@ -8,7 +8,35 @@
 > what produced the gaps backfilled in KumihoIO/kumiho-SDKs#155 and #157.
 
 
-## Unreleased — mcp Floor Raised to 1.21.1 🔧
+## kumiho 0.14.4 (October 2026) — One Bad Space Hint No Longer Loses a Batch 🧯
+
+`kumiho_memory_reflect` sends two or more captures through
+`tool_memory_store_batch`. The batch resolved each capture's space hint before
+writing anything, with no handling of its own: a hint the server refuses with
+INVALID_ARGUMENT (edge whitespace in a segment such as `"alpha / beta"`, or an
+empty segment such as `"a//b"`) raised out of that step and the whole call
+failed, so every capture in the batch was lost along with the bad one.
+
+### ✨ What changed
+
+- **A space the server refuses as INVALID_ARGUMENT fails only its own capture.** That capture's entry
+  in `results` is `{"error": "space 'alpha / beta' could not be created:
+  INVALID_ARGUMENT: ..."}`, in the same position and shape as a rejected row,
+  and the remaining captures are written in the one batched call as before. If
+  every capture fails this way, nothing is written and `stored_krefs` is empty.
+  Any other failure while creating a space (server unreachable, authentication,
+  permission, quota, an unexpected error) raises exactly as before.
+- **No hint resolves differently.** The batch path still uses a hint exactly as
+  given (it does not slugify, unlike the single-capture path), so every hint that
+  worked keeps the same space, item kref and request. Only a call that used to
+  raise INVALID_ARGUMENT now returns.
+
+### 📋 Upgrading
+
+No caller changes are required. A space the server refused as INVALID_ARGUMENT
+now appears in `results` as an `error` entry instead of as an exception.
+
+### 🔧 mcp Floor Raised to 1.21.1
 
 - **The `mcp` extra now requires `mcp>=1.21.1,<3` (was `>=1.10.0,<3`).** pydantic
   2.14.0 removed `eval_type_backport` from its private `_typing_extra` module,
