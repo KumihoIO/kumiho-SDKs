@@ -46,6 +46,8 @@ struct PagedList {
     std::vector<T> items;
     std::optional<std::string> next_cursor;
     std::optional<int32_t> total_count;
+    std::optional<bool> has_more;
+    bool pagination_present = false;
 };
 
 /**

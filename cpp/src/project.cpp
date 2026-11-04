@@ -80,6 +80,14 @@ std::vector<std::shared_ptr<Space>> Project::getSpaces(
     return client_->getChildSpaces(base, recursive, page_size, cursor);
 }
 
+PagedList<std::shared_ptr<Space>> Project::getSpacesPaged(
+    bool recursive, const std::string& parent_path,
+    int32_t page_size, const std::string& cursor
+) {
+    const std::string base = parent_path.empty() ? ("/" + response_.name()) : parent_path;
+    return client_->getChildSpacesPaged(base, recursive, page_size, cursor);
+}
+
 PagedList<std::shared_ptr<Item>> Project::getItems(
     const std::string& name_filter,
     const std::string& kind_filter,

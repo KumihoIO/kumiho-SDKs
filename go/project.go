@@ -83,9 +83,20 @@ func (p *Project) GetSpaces(ctx context.Context, parentPath string, recursive bo
 	return p.client.GetChildSpaces(ctx, p.baseParent(parentPath), recursive, pageSize, cursor)
 }
 
+// GetSpacesPaged exposes the list completion metadata for project spaces.
+func (p *Project) GetSpacesPaged(ctx context.Context, parentPath string, recursive bool, pageSize int, cursor string) (*InventoryPage[*Space], error) {
+	return p.client.GetChildSpacesPaged(ctx, p.baseParent(parentPath), recursive, pageSize, cursor)
+}
+
 // GetItems searches items within this project.
 func (p *Project) GetItems(ctx context.Context, nameFilter, kindFilter string, pageSize int, cursor string) (*Page[*Item], error) {
 	return p.client.ItemSearch(ctx, p.Name, nameFilter, kindFilter, pageSize, cursor, false)
+}
+
+// GetItemsIncludingDeprecated searches the project including deprecated items.
+// This retains ItemSearch scope; use Space/Client GetItems for direct inventory.
+func (p *Project) GetItemsIncludingDeprecated(ctx context.Context, nameFilter, kindFilter string, pageSize int, cursor string) (*Page[*Item], error) {
+	return p.client.ItemSearch(ctx, p.Name, nameFilter, kindFilter, pageSize, cursor, true)
 }
 
 // Delete forwards the legacy delete/deprecate request to the connected server.

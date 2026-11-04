@@ -40,10 +40,11 @@ mixin SpaceApi on KumihoClientBase {
     String spaceName, {
     bool existsError = false,
   }) async {
-    final request = CreateSpaceRequest()
-      ..parentPath = parentPath
-      ..spaceName = spaceName
-      ..existsError = existsError;
+    final request =
+        CreateSpaceRequest()
+          ..parentPath = parentPath
+          ..spaceName = spaceName
+          ..existsError = existsError;
     return stub.createSpace(request, options: callOptions);
   }
 
@@ -69,14 +70,16 @@ mixin SpaceApi on KumihoClientBase {
     int? pageSize,
     String? cursor,
   }) async {
-    final request = GetChildSpacesRequest()
-      ..parentPath = parentPath
-      ..recursive = recursive;
+    final request =
+        GetChildSpacesRequest()
+          ..parentPath = parentPath
+          ..recursive = recursive;
 
     if (pageSize != null || cursor != null) {
-      request.pagination = PaginationRequest()
-        ..pageSize = pageSize ?? 100
-        ..cursor = cursor ?? '';
+      request.pagination =
+          PaginationRequest()
+            ..pageSize = pageSize ?? 100
+            ..cursor = cursor ?? '';
     }
 
     final response = await stub.getChildSpaces(request, options: callOptions);
@@ -86,9 +89,29 @@ mixin SpaceApi on KumihoClientBase {
         response.spaces,
         nextCursor: response.pagination.nextCursor,
         totalCount: response.pagination.totalCount,
+        hasMore: response.pagination.hasMore,
+        paginationPresent: true,
       );
     }
     return response.spaces;
+  }
+
+  /// Typed paged alternative. Missing metadata remains explicitly unknown.
+  Future<PagedList<SpaceResponse>> getChildSpacesPaged(
+    String parentPath, {
+    bool recursive = false,
+    int pageSize = 100,
+    String? cursor,
+  }) async {
+    final spaces = await getChildSpaces(
+      parentPath,
+      recursive: recursive,
+      pageSize: pageSize,
+      cursor: cursor,
+    );
+    return spaces is PagedList<SpaceResponse>
+        ? spaces
+        : PagedList(spaces, paginationPresent: false);
   }
 
   /// Deletes a space.
@@ -97,13 +120,11 @@ mixin SpaceApi on KumihoClientBase {
   /// Set [force] to `true` to delete even if the space has contents.
   ///
   /// **Warning**: Force deletion removes all items within the space.
-  Future<StatusResponse> deleteSpace(
-    String path, {
-    bool force = false,
-  }) async {
-    final request = DeleteSpaceRequest()
-      ..path = path
-      ..force = force;
+  Future<StatusResponse> deleteSpace(String path, {bool force = false}) async {
+    final request =
+        DeleteSpaceRequest()
+          ..path = path
+          ..force = force;
     return stub.deleteSpace(request, options: callOptions);
   }
 
@@ -116,9 +137,10 @@ mixin SpaceApi on KumihoClientBase {
     String kref,
     Map<String, String> metadata,
   ) async {
-    final request = UpdateMetadataRequest()
-      ..kref = Kref(uri: kref)
-      ..metadata.addAll(metadata);
+    final request =
+        UpdateMetadataRequest()
+          ..kref = Kref(uri: kref)
+          ..metadata.addAll(metadata);
     return stub.updateSpaceMetadata(request, options: callOptions);
   }
 }

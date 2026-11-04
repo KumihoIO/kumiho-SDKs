@@ -848,6 +848,8 @@ class _Client:
                 spaces,
                 next_cursor=resp.pagination.next_cursor,
                 total_count=resp.pagination.total_count,
+                has_more=resp.pagination.has_more,
+                pagination_present=True,
             )
         return spaces
 
@@ -1010,7 +1012,9 @@ class _Client:
             return PagedList(
                 items,
                 next_cursor=resp.pagination.next_cursor,
-                total_count=resp.pagination.total_count
+                total_count=resp.pagination.total_count,
+                has_more=resp.pagination.has_more,
+                pagination_present=True,
             )
         return items
 
@@ -1055,7 +1059,9 @@ class _Client:
             return PagedList(
                 items,
                 next_cursor=resp.pagination.next_cursor,
-                total_count=resp.pagination.total_count
+                total_count=resp.pagination.total_count,
+                has_more=resp.pagination.has_more,
+                pagination_present=True,
             )
         return items
 

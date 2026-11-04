@@ -136,6 +136,20 @@ pub struct Page<T> {
     pub total_count: Option<i32>,
 }
 
+impl<T> Page<T> {
+    /// Whether the server supplied metadata, including an empty final page.
+    pub fn pagination_present(&self) -> bool {
+        self.total_count.is_some()
+    }
+
+    /// Continuation derived from the cursor; unknown when metadata was omitted.
+    /// CE1.11.0 emits a cursor exactly when has_more=true for these list RPCs.
+    pub fn has_more(&self) -> Option<bool> {
+        self.total_count
+            .map(|_| self.next_cursor.as_ref().is_some_and(|s| !s.is_empty()))
+    }
+}
+
 impl<T> std::ops::Deref for Page<T> {
     type Target = [T];
     fn deref(&self) -> &[T] {
@@ -1677,6 +1691,55 @@ fn make_pagination(
         page_size: page_size.unwrap_or(100),
         cursor: cursor.unwrap_or_default(),
     })
+}
+
+#[cfg(test)]
+mod inventory_pagination_tests {
+    use super::*;
+
+    #[test]
+    fn distinguishes_missing_metadata_from_empty_terminal_page() {
+        let missing = page_from::<()>(vec![], None);
+        assert!(!missing.pagination_present());
+        assert_eq!(missing.has_more(), None);
+        assert_eq!(missing.total_count, None);
+        let final_page = page_from::<()>(
+            vec![],
+            Some(pb::PaginationResponse {
+                next_cursor: String::new(),
+                has_more: false,
+                total_count: 0,
+            }),
+        );
+        assert!(final_page.pagination_present());
+        assert_eq!(final_page.has_more(), Some(false));
+        assert_eq!(final_page.total_count, Some(0));
+        assert_eq!(final_page.next_cursor, None);
+    }
+
+    #[test]
+    fn default_remains_unpaged_and_continuation_is_not_rewritten() {
+        assert!(make_pagination(None, None).is_none());
+        let request = make_pagination(Some(2), Some("opaque-before".into())).unwrap();
+        assert_eq!(request.cursor, "opaque-before");
+        let page = page_from(
+            vec![1],
+            Some(pb::PaginationResponse {
+                next_cursor: "opaque-next".into(),
+                has_more: true,
+                total_count: 8,
+            }),
+        );
+        assert_eq!(page.has_more(), Some(true));
+        assert_eq!(page.next_cursor.as_deref(), Some("opaque-next"));
+        assert_eq!(page.total_count, Some(8));
+        let legacy = Page {
+            items: vec![1],
+            next_cursor: None,
+            total_count: Some(1),
+        };
+        assert_eq!(legacy.has_more(), Some(false));
+    }
 }
 
 fn map_path(p: pb::RevisionPath) -> RevisionPath {

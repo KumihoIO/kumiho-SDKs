@@ -16,6 +16,37 @@ import 'revision.dart';
 import 'space.dart';
 import 'project.dart';
 
+// Inventory reads can contain legacy dot-prefixed names. Preserve their exact
+// server identity without broadening Kref() or request validation. Validate a
+// copy with only those leading dots made addressable; controls/traversal,
+// malformed leaves and other URI errors remain rejected.
+Kref _inventoryItemKref(String uri) {
+  try {
+    return Kref(uri);
+  } on KrefValidationError {
+    if (!uri.startsWith('kref://') || uri.contains('..')) rethrow;
+    final query = uri.indexOf('?');
+    final base = query < 0 ? uri : uri.substring(0, query);
+    final suffix = query < 0 ? '' : uri.substring(query);
+    final parts = base.substring('kref://'.length).split('/');
+    if (parts.length < 2) rethrow;
+    final leaf = parts.last;
+    final dot = leaf.lastIndexOf('.');
+    if (dot <= 0 || dot == leaf.length - 1) rethrow;
+    var changed = false;
+    for (var i = 1; i < parts.length; i++) {
+      if (parts[i] == '.') rethrow;
+      if (parts[i].startsWith('.')) {
+        parts[i] = '_${parts[i]}';
+        changed = true;
+      }
+    }
+    if (!changed) rethrow;
+    validateKref('kref://${parts.join('/')}$suffix');
+    return Kref(uri, validate: false);
+  }
+}
+
 /// A versioned asset in the Kumiho system.
 ///
 /// Items represent assets that can have multiple revisions, such as 3D models,
@@ -44,7 +75,7 @@ import 'project.dart';
 class Item extends KumihoObject {
   /// Creates an [Item] from a protobuf response.
   Item(pb.ItemResponse response, dynamic client) : super(client) {
-    kref = Kref(response.kref.uri);
+    kref = _inventoryItemKref(response.kref.uri);
     name = response.name;
     itemName = response.itemName;
     kind = response.kind;

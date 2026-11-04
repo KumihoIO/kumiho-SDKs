@@ -138,6 +138,12 @@ public:
         std::optional<std::string> cursor = std::nullopt
     );
 
+    /** Completion metadata; page_size=0 preserves unpaged full-list behavior. */
+    PagedList<std::shared_ptr<Space>> getSpacesPaged(
+        bool recursive = false, const std::string& parent_path = "",
+        int32_t page_size = 0, const std::string& cursor = ""
+    );
+
     /**
      * @brief Search for items within this project.
      * @param name_filter Filter by item name. Supports wildcards.

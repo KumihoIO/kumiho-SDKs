@@ -570,7 +570,8 @@ class Project(KumihoObject):
         name_filter: str = "",
         kind_filter: str = "",
         page_size: Optional[int] = None,
-        cursor: Optional[str] = None
+        cursor: Optional[str] = None,
+        include_deprecated: bool = False,
     ) -> List['Item']:
         """Search for items within this project.
 
@@ -601,5 +602,6 @@ class Project(KumihoObject):
             item_name_filter=name_filter,
             kind_filter=kind_filter,
             page_size=page_size,
-            cursor=cursor
+            cursor=cursor,
+            include_deprecated=include_deprecated,
         )

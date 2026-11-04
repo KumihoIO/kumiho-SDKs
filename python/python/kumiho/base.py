@@ -22,11 +22,17 @@ class PagedList(List[T]):
     Attributes:
         next_cursor (Optional[str]): The cursor for the next page of results.
         total_count (Optional[int]): The total number of items available.
+        has_more (Optional[bool]): Server continuation flag; None when unknown.
+        pagination_present (bool): Whether pagination metadata was supplied.
     """
-    def __init__(self, items: List[T], next_cursor: Optional[str] = None, total_count: Optional[int] = None):
+    def __init__(self, items: List[T], next_cursor: Optional[str] = None, total_count: Optional[int] = None,
+                 has_more: Optional[bool] = None, pagination_present: Optional[bool] = None):
         super().__init__(items)
         self.next_cursor = next_cursor
         self.total_count = total_count
+        self.has_more = has_more
+        self.pagination_present = (pagination_present if pagination_present is not None else
+                                   any(value is not None for value in (next_cursor, total_count, has_more)))
 
 
 @dataclass

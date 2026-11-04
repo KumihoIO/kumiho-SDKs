@@ -246,7 +246,8 @@ class Space(KumihoObject):
         item_name_filter: str = "",
         kind_filter: str = "",
         page_size: Optional[int] = None,
-        cursor: Optional[str] = None
+        cursor: Optional[str] = None,
+        include_deprecated: bool = False,
     ) -> List[Item]:
         """List items within this space with optional filtering.
 
@@ -280,7 +281,8 @@ class Space(KumihoObject):
             item_name_filter,
             kind_filter,
             page_size=page_size,
-            cursor=cursor
+            cursor=cursor,
+            include_deprecated=include_deprecated,
         )
 
     def get_item(self, item_name: str, kind: str) -> Item:
@@ -471,7 +473,8 @@ class Space(KumihoObject):
             parent_path = "/" + "/".join(parent_parts)
         return self._client.get_space(parent_path)
 
-    def get_child_spaces(self) -> List['Space']:
+    def get_child_spaces(self, recursive: bool = False, page_size: Optional[int] = None,
+                         cursor: Optional[str] = None) -> List['Space']:
         """Get immediate child spaces of this space.
 
         This is a convenience method equivalent to ``get_spaces(recursive=False)``.
@@ -485,7 +488,8 @@ class Space(KumihoObject):
             >>> for child in children:
             ...     print(child.name)
         """
-        return self._client.get_child_spaces(self.path)
+        return self._client.get_child_spaces(self.path, recursive=recursive,
+                                             page_size=page_size, cursor=cursor)
 
     def get_project(self) -> 'Project':
         """Get the project that contains this space.

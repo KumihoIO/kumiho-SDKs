@@ -22,6 +22,7 @@ using ::testing::_;
 using ::testing::Return;
 using ::testing::SetArgPointee;
 using ::testing::DoAll;
+using ::testing::Invoke;
 
 // --- Constants ---
 const std::string PUBLISHED_TAG = "published";
@@ -293,6 +294,55 @@ protected:
 };
 
 // --- Unit Tests ---
+TEST_F(KumihoUnitTest, InventoryMetadataPresenceAndLegacyUnpagedRequest) {
+    EXPECT_CALL(*mock_stub, GetChildSpaces(_, _, _))
+        .WillOnce(Invoke([](grpc::ClientContext*, const kumiho::GetChildSpacesRequest& request,
+                            kumiho::GetChildSpacesResponse* response) {
+            EXPECT_FALSE(request.has_pagination());
+            response->mutable_pagination()->set_total_count(0);
+            response->mutable_pagination()->set_has_more(false);
+            return grpc::Status::OK;
+        }));
+    auto page = client->getChildSpacesPaged("/p", true);
+    EXPECT_TRUE(page.pagination_present);
+    ASSERT_TRUE(page.has_more.has_value());
+    EXPECT_FALSE(*page.has_more);
+    EXPECT_EQ(page.total_count, 0);
+    ASSERT_TRUE(page.next_cursor.has_value());
+    EXPECT_TRUE(page.next_cursor->empty());
+
+    EXPECT_CALL(*mock_stub, GetItems(_, _, _))
+        .WillOnce(Invoke([](grpc::ClientContext*, const kumiho::GetItemsRequest& request,
+                            kumiho::GetItemsResponse*) {
+            EXPECT_FALSE(request.has_pagination());
+            return grpc::Status::OK;
+        }));
+    auto unknown = client->getItemsPaged("/p");
+    EXPECT_FALSE(unknown.pagination_present);
+    EXPECT_FALSE(unknown.has_more.has_value());
+    EXPECT_FALSE(unknown.total_count.has_value());
+}
+
+TEST_F(KumihoUnitTest, DirectItemsPagedForwardsDeprecatedAndCursor) {
+    EXPECT_CALL(*mock_stub, GetItems(_, _, _))
+        .WillOnce(Invoke([](grpc::ClientContext*, const kumiho::GetItemsRequest& request,
+                            kumiho::GetItemsResponse* response) {
+            EXPECT_TRUE(request.include_deprecated());
+            EXPECT_EQ(request.pagination().page_size(), 2);
+            EXPECT_EQ(request.pagination().cursor(), "opaque-before");
+            auto* page = response->mutable_pagination();
+            page->set_total_count(8); page->set_has_more(true); page->set_next_cursor("opaque-next");
+            return grpc::Status::OK;
+        }));
+    kumiho::SpaceResponse proto; proto.set_path("/p");
+    kumiho::api::Space space(proto, client.get());
+    auto page = space.getItemsPaged("", "", 2, "opaque-before", true);
+    EXPECT_TRUE(page.pagination_present);
+    EXPECT_EQ(page.has_more, true);
+    EXPECT_EQ(page.next_cursor, "opaque-next");
+    EXPECT_EQ(page.total_count, 8);
+}
+
 TEST_F(KumihoUnitTest, ForceProjectDeleteRequiresBoundSnapshot) {
     EXPECT_THROW(client->deleteProject("project-1", true), std::invalid_argument);
 }

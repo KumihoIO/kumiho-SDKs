@@ -15,7 +15,10 @@ endif()
 
 # --- gRPC and Protobuf setup ---
 find_package(gRPC CONFIG REQUIRED)
-find_package(Protobuf CONFIG REQUIRED)
+find_package(Protobuf CONFIG QUIET)
+if(NOT Protobuf_FOUND)
+    find_package(Protobuf REQUIRED)
+endif()
 find_package(CURL REQUIRED)
 
 # --- Manually find the gRPC C++ plugin ---
@@ -28,7 +31,7 @@ if(DEFINED GRPC_CPP_PLUGIN)
 else()
     find_program(
         GRPC_CPP_PLUGIN
-        NAMES grpc_cpp_plugin.exe
+        NAMES grpc_cpp_plugin grpc_cpp_plugin.exe
         HINTS "${CMAKE_TOOLCHAIN_FILE}/../../installed/x64-windows/tools/grpc"
     )
     if(NOT GRPC_CPP_PLUGIN)
@@ -111,6 +114,9 @@ if(KUMIHO_BUILD_TESTS)
 
     find_package(GTest REQUIRED)
     include(GoogleTest)
+
+    add_executable(kumiho_inventory_probe tests/ce_inventory_probe.cpp)
+    target_link_libraries(kumiho_inventory_probe PRIVATE kumiho)
 
     # API Tests
     add_executable(kumiho_tests

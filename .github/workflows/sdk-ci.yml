@@ -18,6 +18,9 @@ on:
       - 'go/**'
       - 'rust/**'
       - 'python/**'
+      - 'dart/**'
+      - 'cpp/**'
+      - 'scripts/verify-ce-inventory.py'
       - 'spec/**'
       - '.github/workflows/sdk-ci.yml'
   push:
@@ -26,6 +29,9 @@ on:
       - 'go/**'
       - 'rust/**'
       - 'python/**'
+      - 'dart/**'
+      - 'cpp/**'
+      - 'scripts/verify-ce-inventory.py'
       - 'spec/**'
       - '.github/workflows/sdk-ci.yml'
 
@@ -37,6 +43,52 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  dart:
+    name: Dart (native regression tests)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: dart
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dart-lang/setup-dart@v1
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: dart pub get
+      - name: Test without live production credentials
+        run: |
+          mapfile -t tests < <(find test -name '*_test.dart' ! -name 'live_test.dart' | sort)
+          dart test "${tests[@]}"
+      - name: Exercise published CE with isolated data
+        run: |
+          python -m pip install neo4j
+          python ../scripts/verify-ce-inventory.py dart run test/ce_inventory_probe.dart '{endpoint}' '{root}'
+
+  cpp:
+    name: C++ (native tests and published CE1.11.0)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install test toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake ninja-build libgrpc++-dev libprotobuf-dev protobuf-compiler protobuf-compiler-grpc libcurl4-openssl-dev libgtest-dev libgmock-dev nlohmann-json3-dev
+          python -m pip install neo4j
+      - name: Build native clients and regressions
+        run: |
+          cmake -S cpp -B cpp/build -G Ninja -DCMAKE_BUILD_TYPE=Debug -DKUMIHO_BUILD_INTEGRATION_TESTS=OFF -DKUMIHO_BUILD_EXAMPLES=OFF -DGRPC_CPP_PLUGIN=/usr/bin/grpc_cpp_plugin
+          cmake --build cpp/build --target kumiho_tests kumiho_inventory_probe -j2
+      - name: Test metadata and existing API compatibility
+        run: cpp/build/kumiho_tests
+      - name: Exercise real published CE with isolated data
+        run: python scripts/verify-ce-inventory.py "$PWD/cpp/build/kumiho_inventory_probe" '{endpoint}' '{root}'
+
   go:
     name: Go (build / vet / test)
     runs-on: ubuntu-latest
@@ -63,6 +115,13 @@ jobs:
             echo "$unformatted"
             exit 1
           fi
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Exercise published CE with isolated data
+        run: |
+          python -m pip install neo4j
+          python ../scripts/verify-ce-inventory.py go run ./cmd/inventory-probe '{endpoint}' '{root}'
 
   python:
     # One leg per supported mcp major. mcp 2.0.0 removed the low-level handler
@@ -116,6 +175,11 @@ jobs:
         # that suite now lives here and is collected by this same command.
         # Its live tests skip without KUMIHO_AUTH_TOKEN, which CI does not set.
         run: python -m pytest tests/ -v
+      - name: Exercise published CE with isolated data
+        if: matrix.mcp-label == '1.21.1 floor'
+        run: |
+          python -m pip install neo4j
+          python ../../scripts/verify-ce-inventory.py python tests/ce_inventory_probe.py '{endpoint}' '{root}'
 
   python-cli:
     # kumiho-cli is a second distribution with its own pyproject and its own
@@ -172,3 +236,10 @@ jobs:
       - name: Clippy
         continue-on-error: true
         run: cargo clippy --all-targets
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Exercise published CE with isolated data
+        run: |
+          python -m pip install neo4j
+          python ../scripts/verify-ce-inventory.py cargo run --example inventory_probe -- '{endpoint}' '{root}'

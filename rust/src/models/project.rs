@@ -146,6 +146,27 @@ impl Project {
             .await
     }
 
+    /// Project search including deprecated content. ItemSearch scope is preserved;
+    /// use Space/Client get_items for direct-item inventory completion metadata.
+    pub async fn get_items_including_deprecated(
+        &self,
+        name_filter: &str,
+        kind_filter: &str,
+        page_size: Option<i32>,
+        cursor: Option<String>,
+    ) -> Result<Page<Item>> {
+        self.client
+            .item_search(
+                &self.name,
+                name_filter,
+                kind_filter,
+                page_size,
+                cursor,
+                true,
+            )
+            .await
+    }
+
     /// Delete or deprecate this Project using the connected server contract.
     /// New servers require [`Self::hard_delete`] for permanent deletion.
     pub async fn delete(&self, force: bool) -> Result<()> {
