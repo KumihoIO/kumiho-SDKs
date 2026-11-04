@@ -57,10 +57,11 @@ language probes check unpaged1,004-row lists, four exactly full251-row pages,
 unique identities, count/cursor/continuation and direct deprecated inventory.
 No live Cloud authentication or user database is used.
 
-This is unreleased SDK source. Package versions/tags are not advanced or
-published by this change. After review, follow each SDK's normal release
-procedure; Dart currently has `publish_to: none`, C++ is distributed as source,
-and Go requires its own `go/v*` tag. Default whole-list users do not need a
-coordinated wire upgrade. Users of the newly exposed APIs need the updated SDK
-source/package after release. Snapshot-bound cleanup remains a separate server
-capability. Production export/load and historical CE1.6.3 were not tested here.
+The release versions for this change are Python0.16.0 (PyPI), Rust0.11.0
+(crates.io), Go0.11.0 (`go/v0.11.0` module tag), Dart0.3.0 (Git source) and
+C++1.1.0 (Git source). Follow [RELEASING.md](RELEASING.md) after review and
+green CI. Dart retains `publish_to: none`; C++ has no registry publisher.
+Default whole-list users do not need a coordinated wire upgrade. Users of
+the newly exposed APIs need the updated SDK source/package after release.
+Snapshot-bound cleanup remains a separate server capability. Production
+export/load and historical CE1.6.3 were not tested here.

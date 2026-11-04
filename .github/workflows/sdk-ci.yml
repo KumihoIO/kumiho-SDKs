@@ -83,11 +83,18 @@ jobs:
       - name: Build native clients and regressions
         run: |
           cmake -S cpp -B cpp/build -G Ninja -DCMAKE_BUILD_TYPE=Debug -DKUMIHO_BUILD_INTEGRATION_TESTS=OFF -DKUMIHO_BUILD_EXAMPLES=OFF -DGRPC_CPP_PLUGIN=/usr/bin/grpc_cpp_plugin
-          cmake --build cpp/build --target kumiho_tests kumiho_inventory_probe -j2
+          cmake --build cpp/build --target kumiho_tests kumiho_inventory_probe kumiho_listener -j2
       - name: Test metadata and existing API compatibility
         run: cpp/build/kumiho_tests
-      - name: Exercise real published CE with isolated data
-        run: python scripts/verify-ce-inventory.py "$PWD/cpp/build/kumiho_inventory_probe" '{endpoint}' '{root}'
+      - name: Install SDK and build an independent consumer
+        run: |
+          cmake --install cpp/build --prefix "$RUNNER_TEMP/kumiho-sdk"
+          python -c 'import os; from pathlib import Path; prefix = Path(os.environ["RUNNER_TEMP"]) / "kumiho-sdk"; paths = Path("cpp/build/install_manifest.txt").read_text().splitlines(); assert paths and all(Path(p).is_relative_to(prefix) for p in paths), paths'
+          cmake -E rename "$RUNNER_TEMP/kumiho-sdk" "$RUNNER_TEMP/kumiho-sdk-relocated"
+          cmake -S cpp/tests/installed -B "$RUNNER_TEMP/kumiho-consumer" -G Ninja -DCMAKE_BUILD_TYPE=Debug -DCMAKE_PREFIX_PATH="$RUNNER_TEMP/kumiho-sdk-relocated"
+          cmake --build "$RUNNER_TEMP/kumiho-consumer" -j2
+      - name: Exercise installed consumer against published CE with isolated data
+        run: python scripts/verify-ce-inventory.py "$RUNNER_TEMP/kumiho-consumer/installed_inventory_probe" '{endpoint}' '{root}'
 
   go:
     name: Go (build / vet / test)

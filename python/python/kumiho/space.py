@@ -475,12 +475,19 @@ class Space(KumihoObject):
 
     def get_child_spaces(self, recursive: bool = False, page_size: Optional[int] = None,
                          cursor: Optional[str] = None) -> List['Space']:
-        """Get immediate child spaces of this space.
+        """Get child spaces with optional recursion and pagination.
 
-        This is a convenience method equivalent to ``get_spaces(recursive=False)``.
+        Defaults to all immediate children, equivalent to
+        ``get_spaces(recursive=False)``.
+
+        Args:
+            recursive: Include every descendant when True.
+            page_size: Requested page size; None keeps the unpaged default.
+            cursor: Opaque continuation cursor from the previous page.
 
         Returns:
-            List[Space]: A list of direct child Space objects.
+            List[Space]: List-compatible result retaining available pagination
+            metadata. Follow next_cursor to retrieve subsequent pages.
 
         Example:
             >>> assets = project.get_space("assets")

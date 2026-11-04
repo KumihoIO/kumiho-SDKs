@@ -1,5 +1,6 @@
 cmake_minimum_required(VERSION 3.14)
-project(KumihoCpp VERSION 1.0.0 LANGUAGES CXX)
+project(KumihoCpp VERSION 1.1.0 LANGUAGES CXX)
+include(GNUInstallDirs)
 
 # --- Options ---
 option(KUMIHO_BUILD_TESTS "Build unit tests" ON)
@@ -288,29 +289,15 @@ if(KUMIHO_BUILD_TESTS)
     )
 endif()
 
-# --- Installation ---
-install(TARGETS kumiho_listener
-    RUNTIME DESTINATION ${CMAKE_SOURCE_DIR}/../../apps/cpp
-)
-
-# Install required DLLs for Windows
-if(WIN32)
-    install(FILES
-        "g:/git/vcpkg/installed/x64-windows/bin/libprotobuf.dll"
-        "g:/git/vcpkg/installed/x64-windows/bin/abseil_dll.dll"
-        "g:/git/vcpkg/installed/x64-windows/bin/cares.dll"
-        "g:/git/vcpkg/installed/x64-windows/bin/zlib1.dll"
-        "g:/git/vcpkg/installed/x64-windows/bin/re2.dll"
-        "g:/git/vcpkg/installed/x64-windows/bin/libcrypto-3-x64.dll"
-        "g:/git/vcpkg/installed/x64-windows/bin/libssl-3-x64.dll"
-        DESTINATION ${CMAKE_SOURCE_DIR}/../../apps/cpp
-    )
-endif()
-
 # --- Library Installation (for find_package support) ---
 if(KUMIHO_INSTALL)
-    include(GNUInstallDirs)
     include(CMakePackageConfigHelpers)
+
+    # Runtime dependencies are provided by the consumer's toolchain/package
+    # manager. Every SDK install destination stays beneath the chosen prefix.
+    install(TARGETS kumiho_listener
+        RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+    )
 
     # Install library
     install(TARGETS kumiho protobuf_grpc_lib

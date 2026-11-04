@@ -35,7 +35,7 @@ Modern C++ client library for the Kumiho asset management and versioning platfor
 ### Prerequisites
 
 - C++17 compatible compiler (MSVC 2019+, GCC 8+, Clang 8+)
-- CMake 3.10+
+- CMake 3.15+ (for the `cmake --install` command below)
 - vcpkg (recommended for dependency management)
 - gRPC and Protobuf
 
@@ -43,15 +43,23 @@ Modern C++ client library for the Kumiho asset management and versioning platfor
 
 ```bash
 # Install dependencies
-vcpkg install grpc protobuf gtest
+vcpkg install grpc protobuf curl gtest nlohmann-json
 
 # Clone and build
-git clone https://github.com/KumihoIO/kumiho-SDKs.git
+git clone --recurse-submodules --branch cpp-v1.1.0 https://github.com/KumihoIO/kumiho-SDKs.git
 cd kumiho-SDKs/cpp
 mkdir build && cd build
 cmake .. -DCMAKE_TOOLCHAIN_FILE=[vcpkg root]/scripts/buildsystems/vcpkg.cmake
 cmake --build . --config Release
+cmake --install . --config Release --prefix /path/to/kumiho-sdk
 ```
+
+C++1.1.0 is distributed from the Git source tag; no package registry or
+prebuilt binary is published. GitHub's automatic source archive omits the
+protobuf submodule, so use the recursive clone above. Dependencies (including
+Windows runtime DLLs) are supplied by your toolchain/package manager.
+Consumers use `find_package(kumiho 1.1 CONFIG REQUIRED)` with
+`CMAKE_PREFIX_PATH=/path/to/kumiho-sdk` and link `kumiho::kumiho`.
 
 ### Basic Usage
 
