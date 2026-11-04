@@ -345,8 +345,16 @@ TEST_F(KumihoUnitTest, DirectItemsPagedForwardsDeprecatedAndCursor) {
     EXPECT_EQ(legacy.total_count, 1);
 }
 
-TEST_F(KumihoUnitTest, ForceProjectDeleteRequiresBoundSnapshot) {
-    EXPECT_THROW(client->deleteProject("project-1", true), std::invalid_argument);
+TEST_F(KumihoUnitTest, LegacyForceDeletePropagatesTheServerGuard) {
+    EXPECT_CALL(*mock_stub, DeleteProject(_, _, _))
+        .WillOnce(Invoke([](grpc::ClientContext*, const kumiho::DeleteProjectRequest& request,
+                            kumiho::StatusResponse*) {
+            EXPECT_EQ(request.project_id(), "project-1");
+            EXPECT_TRUE(request.force());
+            return grpc::Status(grpc::StatusCode::FAILED_PRECONDITION,
+                "permanent deletion requires a bound impact snapshot");
+        }));
+    EXPECT_THROW(client->deleteProject("project-1", true), kumiho::api::RpcError);
 }
 
 TEST_F(KumihoUnitTest, HardDeleteRequiresExplicitConfirmation) {
@@ -483,27 +491,25 @@ TEST_F(KumihoUnitTest, ResolveKrefInvalidTimeFormat) {
     EXPECT_THROW(client->resolveKref("kref://some_id", "", "2025-10-13 12:00:00"), kumiho::api::ValidationError);
 }
 
-TEST_F(KumihoUnitTest, ResolveItemKrefFallbackToFirstArtifact) {
-    // Setup: Item KREF, no default_artifact, but one artifact exists
-    // The client->resolve() method calls ResolveKref internally
-    kumiho::RevisionResponse revision_response;
-    revision_response.mutable_kref()->set_uri("kref://space1/item1.kind?r=1");
-    revision_response.set_number(1);
-    
-    EXPECT_CALL(*mock_stub, ResolveKref(_, _, _))
-        .WillOnce(DoAll(SetArgPointee<2>(revision_response), Return(grpc::Status::OK)));
-
-    kumiho::ArtifactResponse artifact_response;
-    artifact_response.set_location("/path/to/artifact1");
-    kumiho::GetArtifactsResponse artifacts_response;
-    auto* r = artifacts_response.add_artifacts();
-    *r = artifact_response;
-    EXPECT_CALL(*mock_stub, GetArtifacts(_, _, _))
-        .WillOnce(DoAll(SetArgPointee<2>(artifacts_response), Return(grpc::Status::OK)));
-
+TEST_F(KumihoUnitTest, ResolveUsesTheCanonicalServerLocation) {
+    EXPECT_CALL(*mock_stub, ResolveKref(_, _, _)).Times(0);
+    EXPECT_CALL(*mock_stub, GetArtifacts(_, _, _)).Times(0);
+    EXPECT_CALL(*mock_stub, ResolveLocation(_, _, _))
+        .WillOnce(Invoke([](grpc::ClientContext*, const kumiho::ResolveLocationRequest& request,
+                            kumiho::ResolveLocationResponse* response) {
+            EXPECT_EQ(request.kref(), "kref://space1/item1.kind");
+            response->set_location("/path/to/artifact1");
+            return grpc::Status::OK;
+        }));
     auto location = client->resolve("kref://space1/item1.kind");
     ASSERT_TRUE(location.has_value());
     EXPECT_EQ(location.value(), "/path/to/artifact1");
+}
+
+TEST_F(KumihoUnitTest, ResolveServerFailureReturnsNoLocation) {
+    EXPECT_CALL(*mock_stub, ResolveLocation(_, _, _))
+        .WillOnce(Return(grpc::Status(grpc::StatusCode::NOT_FOUND, "no location")));
+    EXPECT_FALSE(client->resolve("kref://space1/item1.kind").has_value());
 }
 
 // ---------------------------------------------------------------------------
