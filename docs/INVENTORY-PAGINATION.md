@@ -13,17 +13,19 @@ Neither a stable count nor these SDK APIs freezes a tree under concurrent writes
 | --- | --- | --- |
 | Python | List-compatible `client.get_child_spaces` / `get_items` | `PagedList.total_count`, `.next_cursor`, `.has_more`, `.pagination_present`; Space forwards recursion/paging and `include_deprecated` |
 | Dart | Existing `Future<List<Space>>` model methods | Model mapping preserves PagedList at runtime; typed `getChildSpacesPaged` / `getSpacesPaged`; items already return PagedList |
-| C++ | Existing vector-returning methods | `getChildSpacesPaged`, new direct `getItemsPaged`, model paged variants; optional count/cursor/has_more and explicit presence |
+| C++ | Existing vector-returning methods and PagedList layout | `getChildSpacesPaged`, new direct `getItemsPaged`, model paged variants; count/cursor plus `paginationPresent()` and cursor-derived `hasMore()` |
 | Go | Existing `Page` fields, struct literals and method return types | New `InventoryPage` and `GetChildSpacesPaged` / `GetItemsPaged` / model variants add `PaginationPresent` and `HasMore` |
 | Rust | Existing `Page` fields, struct literals and return types | `pagination_present()` and cursor-derived `has_more()` accessors; `get_items_including_deprecated` on Space |
 
 Check metadata presence before interpreting an empty cursor or zero count.
 Missing metadata from an older server remains unknown; it is never upgraded
 to a completion claim. Rust's convenience flag derives from the cursor/count
-already stored by Page; raw protobuf still exposes the literal wire flag.
+already stored by Page; C++ uses the same approach to preserve aggregate/ABI
+layout. Raw protobuf still exposes the literal wire flag in both SDKs.
 C++ terminal cursors remain an engaged optional containing an empty string:
-checking `has_value()` alone is insufficient. Prefer `has_more == false` after
-checking `pagination_present`. Rebuild C++ libraries and headers together.
+checking `has_value()` alone is insufficient. Prefer `hasMore() == false` after
+checking `paginationPresent()`. Build updated C++ libraries and headers together
+to use the newly added methods.
 
 Dart inventory Item models preserve safe dot-prefixed identities returned by
 the server (including items inside dot-prefixed spaces). This response-only

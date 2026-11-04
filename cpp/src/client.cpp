@@ -588,8 +588,6 @@ PagedList<std::shared_ptr<Space>> Client::getChildSpacesPaged(
     if (res.has_pagination()) {
         result.next_cursor = res.pagination().next_cursor();
         result.total_count = res.pagination().total_count();
-        result.has_more = res.pagination().has_more();
-        result.pagination_present = true;
     }
 
     return result;
@@ -751,8 +749,6 @@ PagedList<std::shared_ptr<Item>> Client::getItemsPaged(
     if (res.has_pagination()) {
         result.next_cursor = res.pagination().next_cursor();
         result.total_count = res.pagination().total_count();
-        result.has_more = res.pagination().has_more();
-        result.pagination_present = true;
     }
     return result;
 }
@@ -793,8 +789,6 @@ PagedList<std::shared_ptr<Item>> Client::itemSearch(
     if (res.has_pagination()) {
         result.next_cursor = res.pagination().next_cursor();
         result.total_count = res.pagination().total_count();
-        result.has_more = res.pagination().has_more();
-        result.pagination_present = true;
     }
 
     return result;

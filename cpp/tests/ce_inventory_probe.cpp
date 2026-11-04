@@ -11,25 +11,25 @@ int main(int argc, char** argv) {
     const auto legacy = client.getChildSpaces(root, true);
     assert(legacy.size() == 1004);
     const auto all = client.getItemsPaged(root, "", "", true);
-    assert(all.items.size() == 1004 && all.pagination_present && all.total_count == 1004 && all.has_more == false);
+    assert(all.items.size() == 1004 && all.paginationPresent() && all.total_count == 1004 && all.hasMore() == false);
     std::set<std::string> spaces, items;
     std::string cursor;
     size_t count = 0;
     do {
         const auto page = client.getChildSpacesPaged(root, true, 251, cursor);
-        assert(page.pagination_present && page.total_count == 1004 && page.items.size() == 251);
+        assert(page.paginationPresent() && page.total_count == 1004 && page.items.size() == 251);
         for (const auto& space : page.items) spaces.insert(space->getPath());
         count += page.items.size(); cursor = page.next_cursor.value_or("");
-        assert(page.has_more == !cursor.empty());
+        assert(page.hasMore() == !cursor.empty());
     } while (!cursor.empty());
     assert(count == 1004 && spaces.size() == 1004);
     count = 0;
     do {
         const auto page = client.getItemsPaged(root, "", "", true, 251, cursor);
-        assert(page.pagination_present && page.total_count == 1004 && page.items.size() == 251);
+        assert(page.paginationPresent() && page.total_count == 1004 && page.items.size() == 251);
         for (const auto& item : page.items) items.insert(item->getKref());
         count += page.items.size(); cursor = page.next_cursor.value_or("");
-        assert(page.has_more == !cursor.empty());
+        assert(page.hasMore() == !cursor.empty());
     } while (!cursor.empty());
     assert(count == 1004 && items.size() == 1004);
     kumiho::SpaceResponse response; response.set_path(root);

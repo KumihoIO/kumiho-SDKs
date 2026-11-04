@@ -304,9 +304,9 @@ TEST_F(KumihoUnitTest, InventoryMetadataPresenceAndLegacyUnpagedRequest) {
             return grpc::Status::OK;
         }));
     auto page = client->getChildSpacesPaged("/p", true);
-    EXPECT_TRUE(page.pagination_present);
-    ASSERT_TRUE(page.has_more.has_value());
-    EXPECT_FALSE(*page.has_more);
+    EXPECT_TRUE(page.paginationPresent());
+    ASSERT_TRUE(page.hasMore().has_value());
+    EXPECT_FALSE(*page.hasMore());
     EXPECT_EQ(page.total_count, 0);
     ASSERT_TRUE(page.next_cursor.has_value());
     EXPECT_TRUE(page.next_cursor->empty());
@@ -318,8 +318,8 @@ TEST_F(KumihoUnitTest, InventoryMetadataPresenceAndLegacyUnpagedRequest) {
             return grpc::Status::OK;
         }));
     auto unknown = client->getItemsPaged("/p");
-    EXPECT_FALSE(unknown.pagination_present);
-    EXPECT_FALSE(unknown.has_more.has_value());
+    EXPECT_FALSE(unknown.paginationPresent());
+    EXPECT_FALSE(unknown.hasMore().has_value());
     EXPECT_FALSE(unknown.total_count.has_value());
 }
 
@@ -337,10 +337,12 @@ TEST_F(KumihoUnitTest, DirectItemsPagedForwardsDeprecatedAndCursor) {
     kumiho::SpaceResponse proto; proto.set_path("/p");
     kumiho::api::Space space(proto, client.get());
     auto page = space.getItemsPaged("", "", 2, "opaque-before", true);
-    EXPECT_TRUE(page.pagination_present);
-    EXPECT_EQ(page.has_more, true);
+    EXPECT_TRUE(page.paginationPresent());
+    EXPECT_EQ(page.hasMore(), true);
     EXPECT_EQ(page.next_cursor, "opaque-next");
     EXPECT_EQ(page.total_count, 8);
+    kumiho::api::PagedList<int> legacy{{1}, std::nullopt, 1};
+    EXPECT_EQ(legacy.total_count, 1);
 }
 
 TEST_F(KumihoUnitTest, ForceProjectDeleteRequiresBoundSnapshot) {
