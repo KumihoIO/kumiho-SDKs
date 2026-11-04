@@ -157,6 +157,8 @@ mixin ItemApi on KumihoClientBase {
           response.hasPagination() ? response.pagination.nextCursor : null,
       totalCount:
           response.hasPagination() ? response.pagination.totalCount : null,
+      hasMore: response.hasPagination() ? response.pagination.hasMore : null,
+      paginationPresent: response.hasPagination(),
     );
   }
 
@@ -198,6 +200,8 @@ mixin ItemApi on KumihoClientBase {
           response.hasPagination() ? response.pagination.nextCursor : null,
       totalCount:
           response.hasPagination() ? response.pagination.totalCount : null,
+      hasMore: response.hasPagination() ? response.pagination.hasMore : null,
+      paginationPresent: response.hasPagination(),
     );
   }
 
@@ -244,6 +248,8 @@ mixin ItemApi on KumihoClientBase {
           response.hasPagination() ? response.pagination.nextCursor : null,
       totalCount:
           response.hasPagination() ? response.pagination.totalCount : null,
+      hasMore: response.hasPagination() ? response.pagination.hasMore : null,
+      paginationPresent: response.hasPagination(),
     );
   }
 

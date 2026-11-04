@@ -720,6 +720,39 @@ std::vector<std::shared_ptr<Item>> Client::getItems(
     return items;
 }
 
+PagedList<std::shared_ptr<Item>> Client::getItemsPaged(
+    const std::string& parent_path,
+    const std::string& item_name_filter,
+    const std::string& kind_filter,
+    bool include_deprecated,
+    int32_t page_size,
+    const std::string& cursor
+) {
+    ::kumiho::GetItemsRequest req;
+    req.set_parent_path(parent_path);
+    req.set_item_name_filter(item_name_filter);
+    req.set_kind_filter(kind_filter);
+    req.set_include_deprecated(include_deprecated);
+    if (page_size > 0 || !cursor.empty()) {
+        auto* pagination = req.mutable_pagination();
+        pagination->set_page_size(page_size > 0 ? page_size : 100);
+        pagination->set_cursor(cursor);
+    }
+    ::kumiho::GetItemsResponse res;
+    grpc::ClientContext context; configureContext(context);
+    grpc::Status status = stub_->GetItems(&context, req, &res);
+    if (!status.ok()) {
+        throw RpcError("GetItems failed: " + status.error_message(), static_cast<int>(status.error_code()));
+    }
+    PagedList<std::shared_ptr<Item>> result;
+    for (const auto& pb : res.items()) result.items.push_back(std::make_shared<Item>(pb, this));
+    if (res.has_pagination()) {
+        result.next_cursor = res.pagination().next_cursor();
+        result.total_count = res.pagination().total_count();
+    }
+    return result;
+}
+
 PagedList<std::shared_ptr<Item>> Client::itemSearch(
     const std::string& context_filter,
     const std::string& name_filter,

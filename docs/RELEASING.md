@@ -8,7 +8,7 @@ This repo publishes each SDK with its own tag-triggered workflow.
 | Go (tag-based) | `.github/workflows/go-release.yml` | `go/v*` | none (uses `GITHUB_TOKEN`) |
 | Python → PyPI | `.github/workflows/sdk-publish.yml` | `sdk-v*` | existing PyPI setup |
 
-CI for every PR (`sdk-ci.yml`) builds + tests both SDKs and verifies the Rust
+CI for every PR (`sdk-ci.yml`) builds + tests all five SDKs and verifies the Rust
 crate **packages** cleanly (`cargo publish --dry-run`), so packaging breakage is
 caught before you ever tag a release.
 
@@ -98,6 +98,41 @@ as the Rust token applies; if it uses PyPI **Trusted Publishing** (OIDC), no
 secret is needed.
 
 ---
+
+## Inventory pagination release versions
+
+| SDK | Version surfaces | Release tag | Distribution |
+| --- | --- | --- | --- |
+| Python | `python/python/pyproject.toml`, `kumiho/__init__.py`: 0.16.0 | `sdk-v0.16.0` | PyPI `kumiho` |
+| Rust | `rust/Cargo.toml`: 0.11.0 | `rust-v0.11.0` | crates.io `kumiho` |
+| Go | `go/doc.go` Version: 0.11.0 | `go/v0.11.0` | Go module tag |
+| Dart | `dart/pubspec.yaml`: 0.3.0 | `dart-v0.3.0` | Git dependency, path `dart` |
+| C++ | `cpp/CMakeLists.txt`, `cpp/vcpkg.json`: 1.1.0 | `cpp-v1.1.0` | Recursive Git checkout, path `cpp` |
+
+Review and test the final commit before creating any release tag. Verify each
+tag resolves to that reviewed merged commit, then verify the resulting public
+package version and a fresh consumer install. Do not move release tags or retry
+an uncertain upload before checking the registry and workflow result.
+
+Dart retains `publish_to: none` and has no pub.dev publishing workflow. Its
+source release is installed as a Git dependency:
+
+```yaml
+dependencies:
+  kumiho:
+    git:
+      url: https://github.com/KumihoIO/kumiho-SDKs.git
+      ref: dart-v0.3.0
+      path: dart
+```
+
+C++ has no package registry or binary publishing workflow. Create its source
+tag at the same reviewed commit, then use `git clone --recurse-submodules
+--branch cpp-v1.1.0 https://github.com/KumihoIO/kumiho-SDKs.git`. Automatic
+GitHub source archives do not contain the required protobuf submodule.
+See `cpp/README.md` for building and installing to a chosen prefix. CI tests
+the installed, relocated Linux package with an independent CMake consumer;
+Windows/macOS install and binary redistribution are not covered by that job.
 
 ## Secrets summary
 

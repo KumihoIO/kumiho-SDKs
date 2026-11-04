@@ -48,6 +48,11 @@ func (s *Space) GetSpaces(ctx context.Context, recursive bool, pageSize int, cur
 	return s.client.GetChildSpaces(ctx, s.Path, recursive, pageSize, cursor)
 }
 
+// GetSpacesPaged retains completion metadata while preserving the old Page API.
+func (s *Space) GetSpacesPaged(ctx context.Context, recursive bool, pageSize int, cursor string) (*InventoryPage[*Space], error) {
+	return s.client.GetChildSpacesPaged(ctx, s.Path, recursive, pageSize, cursor)
+}
+
 // GetChildSpaces lists the immediate child spaces (Python get_child_spaces).
 func (s *Space) GetChildSpaces(ctx context.Context) (*Page[*Space], error) {
 	return s.client.GetChildSpaces(ctx, s.Path, false, 0, "")
@@ -66,6 +71,16 @@ func (s *Space) CreateBundle(ctx context.Context, bundleName string, metadata ma
 // GetItems lists items in this space.
 func (s *Space) GetItems(ctx context.Context, nameFilter, kindFilter string, pageSize int, cursor string) (*Page[*Item], error) {
 	return s.client.GetItems(ctx, s.Path, nameFilter, kindFilter, pageSize, cursor, false)
+}
+
+// GetItemsIncludingDeprecated is the direct-item inventory variant of GetItems.
+func (s *Space) GetItemsIncludingDeprecated(ctx context.Context, nameFilter, kindFilter string, pageSize int, cursor string) (*Page[*Item], error) {
+	return s.client.GetItems(ctx, s.Path, nameFilter, kindFilter, pageSize, cursor, true)
+}
+
+// GetItemsPaged is direct inventory with an explicit deprecated switch.
+func (s *Space) GetItemsPaged(ctx context.Context, nameFilter, kindFilter string, pageSize int, cursor string, includeDeprecated bool) (*InventoryPage[*Item], error) {
+	return s.client.GetItemsPaged(ctx, s.Path, nameFilter, kindFilter, pageSize, cursor, includeDeprecated)
 }
 
 // GetItem gets an item by name + kind.

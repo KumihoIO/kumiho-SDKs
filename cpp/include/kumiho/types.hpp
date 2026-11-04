@@ -46,6 +46,12 @@ struct PagedList {
     std::vector<T> items;
     std::optional<std::string> next_cursor;
     std::optional<int32_t> total_count;
+    // Keep the existing aggregate layout and binary representation unchanged.
+    bool paginationPresent() const { return total_count.has_value(); }
+    std::optional<bool> hasMore() const {
+        if (!paginationPresent()) return std::nullopt;
+        return next_cursor.has_value() && !next_cursor->empty();
+    }
 };
 
 /**

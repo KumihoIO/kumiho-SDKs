@@ -1,5 +1,6 @@
 cmake_minimum_required(VERSION 3.14)
-project(KumihoCpp VERSION 1.0.0 LANGUAGES CXX)
+project(KumihoCpp VERSION 1.1.0 LANGUAGES CXX)
+include(GNUInstallDirs)
 
 # --- Options ---
 option(KUMIHO_BUILD_TESTS "Build unit tests" ON)
@@ -15,7 +16,10 @@ endif()
 
 # --- gRPC and Protobuf setup ---
 find_package(gRPC CONFIG REQUIRED)
-find_package(Protobuf CONFIG REQUIRED)
+find_package(Protobuf CONFIG QUIET)
+if(NOT Protobuf_FOUND)
+    find_package(Protobuf REQUIRED)
+endif()
 find_package(CURL REQUIRED)
 
 # --- Manually find the gRPC C++ plugin ---
@@ -28,7 +32,7 @@ if(DEFINED GRPC_CPP_PLUGIN)
 else()
     find_program(
         GRPC_CPP_PLUGIN
-        NAMES grpc_cpp_plugin.exe
+        NAMES grpc_cpp_plugin grpc_cpp_plugin.exe
         HINTS "${CMAKE_TOOLCHAIN_FILE}/../../installed/x64-windows/tools/grpc"
     )
     if(NOT GRPC_CPP_PLUGIN)
@@ -111,6 +115,9 @@ if(KUMIHO_BUILD_TESTS)
 
     find_package(GTest REQUIRED)
     include(GoogleTest)
+
+    add_executable(kumiho_inventory_probe tests/ce_inventory_probe.cpp)
+    target_link_libraries(kumiho_inventory_probe PRIVATE kumiho)
 
     # API Tests
     add_executable(kumiho_tests
@@ -282,29 +289,15 @@ if(KUMIHO_BUILD_TESTS)
     )
 endif()
 
-# --- Installation ---
-install(TARGETS kumiho_listener
-    RUNTIME DESTINATION ${CMAKE_SOURCE_DIR}/../../apps/cpp
-)
-
-# Install required DLLs for Windows
-if(WIN32)
-    install(FILES
-        "g:/git/vcpkg/installed/x64-windows/bin/libprotobuf.dll"
-        "g:/git/vcpkg/installed/x64-windows/bin/abseil_dll.dll"
-        "g:/git/vcpkg/installed/x64-windows/bin/cares.dll"
-        "g:/git/vcpkg/installed/x64-windows/bin/zlib1.dll"
-        "g:/git/vcpkg/installed/x64-windows/bin/re2.dll"
-        "g:/git/vcpkg/installed/x64-windows/bin/libcrypto-3-x64.dll"
-        "g:/git/vcpkg/installed/x64-windows/bin/libssl-3-x64.dll"
-        DESTINATION ${CMAKE_SOURCE_DIR}/../../apps/cpp
-    )
-endif()
-
 # --- Library Installation (for find_package support) ---
 if(KUMIHO_INSTALL)
-    include(GNUInstallDirs)
     include(CMakePackageConfigHelpers)
+
+    # Runtime dependencies are provided by the consumer's toolchain/package
+    # manager. Every SDK install destination stays beneath the chosen prefix.
+    install(TARGETS kumiho_listener
+        RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+    )
 
     # Install library
     install(TARGETS kumiho protobuf_grpc_lib

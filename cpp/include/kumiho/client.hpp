@@ -237,7 +237,7 @@ public:
      *
      * @param parent_path The parent path (empty for root).
      * @param recursive Whether to fetch all descendant spaces recursively.
-     * @param page_size Page size for pagination (0 = server default).
+     * @param page_size Page size for pagination (0 = unpaged, preserving legacy behavior).
      * @param cursor Cursor for pagination (empty = first page).
      * @return A PagedList of Space objects.
      */
@@ -321,6 +321,16 @@ public:
         bool include_deprecated = false,
         std::optional<int32_t> page_size = std::nullopt,
         std::optional<std::string> cursor = std::nullopt
+    );
+
+    /** Direct GetItems with completion metadata. page_size=0 keeps unpaged behavior. */
+    PagedList<std::shared_ptr<Item>> getItemsPaged(
+        const std::string& parent_path,
+        const std::string& item_name_filter = "",
+        const std::string& kind_filter = "",
+        bool include_deprecated = false,
+        int32_t page_size = 0,
+        const std::string& cursor = ""
     );
 
     /**

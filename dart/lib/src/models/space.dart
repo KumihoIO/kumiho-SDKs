@@ -72,7 +72,8 @@ class Space extends KumihoObject {
   }
 
   /// Gets the kref for this space.
-  String get kref => 'kref://$projectName$path'.replaceFirst('kref:///', 'kref://');
+  String get kref =>
+      'kref://$projectName$path'.replaceFirst('kref:///', 'kref://');
 
   /// Gets the parent project of this space.
   ///
@@ -106,10 +107,7 @@ class Space extends KumihoObject {
   /// ```dart
   /// final hero = await models.createItem('hero', 'model');
   /// ```
-  Future<Item> createItem(
-    String itemName,
-    String kind,
-  ) async {
+  Future<Item> createItem(String itemName, String kind) async {
     final response = await client.createItem(path, itemName, kind);
     return Item(response, client);
   }
@@ -123,7 +121,11 @@ class Space extends KumihoObject {
     String bundleName, {
     Map<String, String>? metadata,
   }) async {
-    final response = await client.createBundle(path, bundleName, metadata: metadata);
+    final response = await client.createBundle(
+      path,
+      bundleName,
+      metadata: metadata,
+    );
     return Bundle(response, client);
   }
 
@@ -133,7 +135,10 @@ class Space extends KumihoObject {
   /// final hero = await models.getItem('hero', 'model');
   /// ```
   Future<Item> getItem(String itemName, String kind) async {
-    final krefUri = 'kref://$path/$itemName.$kind'.replaceFirst('kref:///', 'kref://');
+    final krefUri = 'kref://$path/$itemName.$kind'.replaceFirst(
+      'kref:///',
+      'kref://',
+    );
     final response = await client.getItemByKref(krefUri);
     return Item(response, client);
   }
@@ -162,11 +167,13 @@ class Space extends KumihoObject {
       cursor: cursor,
       includeDeprecated: includeDeprecated,
     );
-    
+
     return PagedList(
       items.map<Item>((i) => Item(i, client)).toList(),
       nextCursor: items.nextCursor,
       totalCount: items.totalCount,
+      hasMore: items.hasMore,
+      paginationPresent: items.paginationPresent,
     );
   }
 
@@ -192,7 +199,33 @@ class Space extends KumihoObject {
       pageSize: pageSize,
       cursor: cursor,
     );
-    return spaceResponses.map<Space>((s) => Space(s, client)).toList();
+    final spaces = spaceResponses.map<Space>((s) => Space(s, client)).toList();
+    if (spaceResponses is PagedList<pb.SpaceResponse>) {
+      return PagedList(
+        spaces,
+        nextCursor: spaceResponses.nextCursor,
+        totalCount: spaceResponses.totalCount,
+        hasMore: spaceResponses.hasMore,
+        paginationPresent: spaceResponses.paginationPresent,
+      );
+    }
+    return spaces;
+  }
+
+  /// Typed paged alternative; the existing List-returning method is preserved.
+  Future<PagedList<Space>> getChildSpacesPaged({
+    bool recursive = false,
+    int pageSize = 100,
+    String? cursor,
+  }) async {
+    final spaces = await getChildSpaces(
+      recursive: recursive,
+      pageSize: pageSize,
+      cursor: cursor,
+    );
+    return spaces is PagedList<Space>
+        ? spaces
+        : PagedList(spaces, paginationPresent: false);
   }
 
   /// Gets the parent space of this space.

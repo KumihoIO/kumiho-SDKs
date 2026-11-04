@@ -76,11 +76,17 @@ PagedList<std::shared_ptr<Item>> Space::getItems(
     std::optional<std::string> cursor,
     bool include_deprecated
 ) {
-    // Note: Space::getItems uses itemSearch internally in Python SDK too, 
-    // but here we should probably use getItems on client if it existed, 
-    // or itemSearch with context.
-    // The original code used client_->itemSearch(response_.path(), ...)
+    // Preserve the legacy prefix-search scope. For direct GetItems inventory
+    // and explicit completion metadata, use getItemsPaged().
     return client_->itemSearch(response_.path(), name_filter, kind_filter, page_size, cursor, include_deprecated);
+}
+
+PagedList<std::shared_ptr<Item>> Space::getItemsPaged(
+    const std::string& name_filter, const std::string& kind_filter,
+    int32_t page_size, const std::string& cursor, bool include_deprecated
+) {
+    return client_->getItemsPaged(response_.path(), name_filter, kind_filter,
+        include_deprecated, page_size, cursor);
 }
 
 std::shared_ptr<Space> Space::setMetadata(const Metadata& metadata) {
@@ -156,6 +162,18 @@ std::vector<std::shared_ptr<Space>> Space::getSpaces(
     std::optional<std::string> cursor
 ) {
     return getChildSpaces(recursive, page_size, cursor);
+}
+
+PagedList<std::shared_ptr<Space>> Space::getChildSpacesPaged(
+    bool recursive, int32_t page_size, const std::string& cursor
+) {
+    return client_->getChildSpacesPaged(response_.path(), recursive, page_size, cursor);
+}
+
+PagedList<std::shared_ptr<Space>> Space::getSpacesPaged(
+    bool recursive, int32_t page_size, const std::string& cursor
+) {
+    return getChildSpacesPaged(recursive, page_size, cursor);
 }
 
 std::shared_ptr<Project> Space::getProject() {

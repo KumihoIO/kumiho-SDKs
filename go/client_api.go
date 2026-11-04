@@ -144,6 +144,15 @@ func (c *Client) GetSpace(ctx context.Context, path string) (*Space, error) {
 
 // GetChildSpaces lists child spaces under parentPath.
 func (c *Client) GetChildSpaces(ctx context.Context, parentPath string, recursive bool, pageSize int, cursor string) (*Page[*Space], error) {
+	page, err := c.GetChildSpacesPaged(ctx, parentPath, recursive, pageSize, cursor)
+	if err != nil {
+		return nil, err
+	}
+	return &page.Page, nil
+}
+
+// GetChildSpacesPaged retains explicit metadata presence and the server's has_more.
+func (c *Client) GetChildSpacesPaged(ctx context.Context, parentPath string, recursive bool, pageSize int, cursor string) (*InventoryPage[*Space], error) {
 	resp, err := c.grpc.GetChildSpaces(ctx, &pb.GetChildSpacesRequest{
 		ParentPath: parentPath, Recursive: recursive, Pagination: pagination(pageSize, cursor),
 	})
@@ -154,7 +163,7 @@ func (c *Client) GetChildSpaces(ctx context.Context, parentPath string, recursiv
 	for _, s := range resp.GetSpaces() {
 		items = append(items, newSpace(s, c))
 	}
-	return pageFrom(items, resp.GetPagination()), nil
+	return inventoryPageFrom(items, resp.GetPagination()), nil
 }
 
 // UpdateSpaceMetadata replaces/merges a space's metadata.
@@ -235,6 +244,15 @@ func (c *Client) GetBundleByKref(ctx context.Context, krefURI string) (*Bundle, 
 
 // GetItems lists items in a space.
 func (c *Client) GetItems(ctx context.Context, parentPath, nameFilter, kindFilter string, pageSize int, cursor string, includeDeprecated bool) (*Page[*Item], error) {
+	page, err := c.GetItemsPaged(ctx, parentPath, nameFilter, kindFilter, pageSize, cursor, includeDeprecated)
+	if err != nil {
+		return nil, err
+	}
+	return &page.Page, nil
+}
+
+// GetItemsPaged lists direct children with explicit completion metadata.
+func (c *Client) GetItemsPaged(ctx context.Context, parentPath, nameFilter, kindFilter string, pageSize int, cursor string, includeDeprecated bool) (*InventoryPage[*Item], error) {
 	resp, err := c.grpc.GetItems(ctx, &pb.GetItemsRequest{
 		ParentPath: parentPath, ItemNameFilter: nameFilter, KindFilter: kindFilter,
 		Pagination: pagination(pageSize, cursor), IncludeDeprecated: includeDeprecated,
@@ -242,7 +260,11 @@ func (c *Client) GetItems(ctx context.Context, parentPath, nameFilter, kindFilte
 	if err != nil {
 		return nil, err
 	}
-	return pageOfItems(resp.GetItems(), resp.GetPagination(), c), nil
+	items := make([]*Item, 0, len(resp.GetItems()))
+	for _, item := range resp.GetItems() {
+		items = append(items, newItem(item, c))
+	}
+	return inventoryPageFrom(items, resp.GetPagination()), nil
 }
 
 // ItemSearch searches items across the system by filters.

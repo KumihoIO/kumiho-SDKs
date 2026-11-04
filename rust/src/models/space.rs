@@ -110,6 +110,26 @@ impl Space {
             .await
     }
 
+    /// Direct items including deprecated content, for an accessible inventory.
+    pub async fn get_items_including_deprecated(
+        &self,
+        item_name_filter: &str,
+        kind_filter: &str,
+        page_size: Option<i32>,
+        cursor: Option<String>,
+    ) -> Result<Page<Item>> {
+        self.client
+            .get_items(
+                &self.path,
+                item_name_filter,
+                kind_filter,
+                page_size,
+                cursor,
+                true,
+            )
+            .await
+    }
+
     /// Get an item by name + kind.
     pub async fn get_item(&self, item_name: &str, kind: &str) -> Result<Item> {
         self.client.get_item(&self.path, item_name, kind).await

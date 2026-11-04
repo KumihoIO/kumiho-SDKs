@@ -131,6 +131,8 @@ class Project extends KumihoObject {
       items.map<Item>((i) => Item(i, client)).toList(),
       nextCursor: items.nextCursor,
       totalCount: items.totalCount,
+      hasMore: items.hasMore,
+      paginationPresent: items.paginationPresent,
     );
   }
 
@@ -197,7 +199,33 @@ class Project extends KumihoObject {
       pageSize: pageSize,
       cursor: cursor,
     );
-    return spaceResponses.map<Space>((s) => Space(s, client)).toList();
+    final spaces = spaceResponses.map<Space>((s) => Space(s, client)).toList();
+    if (spaceResponses is PagedList<pb.SpaceResponse>) {
+      return PagedList(
+        spaces,
+        nextCursor: spaceResponses.nextCursor,
+        totalCount: spaceResponses.totalCount,
+        hasMore: spaceResponses.hasMore,
+        paginationPresent: spaceResponses.paginationPresent,
+      );
+    }
+    return spaces;
+  }
+
+  /// Typed paged alternative; normal getSpaces() still omits pagination by default.
+  Future<PagedList<Space>> getSpacesPaged({
+    bool recursive = false,
+    int pageSize = 100,
+    String? cursor,
+  }) async {
+    final spaces = await getSpaces(
+      recursive: recursive,
+      pageSize: pageSize,
+      cursor: cursor,
+    );
+    return spaces is PagedList<Space>
+        ? spaces
+        : PagedList(spaces, paginationPresent: false);
   }
 
   /// Updates the project description.

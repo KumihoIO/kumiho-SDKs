@@ -354,6 +354,21 @@ type Page[T any] struct {
 	TotalCount int32
 }
 
+// InventoryPage exposes completion metadata without changing Page's layout.
+type InventoryPage[T any] struct {
+	Page[T]
+	PaginationPresent bool
+	HasMore           bool
+}
+
+func inventoryPageFrom[T any](items []T, p *pb.PaginationResponse) *InventoryPage[T] {
+	page := &InventoryPage[T]{Page: *pageFrom(items, p), PaginationPresent: p != nil}
+	if p != nil {
+		page.HasMore = p.GetHasMore()
+	}
+	return page
+}
+
 func pageFrom[T any](items []T, p *pb.PaginationResponse) *Page[T] {
 	pg := &Page[T]{Items: items}
 	if p != nil {

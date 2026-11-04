@@ -149,6 +149,15 @@ public:
         bool include_deprecated = false
     );
 
+    /** Direct-child GetItems inventory. Existing getItems retains ItemSearch scope. */
+    PagedList<std::shared_ptr<Item>> getItemsPaged(
+        const std::string& name_filter = "",
+        const std::string& kind_filter = "",
+        int32_t page_size = 0,
+        const std::string& cursor = "",
+        bool include_deprecated = false
+    );
+
     /**
      * @brief Set or update metadata for this space.
      * @param metadata Dictionary of metadata key-value pairs.
@@ -219,6 +228,17 @@ public:
         bool recursive = false,
         std::optional<int32_t> page_size = std::nullopt,
         std::optional<std::string> cursor = std::nullopt
+    );
+
+    /** Completion metadata without changing the existing vector-returning API. */
+    PagedList<std::shared_ptr<Space>> getChildSpacesPaged(
+        bool recursive = false, int32_t page_size = 0,
+        const std::string& cursor = ""
+    );
+
+    PagedList<std::shared_ptr<Space>> getSpacesPaged(
+        bool recursive = false, int32_t page_size = 0,
+        const std::string& cursor = ""
     );
 
     /**
