@@ -53,6 +53,7 @@ mod error;
 mod kref;
 mod kref_parts;
 mod models;
+pub mod project_export;
 mod token_loader;
 
 pub use client::{Client, ClientBuilder, ScoredRevision, SearchResult};

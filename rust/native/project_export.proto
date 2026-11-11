@@ -1,0 +1,20 @@
+// A complete read-only catalog manifest for one project from a single DB snapshot.
+syntax = "proto3";
+
+package kumiho.export.v1;
+
+service ProjectExportService {
+  rpc ExportProject(ExportProjectRequest) returns (ExportProjectResponse);
+}
+
+message ExportProjectRequest {
+  // Exact project name in the tenant carried by the authenticated session.
+  string project = 1;
+}
+
+message ExportProjectResponse {
+  uint32 schema_version = 1;
+  string project = 2;
+  // Complete UTF-8 JSON document. An over-limit export returns an RPC error.
+  bytes document = 3;
+}

@@ -337,6 +337,9 @@ impl ClientBuilder {
 
         let interceptor = KumihoInterceptor { metadata };
         let audit = crate::audit::pb::change_audit_service_client::ChangeAuditServiceClient::with_interceptor(channel.clone(), interceptor.clone());
+        let export = crate::project_export::pb::project_export_service_client::ProjectExportServiceClient::with_interceptor(
+            channel.clone(), interceptor.clone(),
+        ).max_decoding_message_size(crate::project_export::MAX_DOCUMENT_BYTES + 512);
         let grpc =
             pb::kumiho_service_client::KumihoServiceClient::with_interceptor(channel, interceptor)
                 .max_decoding_message_size(64 * 1024 * 1024);
@@ -344,6 +347,7 @@ impl ClientBuilder {
         Ok(Client {
             grpc,
             audit,
+            export,
             max_attempts: retry_max_attempts(),
             rpc_timeout: rpc_timeout(),
         })
@@ -417,6 +421,9 @@ async fn build_channel(host: &str, port: u16, use_tls: bool) -> Result<Channel> 
 pub struct Client {
     grpc: GrpcClient,
     audit: crate::audit::pb::change_audit_service_client::ChangeAuditServiceClient<
+        InterceptedService<Channel, KumihoInterceptor>,
+    >,
+    export: crate::project_export::pb::project_export_service_client::ProjectExportServiceClient<
         InterceptedService<Channel, KumihoInterceptor>,
     >,
     // Retry/deadline config, resolved once at build time rather than re-reading
@@ -1699,6 +1706,38 @@ fn make_pagination(
 }
 
 impl Client {
+    /// Download the complete manifest of one project from one authorized database snapshot.
+    pub async fn export_project(
+        &self,
+        project: &str,
+    ) -> Result<crate::project_export::ProjectExport> {
+        if project.is_empty() || project.len() > 255 || project.chars().any(char::is_control) {
+            return Err(Error::InvalidArgument("invalid project name".into()));
+        }
+        let mut attempt = 0;
+        loop {
+            let mut grpc = self.export.clone();
+            let mut request =
+                tonic::Request::new(crate::project_export::pb::ExportProjectRequest {
+                    project: project.to_owned(),
+                });
+            if let Some(deadline) = self.rpc_timeout {
+                request.set_timeout(deadline);
+            }
+            match grpc.export_project(request).await {
+                Ok(response) => return crate::project_export::read(project, response.into_inner()),
+                Err(status) => {
+                    attempt += 1;
+                    if is_transient(status.code()) && attempt < self.max_attempts {
+                        tokio::time::sleep(backoff(attempt)).await;
+                    } else {
+                        return Err(Error::Rpc(status));
+                    }
+                }
+            }
+        }
+    }
+
     /// One bounded page of durable native changes under current Audit authority.
     /// Server cursors and errors are returned unchanged; this never emulates history locally.
     pub async fn list_changes(

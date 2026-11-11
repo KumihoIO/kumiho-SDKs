@@ -139,3 +139,17 @@ are returned explicitly. An absent historical request_id stays absent. These
 pages cover native change events; security audit records and console management
 operations are separate sources. Unsupported servers return their RPC error;
 the SDK never substitutes a local event buffer for persisted history.
+
+### Project export
+
+```rust
+let export = client.export_project("film-aurora").await?;
+std::fs::write("film-aurora-export.json", export.document)?;
+```
+
+The native database reads one project's catalog under the current session and returns
+a complete version 1 JSON manifest from a single read transaction. It includes
+project and asset metadata, live numeric revisions, dependency references, and
+registered artifact locations. The SDK validates the response's schema and project,
+preserves server errors, and accepts documents up to 8 MiB. A missing service or
+an over-limit project returns an error before a file can be written.
