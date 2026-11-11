@@ -153,3 +153,16 @@ project and asset metadata, live numeric revisions, dependency references, and
 registered artifact locations. The SDK validates the response's schema and project,
 preserves server errors, and accepts documents up to 8 MiB. A missing service or
 an over-limit project returns an error before a file can be written.
+
+### Backup status
+
+Use the same connected native client to read the database archive runner's
+published observation as a current tenant owner or admin.
+
+```rust,ignore
+let status = client.get_backup_status().await?;
+```
+
+The observation and checkpoint timestamps are Unix milliseconds. An older
+server can return `Unimplemented`; an unavailable observation can carry its
+last publication time. The RPC only returns status.

@@ -46,6 +46,7 @@ pub mod pb {
 }
 
 pub mod audit;
+pub mod backup_status;
 mod client;
 mod discovery;
 mod edge;

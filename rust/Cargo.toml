@@ -21,6 +21,7 @@ include = [
     "proto/kumiho.proto",
     "native/audit.proto",
     "native/project_export.proto",
+    "native/backup_status.proto",
     "Cargo.toml",
     "README.md",
     "LICENSE",

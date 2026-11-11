@@ -340,6 +340,11 @@ impl ClientBuilder {
         let export = crate::project_export::pb::project_export_service_client::ProjectExportServiceClient::with_interceptor(
             channel.clone(), interceptor.clone(),
         ).max_decoding_message_size(crate::project_export::MAX_DOCUMENT_BYTES + 512);
+        let backup_status = crate::backup_status::pb::backup_status_service_client::BackupStatusServiceClient::with_interceptor(
+            channel.clone(),
+            interceptor.clone(),
+        )
+        .max_decoding_message_size(256);
         let grpc =
             pb::kumiho_service_client::KumihoServiceClient::with_interceptor(channel, interceptor)
                 .max_decoding_message_size(64 * 1024 * 1024);
@@ -348,6 +353,7 @@ impl ClientBuilder {
             grpc,
             audit,
             export,
+            backup_status,
             max_attempts: retry_max_attempts(),
             rpc_timeout: rpc_timeout(),
         })
@@ -426,6 +432,10 @@ pub struct Client {
     export: crate::project_export::pb::project_export_service_client::ProjectExportServiceClient<
         InterceptedService<Channel, KumihoInterceptor>,
     >,
+    backup_status:
+        crate::backup_status::pb::backup_status_service_client::BackupStatusServiceClient<
+            InterceptedService<Channel, KumihoInterceptor>,
+        >,
     // Retry/deadline config, resolved once at build time rather than re-reading
     // the environment on every RPC.
     max_attempts: u32,
@@ -1706,6 +1716,30 @@ fn make_pagination(
 }
 
 impl Client {
+    /// Read the connected database's published backup status as a current tenant owner or admin.
+    pub async fn get_backup_status(&self) -> Result<crate::backup_status::BackupStatus> {
+        let mut attempt = 0;
+        loop {
+            let mut grpc = self.backup_status.clone();
+            let mut request =
+                tonic::Request::new(crate::backup_status::pb::GetBackupStatusRequest {});
+            if let Some(deadline) = self.rpc_timeout {
+                request.set_timeout(deadline);
+            }
+            match grpc.get_backup_status(request).await {
+                Ok(response) => return crate::backup_status::read(response.into_inner()),
+                Err(status) => {
+                    attempt += 1;
+                    if is_transient(status.code()) && attempt < self.max_attempts {
+                        tokio::time::sleep(backoff(attempt)).await;
+                    } else {
+                        return Err(Error::Rpc(status));
+                    }
+                }
+            }
+        }
+    }
+
     /// Download the complete manifest of one project from one authorized database snapshot.
     pub async fn export_project(
         &self,
