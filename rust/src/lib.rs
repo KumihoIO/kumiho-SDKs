@@ -45,6 +45,7 @@ pub mod pb {
     tonic::include_proto!("kumiho");
 }
 
+pub mod audit;
 mod client;
 mod discovery;
 mod edge;

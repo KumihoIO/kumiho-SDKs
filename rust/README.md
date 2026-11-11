@@ -124,3 +124,18 @@ Unary RPCs retry automatically on `UNAVAILABLE`, `DEADLINE_EXCEEDED`,
 ## License
 
 MIT — see [LICENSE](LICENSE).
+
+## Native change audit
+
+An opt-in native server can expose ChangeAuditService.ListChanges independently
+of the existing KumihoService vocabulary. Client::list_changes returns bounded
+pages from persisted native events under the caller's current Audit and Read
+permissions. Exact action, project, actor and inclusive/exclusive time filters
+are supported. A short or empty filtered page may still have has_more; continue
+with next_cursor until it is false.
+
+Cursors remain opaque and bound to the caller, tenant and filters. Replay limits
+are returned explicitly. An absent historical request_id stays absent. These
+pages cover native change events; security audit records and console management
+operations are separate sources. Unsupported servers return their RPC error;
+the SDK never substitutes a local event buffer for persisted history.

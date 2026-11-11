@@ -336,12 +336,14 @@ impl ClientBuilder {
         }
 
         let interceptor = KumihoInterceptor { metadata };
+        let audit = crate::audit::pb::change_audit_service_client::ChangeAuditServiceClient::with_interceptor(channel.clone(), interceptor.clone());
         let grpc =
             pb::kumiho_service_client::KumihoServiceClient::with_interceptor(channel, interceptor)
                 .max_decoding_message_size(64 * 1024 * 1024);
 
         Ok(Client {
             grpc,
+            audit,
             max_attempts: retry_max_attempts(),
             rpc_timeout: rpc_timeout(),
         })
@@ -414,6 +416,9 @@ async fn build_channel(host: &str, port: u16, use_tls: bool) -> Result<Channel> 
 #[derive(Clone)]
 pub struct Client {
     grpc: GrpcClient,
+    audit: crate::audit::pb::change_audit_service_client::ChangeAuditServiceClient<
+        InterceptedService<Channel, KumihoInterceptor>,
+    >,
     // Retry/deadline config, resolved once at build time rather than re-reading
     // the environment on every RPC.
     max_attempts: u32,
@@ -1691,6 +1696,35 @@ fn make_pagination(
         page_size: page_size.unwrap_or(100),
         cursor: cursor.unwrap_or_default(),
     })
+}
+
+impl Client {
+    /// One bounded page of durable native changes under current Audit authority.
+    /// Server cursors and errors are returned unchanged; this never emulates history locally.
+    pub async fn list_changes(
+        &self,
+        input: crate::audit::ListChangesRequest,
+    ) -> Result<crate::audit::ChangeAuditPage> {
+        let mut attempt = 0;
+        loop {
+            let mut grpc = self.audit.clone();
+            let mut request = tonic::Request::new(input.clone());
+            if let Some(deadline) = self.rpc_timeout {
+                request.set_timeout(deadline);
+            }
+            match grpc.list_changes(request).await {
+                Ok(response) => return Ok(response.into_inner()),
+                Err(status) => {
+                    attempt += 1;
+                    if is_transient(status.code()) && attempt < self.max_attempts {
+                        tokio::time::sleep(backoff(attempt)).await;
+                    } else {
+                        return Err(Error::Rpc(status));
+                    }
+                }
+            }
+        }
+    }
 }
 
 #[cfg(test)]

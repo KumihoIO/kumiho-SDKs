@@ -19,6 +19,7 @@ include = [
     "src/**/*.rs",
     "build.rs",
     "proto/kumiho.proto",
+    "native/audit.proto",
     "Cargo.toml",
     "README.md",
     "LICENSE",
