@@ -126,6 +126,7 @@ from .item import Item
 from .artifact import Artifact
 from .revision import Revision
 from .base import PagedList, SearchResult
+from . import ingest as _ingest
 
 if TYPE_CHECKING:
     from .bundle import Bundle, BundleMember, BundleRevisionHistory
@@ -144,6 +145,15 @@ _FORCE_REFRESH_ENV = "KUMIHO_FORCE_DISCOVERY_REFRESH"
 
 class ProjectLimitError(Exception):
     """Raised when guardrails block project creation (e.g., max projects reached)."""
+
+
+def _is_unimplemented(exc: grpc.RpcError) -> bool:
+    """True when a gRPC error carries the UNIMPLEMENTED status."""
+    code = getattr(exc, "code", None)
+    try:
+        return callable(code) and code() == grpc.StatusCode.UNIMPLEMENTED
+    except Exception:  # pragma: no cover - a malformed error object
+        return False
 
 
 # --- Evaluation vocabulary -------------------------------------------------
@@ -1544,6 +1554,229 @@ class _Client:
         ]
         failures = [(failure.index, failure.reason) for failure in resp.failures]
         return results, failures
+
+    def get_mutation_capabilities(self) -> "_ingest.MutationCapabilities":
+        """Ask the server which native atomic mutations it implements.
+
+        Check ``batch_ingest`` before calling :meth:`batch_ingest`. A server
+        that does not implement the RPC (kumiho-server / CE, or an older
+        kumiho-db) answers UNIMPLEMENTED; that is reported as a capabilities
+        object with every flag False rather than raised, so the check reads the
+        same everywhere.
+
+        Returns:
+            MutationCapabilities: ``batch_ingest`` and the other feature flags,
+            plus the server's ``contract_version``.
+
+        Raises:
+            grpc.RpcError: Any failure other than UNIMPLEMENTED (for example
+                UNAUTHENTICATED or UNAVAILABLE).
+
+        Example:
+            >>> if client.get_mutation_capabilities().batch_ingest:
+            ...     client.batch_ingest(...)
+        """
+        try:
+            resp = self.stub.GetMutationCapabilities(
+                kumiho_pb2.GetMutationCapabilitiesRequest()
+            )
+        except grpc.RpcError as exc:
+            if _is_unimplemented(exc):
+                return _ingest.MutationCapabilities()
+            raise
+        return _ingest.MutationCapabilities(
+            batch_ingest=resp.batch_ingest,
+            batch_expected_latest_revision=resp.batch_expected_latest_revision,
+            transactional_idempotency_fingerprint=resp.transactional_idempotency_fingerprint,
+            atomic_derived_from_edges=resp.atomic_derived_from_edges,
+            contract_version=resp.contract_version,
+        )
+
+    def batch_ingest(
+        self,
+        revisions: Sequence[Union["_ingest.RevisionInput", Mapping[str, Any]]] = (),
+        edges: Sequence["_ingest.IngestEdge"] = (),
+        tags: Sequence["_ingest.IngestTag"] = (),
+        *,
+        idempotency_prefix: str,
+        limits: "_ingest.BatchIngestLimits" = _ingest.DEFAULT_LIMITS,
+    ) -> "_ingest.BatchIngestResult":
+        """Write revisions, the edges among them and their tags in one atomic call.
+
+        Memories (revisions with their artifacts), the edges between them or to
+        existing revisions, and tags on them commit in one server transaction,
+        instead of one call per edge and per tag. Every row, edge and tag is
+        keyed ``"{idempotency_prefix}:{index}"`` (under its own kind), so
+        sending the same request again after a lost reply replays what already
+        committed and commits only what is new. Keep the prefix stable across
+        retries of one request and unique per request.
+
+        Availability:
+            kumiho-db only. kumiho-server (CE) has no ``BatchIngest``; the call
+            raises :class:`~kumiho.ingest.BatchIngestUnsupportedError`. Check
+            :meth:`get_mutation_capabilities` first when the server is unknown.
+
+        Args:
+            revisions: Rows to create, in request order, each a
+                :class:`~kumiho.ingest.RevisionInput` or a dict shaped like the
+                rows of :meth:`batch_create_revisions` (``item_kref``,
+                ``metadata``, ``embedding_text``, ``artifacts``). Missing parent
+                items are created; the parent space must exist.
+            edges: :class:`~kumiho.ingest.IngestEdge` objects. Each end is a
+                row of this request (``RowRef(i)`` or a bare ``int``) or an
+                existing revision named by number (``KrefRef`` or a kref string
+                ``...?r=3``).
+            tags: :class:`~kumiho.ingest.IngestTag` objects, attaching a tag to
+                a row of this request. ``latest`` is system-managed and refused;
+                ``published`` publishes and freezes the revision.
+            idempotency_prefix: Required, non-empty.
+            limits: Request-size limits. The defaults are kumiho-db's: 200
+                revisions, 500 edges and 500 tags per request, and an estimated
+                60 reads per revision plus 32 per edge or tag within 32,000.
+
+        Returns:
+            BatchIngestResult: positional receipts, 1:1 with the request. A
+            rejected element is ``None`` and listed in ``failures``; the rest of
+            the request still committed. Check ``result.ok``.
+
+        Raises:
+            BatchIngestValidationError: (a ``ValueError``) the request exceeds
+                ``limits``, has no prefix, tags ``latest``, names a row that is
+                not in the request, and so on. Nothing is sent.
+            BatchIngestUnsupportedError: (a ``grpc.RpcError``) the server does
+                not implement BatchIngest.
+            grpc.RpcError: Whole-request failures, where nothing commits:
+                ``NOT_FOUND`` when an edge names an existing revision that does
+                not exist (or whose item was deleted), ``ABORTED`` when the
+                prefix was already used for different content, and quota,
+                permission or server errors.
+
+        Example:
+            >>> from kumiho import RevisionInput, IngestEdge, IngestTag, KrefRef
+            >>> result = client.batch_ingest(
+            ...     revisions=[
+            ...         RevisionInput("kref://proj/mem/a.memory", {"title": "A"}),
+            ...         RevisionInput("kref://proj/mem/b.memory", {"title": "B"}),
+            ...     ],
+            ...     edges=[
+            ...         IngestEdge(0, 1, "DERIVED_FROM"),
+            ...         IngestEdge(1, KrefRef("kref://proj/mem/old.memory?r=3"),
+            ...                    "DEPENDS_ON"),
+            ...     ],
+            ...     tags=[IngestTag(0, "published")],
+            ...     idempotency_prefix="import-20261119",
+            ... )
+            >>> assert result.ok
+        """
+        rows, ingest_edges, ingest_tags = _ingest.normalize_and_check(
+            revisions, edges, tags, idempotency_prefix, limits
+        )
+
+        def endpoint(end: Any) -> Any:
+            if isinstance(end, _ingest.RowRef):
+                return kumiho_pb2.IngestEndpoint(row_index=end.index)
+            return kumiho_pb2.IngestEndpoint(
+                revision_kref=kumiho_pb2.Kref(uri=_ingest._uri(end.kref))
+            )
+
+        req = kumiho_pb2.BatchIngestRequest(
+            revisions=[
+                kumiho_pb2.BatchRevisionRow(
+                    revision=CreateRevisionRequest(
+                        item_kref=kumiho_pb2.Kref(uri=_ingest._uri(row.item_kref)),
+                        metadata=dict(row.metadata),
+                        embedding_text=row.embedding_text,
+                    ),
+                    artifacts=[
+                        kumiho_pb2.BatchArtifactInput(
+                            name=a.name,
+                            location=a.location,
+                            metadata=dict(a.metadata),
+                            is_default=a.is_default,
+                        )
+                        for a in row.artifacts
+                    ],
+                )
+                for row in rows
+            ],
+            edges=[
+                kumiho_pb2.IngestEdge(
+                    source=endpoint(edge.source),
+                    target=endpoint(edge.target),
+                    edge_type=edge.edge_type,
+                    metadata=dict(edge.metadata),
+                )
+                for edge in ingest_edges
+            ],
+            tags=[
+                kumiho_pb2.IngestTag(row_index=tag.row_index, tag=tag.tag)
+                for tag in ingest_tags
+            ],
+            idempotency_prefix=idempotency_prefix,
+        )
+        try:
+            resp = self.stub.BatchIngest(req)
+        except grpc.RpcError as exc:
+            if _is_unimplemented(exc):
+                raise _ingest.BatchIngestUnsupportedError(
+                    "This server does not implement BatchIngest (it answered "
+                    "UNIMPLEMENTED). BatchIngest is a kumiho-db RPC; "
+                    "kumiho-server (CE) and older servers lack it. Check "
+                    "client.get_mutation_capabilities().batch_ingest first, or "
+                    "use batch_create_revisions() plus individual edge and tag "
+                    "calls.",
+                    cause=exc,
+                ) from exc
+            raise
+
+        failures = [
+            _ingest.ElementFailure("revision", f.index, f.reason) for f in resp.failures
+        ]
+        failures += [
+            _ingest.ElementFailure("edge", f.index, f.reason) for f in resp.edge_failures
+        ]
+        failures += [
+            _ingest.ElementFailure("tag", f.index, f.reason) for f in resp.tag_failures
+        ]
+        # A rejected row comes back as an empty stub with no kref; an element
+        # with no receipt and no reported reason is still a failure.
+        revision_results: List[Optional[Revision]] = [
+            Revision(pb, self) if pb.HasField("kref") else None for pb in resp.results
+        ]
+        edge_results: List[Optional[_ingest.EdgeReceipt]] = [
+            _ingest.EdgeReceipt(created=e.created, replayed=e.replayed)
+            if e.succeeded
+            else None
+            for e in resp.edges
+        ]
+        tag_results: List[Optional[_ingest.TagReceipt]] = [
+            _ingest.TagReceipt(
+                revision_number=t.revision_number,
+                tag_version=t.tag_version,
+                changed=t.changed,
+                replayed=t.replayed,
+            )
+            if t.succeeded
+            else None
+            for t in resp.tags
+        ]
+        reported = {(f.kind, f.index) for f in failures}
+        for kind, items in (
+            ("revision", revision_results),
+            ("edge", edge_results),
+            ("tag", tag_results),
+        ):
+            for index, item in enumerate(items):
+                if item is None and (kind, index) not in reported:
+                    failures.append(
+                        _ingest.ElementFailure(kind, index, "rejected without a reason")
+                    )
+        return _ingest.BatchIngestResult(
+            revisions=revision_results,
+            edges=edge_results,
+            tags=tag_results,
+            failures=failures,
+        )
 
     def delete_revision(self, kref: Kref, force: bool) -> None:
         """Delete a revision.

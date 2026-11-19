@@ -12,6 +12,27 @@ in descending version order, which is also descending date order.
 narrative — why a change mattered and what you have to do about it. This file is
 its terse companion. Entries belong in both.
 
+## [0.17.0] - 2026-11-19
+
+### Added
+- **`kumiho.batch_ingest()` / `Client.batch_ingest()`** writes revisions (with
+  artifacts), the edges among them or to existing revisions, and tags on them in
+  one atomic kumiho-db command, idempotent per element under a required
+  `idempotency_prefix`. Typed inputs `RevisionInput`, `ArtifactInput`,
+  `IngestEdge`, `IngestTag`, `RowRef`, `KrefRef`; positional `BatchIngestResult`
+  with `Revision`, `EdgeReceipt`, `TagReceipt` and `ElementFailure`.
+- **`kumiho.get_mutation_capabilities()` / `Client.get_mutation_capabilities()`**
+  returns `MutationCapabilities`; all flags are `False` on a server without the
+  RPC.
+- **Client-side limits** for BatchIngest (200 revisions, 500 edges, 500 tags,
+  32,000 estimated reads; `BatchIngestLimits`) raise `BatchIngestValidationError`
+  before anything is sent. UNIMPLEMENTED (kumiho-server CE) raises
+  `BatchIngestUnsupportedError`.
+
+### Changed
+- Protobuf stubs regenerated for `BatchIngest` / `GetMutationCapabilities`;
+  `kumiho_pb2.pyi` now also carries the earlier `memory_project` search fields.
+
 ## [0.15.0] - 2026-10-29
 
 ### Fixed

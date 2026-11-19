@@ -322,7 +322,7 @@ class ItemSearchRequest(_message.Message):
     def __init__(self, context_filter: _Optional[str] = ..., item_name_filter: _Optional[str] = ..., kind_filter: _Optional[str] = ..., pagination: _Optional[_Union[PaginationRequest, _Mapping]] = ..., include_deprecated: bool = ...) -> None: ...
 
 class SearchRequest(_message.Message):
-    __slots__ = ("query", "context_filter", "kind_filter", "include_deprecated", "pagination", "min_score", "include_revision_metadata", "include_artifact_metadata")
+    __slots__ = ("query", "context_filter", "kind_filter", "include_deprecated", "pagination", "min_score", "include_revision_metadata", "include_artifact_metadata", "memory_project", "memory_revision_limit")
     QUERY_FIELD_NUMBER: _ClassVar[int]
     CONTEXT_FILTER_FIELD_NUMBER: _ClassVar[int]
     KIND_FILTER_FIELD_NUMBER: _ClassVar[int]
@@ -331,6 +331,8 @@ class SearchRequest(_message.Message):
     MIN_SCORE_FIELD_NUMBER: _ClassVar[int]
     INCLUDE_REVISION_METADATA_FIELD_NUMBER: _ClassVar[int]
     INCLUDE_ARTIFACT_METADATA_FIELD_NUMBER: _ClassVar[int]
+    MEMORY_PROJECT_FIELD_NUMBER: _ClassVar[int]
+    MEMORY_REVISION_LIMIT_FIELD_NUMBER: _ClassVar[int]
     query: str
     context_filter: str
     kind_filter: str
@@ -339,27 +341,35 @@ class SearchRequest(_message.Message):
     min_score: float
     include_revision_metadata: bool
     include_artifact_metadata: bool
-    def __init__(self, query: _Optional[str] = ..., context_filter: _Optional[str] = ..., kind_filter: _Optional[str] = ..., include_deprecated: bool = ..., pagination: _Optional[_Union[PaginationRequest, _Mapping]] = ..., min_score: _Optional[float] = ..., include_revision_metadata: bool = ..., include_artifact_metadata: bool = ...) -> None: ...
+    memory_project: str
+    memory_revision_limit: int
+    def __init__(self, query: _Optional[str] = ..., context_filter: _Optional[str] = ..., kind_filter: _Optional[str] = ..., include_deprecated: bool = ..., pagination: _Optional[_Union[PaginationRequest, _Mapping]] = ..., min_score: _Optional[float] = ..., include_revision_metadata: bool = ..., include_artifact_metadata: bool = ..., memory_project: _Optional[str] = ..., memory_revision_limit: _Optional[int] = ...) -> None: ...
 
 class SearchResult(_message.Message):
-    __slots__ = ("item", "score", "matched_in")
+    __slots__ = ("item", "score", "matched_in", "memory_revision", "memory_revision_resolved")
     ITEM_FIELD_NUMBER: _ClassVar[int]
     SCORE_FIELD_NUMBER: _ClassVar[int]
     MATCHED_IN_FIELD_NUMBER: _ClassVar[int]
+    MEMORY_REVISION_FIELD_NUMBER: _ClassVar[int]
+    MEMORY_REVISION_RESOLVED_FIELD_NUMBER: _ClassVar[int]
     item: ItemResponse
     score: float
     matched_in: _containers.RepeatedScalarFieldContainer[str]
-    def __init__(self, item: _Optional[_Union[ItemResponse, _Mapping]] = ..., score: _Optional[float] = ..., matched_in: _Optional[_Iterable[str]] = ...) -> None: ...
+    memory_revision: RevisionResponse
+    memory_revision_resolved: bool
+    def __init__(self, item: _Optional[_Union[ItemResponse, _Mapping]] = ..., score: _Optional[float] = ..., matched_in: _Optional[_Iterable[str]] = ..., memory_revision: _Optional[_Union[RevisionResponse, _Mapping]] = ..., memory_revision_resolved: bool = ...) -> None: ...
 
 class SearchResponse(_message.Message):
-    __slots__ = ("results", "pagination", "search_mode")
+    __slots__ = ("results", "pagination", "search_mode", "memory_project_validated")
     RESULTS_FIELD_NUMBER: _ClassVar[int]
     PAGINATION_FIELD_NUMBER: _ClassVar[int]
     SEARCH_MODE_FIELD_NUMBER: _ClassVar[int]
+    MEMORY_PROJECT_VALIDATED_FIELD_NUMBER: _ClassVar[int]
     results: _containers.RepeatedCompositeFieldContainer[SearchResult]
     pagination: PaginationResponse
     search_mode: str
-    def __init__(self, results: _Optional[_Iterable[_Union[SearchResult, _Mapping]]] = ..., pagination: _Optional[_Union[PaginationResponse, _Mapping]] = ..., search_mode: _Optional[str] = ...) -> None: ...
+    memory_project_validated: bool
+    def __init__(self, results: _Optional[_Iterable[_Union[SearchResult, _Mapping]]] = ..., pagination: _Optional[_Union[PaginationResponse, _Mapping]] = ..., search_mode: _Optional[str] = ..., memory_project_validated: bool = ...) -> None: ...
 
 class ScoreRevisionsRequest(_message.Message):
     __slots__ = ("query", "revision_krefs", "score_fields")
@@ -551,6 +561,119 @@ class BatchCreateRevisionsResponse(_message.Message):
     requested_count: int
     succeeded_count: int
     def __init__(self, results: _Optional[_Iterable[_Union[RevisionResponse, _Mapping]]] = ..., failures: _Optional[_Iterable[_Union[BatchRevisionFailure, _Mapping]]] = ..., requested_count: _Optional[int] = ..., succeeded_count: _Optional[int] = ...) -> None: ...
+
+class GetMutationCapabilitiesRequest(_message.Message):
+    __slots__ = ()
+    def __init__(self) -> None: ...
+
+class MutationCapabilities(_message.Message):
+    __slots__ = ("batch_expected_latest_revision", "transactional_idempotency_fingerprint", "contract_version", "atomic_derived_from_edges", "batch_ingest")
+    BATCH_EXPECTED_LATEST_REVISION_FIELD_NUMBER: _ClassVar[int]
+    TRANSACTIONAL_IDEMPOTENCY_FINGERPRINT_FIELD_NUMBER: _ClassVar[int]
+    CONTRACT_VERSION_FIELD_NUMBER: _ClassVar[int]
+    ATOMIC_DERIVED_FROM_EDGES_FIELD_NUMBER: _ClassVar[int]
+    BATCH_INGEST_FIELD_NUMBER: _ClassVar[int]
+    batch_expected_latest_revision: bool
+    transactional_idempotency_fingerprint: bool
+    contract_version: str
+    atomic_derived_from_edges: bool
+    batch_ingest: bool
+    def __init__(self, batch_expected_latest_revision: bool = ..., transactional_idempotency_fingerprint: bool = ..., contract_version: _Optional[str] = ..., atomic_derived_from_edges: bool = ..., batch_ingest: bool = ...) -> None: ...
+
+class IngestEndpoint(_message.Message):
+    __slots__ = ("row_index", "revision_kref")
+    ROW_INDEX_FIELD_NUMBER: _ClassVar[int]
+    REVISION_KREF_FIELD_NUMBER: _ClassVar[int]
+    row_index: int
+    revision_kref: Kref
+    def __init__(self, row_index: _Optional[int] = ..., revision_kref: _Optional[_Union[Kref, _Mapping]] = ...) -> None: ...
+
+class IngestEdge(_message.Message):
+    __slots__ = ("source", "target", "edge_type", "metadata")
+    class MetadataEntry(_message.Message):
+        __slots__ = ("key", "value")
+        KEY_FIELD_NUMBER: _ClassVar[int]
+        VALUE_FIELD_NUMBER: _ClassVar[int]
+        key: str
+        value: str
+        def __init__(self, key: _Optional[str] = ..., value: _Optional[str] = ...) -> None: ...
+    SOURCE_FIELD_NUMBER: _ClassVar[int]
+    TARGET_FIELD_NUMBER: _ClassVar[int]
+    EDGE_TYPE_FIELD_NUMBER: _ClassVar[int]
+    METADATA_FIELD_NUMBER: _ClassVar[int]
+    source: IngestEndpoint
+    target: IngestEndpoint
+    edge_type: str
+    metadata: _containers.ScalarMap[str, str]
+    def __init__(self, source: _Optional[_Union[IngestEndpoint, _Mapping]] = ..., target: _Optional[_Union[IngestEndpoint, _Mapping]] = ..., edge_type: _Optional[str] = ..., metadata: _Optional[_Mapping[str, str]] = ...) -> None: ...
+
+class IngestTag(_message.Message):
+    __slots__ = ("row_index", "tag")
+    ROW_INDEX_FIELD_NUMBER: _ClassVar[int]
+    TAG_FIELD_NUMBER: _ClassVar[int]
+    row_index: int
+    tag: str
+    def __init__(self, row_index: _Optional[int] = ..., tag: _Optional[str] = ...) -> None: ...
+
+class BatchIngestRequest(_message.Message):
+    __slots__ = ("revisions", "edges", "tags", "idempotency_prefix")
+    REVISIONS_FIELD_NUMBER: _ClassVar[int]
+    EDGES_FIELD_NUMBER: _ClassVar[int]
+    TAGS_FIELD_NUMBER: _ClassVar[int]
+    IDEMPOTENCY_PREFIX_FIELD_NUMBER: _ClassVar[int]
+    revisions: _containers.RepeatedCompositeFieldContainer[BatchRevisionRow]
+    edges: _containers.RepeatedCompositeFieldContainer[IngestEdge]
+    tags: _containers.RepeatedCompositeFieldContainer[IngestTag]
+    idempotency_prefix: str
+    def __init__(self, revisions: _Optional[_Iterable[_Union[BatchRevisionRow, _Mapping]]] = ..., edges: _Optional[_Iterable[_Union[IngestEdge, _Mapping]]] = ..., tags: _Optional[_Iterable[_Union[IngestTag, _Mapping]]] = ..., idempotency_prefix: _Optional[str] = ...) -> None: ...
+
+class IngestEdgeResult(_message.Message):
+    __slots__ = ("succeeded", "created", "replayed")
+    SUCCEEDED_FIELD_NUMBER: _ClassVar[int]
+    CREATED_FIELD_NUMBER: _ClassVar[int]
+    REPLAYED_FIELD_NUMBER: _ClassVar[int]
+    succeeded: bool
+    created: bool
+    replayed: bool
+    def __init__(self, succeeded: bool = ..., created: bool = ..., replayed: bool = ...) -> None: ...
+
+class IngestTagResult(_message.Message):
+    __slots__ = ("succeeded", "revision_number", "tag_version", "changed", "replayed")
+    SUCCEEDED_FIELD_NUMBER: _ClassVar[int]
+    REVISION_NUMBER_FIELD_NUMBER: _ClassVar[int]
+    TAG_VERSION_FIELD_NUMBER: _ClassVar[int]
+    CHANGED_FIELD_NUMBER: _ClassVar[int]
+    REPLAYED_FIELD_NUMBER: _ClassVar[int]
+    succeeded: bool
+    revision_number: int
+    tag_version: int
+    changed: bool
+    replayed: bool
+    def __init__(self, succeeded: bool = ..., revision_number: _Optional[int] = ..., tag_version: _Optional[int] = ..., changed: bool = ..., replayed: bool = ...) -> None: ...
+
+class BatchIngestResponse(_message.Message):
+    __slots__ = ("results", "failures", "edges", "edge_failures", "tags", "tag_failures", "requested_count", "succeeded_count", "edges_succeeded_count", "tags_succeeded_count")
+    RESULTS_FIELD_NUMBER: _ClassVar[int]
+    FAILURES_FIELD_NUMBER: _ClassVar[int]
+    EDGES_FIELD_NUMBER: _ClassVar[int]
+    EDGE_FAILURES_FIELD_NUMBER: _ClassVar[int]
+    TAGS_FIELD_NUMBER: _ClassVar[int]
+    TAG_FAILURES_FIELD_NUMBER: _ClassVar[int]
+    REQUESTED_COUNT_FIELD_NUMBER: _ClassVar[int]
+    SUCCEEDED_COUNT_FIELD_NUMBER: _ClassVar[int]
+    EDGES_SUCCEEDED_COUNT_FIELD_NUMBER: _ClassVar[int]
+    TAGS_SUCCEEDED_COUNT_FIELD_NUMBER: _ClassVar[int]
+    results: _containers.RepeatedCompositeFieldContainer[RevisionResponse]
+    failures: _containers.RepeatedCompositeFieldContainer[BatchRevisionFailure]
+    edges: _containers.RepeatedCompositeFieldContainer[IngestEdgeResult]
+    edge_failures: _containers.RepeatedCompositeFieldContainer[BatchRevisionFailure]
+    tags: _containers.RepeatedCompositeFieldContainer[IngestTagResult]
+    tag_failures: _containers.RepeatedCompositeFieldContainer[BatchRevisionFailure]
+    requested_count: int
+    succeeded_count: int
+    edges_succeeded_count: int
+    tags_succeeded_count: int
+    def __init__(self, results: _Optional[_Iterable[_Union[RevisionResponse, _Mapping]]] = ..., failures: _Optional[_Iterable[_Union[BatchRevisionFailure, _Mapping]]] = ..., edges: _Optional[_Iterable[_Union[IngestEdgeResult, _Mapping]]] = ..., edge_failures: _Optional[_Iterable[_Union[BatchRevisionFailure, _Mapping]]] = ..., tags: _Optional[_Iterable[_Union[IngestTagResult, _Mapping]]] = ..., tag_failures: _Optional[_Iterable[_Union[BatchRevisionFailure, _Mapping]]] = ..., requested_count: _Optional[int] = ..., succeeded_count: _Optional[int] = ..., edges_succeeded_count: _Optional[int] = ..., tags_succeeded_count: _Optional[int] = ...) -> None: ...
 
 class CreateArtifactRequest(_message.Message):
     __slots__ = ("revision_kref", "name", "location", "exists_error", "metadata")

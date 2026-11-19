@@ -289,6 +289,71 @@ Key semantics:
 - **Failures are positional**: `failures` is `[(row_index, reason)]` for rows
   rejected by validation; everything valid commits atomically.
 
+## Memories, Edges and Tags in One Transaction (BatchIngest)
+
+`batch_create_revisions()` writes revisions. When the same import also needs
+the edges between them and tags on them, `batch_ingest()` writes all three in
+**one atomic server command** instead of one call per edge and per tag.
+
+```python
+from kumiho import (
+    RevisionInput, ArtifactInput, IngestEdge, IngestTag, KrefRef,
+)
+
+if kumiho.get_mutation_capabilities().batch_ingest:        # kumiho-db only
+    result = kumiho.batch_ingest(
+        revisions=[
+            RevisionInput(
+                "kref://proj/mem/summary.memory",
+                {"title": "Summary"},
+                artifacts=[ArtifactInput("body", "s3://bucket/summary.md",
+                                         is_default=True)],
+            ),
+            RevisionInput("kref://proj/mem/detail.memory", {"title": "Detail"}),
+        ],
+        edges=[
+            IngestEdge(0, 1, "DERIVED_FROM"),            # between two new rows
+            IngestEdge(1, KrefRef("kref://proj/mem/old.memory?r=3"),
+                       "DEPENDS_ON"),                    # to an existing revision
+        ],
+        tags=[IngestTag(0, "published")],                # tags on new rows
+        idempotency_prefix="import-20261119",
+    )
+    assert result.ok
+```
+
+- **Edge ends are rows or existing revisions.** An `int` (or `RowRef(i)`) is
+  the revision that `revisions[i]` creates; a `KrefRef` (or a kref string) must
+  name an existing revision by number, `...?r=3` — not a tag selector or an
+  artifact.
+- **Tags attach to rows of the same request.** `latest` is system-managed and
+  refused; `published` publishes and freezes the revision.
+- **Idempotency is required.** Rows, edges and tags are keyed
+  `{prefix}:{index}` under their own kind, so re-sending a request after a lost
+  reply replays what committed and commits only what is new. Use a new prefix
+  for each distinct request.
+- **Limits** (checked client-side, nothing sent when exceeded): 200 revisions,
+  500 edges, 500 tags per request, and an estimated 60 reads per revision plus
+  32 per edge or tag within 32,000 — so 200 revisions, 500 edges and 125 tags
+  together is the largest mix. Split bigger imports into several requests.
+  The numbers are fixed in the kumiho-db build; pass
+  `limits=kumiho.BatchIngestLimits(...)` only for a server built with others.
+- **Receipts are positional.** `result.revisions` holds `Revision` objects,
+  `result.edges` / `result.tags` hold `EdgeReceipt` / `TagReceipt`; a rejected
+  element is `None` and listed in `result.failures` while the rest still
+  commits. The SDK refuses the common mistakes before sending (duplicate edges
+  or tags, bad tag text, bad edge names, rows out of range), but the server can
+  still reject an element the client cannot judge, such as a row whose parent
+  space is missing, so always check `result.ok`.
+- **Some failures abort the whole request.** An edge to an existing revision
+  that does not exist (or whose item was deleted) fails the call with gRPC
+  `NOT_FOUND`, and reusing a prefix for different content fails it with
+  `ABORTED`. Nothing in the request commits in either case.
+- **kumiho-db only.** kumiho-server (CE) does not implement `BatchIngest`;
+  the call raises `BatchIngestUnsupportedError` (a `grpc.RpcError` carrying
+  `UNIMPLEMENTED`). `get_mutation_capabilities()` reports every flag `False`
+  on a server without the RPC, so the check above works everywhere.
+
 ## Metadata
 
 All node types support custom metadata as key-value string pairs. Metadata can be set during creation (where supported) or updated afterward.

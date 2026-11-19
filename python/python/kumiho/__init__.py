@@ -110,7 +110,7 @@ Attributes:
     PUBLISHED_TAG (str): Standard tag name for published revisions.
 """
 
-__version__ = "0.16.0"
+__version__ = "0.17.0"
 
 import contextvars
 from typing import Any, Dict, List, Mapping, Optional, Iterator, Sequence, Tuple, Union
@@ -136,6 +136,22 @@ from .evaluation import (
     FragmentEvaluation,
     NoulAnswer,
     ScoreAnswer,
+)
+from .ingest import (
+    ArtifactInput,
+    BatchIngestLimits,
+    BatchIngestResult,
+    BatchIngestUnsupportedError,
+    BatchIngestValidationError,
+    EdgeReceipt,
+    ElementFailure,
+    IngestEdge,
+    IngestTag,
+    KrefRef,
+    MutationCapabilities,
+    RevisionInput,
+    RowRef,
+    TagReceipt,
 )
 from .space import Space
 from .kref import Kref, KrefParts, KrefValidationError, parse_kref, validate_kref, is_valid_kref
@@ -1027,6 +1043,76 @@ def batch_create_revisions(
     )
 
 
+def batch_ingest(
+    revisions: Sequence[Union[RevisionInput, Mapping[str, Any]]] = (),
+    edges: Sequence[IngestEdge] = (),
+    tags: Sequence[IngestTag] = (),
+    *,
+    idempotency_prefix: str,
+    limits: BatchIngestLimits = BatchIngestLimits(),
+) -> BatchIngestResult:
+    """Write revisions, the edges among them and their tags in one atomic call.
+
+    The graph-aware counterpart of :func:`batch_create_revisions`: memories
+    (revisions with their artifacts), the edges between them or to existing
+    revisions, and tags on them commit in one server transaction. Every row,
+    edge and tag is keyed ``"{idempotency_prefix}:{index}"``, so re-sending the
+    same request replays what committed and commits only what is new.
+
+    kumiho-db only: against kumiho-server (CE) this raises
+    :class:`BatchIngestUnsupportedError`; call
+    :func:`get_mutation_capabilities` first when the server is unknown.
+
+    Args:
+        revisions: :class:`RevisionInput` rows (or dicts shaped like
+            :func:`batch_create_revisions` rows), created in order.
+        edges: :class:`IngestEdge` objects. An end is a row of this request
+            (``RowRef(i)`` or a bare int) or an existing revision by number
+            (``KrefRef("kref://p/s/item.kind?r=3")`` or that string).
+        tags: :class:`IngestTag` objects on rows of this request. ``latest`` is
+            refused; ``published`` publishes and freezes the revision.
+        idempotency_prefix: Required, non-empty.
+        limits: Request-size limits; the defaults are the server's (200
+            revisions, 500 edges, 500 tags).
+
+    Returns:
+        BatchIngestResult: positional receipts; rejected elements are None and
+        listed in ``failures`` (check ``result.ok``).
+
+    Raises:
+        BatchIngestValidationError: The request is refused client-side.
+        BatchIngestUnsupportedError: The server has no BatchIngest.
+        grpc.RpcError: Whole-request failures, where nothing commits:
+            ``NOT_FOUND`` for an edge to a revision that does not exist,
+            ``ABORTED`` for a prefix reused with different content.
+
+    Example:
+        >>> result = kumiho.batch_ingest(
+        ...     revisions=[kumiho.RevisionInput("kref://p/mem/a.memory", {"t": "A"}),
+        ...                kumiho.RevisionInput("kref://p/mem/b.memory", {"t": "B"})],
+        ...     edges=[kumiho.IngestEdge(1, 0, "DERIVED_FROM")],
+        ...     tags=[kumiho.IngestTag(0, "published")],
+        ...     idempotency_prefix="import-1",
+        ... )
+    """
+    return get_client().batch_ingest(
+        revisions=revisions,
+        edges=edges,
+        tags=tags,
+        idempotency_prefix=idempotency_prefix,
+        limits=limits,
+    )
+
+
+def get_mutation_capabilities() -> MutationCapabilities:
+    """Ask the server which native atomic mutations it implements.
+
+    Check ``.batch_ingest`` before :func:`batch_ingest`. A server without the
+    RPC (kumiho-server / CE) is reported with every flag False, not raised.
+    """
+    return get_client().get_mutation_capabilities()
+
+
 def get_artifact(kref: str) -> Artifact:
     """Get an artifact by its kref URI.
 
@@ -1352,6 +1438,21 @@ __all__ = [
     "Kref",
     "Event",
     "ProjectLimitError",
+    # Batch ingest types
+    "ArtifactInput",
+    "BatchIngestLimits",
+    "BatchIngestResult",
+    "BatchIngestUnsupportedError",
+    "BatchIngestValidationError",
+    "EdgeReceipt",
+    "ElementFailure",
+    "IngestEdge",
+    "IngestTag",
+    "KrefRef",
+    "MutationCapabilities",
+    "RevisionInput",
+    "RowRef",
+    "TagReceipt",
     # Evaluation types
     "EvaluationFragment",
     "EvaluationQuestion",
@@ -1427,6 +1528,8 @@ __all__ = [
     "get_item",
     "get_bundle",
     "get_revision",
+    "batch_ingest",
+    "get_mutation_capabilities",
     "get_artifact",
     "get_artifacts_by_location",
     "set_attribute",
