@@ -2554,7 +2554,10 @@ def tool_memory_retrieve(
                     if unroll_revisions:
                         # Unroll ALL revisions for stacked items (dream-state,
                         # history browsing). Each revision gets a separate slot.
-                        revisions = sr.item.get_revisions()
+                        # One server page, as before get_revisions followed
+                        # cursors: a long history must not turn every hit
+                        # into a full walk and flood the recall slots.
+                        revisions = sr.item.get_revisions_page()
                         if revisions and len(revisions) > 1:
                             for rev in revisions:
                                 if not _matches_memory_types(rev, allowed_types):
@@ -2876,12 +2879,25 @@ def tool_find_path(
         return {"error": str(e)}
 
 
+def _mcp_page_size(page_size: Optional[int]) -> int:
+    """Bound an MCP page size to 1..1000 (default 100)."""
+    if page_size is None:
+        return 100
+    return max(1, min(int(page_size), 1000))
+
+
 def tool_get_edges(
     revision_kref: str,
     direction: str = "both",
-    edge_type: Optional[str] = None
+    edge_type: Optional[str] = None,
+    page_size: Optional[int] = None,
+    cursor: Optional[str] = None,
 ) -> Dict[str, Any]:
-    """Get edges for a revision."""
+    """Get one page of edges for a revision.
+
+    Paged so a hub revision cannot flood an agent's context; pass the returned
+    ``next_cursor`` back as ``cursor`` for the next page.
+    """
     _ensure_configured()
     try:
         revision = kumiho.get_revision(revision_kref)
@@ -2894,15 +2910,19 @@ def tool_get_edges(
         }
         direction_val = dir_map.get(direction.lower(), EdgeDirection.BOTH)
         
-        edges = revision.get_edges(
+        page = revision.get_edges_page(
             edge_type_filter=edge_type,
             direction=direction_val,
+            page_size=_mcp_page_size(page_size),
+            cursor=cursor or None,
         )
         return {
             "revision_kref": revision_kref,
             "direction": direction,
-            "edges": [_serialize_edge(e) for e in edges],
-            "count": len(edges),
+            "edges": [_serialize_edge(e) for e in page],
+            "count": len(page),
+            "has_more": bool(page.has_more),
+            "next_cursor": page.next_cursor if page.has_more else None,
         }
     except Exception as e:
         return {"error": str(e)}
@@ -2936,12 +2956,23 @@ def tool_get_artifacts_by_location(location: str) -> Dict[str, Any]:
         return {"error": str(e)}
 
 
-def tool_get_item_revisions(item_kref: str, include_metadata: bool = False) -> Dict[str, Any]:
-    """Get all revisions for an item."""
+def tool_get_item_revisions(
+    item_kref: str,
+    include_metadata: bool = False,
+    page_size: Optional[int] = None,
+    cursor: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Get one page of revisions for an item.
+
+    Paged so a long history cannot flood an agent's context; pass the returned
+    ``next_cursor`` back as ``cursor`` for the next page.
+    """
     _ensure_configured()
     try:
         item = kumiho.get_item(item_kref)
-        revisions = item.get_revisions()
+        revisions = item.get_revisions_page(
+            page_size=_mcp_page_size(page_size), cursor=cursor or None
+        )
 
         serialized = []
         for r in revisions:
@@ -2954,6 +2985,8 @@ def tool_get_item_revisions(item_kref: str, include_metadata: bool = False) -> D
             "item_kref": item_kref,
             "revisions": serialized,
             "count": len(revisions),
+            "has_more": bool(revisions.has_more),
+            "next_cursor": revisions.next_cursor if revisions.has_more else None,
         }
     except grpc.RpcError as e:
         if e.code() == grpc.StatusCode.NOT_FOUND:
@@ -3793,7 +3826,7 @@ TOOLS: List[Dict[str, Any]] = [
     },
     {
         "name": "kumiho_get_item_revisions",
-        "description": "Get all revisions for a Kumiho item. Shows version history with tags.",
+        "description": "Get a page of revisions for a Kumiho item. Shows version history with tags. When has_more is true, call again with cursor=next_cursor.",
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -3805,6 +3838,17 @@ TOOLS: List[Dict[str, Any]] = [
                     "type": "boolean",
                     "description": "Whether to include full metadata for each revision. Default: false",
                     "default": False,
+                },
+                "page_size": {
+                    "type": "integer",
+                    "description": "Revisions per page, 1-1000. Default: 100",
+                    "default": 100,
+                    "minimum": 1,
+                    "maximum": 1000,
+                },
+                "cursor": {
+                    "type": "string",
+                    "description": "next_cursor from the previous call, to fetch the next page",
                 },
             },
             "required": ["item_kref"],
@@ -4091,7 +4135,7 @@ TOOLS: List[Dict[str, Any]] = [
     },
     {
         "name": "kumiho_get_edges",
-        "description": "Get edges (relationships) for a revision. Can filter by direction and edge type.",
+        "description": "Get a page of edges (relationships) for a revision. Can filter by direction and edge type. When has_more is true, call again with cursor=next_cursor.",
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -4108,6 +4152,17 @@ TOOLS: List[Dict[str, Any]] = [
                 "edge_type": {
                     "type": "string",
                     "description": "Filter by edge type (e.g., 'DEPENDS_ON', 'DERIVED_FROM')",
+                },
+                "page_size": {
+                    "type": "integer",
+                    "description": "Edges per page, 1-1000. Default: 100",
+                    "default": 100,
+                    "minimum": 1,
+                    "maximum": 1000,
+                },
+                "cursor": {
+                    "type": "string",
+                    "description": "next_cursor from the previous call, to fetch the next page",
                 },
             },
             "required": ["revision_kref"],
@@ -4619,6 +4674,8 @@ TOOL_HANDLERS = {
     "kumiho_get_item_revisions": lambda args: tool_get_item_revisions(
         args["item_kref"],
         args.get("include_metadata", False),
+        args.get("page_size"),
+        args.get("cursor"),
     ),
     "kumiho_get_revision": lambda args: tool_get_revision(args["kref"]),
     "kumiho_get_revision_by_tag": lambda args: tool_get_revision_by_tag(
@@ -4672,6 +4729,8 @@ TOOL_HANDLERS = {
         args["revision_kref"],
         args.get("direction", "both"),
         args.get("edge_type"),
+        args.get("page_size"),
+        args.get("cursor"),
     ),
     "kumiho_create_revision": lambda args: tool_create_revision(
         args["item_kref"],

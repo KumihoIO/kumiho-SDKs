@@ -8,6 +8,52 @@
 > what produced the gaps backfilled in KumihoIO/kumiho-SDKs#155 and #157.
 
 
+## kumiho 0.17.1 (November 2026) — Edge and Revision Lists No Longer Truncate 📜
+
+`Client.get_edges()` (and `Revision.get_edges()`) and `Client.get_revisions()`
+(and `Item.get_revisions()`) never sent a page size and never read the cursor in
+the response, so a revision with more edges than the server's first page (100 on
+kumiho-db) got only that page, with no error. Graph walks, impact checks and
+cleanup built on them quietly missed the rest.
+
+### ✨ What changed
+
+- **`get_edges()` and `get_revisions()` return everything.** Same signature,
+  same `List` return; they follow the server cursor until it is exhausted,
+  asking for 1000 per page (the most both servers allow). kumiho-server CE's
+  `GetEdges` sends no pagination info and returns every edge at once, so it is
+  called once, as before. A cursor that does not advance, or `has_more` with no
+  cursor, raises `RuntimeError` rather than looping or returning a partial list.
+- **No duplicates from offset paging.** kumiho-server CE pages `GetRevisions` by
+  offset, newest first, so a revision created between two pages shifts the
+  window. `get_revisions()` drops the repeated row (and `get_edges()` a repeated
+  edge). CE offsets are not a snapshot: a revision deleted mid-walk can still be
+  missed. kumiho-db's cursors are key positions and have neither problem.
+- **MCP `kumiho_get_edges` and `kumiho_get_item_revisions` are paged.** They take
+  `page_size` (1–1000, default 100) and `cursor`, and return `has_more` and
+  `next_cursor`. Before, they returned the server's first page; with the fix
+  above they would otherwise have returned an unbounded list into an agent's
+  context. Memory recall with `unroll_revisions` likewise still reads one page
+  of revisions per hit rather than each hit's full history.
+- **New page API**, in the style of `get_items` / `search`:
+  `get_edges_page(kref, edge_type_filter="", direction=0, page_size=None,
+  cursor=None)` and `get_revisions_page(item_kref, page_size=None, cursor=None)`
+  on the client, `Revision.get_edges_page(...)` and `Item.get_revisions_page(...)`
+  on the objects. They return a `PagedList` with `next_cursor`, `has_more` and
+  `total_count` (all `None` when the server sent no pagination info). Page size
+  defaults to 100 and is at most 1000: kumiho-db rejects a larger one with
+  `INVALID_ARGUMENT`, kumiho-server CE clamps it, and CE's `GetEdges` ignores it.
+  Both servers report `total_count` as `-1` (unknown).
+
+### What you have to do
+
+Nothing for SDK callers. Callers that relied on the first page only will now
+receive every edge or revision; use the `*_page` methods to keep bounded reads.
+MCP clients that read every edge or revision from one `kumiho_get_edges` /
+`kumiho_get_item_revisions` call should follow `next_cursor` while `has_more`.
+
+---
+
 ## kumiho 0.17.0 (November 2026) — BatchIngest: Memories, Edges and Tags in One Transaction 🧩
 
 Importing a graph meant `batch_create_revisions` for the nodes and then one call
