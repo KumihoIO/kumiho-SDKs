@@ -177,6 +177,24 @@ members = bundle.get_members()
 history = bundle.get_history()  # Full audit trail
 ```
 
+### Bulk Ingest with Edges and Tags
+
+On kumiho-db, write memories, the edges between them and their tags in one
+atomic call (idempotent under the prefix; kumiho-server answers with
+`BatchIngestUnsupportedError`):
+
+```python
+if kumiho.get_mutation_capabilities().batch_ingest:
+    result = kumiho.batch_ingest(
+        revisions=[kumiho.RevisionInput("kref://proj/mem/a.memory", {"title": "A"}),
+                   kumiho.RevisionInput("kref://proj/mem/b.memory", {"title": "B"})],
+        edges=[kumiho.IngestEdge(1, 0, "DERIVED_FROM")],   # row 1 -> row 0
+        tags=[kumiho.IngestTag(0, "published")],
+        idempotency_prefix="import-1",
+    )
+    assert result.ok
+```
+
 ### Event Streaming
 
 React to changes in real-time:

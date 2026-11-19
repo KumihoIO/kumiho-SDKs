@@ -114,6 +114,7 @@ Contents
    api/item
    api/bundle
    api/revision
+   api/ingest
    api/artifact
    api/edge
    api/kref

@@ -8,6 +8,54 @@
 > what produced the gaps backfilled in KumihoIO/kumiho-SDKs#155 and #157.
 
 
+## Unreleased — BatchIngest: Memories, Edges and Tags in One Transaction
+
+Importing a graph meant `batch_create_revisions` for the nodes and then one call
+per edge and one per tag, each its own transaction, so a failure halfway left a
+half-linked graph. kumiho-db has a `BatchIngest` RPC that writes revisions (with
+their artifacts), the edges among them or to existing revisions, and tags on
+them in a single atomic command. The SDK now speaks it. Nothing existing
+changes: the protobuf additions are new messages and two new RPCs.
+
+### ✨ What changed
+
+- **`kumiho.batch_ingest(revisions, edges, tags, *, idempotency_prefix, limits)`**
+  (and `Client.batch_ingest`) takes typed inputs — `RevisionInput`,
+  `ArtifactInput`, `IngestEdge`, `IngestTag`, with `RowRef` / `KrefRef` naming an
+  edge end — and returns a `BatchIngestResult`: positional `Revision` objects,
+  `EdgeReceipt` and `TagReceipt`, with a rejected element as `None` and listed in
+  `failures` (`result.ok`). Revisions may also be dicts shaped like
+  `batch_create_revisions` rows. An edge end given as an `int` is a row; as a kref
+  string, an existing revision (`...?r=3`).
+- **`kumiho.get_mutation_capabilities()`** (and `Client.get_mutation_capabilities`)
+  returns `MutationCapabilities` (`batch_ingest`, `batch_expected_latest_revision`,
+  `transactional_idempotency_fingerprint`, `atomic_derived_from_edges`,
+  `contract_version`). A server without the RPC yields every flag `False`.
+- **Every row, edge and tag is idempotent under the prefix.** The prefix is
+  required; re-sending a request after a lost reply replays what committed.
+- **Requests are checked before they are sent.** The SDK raises
+  `BatchIngestValidationError` (a `ValueError`) for more than 200 revisions, 500
+  edges or 500 tags, an estimated read budget over 32,000 (60 per revision plus
+  32 per edge or tag), an empty prefix, the system-managed `latest` tag, a tag or
+  edge naming a row that is not in the request, a self-edge, a bad edge name, and
+  artifact specs the server would reject. The server commits the valid rest of a
+  request and reports bad elements by position, so a partial write is refused up
+  front. Pass `limits=BatchIngestLimits(...)` if your operator changed the
+  server's numbers.
+- **Protobuf stubs regenerated** (grpcio-tools 1.76.0, protobuf 6.31.1, as before)
+  from kumiho-db's `kumiho.proto` for the new messages, with identical field
+  numbers. The checked-in `kumiho_pb2.pyi` had missed the earlier
+  `memory_project` search fields; it now includes them.
+
+### 📋 Upgrading
+
+Nothing to do. `BatchIngest` is a kumiho-db RPC: kumiho-server (CE) and older
+servers answer `UNIMPLEMENTED`, which the SDK raises as
+`BatchIngestUnsupportedError` (still a `grpc.RpcError`, `code()` is
+`UNIMPLEMENTED`). Call `get_mutation_capabilities().batch_ingest` first, or fall
+back to `batch_create_revisions` plus individual edge and tag calls.
+
+
 ## kumiho 0.15.0 (October 2026) — Item Krefs Read by One Parser 🧭
 
 An item kref names its parent path, its item name and its kind, and the SDK cut

@@ -185,6 +185,16 @@ class KumihoServiceStub(object):
                 request_serializer=kumiho__pb2.BatchCreateRevisionsRequest.SerializeToString,
                 response_deserializer=kumiho__pb2.BatchCreateRevisionsResponse.FromString,
                 _registered_method=True)
+        self.GetMutationCapabilities = channel.unary_unary(
+                '/kumiho.KumihoService/GetMutationCapabilities',
+                request_serializer=kumiho__pb2.GetMutationCapabilitiesRequest.SerializeToString,
+                response_deserializer=kumiho__pb2.MutationCapabilities.FromString,
+                _registered_method=True)
+        self.BatchIngest = channel.unary_unary(
+                '/kumiho.KumihoService/BatchIngest',
+                request_serializer=kumiho__pb2.BatchIngestRequest.SerializeToString,
+                response_deserializer=kumiho__pb2.BatchIngestResponse.FromString,
+                _registered_method=True)
         self.DeleteRevision = channel.unary_unary(
                 '/kumiho.KumihoService/DeleteRevision',
                 request_serializer=kumiho__pb2.DeleteRevisionRequest.SerializeToString,
@@ -538,6 +548,23 @@ class KumihoServiceServicer(object):
 
     def BatchCreateRevisions(self, request, context):
         """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def GetMutationCapabilities(self, request, context):
+        """GetMutationCapabilities reports which native atomic mutations the server
+        implements; BatchIngest is gated on MutationCapabilities.batch_ingest.
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def BatchIngest(self, request, context):
+        """Revisions, edges and tags in one atomic command, each element idempotent
+        under the prefix (see BatchIngestRequest). Servers that predate it fail
+        closed with UNIMPLEMENTED.
+        """
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
@@ -905,6 +932,16 @@ def add_KumihoServiceServicer_to_server(servicer, server):
                     servicer.BatchCreateRevisions,
                     request_deserializer=kumiho__pb2.BatchCreateRevisionsRequest.FromString,
                     response_serializer=kumiho__pb2.BatchCreateRevisionsResponse.SerializeToString,
+            ),
+            'GetMutationCapabilities': grpc.unary_unary_rpc_method_handler(
+                    servicer.GetMutationCapabilities,
+                    request_deserializer=kumiho__pb2.GetMutationCapabilitiesRequest.FromString,
+                    response_serializer=kumiho__pb2.MutationCapabilities.SerializeToString,
+            ),
+            'BatchIngest': grpc.unary_unary_rpc_method_handler(
+                    servicer.BatchIngest,
+                    request_deserializer=kumiho__pb2.BatchIngestRequest.FromString,
+                    response_serializer=kumiho__pb2.BatchIngestResponse.SerializeToString,
             ),
             'DeleteRevision': grpc.unary_unary_rpc_method_handler(
                     servicer.DeleteRevision,
@@ -1883,6 +1920,60 @@ class KumihoService(object):
             '/kumiho.KumihoService/BatchCreateRevisions',
             kumiho__pb2.BatchCreateRevisionsRequest.SerializeToString,
             kumiho__pb2.BatchCreateRevisionsResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def GetMutationCapabilities(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/kumiho.KumihoService/GetMutationCapabilities',
+            kumiho__pb2.GetMutationCapabilitiesRequest.SerializeToString,
+            kumiho__pb2.MutationCapabilities.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def BatchIngest(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/kumiho.KumihoService/BatchIngest',
+            kumiho__pb2.BatchIngestRequest.SerializeToString,
+            kumiho__pb2.BatchIngestResponse.FromString,
             options,
             channel_credentials,
             insecure,
