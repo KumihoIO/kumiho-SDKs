@@ -12,21 +12,30 @@ in descending version order, which is also descending date order.
 narrative — why a change mattered and what you have to do about it. This file is
 its terse companion. Entries belong in both.
 
-## [Unreleased]
+## [0.17.1] - 2026-11-20
 
 ### Added
 - **`Client.get_edges_page()` / `Revision.get_edges_page()`** and
   **`Client.get_revisions_page()` / `Item.get_revisions_page()`** fetch one page
   (`page_size`, `cursor`) and return a `PagedList` with `next_cursor`,
   `has_more` and `total_count`; those are `None` against a server that sends no
-  pagination info.
+  pagination info (kumiho-server CE's `GetEdges`).
+- MCP `kumiho_get_edges` and `kumiho_get_item_revisions` take `page_size`
+  (1–1000, default 100) and `cursor`, and return `has_more` / `next_cursor`.
 
 ### Fixed
 - **`get_edges()` and `get_revisions()` no longer truncate.** They sent no
   pagination and ignored the response cursor, so a revision with more than the
   server's first page (100 on kumiho-db) silently returned only that page. They
-  now follow the cursor and return everything, with the same signature and return
-  type. A cursor that repeats raises `RuntimeError` instead of looping.
+  now follow the cursor and return everything, 1000 per page, with the same
+  signature and return type. A cursor that repeats, or `has_more` with no
+  cursor, raises `RuntimeError`. A row repeated by kumiho-server CE's offset
+  paging (a revision created mid-walk) is returned once.
+
+### Changed
+- MCP `kumiho_get_edges` / `kumiho_get_item_revisions` and recall's
+  `unroll_revisions` read one page, so the fix above does not make them
+  unbounded.
 
 ## [0.17.0] - 2026-11-19
 

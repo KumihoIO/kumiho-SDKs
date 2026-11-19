@@ -207,7 +207,8 @@ class Item(KumihoObject):
         """Get one page of revisions of this item.
 
         Args:
-            page_size: Revisions per page (server default 100, max 1000).
+            page_size: Revisions per page: default 100, at most 1000
+                (kumiho-db rejects more; kumiho-server CE clamps).
             cursor: ``next_cursor`` from the previous page; omit for the first.
 
         Returns:

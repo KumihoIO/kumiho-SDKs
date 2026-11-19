@@ -615,7 +615,8 @@ class Revision(KumihoObject):
             edge_type_filter: Optional filter for edge type.
             direction: ``kumiho.OUTGOING`` (0), ``kumiho.INCOMING`` (1) or
                 ``kumiho.BOTH`` (2).
-            page_size: Edges per page (server default 100, max 1000).
+            page_size: Edges per page: default 100, at most 1000 (kumiho-db
+                rejects more; kumiho-server CE returns every edge at once).
             cursor: ``next_cursor`` from the previous page; omit for the first.
 
         Returns:

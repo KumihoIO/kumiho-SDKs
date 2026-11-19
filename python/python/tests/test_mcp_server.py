@@ -712,9 +712,9 @@ class TestMemoryRetrieveLatestMode:
         r1.created_at = "2026-01-01T00:00:00+00:00"
         r2 = MockRevision(f"{stacked.kref.uri}?r=2")
         r2.created_at = "2026-05-01T00:00:00+00:00"
-        stacked.get_revisions = lambda: [r1, r2]
+        stacked.get_revisions_page = lambda: [r1, r2]
         single = self._item("single", "2026-03-01T00:00:00+00:00")
-        single.get_revisions = lambda: [single.returned_rev]
+        single.get_revisions_page = lambda: [single.returned_rev]
         mock_search.return_value = [self._hit(stacked, 0.9), self._hit(single, 0.5)]
 
         from kumiho.mcp_server import tool_memory_retrieve
@@ -1240,9 +1240,9 @@ class TestMemoryRetrieveSpacesUsed:
         revisions = [
             MockRevision(f"{stacked.kref.uri}?r={n}", number=n) for n in (1, 2)
         ]
-        stacked.get_revisions = lambda: revisions
+        stacked.get_revisions_page = lambda: revisions
         single = _memory_item("CognitiveMemory/facts/db")
-        single.get_revisions = lambda: [single.returned_rev]
+        single.get_revisions_page = lambda: [single.returned_rev]
         mock_search.return_value = [_search_hit(stacked, 0.9), _search_hit(single, 0.5)]
 
         from kumiho.mcp_server import tool_memory_retrieve

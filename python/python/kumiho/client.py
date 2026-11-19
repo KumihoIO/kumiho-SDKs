@@ -140,6 +140,10 @@ if TYPE_CHECKING:
 
 _LOGGER = logging.getLogger("kumiho.client")
 _DISCOVERY_DISABLE_ENV = "KUMIHO_DISABLE_AUTO_DISCOVERY"
+# Page size the get_edges / get_revisions auto-follow asks for. Both servers
+# allow 1000 (kumiho-db rejects more, kumiho-server CE clamps), and a larger page
+# means fewer round trips; CE GetRevisions also re-scans its SKIP offset per page.
+_FOLLOW_PAGE_SIZE = 1000
 _FORCE_REFRESH_ENV = "KUMIHO_FORCE_DISCOVERY_REFRESH"
 
 
@@ -1357,7 +1361,8 @@ class _Client:
 
         Args:
             item_kref: The kref of the item.
-            page_size: Revisions per page (server default 100, max 1000).
+            page_size: Revisions per page: default 100, at most 1000
+                (kumiho-db rejects more; kumiho-server CE clamps).
             cursor: ``next_cursor`` from the previous page; omit for the first.
 
         Returns:
@@ -1396,8 +1401,11 @@ class _Client:
             RuntimeError: If the server returns a cursor that does not advance.
         """
         return self._collect_pages(
-            lambda cursor: self.get_revisions_page(item_kref, cursor=cursor),
+            lambda cursor: self.get_revisions_page(
+                item_kref, page_size=_FOLLOW_PAGE_SIZE, cursor=cursor
+            ),
             "GetRevisions",
+            key=lambda revision: str(revision.kref),
         )
 
     def get_latest_revision(self, item_kref: Kref) -> Optional[Revision]:
@@ -2278,13 +2286,16 @@ class _Client:
             kref: The kref to get edges for.
             edge_type_filter: Optional filter for edge types.
             direction: 0=OUTGOING, 1=INCOMING, 2=BOTH (see kumiho.EdgeDirection).
-            page_size: Edges per page (server default 100, max 1000).
+            page_size: Edges per page: default 100, at most 1000 (kumiho-db
+                rejects more). kumiho-server CE ignores it and returns every
+                edge in one response.
             cursor: ``next_cursor`` from the previous page; omit for the first.
 
         Returns:
             A PagedList of Edge objects. ``next_cursor`` and ``has_more``
             describe the next page; both are ``None`` when the server sent no
-            pagination info (older servers), in which case the list is complete.
+            pagination info (kumiho-server CE's GetEdges), in which case the
+            list is complete.
         """
         pagination = None
         if page_size is not None or cursor is not None:
@@ -2327,28 +2338,50 @@ class _Client:
         """
         return self._collect_pages(
             lambda cursor: self.get_edges_page(
-                kref, edge_type_filter, direction, cursor=cursor
+                kref, edge_type_filter, direction,
+                page_size=_FOLLOW_PAGE_SIZE, cursor=cursor,
             ),
             "GetEdges",
+            key=lambda edge: (
+                str(edge.source_kref), str(edge.target_kref), edge.edge_type
+            ),
         )
 
     @staticmethod
-    def _collect_pages(fetch_page, rpc_name: str) -> List[Any]:
+    def _collect_pages(fetch_page, rpc_name: str, key=None) -> List[Any]:
         """Follow ``next_cursor`` across pages and return every item.
 
         ``fetch_page(cursor)`` returns a PagedList. Stops when the server
         reports no more results or sent no pagination info. A cursor that
-        repeats raises instead of looping forever.
+        repeats, or ``has_more`` without a cursor, raises instead of looping
+        forever or silently returning a partial list.
+
+        ``key(item)`` drops items already returned by an earlier page.
+        kumiho-server (CE) pages GetRevisions by offset, newest first, so a
+        revision created between two pages shifts the window and the next
+        page repeats a row; without this the list would hold it twice.
         """
         results: List[Any] = []
+        returned = set()
         seen = set()
         cursor: Optional[str] = None
         while True:
             page = fetch_page(cursor)
-            results.extend(page)
+            for element in page:
+                if key is not None:
+                    identity = key(element)
+                    if identity in returned:
+                        continue
+                    returned.add(identity)
+                results.append(element)
             next_cursor = page.next_cursor
-            if not page.pagination_present or not page.has_more or not next_cursor:
+            if not page.pagination_present or not page.has_more:
                 return results
+            if not next_cursor:
+                raise RuntimeError(
+                    f"{rpc_name} reported more results but returned no "
+                    f"pagination cursor"
+                )
             if next_cursor == cursor or next_cursor in seen:
                 raise RuntimeError(
                     f"{rpc_name} returned a pagination cursor that did not advance"
