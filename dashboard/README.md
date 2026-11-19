@@ -143,7 +143,7 @@ zero-config alternative.
   layout, the north-star's lattice) are a render treatment like the nebula —
   colorless, non-interactive, excluded from the legend and the audit.
 - **One brain** — the Sources panel aggregates whoever actually writes
-  (`source_client` metadata when present, else the author identity), and every
+  (`source_client` metadata when present, else the revision's writer), and every
   filter is derived from the data — nothing is hardcoded.
 - **Views** — `UNIFIED` (one sphere) ⇄ `SPACES` (a constellation: the biggest
   spaces get their own sphere, the long tail shares an "other" cluster; the
@@ -195,11 +195,12 @@ across reloads and clients.
   edges right after the revision, which the immediate check can't see). A
   first-class edge event would remove the residual blind spot (edges created
   long after their revisions, between two old revisions).
-- **Memories don't record their originating client.** Today's revision
-  metadata has `created_by`/`username` (author identity) but nothing like
-  `source_client`; the "one brain across Claude Code / Codex / Revka" story
-  (M5) needs writers to stamp it. The dashboard already reads
-  `source_client` | `client` | `agent` and falls back to the author, so badges
+- **Memories don't record their originating client.** Today's revisions carry
+  only the writer identity (`Revision.username`; kumiho-server hides
+  `created_by` from read metadata) and nothing like `source_client`; the
+  "one brain across Claude Code / Codex / Revka" story (M5) needs writers to
+  stamp it. The dashboard already reads `source_client` | `client` | `agent`
+  and falls back to the revision's writer, then the item's creator, so badges
   light up as soon as writers start stamping.
 - **`CreateEdge` returns only a status**, so the SDK synthesizes the `Edge`
   client-side without `created_at` — snapshot edge recency can't be shown.
