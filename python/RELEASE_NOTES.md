@@ -8,6 +8,35 @@
 > what produced the gaps backfilled in KumihoIO/kumiho-SDKs#155 and #157.
 
 
+## kumiho (Unreleased) — Edge and Revision Lists No Longer Truncate
+
+`Client.get_edges()` (and `Revision.get_edges()`) and `Client.get_revisions()`
+(and `Item.get_revisions()`) never sent a page size and never read the cursor in
+the response, so a revision with more edges than the server's first page (100 on
+kumiho-db) got only that page, with no error. Graph walks, impact checks and
+cleanup built on them quietly missed the rest.
+
+### ✨ What changed
+
+- **`get_edges()` and `get_revisions()` return everything.** Same signature,
+  same `List` return; they follow the server cursor until it is exhausted. A
+  server that sends no pagination info (older releases) behaves as before. If a
+  server returns a cursor that does not advance, the call raises `RuntimeError`
+  rather than looping.
+- **New page API**, in the style of `get_items` / `search`:
+  `get_edges_page(kref, edge_type_filter="", direction=0, page_size=None,
+  cursor=None)` and `get_revisions_page(item_kref, page_size=None, cursor=None)`
+  on the client, `Revision.get_edges_page(...)` and `Item.get_revisions_page(...)`
+  on the objects. They return a `PagedList` with `next_cursor`, `has_more` and
+  `total_count` (all `None` when the server sent no pagination info).
+
+### What you have to do
+
+Nothing. Callers that relied on the first page only will now receive every edge
+or revision; use the `*_page` methods to keep bounded reads.
+
+---
+
 ## kumiho 0.17.0 (November 2026) — BatchIngest: Memories, Edges and Tags in One Transaction 🧩
 
 Importing a graph meant `batch_create_revisions` for the nodes and then one call

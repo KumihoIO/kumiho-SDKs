@@ -12,6 +12,22 @@ in descending version order, which is also descending date order.
 narrative — why a change mattered and what you have to do about it. This file is
 its terse companion. Entries belong in both.
 
+## [Unreleased]
+
+### Added
+- **`Client.get_edges_page()` / `Revision.get_edges_page()`** and
+  **`Client.get_revisions_page()` / `Item.get_revisions_page()`** fetch one page
+  (`page_size`, `cursor`) and return a `PagedList` with `next_cursor`,
+  `has_more` and `total_count`; those are `None` against a server that sends no
+  pagination info.
+
+### Fixed
+- **`get_edges()` and `get_revisions()` no longer truncate.** They sent no
+  pagination and ignored the response cursor, so a revision with more than the
+  server's first page (100 on kumiho-db) silently returned only that page. They
+  now follow the cursor and return everything, with the same signature and return
+  type. A cursor that repeats raises `RuntimeError` instead of looping.
+
 ## [0.17.0] - 2026-11-19
 
 ### Added

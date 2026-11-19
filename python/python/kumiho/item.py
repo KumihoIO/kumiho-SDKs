@@ -37,6 +37,7 @@ from .proto.kumiho_pb2 import ItemResponse, ResolveKrefRequest
 from .revision import Revision
 
 if TYPE_CHECKING:
+    from .base import PagedList
     from .client import _Client
     from .space import Space
     from .project import Project
@@ -199,6 +200,20 @@ class Item(KumihoObject):
             ...     print(f"v{v.number}: created {v.created_at}")
         """
         return self._client.get_revisions(self.kref)
+
+    def get_revisions_page(
+        self, page_size: Optional[int] = None, cursor: Optional[str] = None
+    ) -> 'PagedList':
+        """Get one page of revisions of this item.
+
+        Args:
+            page_size: Revisions per page (server default 100, max 1000).
+            cursor: ``next_cursor`` from the previous page; omit for the first.
+
+        Returns:
+            PagedList[Revision]: Revisions plus ``next_cursor`` / ``has_more``.
+        """
+        return self._client.get_revisions_page(self.kref, page_size, cursor)
 
     def get_revision(self, revision_number: int) -> Optional[Revision]:
         """Get a specific revision by its number.

@@ -1347,18 +1347,58 @@ class _Client:
         parent_path, item_name, kind = parse_kref(revision.item_kref).get_item_request()
         return self.get_item(parent_path, item_name, kind)
 
+    def get_revisions_page(
+        self,
+        item_kref: Kref,
+        page_size: Optional[int] = None,
+        cursor: Optional[str] = None,
+    ) -> PagedList:
+        """Get one page of revisions of an item.
+
+        Args:
+            item_kref: The kref of the item.
+            page_size: Revisions per page (server default 100, max 1000).
+            cursor: ``next_cursor`` from the previous page; omit for the first.
+
+        Returns:
+            A PagedList of Revision objects. ``next_cursor`` and ``has_more``
+            are ``None`` when the server sent no pagination info.
+        """
+        pagination = None
+        if page_size is not None or cursor is not None:
+            pagination = PaginationRequest(page_size=page_size or 100, cursor=cursor or "")
+        req = GetRevisionsRequest(item_kref=item_kref.to_pb(), pagination=pagination)
+        resp = self.stub.GetRevisions(req)
+        revisions = [Revision(v, self) for v in resp.revisions]
+        if resp.HasField("pagination"):
+            return PagedList(
+                revisions,
+                next_cursor=resp.pagination.next_cursor,
+                total_count=resp.pagination.total_count,
+                has_more=resp.pagination.has_more,
+                pagination_present=True,
+            )
+        return PagedList(revisions)
+
     def get_revisions(self, item_kref: Kref) -> List[Revision]:
         """Get all revisions of an item.
+
+        Follows the server's pagination cursor until every revision has been
+        returned. Use :meth:`get_revisions_page` to fetch a single page.
 
         Args:
             item_kref: The kref of the item.
 
         Returns:
             A list of Revision objects for the item.
+
+        Raises:
+            RuntimeError: If the server returns a cursor that does not advance.
         """
-        req = GetRevisionsRequest(item_kref=item_kref.to_pb())
-        resp = self.stub.GetRevisions(req)
-        return [Revision(v, self) for v in resp.revisions]
+        return self._collect_pages(
+            lambda cursor: self.get_revisions_page(item_kref, cursor=cursor),
+            "GetRevisions",
+        )
 
     def get_latest_revision(self, item_kref: Kref) -> Optional[Revision]:
         """Get the latest revision of an item.
@@ -2224,8 +2264,54 @@ class _Client:
         )
         return Edge(pb_edge, self)
 
+    def get_edges_page(
+        self,
+        kref: Kref,
+        edge_type_filter: str = "",
+        direction: int = 0,
+        page_size: Optional[int] = None,
+        cursor: Optional[str] = None,
+    ) -> PagedList:
+        """Get one page of edges associated with a kref.
+
+        Args:
+            kref: The kref to get edges for.
+            edge_type_filter: Optional filter for edge types.
+            direction: 0=OUTGOING, 1=INCOMING, 2=BOTH (see kumiho.EdgeDirection).
+            page_size: Edges per page (server default 100, max 1000).
+            cursor: ``next_cursor`` from the previous page; omit for the first.
+
+        Returns:
+            A PagedList of Edge objects. ``next_cursor`` and ``has_more``
+            describe the next page; both are ``None`` when the server sent no
+            pagination info (older servers), in which case the list is complete.
+        """
+        pagination = None
+        if page_size is not None or cursor is not None:
+            pagination = PaginationRequest(page_size=page_size or 100, cursor=cursor or "")
+        req = GetEdgesRequest(
+            kref=kref.to_pb(),
+            edge_type_filter=edge_type_filter,
+            direction=direction,
+            pagination=pagination,
+        )
+        resp = self.stub.GetEdges(req)
+        edges = [Edge(pb, self) for pb in resp.edges]
+        if resp.HasField("pagination"):
+            return PagedList(
+                edges,
+                next_cursor=resp.pagination.next_cursor,
+                total_count=resp.pagination.total_count,
+                has_more=resp.pagination.has_more,
+                pagination_present=True,
+            )
+        return PagedList(edges)
+
     def get_edges(self, kref: Kref, edge_type_filter: str = "", direction: int = 0) -> List[Edge]:
-        """Get edges associated with a kref.
+        """Get all edges associated with a kref.
+
+        Follows the server's pagination cursor until every edge has been
+        returned. Use :meth:`get_edges_page` to fetch a single page.
 
         Args:
             kref: The kref to get edges for.
@@ -2235,10 +2321,40 @@ class _Client:
 
         Returns:
             A list of Edge objects.
+
+        Raises:
+            RuntimeError: If the server returns a cursor that does not advance.
         """
-        req = GetEdgesRequest(kref=kref.to_pb(), edge_type_filter=edge_type_filter, direction=direction)
-        resp = self.stub.GetEdges(req)
-        return [Edge(pb, self) for pb in resp.edges]
+        return self._collect_pages(
+            lambda cursor: self.get_edges_page(
+                kref, edge_type_filter, direction, cursor=cursor
+            ),
+            "GetEdges",
+        )
+
+    @staticmethod
+    def _collect_pages(fetch_page, rpc_name: str) -> List[Any]:
+        """Follow ``next_cursor`` across pages and return every item.
+
+        ``fetch_page(cursor)`` returns a PagedList. Stops when the server
+        reports no more results or sent no pagination info. A cursor that
+        repeats raises instead of looping forever.
+        """
+        results: List[Any] = []
+        seen = set()
+        cursor: Optional[str] = None
+        while True:
+            page = fetch_page(cursor)
+            results.extend(page)
+            next_cursor = page.next_cursor
+            if not page.pagination_present or not page.has_more or not next_cursor:
+                return results
+            if next_cursor == cursor or next_cursor in seen:
+                raise RuntimeError(
+                    f"{rpc_name} returned a pagination cursor that did not advance"
+                )
+            seen.add(next_cursor)
+            cursor = next_cursor
 
     def delete_edge(
         self,

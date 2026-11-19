@@ -39,6 +39,7 @@ if TYPE_CHECKING:
     from .item import Item
     from .space import Space
     from .project import Project
+    from .base import PagedList
     from .edge import TraversalResult, RevisionPath, ImpactedRevision
 
 
@@ -587,7 +588,8 @@ class Revision(KumihoObject):
                 - ``kumiho.BOTH`` (2): Edges in both directions.
 
         Returns:
-            List[Edge]: A list of Edge objects.
+            List[Edge]: Every matching edge. Pagination is followed
+            automatically; see :meth:`get_edges_page` for a single page.
 
         Example:
             >>> import kumiho
@@ -599,6 +601,37 @@ class Revision(KumihoObject):
             >>> dependents = revision.get_edges(kumiho.DEPENDS_ON, kumiho.INCOMING)
         """
         return self._client.get_edges(self.kref, edge_type_filter or "", direction)
+
+    def get_edges_page(
+        self,
+        edge_type_filter: Optional[str] = None,
+        direction: int = 0,
+        page_size: Optional[int] = None,
+        cursor: Optional[str] = None,
+    ) -> 'PagedList':
+        """Get one page of edges involving this revision.
+
+        Args:
+            edge_type_filter: Optional filter for edge type.
+            direction: ``kumiho.OUTGOING`` (0), ``kumiho.INCOMING`` (1) or
+                ``kumiho.BOTH`` (2).
+            page_size: Edges per page (server default 100, max 1000).
+            cursor: ``next_cursor`` from the previous page; omit for the first.
+
+        Returns:
+            PagedList[Edge]: Edges plus ``next_cursor`` / ``has_more``.
+
+        Example:
+            >>> page = revision.get_edges_page(page_size=500)
+            >>> while True:
+            ...     handle(page)
+            ...     if not page.has_more:
+            ...         break
+            ...     page = revision.get_edges_page(page_size=500, cursor=page.next_cursor)
+        """
+        return self._client.get_edges_page(
+            self.kref, edge_type_filter or "", direction, page_size, cursor
+        )
 
     def delete_edge(self, target_revision: 'Revision', edge_type: str) -> None:
         """Delete an edge from this revision.
