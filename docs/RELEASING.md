@@ -103,7 +103,7 @@ secret is needed.
 
 | SDK | Version surfaces | Release tag | Distribution |
 | --- | --- | --- | --- |
-| Python | `python/python/pyproject.toml`, `kumiho/__init__.py`: 0.16.0 | `sdk-v0.16.0` | PyPI `kumiho` |
+| Python | `python/python/pyproject.toml`, `kumiho/__init__.py`: 0.17.0 (BatchIngest; 0.16.0 for pagination) | `sdk-v0.17.0` | PyPI `kumiho` |
 | Rust | `rust/Cargo.toml`: 0.11.0 | `rust-v0.11.0` | crates.io `kumiho` |
 | Go | `go/doc.go` Version: 0.11.0 | `go/v0.11.0` | Go module tag |
 | Dart | `dart/pubspec.yaml`: 0.3.0 | `dart-v0.3.0` | Git dependency, path `dart` |

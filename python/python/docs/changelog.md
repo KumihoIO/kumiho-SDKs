@@ -12,7 +12,7 @@ in descending version order, which is also descending date order.
 narrative — why a change mattered and what you have to do about it. This file is
 its terse companion. Entries belong in both.
 
-## [Unreleased]
+## [0.17.0] - 2026-11-19
 
 ### Added
 - **`kumiho.batch_ingest()` / `Client.batch_ingest()`** writes revisions (with

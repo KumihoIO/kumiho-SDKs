@@ -8,7 +8,7 @@
 > what produced the gaps backfilled in KumihoIO/kumiho-SDKs#155 and #157.
 
 
-## Unreleased — BatchIngest: Memories, Edges and Tags in One Transaction
+## kumiho 0.17.0 (November 2026) — BatchIngest: Memories, Edges and Tags in One Transaction 🧩
 
 Importing a graph meant `batch_create_revisions` for the nodes and then one call
 per edge and one per tag, each its own transaction, so a failure halfway left a
