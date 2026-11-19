@@ -416,12 +416,86 @@ def test_the_documented_maximum_is_accepted(ingest):
     servicer, client = ingest
     result = client.batch_ingest(
         revisions=rows(200),
-        edges=[kumiho.IngestEdge(0, 1, "DEPENDS_ON")] * 500,
-        tags=[kumiho.IngestTag(0, "t")] * 125,
+        # Distinct elements: kumiho-db rejects a repeated edge or tag, so a
+        # maximum built from copies would not be accepted by a real server.
+        edges=[kumiho.IngestEdge(0, 1, f"E{i}") for i in range(500)],
+        tags=[kumiho.IngestTag(i % 200, f"t{i}") for i in range(125)],
         idempotency_prefix="p",
     )
     assert result.ok
     assert len(servicer.requests[0].edges) == 500
+
+
+def test_repeated_edges_and_tags_are_refused(no_network):
+    client, _ = no_network
+    with pytest.raises(kumiho.BatchIngestValidationError, match=r"edges\[1\] repeats"):
+        client.batch_ingest(
+            revisions=rows(2),
+            edges=[kumiho.IngestEdge(0, 1, "X"), kumiho.IngestEdge(0, 1, "X")],
+            idempotency_prefix="p",
+        )
+    # A row given as int and as RowRef is the same endpoint.
+    with pytest.raises(kumiho.BatchIngestValidationError, match="repeats"):
+        client.batch_ingest(
+            revisions=rows(2),
+            edges=[kumiho.IngestEdge(0, 1, "X"),
+                   kumiho.IngestEdge(kumiho.RowRef(0), 1, "X")],
+            idempotency_prefix="p",
+        )
+    with pytest.raises(kumiho.BatchIngestValidationError, match=r"tags\[1\] repeats"):
+        client.batch_ingest(
+            revisions=rows(1),
+            tags=[kumiho.IngestTag(0, "t"), kumiho.IngestTag(0, "t")],
+            idempotency_prefix="p",
+        )
+
+
+def test_distinct_edges_and_tags_on_the_same_rows_are_sent(ingest):
+    servicer, client = ingest
+    result = client.batch_ingest(
+        revisions=rows(2),
+        edges=[kumiho.IngestEdge(0, 1, "X"), kumiho.IngestEdge(1, 0, "X"),
+               kumiho.IngestEdge(0, 1, "Y")],
+        tags=[kumiho.IngestTag(0, "a"), kumiho.IngestTag(1, "a"),
+              kumiho.IngestTag(0, "b")],
+        idempotency_prefix="p",
+    )
+    assert result.ok
+    assert len(servicer.requests[0].edges) == 3
+
+
+@pytest.mark.parametrize(
+    "text", ['say "hi"', "a\\b", "tab\there", "nul\x00", "c1\x85", "x" * 1025, "é" * 513]
+)
+def test_tag_text_the_server_refuses_is_refused(no_network, text):
+    client, _ = no_network
+    with pytest.raises(kumiho.BatchIngestValidationError, match="1024 UTF-8 bytes"):
+        client.batch_ingest(
+            revisions=rows(1), tags=[kumiho.IngestTag(0, text)], idempotency_prefix="p"
+        )
+
+
+def test_tag_text_the_server_accepts_is_sent(ingest):
+    servicer, client = ingest
+    tags = [kumiho.IngestTag(0, "with space"), kumiho.IngestTag(0, "x" * 1024),
+            kumiho.IngestTag(0, "é" * 512), kumiho.IngestTag(0, "한글")]
+    assert client.batch_ingest(revisions=rows(1), tags=tags, idempotency_prefix="p").ok
+    assert len(servicer.requests[0].tags) == 4
+
+
+@pytest.mark.parametrize("bad", [True, 1.0, "0"])
+def test_non_int_row_indexes_are_refused(no_network, bad):
+    client, _ = no_network
+    with pytest.raises(kumiho.BatchIngestValidationError, match="must be an int"):
+        client.batch_ingest(
+            revisions=rows(2), tags=[kumiho.IngestTag(bad, "t")], idempotency_prefix="p"
+        )
+    with pytest.raises(kumiho.BatchIngestValidationError, match="must be an int"):
+        client.batch_ingest(
+            revisions=rows(2),
+            edges=[kumiho.IngestEdge(kumiho.RowRef(bad), 1, "X")],
+            idempotency_prefix="p",
+        )
 
 
 def test_latest_tag_is_refused(no_network):

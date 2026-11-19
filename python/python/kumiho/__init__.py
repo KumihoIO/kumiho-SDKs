@@ -1082,6 +1082,9 @@ def batch_ingest(
     Raises:
         BatchIngestValidationError: The request is refused client-side.
         BatchIngestUnsupportedError: The server has no BatchIngest.
+        grpc.RpcError: Whole-request failures, where nothing commits:
+            ``NOT_FOUND`` for an edge to a revision that does not exist,
+            ``ABORTED`` for a prefix reused with different content.
 
     Example:
         >>> result = kumiho.batch_ingest(

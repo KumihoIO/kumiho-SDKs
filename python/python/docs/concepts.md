@@ -336,12 +336,19 @@ if kumiho.get_mutation_capabilities().batch_ingest:        # kumiho-db only
   500 edges, 500 tags per request, and an estimated 60 reads per revision plus
   32 per edge or tag within 32,000 — so 200 revisions, 500 edges and 125 tags
   together is the largest mix. Split bigger imports into several requests.
-  Operators can change the server's numbers; pass
-  `limits=kumiho.BatchIngestLimits(...)` if yours differ.
+  The numbers are fixed in the kumiho-db build; pass
+  `limits=kumiho.BatchIngestLimits(...)` only for a server built with others.
 - **Receipts are positional.** `result.revisions` holds `Revision` objects,
   `result.edges` / `result.tags` hold `EdgeReceipt` / `TagReceipt`; a rejected
   element is `None` and listed in `result.failures` while the rest still
-  commits.
+  commits. The SDK refuses the common mistakes before sending (duplicate edges
+  or tags, bad tag text, bad edge names, rows out of range), but the server can
+  still reject an element the client cannot judge, such as a row whose parent
+  space is missing, so always check `result.ok`.
+- **Some failures abort the whole request.** An edge to an existing revision
+  that does not exist (or whose item was deleted) fails the call with gRPC
+  `NOT_FOUND`, and reusing a prefix for different content fails it with
+  `ABORTED`. Nothing in the request commits in either case.
 - **kumiho-db only.** kumiho-server (CE) does not implement `BatchIngest`;
   the call raises `BatchIngestUnsupportedError` (a `grpc.RpcError` carrying
   `UNIMPLEMENTED`). `get_mutation_capabilities()` reports every flag `False`

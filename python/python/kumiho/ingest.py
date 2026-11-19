@@ -20,6 +20,7 @@ response back into :class:`BatchIngestResult`.
 from __future__ import annotations
 
 import re
+import unicodedata
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple, Union
 
@@ -54,8 +55,12 @@ class BatchIngestValidationError(ValueError):
     """The request was refused client-side, before any network call.
 
     The server reports a bad row, edge or tag by position and still commits the
-    rest of the request, so everything it would reject per element is refused
-    here for the whole request instead of writing a partial result.
+    rest of the request. The client refuses the common mistakes up front (limits,
+    prefix, row indexes, edge names and duplicates, tag text and duplicates,
+    revision krefs, artifact names) so they fail the whole request instead of
+    writing a partial result. It cannot see everything the server checks (a
+    missing parent space, metadata and artifact size bounds, item kref shape),
+    so always check :attr:`BatchIngestResult.ok` as well.
     """
 
 
@@ -93,9 +98,11 @@ class BatchIngestUnsupportedError(grpc.RpcError):
 class BatchIngestLimits:
     """Request-size limits of kumiho-db's ``BatchIngest``.
 
-    The defaults are the server's. ``GetMutationCapabilities`` carries feature
-    flags, never numbers, so a caller who knows an operator raised or lowered
-    them passes its own instance as ``limits=``.
+    The defaults are kumiho-db's, which are fixed in the server build.
+    ``GetMutationCapabilities`` carries feature flags, never numbers, so a
+    caller talking to a server built with different limits passes its own
+    instance as ``limits=``. Raising them above what the server enforces only
+    moves the failure to a server ``INVALID_ARGUMENT``.
 
     A request is bounded by what its atomic command may read, not only by
     count: ``reads_per_revision`` per revision plus ``reads_per_edge_or_tag``
@@ -275,6 +282,10 @@ def _uri(value: Union[str, Kref]) -> str:
     return value.uri if isinstance(value, Kref) else str(value)
 
 
+def _is_index(value: Any) -> bool:
+    return isinstance(value, int) and not isinstance(value, bool)
+
+
 def _end(end: EdgeEnd) -> Union[RowRef, KrefRef]:
     if isinstance(end, (RowRef, KrefRef)):
         return end
@@ -283,6 +294,18 @@ def _end(end: EdgeEnd) -> Union[RowRef, KrefRef]:
     if isinstance(end, int):
         return RowRef(end)
     return KrefRef(end)
+
+
+def _tag_text_ok(tag: str) -> bool:
+    # kumiho-db keys::valid_tag: 1..=1024 UTF-8 bytes, no double quote, no
+    # backslash, no Unicode control character (general category Cc).
+    return (
+        isinstance(tag, str)
+        and 0 < len(tag.encode("utf-8")) <= 1024
+        and '"' not in tag
+        and "\\" not in tag
+        and not any(unicodedata.category(ch) == "Cc" for ch in tag)
+    )
 
 
 def _artifact(spec: Union[ArtifactInput, Mapping[str, Any]]) -> ArtifactInput:
@@ -342,6 +365,10 @@ def _check_revision(index: int, revision: RevisionInput) -> None:
 
 def _check_end(where: str, end: Union[RowRef, KrefRef], row_count: int) -> str:
     if isinstance(end, RowRef):
+        if not _is_index(end.index):
+            raise BatchIngestValidationError(
+                f"{where} row index must be an int (got {end.index!r})"
+            )
         if not 0 <= end.index < row_count:
             raise BatchIngestValidationError(
                 f"{where} names row {end.index}, which is not in the request"
@@ -366,7 +393,8 @@ def normalize_and_check(
     idempotency_prefix: str,
     limits: BatchIngestLimits,
 ) -> Tuple[List[RevisionInput], List[IngestEdge], List[IngestTag]]:
-    """Refuse any request the server would refuse or partly reject.
+    """Refuse the requests the server would refuse or partly reject, as far as
+    the client can tell without reading server state.
 
     Returns the inputs with row dicts and edge-end shorthands normalized.
     Raises :class:`BatchIngestValidationError`.
@@ -400,6 +428,7 @@ def normalize_and_check(
         _check_revision(index, row)
 
     checked_edges: List[IngestEdge] = []
+    seen_edges = set()
     for index, edge in enumerate(edges):
         if not _EDGE_NAME.fullmatch(edge.edge_type or ""):
             raise BatchIngestValidationError(
@@ -413,17 +442,39 @@ def normalize_and_check(
             raise BatchIngestValidationError(
                 f"edges[{index}] connects an endpoint to itself"
             )
+        identity = (a, b, edge.edge_type)
+        if identity in seen_edges:
+            raise BatchIngestValidationError(
+                f"edges[{index}] repeats an earlier edge (same source, target "
+                f"and edge_type)"
+            )
+        seen_edges.add(identity)
         checked_edges.append(IngestEdge(source, target, edge.edge_type, edge.metadata))
 
+    seen_tags = set()
     for index, tag in enumerate(tags):
         if not tag.tag:
             raise BatchIngestValidationError(f"tags[{index}].tag is empty")
+        if not _tag_text_ok(tag.tag):
+            raise BatchIngestValidationError(
+                f"tags[{index}].tag must be at most 1024 UTF-8 bytes without a "
+                f"double quote, backslash or control character (got {tag.tag!r})"
+            )
         if tag.tag == "latest":
             raise BatchIngestValidationError(
                 f"tags[{index}]: 'latest' is system-managed and cannot be set"
+            )
+        if not _is_index(tag.row_index):
+            raise BatchIngestValidationError(
+                f"tags[{index}].row_index must be an int (got {tag.row_index!r})"
             )
         if not 0 <= tag.row_index < len(rows):
             raise BatchIngestValidationError(
                 f"tags[{index}] names row {tag.row_index}, which is not in the request"
             )
+        if (tag.row_index, tag.tag) in seen_tags:
+            raise BatchIngestValidationError(
+                f"tags[{index}] repeats an earlier tag on row {tag.row_index}"
+            )
+        seen_tags.add((tag.row_index, tag.tag))
     return rows, checked_edges, list(tags)

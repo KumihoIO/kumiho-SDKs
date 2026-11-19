@@ -1630,7 +1630,7 @@ class _Client:
                 a row of this request. ``latest`` is system-managed and refused;
                 ``published`` publishes and freezes the revision.
             idempotency_prefix: Required, non-empty.
-            limits: Request-size limits. The defaults are the server's: 200
+            limits: Request-size limits. The defaults are kumiho-db's: 200
                 revisions, 500 edges and 500 tags per request, and an estimated
                 60 reads per revision plus 32 per edge or tag within 32,000.
 
@@ -1645,8 +1645,11 @@ class _Client:
                 not in the request, and so on. Nothing is sent.
             BatchIngestUnsupportedError: (a ``grpc.RpcError``) the server does
                 not implement BatchIngest.
-            grpc.RpcError: Whole-request failures (quota, permission, server
-                errors).
+            grpc.RpcError: Whole-request failures, where nothing commits:
+                ``NOT_FOUND`` when an edge names an existing revision that does
+                not exist (or whose item was deleted), ``ABORTED`` when the
+                prefix was already used for different content, and quota,
+                permission or server errors.
 
         Example:
             >>> from kumiho import RevisionInput, IngestEdge, IngestTag, KrefRef

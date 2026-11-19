@@ -37,11 +37,14 @@ changes: the protobuf additions are new messages and two new RPCs.
   `BatchIngestValidationError` (a `ValueError`) for more than 200 revisions, 500
   edges or 500 tags, an estimated read budget over 32,000 (60 per revision plus
   32 per edge or tag), an empty prefix, the system-managed `latest` tag, a tag or
-  edge naming a row that is not in the request, a self-edge, a bad edge name, and
-  artifact specs the server would reject. The server commits the valid rest of a
-  request and reports bad elements by position, so a partial write is refused up
-  front. Pass `limits=BatchIngestLimits(...)` if your operator changed the
-  server's numbers.
+  edge naming a row that is not in the request, a self-edge, a repeated edge or
+  tag, tag text the server refuses, a bad edge name, and artifact specs the
+  server would reject. The server commits the valid rest of a request and
+  reports bad elements by position, so these common mistakes fail the whole
+  request instead of writing part of it. The server can still reject an element
+  the client cannot judge (a missing parent space, for one), so check
+  `result.ok`. An edge to a revision that does not exist fails the whole call
+  with `NOT_FOUND`, and a reused prefix with different content with `ABORTED`.
 - **Protobuf stubs regenerated** (grpcio-tools 1.76.0, protobuf 6.31.1, as before)
   from kumiho-db's `kumiho.proto` for the new messages, with identical field
   numbers. The checked-in `kumiho_pb2.pyi` had missed the earlier
