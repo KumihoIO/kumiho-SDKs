@@ -345,6 +345,11 @@ impl ClientBuilder {
             interceptor.clone(),
         )
         .max_decoding_message_size(256);
+        let insight = crate::tenant_insight::pb::tenant_insight_service_client::TenantInsightServiceClient::with_interceptor(
+            channel.clone(),
+            interceptor.clone(),
+        )
+        .max_decoding_message_size(crate::tenant_insight::MAX_RESPONSE_BYTES);
         let grpc =
             pb::kumiho_service_client::KumihoServiceClient::with_interceptor(channel, interceptor)
                 .max_decoding_message_size(64 * 1024 * 1024);
@@ -354,6 +359,7 @@ impl ClientBuilder {
             audit,
             export,
             backup_status,
+            insight,
             max_attempts: retry_max_attempts(),
             rpc_timeout: rpc_timeout(),
         })
@@ -436,6 +442,9 @@ pub struct Client {
         crate::backup_status::pb::backup_status_service_client::BackupStatusServiceClient<
             InterceptedService<Channel, KumihoInterceptor>,
         >,
+    insight: crate::tenant_insight::pb::tenant_insight_service_client::TenantInsightServiceClient<
+        InterceptedService<Channel, KumihoInterceptor>,
+    >,
     // Retry/deadline config, resolved once at build time rather than re-reading
     // the environment on every RPC.
     max_attempts: u32,
@@ -1716,6 +1725,35 @@ fn make_pagination(
 }
 
 impl Client {
+    /// Read the tenant's exact aggregates at one snapshot of the connected native database.
+    ///
+    /// Only `Unavailable` is retried: every other refusal is the server's final answer for this
+    /// tenant and caller, and a retry would repeat a read of the whole tenant.
+    pub async fn get_tenant_aggregates(
+        &self,
+        input: crate::tenant_insight::GetTenantAggregatesRequest,
+    ) -> Result<crate::tenant_insight::TenantAggregates> {
+        let mut attempt = 0;
+        loop {
+            let mut grpc = self.insight.clone();
+            let mut request = tonic::Request::new(input);
+            if let Some(deadline) = self.rpc_timeout {
+                request.set_timeout(deadline);
+            }
+            match grpc.get_tenant_aggregates(request).await {
+                Ok(response) => return Ok(response.into_inner()),
+                Err(status) => {
+                    attempt += 1;
+                    if status.code() == tonic::Code::Unavailable && attempt < self.max_attempts {
+                        tokio::time::sleep(backoff(attempt)).await;
+                    } else {
+                        return Err(Error::Rpc(status));
+                    }
+                }
+            }
+        }
+    }
+
     /// Read the connected database's published backup status as a current tenant owner or admin.
     pub async fn get_backup_status(&self) -> Result<crate::backup_status::BackupStatus> {
         let mut attempt = 0;

@@ -166,3 +166,27 @@ let status = client.get_backup_status().await?;
 The observation and checkpoint timestamps are Unix milliseconds. An older
 server can return `Unimplemented`; an unavailable observation can carry its
 last publication time. The RPC only returns status.
+
+### Tenant aggregates
+
+Use the same connected native client to read a tenant's exact dashboard numbers
+in one call: per-project space, item, revision and artifact counts, revision
+activity per time bucket, space and author, and the newest revisions. Day
+buckets start at local midnight for `utc_offset_minutes`.
+
+```rust,ignore
+use kumiho::tenant_insight::GetTenantAggregatesRequest;
+
+let totals = client
+    .get_tenant_aggregates(GetTenantAggregatesRequest {
+        utc_offset_minutes: 540,
+        ..Default::default()
+    })
+    .await?;
+println!("as of {}", totals.basis.unwrap_or_default().as_of);
+```
+
+Every number equals one snapshot of the tenant, named by `basis.cell_log_index`.
+Archived projects are counted apart from the live ones, in the `archived_*` fields.
+The server refuses instead of answering with a partial number, and an older
+server returns `Unimplemented`. Only `Unavailable` is retried.

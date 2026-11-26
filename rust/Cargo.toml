@@ -22,6 +22,7 @@ include = [
     "native/audit.proto",
     "native/project_export.proto",
     "native/backup_status.proto",
+    "native/tenant_insight.proto",
     "Cargo.toml",
     "README.md",
     "LICENSE",

@@ -55,6 +55,7 @@ mod kref;
 mod kref_parts;
 mod models;
 pub mod project_export;
+pub mod tenant_insight;
 mod token_loader;
 
 pub use client::{Client, ClientBuilder, ScoredRevision, SearchResult};

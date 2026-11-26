@@ -10,6 +10,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("cargo:rerun-if-changed=native/audit.proto");
     println!("cargo:rerun-if-changed=native/project_export.proto");
     println!("cargo:rerun-if-changed=native/backup_status.proto");
+    println!("cargo:rerun-if-changed=native/tenant_insight.proto");
     println!("cargo:rerun-if-env-changed=CARGO_FEATURE_MOCK_SERVER");
     println!("cargo:rerun-if-env-changed=PROTOC");
 
@@ -48,6 +49,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 "native/audit.proto",
                 "native/project_export.proto",
                 "native/backup_status.proto",
+                "native/tenant_insight.proto",
             ],
             &["proto", "native"],
         )?;
