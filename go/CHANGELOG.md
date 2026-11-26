@@ -9,6 +9,29 @@ The grammar and the conformance corpus all SDKs share are in
 
 ## [Unreleased]
 
+## [0.11.1] - 2026-11-26
+
+### Fixed
+- **`Client.GetRevisions` and `Client.GetEdges` return every row.** They sent
+  no pagination and read only the first page, so on kumiho-db they returned at
+  most 100 rows with no error. They now follow `NextCursor`, asking for 1000
+  rows per page, until the server reports no more. A page can be empty while
+  more remain; that is followed too.
+- If the server sends no pagination field (kumiho-server CE `GetEdges`), the
+  single response is treated as complete.
+- A cursor that repeats, or `HasMore` with an empty cursor, returns a gRPC
+  `Internal` error instead of looping or returning a partial list.
+- A row that repeats across pages is returned once. kumiho-server CE pages
+  `GetRevisions` by offset, newest first, so a revision created during the walk
+  shifts the next page by one row. Revisions are keyed by kref, edges by
+  (source, target, edge type).
+
+### Added
+- `Client.GetRevisionsPaged` and `Client.GetEdgesPaged` return one
+  `InventoryPage` with `NextCursor` and `HasMore`, like `GetItemsPaged`.
+
+## [0.11.0] - 2026-11-04
+
 ### Fixed
 - **Item krefs in nested spaces and with dotted names** (`kref://p/a/b/x.k`,
   `kref://p/s/my.file.v2.k`) are looked up as the kref names them by

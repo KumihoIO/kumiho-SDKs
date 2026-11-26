@@ -104,10 +104,10 @@ secret is needed.
 | SDK | Version surfaces | Release tag | Distribution |
 | --- | --- | --- | --- |
 | Python | `python/python/pyproject.toml`, `kumiho/__init__.py`: 0.17.1 (edge/revision pagination; 0.17.0 BatchIngest; 0.16.0 inventory pagination) | `sdk-v0.17.1` | PyPI `kumiho` |
-| Rust | `rust/Cargo.toml`: 0.11.0 | `rust-v0.11.0` | crates.io `kumiho` |
-| Go | `go/doc.go` Version: 0.11.0 | `go/v0.11.0` | Go module tag |
-| Dart | `dart/pubspec.yaml`: 0.3.0 | `dart-v0.3.0` | Git dependency, path `dart` |
-| C++ | `cpp/CMakeLists.txt`, `cpp/vcpkg.json`: 1.1.0 | `cpp-v1.1.0` | Recursive Git checkout, path `cpp` |
+| Rust | `rust/Cargo.toml`: 0.11.1 (edge/revision pagination; 0.11.0 inventory pagination) | `rust-v0.11.1` | crates.io `kumiho` |
+| Go | `go/doc.go` Version: 0.11.1 (edge/revision pagination; 0.11.0 inventory pagination) | `go/v0.11.1` | Go module tag |
+| Dart | `dart/pubspec.yaml`: 0.3.1 (edge/revision pagination; 0.3.0 inventory pagination) | `dart-v0.3.1` | Git dependency, path `dart` |
+| C++ | `cpp/CMakeLists.txt`, `cpp/vcpkg.json`: 1.1.1 (edge/revision pagination; 1.1.0 inventory pagination) | `cpp-v1.1.1` | Recursive Git checkout, path `cpp` |
 
 Review and test the final commit before creating any release tag. Verify each
 tag resolves to that reviewed merged commit, then verify the resulting public
@@ -122,13 +122,13 @@ dependencies:
   kumiho:
     git:
       url: https://github.com/KumihoIO/kumiho-SDKs.git
-      ref: dart-v0.3.0
+      ref: dart-v0.3.1
       path: dart
 ```
 
 C++ has no package registry or binary publishing workflow. Create its source
 tag at the same reviewed commit, then use `git clone --recurse-submodules
---branch cpp-v1.1.0 https://github.com/KumihoIO/kumiho-SDKs.git`. Automatic
+--branch cpp-v1.1.1 https://github.com/KumihoIO/kumiho-SDKs.git`. Automatic
 GitHub source archives do not contain the required protobuf submodule.
 See `cpp/README.md` for building and installing to a chosen prefix. CI tests
 the installed, relocated Linux package with an independent CMake consumer;
