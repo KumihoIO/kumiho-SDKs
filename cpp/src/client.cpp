@@ -34,6 +34,7 @@
 #include <chrono>
 #include <random>
 #include <iomanip>
+#include <set>
 
 namespace kumiho {
 namespace api {
@@ -41,6 +42,71 @@ namespace api {
 // --- Helper Functions ---
 
 namespace {
+
+// Page size requested when following every page (kumiho-db's maximum).
+constexpr int32_t kFollowPageSize = 1000;
+
+template <typename Request>
+void applyPagination(Request& req, int32_t page_size, const std::string& cursor) {
+    if (page_size > 0 || !cursor.empty()) {
+        auto* pagination = req.mutable_pagination();
+        pagination->set_page_size(page_size > 0 ? page_size : 100);
+        pagination->set_cursor(cursor);
+    }
+}
+
+template <typename T, typename Response>
+PagedList<T> pagedFrom(std::vector<T> items, const Response& res) {
+    PagedList<T> result;
+    result.items = std::move(items);
+    if (res.has_pagination()) {
+        result.next_cursor = res.pagination().next_cursor();
+        result.total_count = res.pagination().total_count();
+    }
+    return result;
+}
+
+/*
+ * Follow next_cursor across pages and return every item.
+ *
+ * Stops when the server reports no more results or sends no pagination field
+ * (kumiho-server CE answers GetEdges in one response without one). A page may
+ * be empty while has_more is true, because kumiho-db caps each call's scan. A
+ * cursor that repeats, or has_more without a cursor, throws RpcError rather
+ * than looping forever or returning a silently partial list.
+ *
+ * key(item) drops items an earlier page already returned: CE pages
+ * GetRevisions by offset, newest first, so a revision created between two
+ * pages shifts the window and the next page repeats a row.
+ */
+template <typename T, typename Fetch, typename Convert, typename Key>
+std::vector<T> collectPages(const std::string& rpc, Fetch fetch, Convert convert, Key key) {
+    std::vector<T> results;
+    std::set<std::string> returned;
+    std::set<std::string> seen;
+    std::string cursor;
+    while (true) {
+        auto res = fetch(cursor);
+        for (auto& item : convert(res)) {
+            if (returned.insert(key(*item)).second) {
+                results.push_back(std::move(item));
+            }
+        }
+        if (!res.has_pagination() || !res.pagination().has_more()) {
+            return results;
+        }
+        const std::string& next = res.pagination().next_cursor();
+        if (next.empty()) {
+            throw RpcError(rpc + " reported more results but returned no pagination cursor",
+                           static_cast<int>(grpc::StatusCode::INTERNAL));
+        }
+        if (!seen.insert(next).second) {
+            throw RpcError(rpc + " returned a pagination cursor that did not advance",
+                           static_cast<int>(grpc::StatusCode::INTERNAL));
+        }
+        cursor = next;
+    }
+}
 
 struct EndpointConfig {
     std::string address;
@@ -1016,9 +1082,11 @@ std::optional<std::string> Client::resolve(const std::string& kref_uri) {
     return res.location();
 }
 
-std::vector<std::shared_ptr<Revision>> Client::getRevisions(const Kref& item_kref) {
+::kumiho::GetRevisionsResponse Client::callGetRevisions(
+    const Kref& item_kref, int32_t page_size, const std::string& cursor) {
     ::kumiho::GetRevisionsRequest req;
     *req.mutable_item_kref() = item_kref.toPb();
+    applyPagination(req, page_size, cursor);
 
     ::kumiho::GetRevisionsResponse res;
     grpc::ClientContext context; configureContext(context);
@@ -1027,12 +1095,31 @@ std::vector<std::shared_ptr<Revision>> Client::getRevisions(const Kref& item_kre
     if (!status.ok()) {
         throw RpcError("GetRevisions failed: " + status.error_message(), static_cast<int>(status.error_code()));
     }
+    return res;
+}
 
+std::vector<std::shared_ptr<Revision>> Client::getRevisions(const Kref& item_kref) {
+    return collectPages<std::shared_ptr<Revision>>(
+        "GetRevisions",
+        [&](const std::string& cursor) { return callGetRevisions(item_kref, kFollowPageSize, cursor); },
+        [this](const ::kumiho::GetRevisionsResponse& res) {
+            std::vector<std::shared_ptr<Revision>> revisions;
+            for (const auto& pb : res.revisions()) {
+                revisions.push_back(std::make_shared<Revision>(pb, this));
+            }
+            return revisions;
+        },
+        [](const Revision& revision) { return revision.getKref().uri(); });
+}
+
+PagedList<std::shared_ptr<Revision>> Client::getRevisionsPaged(
+    const Kref& item_kref, int32_t page_size, const std::string& cursor) {
+    auto res = callGetRevisions(item_kref, page_size, cursor);
     std::vector<std::shared_ptr<Revision>> revisions;
     for (const auto& pb : res.revisions()) {
         revisions.push_back(std::make_shared<Revision>(pb, this));
     }
-    return revisions;
+    return pagedFrom(std::move(revisions), res);
 }
 
 std::vector<SearchResult> Client::search(
@@ -1468,11 +1555,14 @@ std::shared_ptr<Edge> Client::createEdge(
     return std::make_shared<Edge>(edge_pb, this);
 }
 
-std::vector<std::shared_ptr<Edge>> Client::getEdges(const Kref& kref, const std::string& edge_type_filter, EdgeDirection direction) {
+::kumiho::GetEdgesResponse Client::callGetEdges(
+    const Kref& kref, const std::string& edge_type_filter, EdgeDirection direction,
+    int32_t page_size, const std::string& cursor) {
     ::kumiho::GetEdgesRequest req;
     *req.mutable_kref() = kref.toPb();
     req.set_edge_type_filter(edge_type_filter);
     req.set_direction(static_cast<::kumiho::EdgeDirection>(static_cast<int>(direction)));
+    applyPagination(req, page_size, cursor);
 
     ::kumiho::GetEdgesResponse res;
     grpc::ClientContext context; configureContext(context);
@@ -1481,12 +1571,37 @@ std::vector<std::shared_ptr<Edge>> Client::getEdges(const Kref& kref, const std:
     if (!status.ok()) {
         throw RpcError("GetEdges failed: " + status.error_message(), static_cast<int>(status.error_code()));
     }
+    return res;
+}
 
+std::vector<std::shared_ptr<Edge>> Client::getEdges(const Kref& kref, const std::string& edge_type_filter, EdgeDirection direction) {
+    return collectPages<std::shared_ptr<Edge>>(
+        "GetEdges",
+        [&](const std::string& cursor) {
+            return callGetEdges(kref, edge_type_filter, direction, kFollowPageSize, cursor);
+        },
+        [this](const ::kumiho::GetEdgesResponse& res) {
+            std::vector<std::shared_ptr<Edge>> edges;
+            for (const auto& pb : res.edges()) {
+                edges.push_back(std::make_shared<Edge>(pb, this));
+            }
+            return edges;
+        },
+        [](const Edge& edge) {
+            return edge.getSourceKref().uri() + '\0' + edge.getTargetKref().uri() + '\0' +
+                   edge.getEdgeType();
+        });
+}
+
+PagedList<std::shared_ptr<Edge>> Client::getEdgesPaged(
+    const Kref& kref, const std::string& edge_type_filter, EdgeDirection direction,
+    int32_t page_size, const std::string& cursor) {
+    auto res = callGetEdges(kref, edge_type_filter, direction, page_size, cursor);
     std::vector<std::shared_ptr<Edge>> edges;
     for (const auto& pb : res.edges()) {
         edges.push_back(std::make_shared<Edge>(pb, this));
     }
-    return edges;
+    return pagedFrom(std::move(edges), res);
 }
 
 void Client::deleteEdge(const Kref& source_kref, const Kref& target_kref, const std::string& edge_type) {

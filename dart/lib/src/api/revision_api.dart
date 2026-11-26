@@ -6,6 +6,8 @@ import 'package:grpc/grpc.dart' show GrpcError, StatusCode;
 import '../base_client.dart';
 import '../generated/kumiho.pbgrpc.dart';
 import '../models/base.dart' show KumihoError;
+import '../models/paged_list.dart';
+import 'paging.dart';
 
 /// Revision API mixin for managing item versions.
 ///
@@ -154,10 +156,50 @@ mixin RevisionApi on KumihoClientBase {
   ///
   /// [itemKref] is the item's kref URI.
   /// Returns revisions ordered by number (newest first by default).
-  Future<List<RevisionResponse>> getRevisions(String itemKref) async {
+  ///
+  /// Follows the server's pagination cursor until every page is read, so the
+  /// list is complete (kumiho-db returns at most 1000 rows per page). Throws
+  /// [KumihoError], not a partial list, if the server reports more results
+  /// without a usable cursor.
+  Future<List<RevisionResponse>> getRevisions(String itemKref) {
+    return collectPages(
+      'GetRevisions',
+      (cursor) => getRevisionsPaged(
+        itemKref,
+        pageSize: followPageSize,
+        cursor: cursor,
+      ),
+      (revision) => revision.kref.uri,
+    );
+  }
+
+  /// Gets one page of an item's revisions.
+  ///
+  /// Pass the previous page's `nextCursor` as [cursor] to continue. With
+  /// neither [pageSize] nor [cursor], no pagination is sent and the server
+  /// returns its default first page.
+  Future<PagedList<RevisionResponse>> getRevisionsPaged(
+    String itemKref, {
+    int? pageSize,
+    String? cursor,
+  }) async {
     final request = GetRevisionsRequest()..itemKref = Kref(uri: itemKref);
+    if (pageSize != null || cursor != null) {
+      request.pagination =
+          PaginationRequest()
+            ..pageSize = pageSize ?? 100
+            ..cursor = cursor ?? '';
+    }
     final response = await stub.getRevisions(request, options: callOptions);
-    return response.revisions;
+    return PagedList(
+      response.revisions,
+      nextCursor:
+          response.hasPagination() ? response.pagination.nextCursor : null,
+      totalCount:
+          response.hasPagination() ? response.pagination.totalCount : null,
+      hasMore: response.hasPagination() ? response.pagination.hasMore : null,
+      paginationPresent: response.hasPagination(),
+    );
   }
 
   /// Resolves a kref to a specific revision.

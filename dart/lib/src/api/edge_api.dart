@@ -3,6 +3,8 @@
 
 import '../base_client.dart';
 import '../generated/kumiho.pbgrpc.dart';
+import '../models/paged_list.dart';
+import 'paging.dart';
 
 /// Standard edge types for Kumiho relationships.
 ///
@@ -180,10 +182,43 @@ mixin EdgeApi on KumihoClientBase {
   ///   - OUTGOING: edges where this revision is the source
   ///   - INCOMING: edges where this revision is the target
   ///   - BOTH: both directions
+  ///
+  /// Follows the server's pagination cursor until every page is read and
+  /// returns one response holding every edge, with no pagination field
+  /// (kumiho-db returns at most 1000 rows per page). Throws [KumihoError],
+  /// not a partial list, if the server reports more results without a usable
+  /// cursor.
   Future<GetEdgesResponse> getEdges(
     String kref, {
     String? edgeTypeFilter,
     EdgeDirection? direction,
+  }) async {
+    final edges = await collectPages(
+      'GetEdges',
+      (cursor) => getEdgesPaged(
+        kref,
+        edgeTypeFilter: edgeTypeFilter,
+        direction: direction,
+        pageSize: followPageSize,
+        cursor: cursor,
+      ),
+      (edge) =>
+          '${edge.sourceKref.uri}\u0000${edge.targetKref.uri}'
+          '\u0000${edge.edgeType}',
+    );
+    return GetEdgesResponse()..edges.addAll(edges);
+  }
+
+  /// Gets one page of a revision's edges.
+  ///
+  /// Pass the previous page's `nextCursor` as [cursor] to continue. With
+  /// neither [pageSize] nor [cursor], no pagination is sent.
+  Future<PagedList<Edge>> getEdgesPaged(
+    String kref, {
+    String? edgeTypeFilter,
+    EdgeDirection? direction,
+    int? pageSize,
+    String? cursor,
   }) async {
     final request = GetEdgesRequest()..kref = Kref(uri: kref);
     if (edgeTypeFilter != null && edgeTypeFilter.isNotEmpty) {
@@ -192,7 +227,22 @@ mixin EdgeApi on KumihoClientBase {
     if (direction != null) {
       request.direction = direction;
     }
-    return stub.getEdges(request, options: callOptions);
+    if (pageSize != null || cursor != null) {
+      request.pagination =
+          PaginationRequest()
+            ..pageSize = pageSize ?? 100
+            ..cursor = cursor ?? '';
+    }
+    final response = await stub.getEdges(request, options: callOptions);
+    return PagedList(
+      response.edges,
+      nextCursor:
+          response.hasPagination() ? response.pagination.nextCursor : null,
+      totalCount:
+          response.hasPagination() ? response.pagination.totalCount : null,
+      hasMore: response.hasPagination() ? response.pagination.hasMore : null,
+      paginationPresent: response.hasPagination(),
+    );
   }
 
   /// Deletes an edge between two revisions.

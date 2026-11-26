@@ -23,6 +23,12 @@ struct Recorded {
     saw_correlation_id: bool,
     /// Every GetItem request the server has seen, in arrival order.
     get_item_requests: Vec<pb::GetItemRequest>,
+    /// Scripted GetRevisions responses, served in order.
+    revision_pages: Vec<pb::GetRevisionsResponse>,
+    revision_requests: Vec<pb::GetRevisionsRequest>,
+    /// Scripted GetEdges responses, served in order.
+    edge_pages: Vec<pb::GetEdgesResponse>,
+    edge_requests: Vec<pb::GetEdgesRequest>,
 }
 
 #[derive(Clone, Default)]
@@ -286,9 +292,14 @@ impl KumihoService for FakeKumiho {
     }
     async fn get_revisions(
         &self,
-        _r: Request<pb::GetRevisionsRequest>,
+        r: Request<pb::GetRevisionsRequest>,
     ) -> Result<Response<pb::GetRevisionsResponse>, Status> {
-        Err(unimpl("get_revisions"))
+        let mut rec = self.rec.lock().unwrap();
+        rec.revision_requests.push(r.into_inner());
+        if rec.revision_pages.is_empty() {
+            return Err(unimpl("get_revisions"));
+        }
+        Ok(Response::new(rec.revision_pages.remove(0)))
     }
     async fn batch_get_revisions(
         &self,
@@ -412,9 +423,14 @@ impl KumihoService for FakeKumiho {
     }
     async fn get_edges(
         &self,
-        _r: Request<pb::GetEdgesRequest>,
+        r: Request<pb::GetEdgesRequest>,
     ) -> Result<Response<pb::GetEdgesResponse>, Status> {
-        Err(unimpl("get_edges"))
+        let mut rec = self.rec.lock().unwrap();
+        rec.edge_requests.push(r.into_inner());
+        if rec.edge_pages.is_empty() {
+            return Err(unimpl("get_edges"));
+        }
+        Ok(Response::new(rec.edge_pages.remove(0)))
     }
     async fn delete_edge(
         &self,
@@ -1032,4 +1048,264 @@ async fn get_item_by_kref_with_a_huge_revision_still_looks_the_item_up() {
             ("/p/s".to_string(), "x".to_string(), "bundle".to_string()),
         ]
     );
+}
+
+// ---- GetRevisions / GetEdges pagination ----
+
+mod paging {
+    use super::*;
+    use kumiho::{EdgeDirection, Kref};
+
+    pub fn more(cursor: &str) -> Option<pb::PaginationResponse> {
+        Some(pb::PaginationResponse {
+            next_cursor: cursor.into(),
+            has_more: true,
+            total_count: -1,
+        })
+    }
+
+    pub fn done() -> Option<pb::PaginationResponse> {
+        Some(pb::PaginationResponse {
+            next_cursor: String::new(),
+            has_more: false,
+            total_count: -1,
+        })
+    }
+
+    pub fn rev(n: i32) -> pb::RevisionResponse {
+        pb::RevisionResponse {
+            kref: Some(pb::Kref {
+                uri: format!("kref://p/s/x.k?r={n}"),
+            }),
+            item_kref: Some(pb::Kref {
+                uri: "kref://p/s/x.k".into(),
+            }),
+            number: n,
+            ..Default::default()
+        }
+    }
+
+    pub fn revs(
+        numbers: &[i32],
+        pagination: Option<pb::PaginationResponse>,
+    ) -> pb::GetRevisionsResponse {
+        pb::GetRevisionsResponse {
+            revisions: numbers.iter().map(|&n| rev(n)).collect(),
+            pagination,
+        }
+    }
+
+    pub fn edge(target: i32) -> pb::Edge {
+        pb::Edge {
+            source_kref: Some(pb::Kref {
+                uri: "kref://p/s/x.k?r=1".into(),
+            }),
+            target_kref: Some(pb::Kref {
+                uri: format!("kref://p/s/y.k?r={target}"),
+            }),
+            edge_type: "DEPENDS_ON".into(),
+            ..Default::default()
+        }
+    }
+
+    pub fn edges(
+        targets: &[i32],
+        pagination: Option<pb::PaginationResponse>,
+    ) -> pb::GetEdgesResponse {
+        pb::GetEdgesResponse {
+            edges: targets.iter().map(|&n| edge(n)).collect(),
+            revision_krefs: vec![],
+            pagination,
+        }
+    }
+
+    pub fn item() -> Kref {
+        Kref::unchecked("kref://p/s/x.k")
+    }
+
+    pub fn revision() -> Kref {
+        Kref::unchecked("kref://p/s/x.k?r=1")
+    }
+
+    pub async fn edge_targets(client: &Client) -> kumiho::Result<Vec<String>> {
+        let edges = client
+            .get_edges(&revision(), "", EdgeDirection::Both)
+            .await?;
+        Ok(edges
+            .into_iter()
+            .map(|e| e.target_kref.uri().to_string())
+            .collect())
+    }
+
+    pub async fn revision_numbers(client: &Client) -> kumiho::Result<Vec<i32>> {
+        let revisions = client.get_revisions(&item()).await?;
+        Ok(revisions.into_iter().map(|r| r.number).collect())
+    }
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn get_revisions_follows_every_page_including_an_empty_middle_page() {
+    let (fake, client) = start_server().await;
+    fake.rec.lock().unwrap().revision_pages = vec![
+        paging::revs(&[5, 4], paging::more("c1")),
+        paging::revs(&[], paging::more("c2")),
+        paging::revs(&[3, 2, 1], paging::done()),
+    ];
+    assert_eq!(
+        paging::revision_numbers(&client).await.unwrap(),
+        vec![5, 4, 3, 2, 1]
+    );
+    let rec = fake.rec.lock().unwrap();
+    let sent: Vec<(i32, String)> = rec
+        .revision_requests
+        .iter()
+        .map(|r| {
+            let p = r.pagination.clone().expect("pagination sent");
+            (p.page_size, p.cursor)
+        })
+        .collect();
+    assert_eq!(
+        sent,
+        vec![
+            (1000, String::new()),
+            (1000, "c1".to_string()),
+            (1000, "c2".to_string())
+        ]
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn get_edges_follows_every_page_including_an_empty_middle_page() {
+    let (fake, client) = start_server().await;
+    fake.rec.lock().unwrap().edge_pages = vec![
+        paging::edges(&[1, 2], paging::more("c1")),
+        paging::edges(&[], paging::more("c2")),
+        paging::edges(&[3], paging::done()),
+    ];
+    let targets = paging::edge_targets(&client).await.unwrap();
+    assert_eq!(
+        targets,
+        vec![
+            "kref://p/s/y.k?r=1",
+            "kref://p/s/y.k?r=2",
+            "kref://p/s/y.k?r=3"
+        ]
+    );
+    let rec = fake.rec.lock().unwrap();
+    let sent: Vec<(i32, String)> = rec
+        .edge_requests
+        .iter()
+        .map(|r| {
+            let p = r.pagination.clone().expect("pagination sent");
+            (p.page_size, p.cursor)
+        })
+        .collect();
+    assert_eq!(
+        sent,
+        vec![
+            (1000, String::new()),
+            (1000, "c1".to_string()),
+            (1000, "c2".to_string())
+        ]
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn missing_pagination_field_is_one_complete_response() {
+    // kumiho-server CE answers GetEdges with every edge and no pagination.
+    let (fake, client) = start_server().await;
+    {
+        let mut rec = fake.rec.lock().unwrap();
+        rec.edge_pages = vec![paging::edges(&[1, 2, 3], None)];
+        rec.revision_pages = vec![paging::revs(&[2, 1], None)];
+    }
+    assert_eq!(paging::edge_targets(&client).await.unwrap().len(), 3);
+    assert_eq!(paging::revision_numbers(&client).await.unwrap(), vec![2, 1]);
+    let rec = fake.rec.lock().unwrap();
+    assert_eq!(rec.edge_requests.len(), 1);
+    assert_eq!(rec.revision_requests.len(), 1);
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn repeated_cursor_is_an_error_not_a_loop() {
+    let (fake, client) = start_server().await;
+    {
+        let mut rec = fake.rec.lock().unwrap();
+        rec.edge_pages = vec![
+            paging::edges(&[1], paging::more("c1")),
+            paging::edges(&[2], paging::more("c1")),
+        ];
+        rec.revision_pages = vec![
+            paging::revs(&[3], paging::more("a")),
+            paging::revs(&[2], paging::more("b")),
+            paging::revs(&[1], paging::more("a")),
+        ];
+    }
+    let err = paging::edge_targets(&client).await.unwrap_err();
+    assert!(err.to_string().contains("did not advance"), "{err}");
+    let err = paging::revision_numbers(&client).await.unwrap_err();
+    assert!(err.to_string().contains("did not advance"), "{err}");
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn has_more_without_a_cursor_is_an_error() {
+    let (fake, client) = start_server().await;
+    {
+        let mut rec = fake.rec.lock().unwrap();
+        rec.edge_pages = vec![paging::edges(&[1], paging::more(""))];
+        rec.revision_pages = vec![paging::revs(&[1], paging::more(""))];
+    }
+    let err = paging::edge_targets(&client).await.unwrap_err();
+    assert!(err.to_string().contains("no pagination cursor"), "{err}");
+    let err = paging::revision_numbers(&client).await.unwrap_err();
+    assert!(err.to_string().contains("no pagination cursor"), "{err}");
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn ce_offset_shift_does_not_repeat_a_revision() {
+    // CE pages GetRevisions by offset, newest first. Revision 4 is created
+    // after the first page, so the second page starts one row later and
+    // repeats revision 2.
+    let (fake, client) = start_server().await;
+    fake.rec.lock().unwrap().revision_pages = vec![
+        paging::revs(&[3, 2], paging::more("offset:2")),
+        paging::revs(&[2, 1], paging::done()),
+    ];
+    assert_eq!(
+        paging::revision_numbers(&client).await.unwrap(),
+        vec![3, 2, 1]
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn single_page_apis_return_one_page_with_its_cursor() {
+    let (fake, client) = start_server().await;
+    {
+        let mut rec = fake.rec.lock().unwrap();
+        rec.revision_pages = vec![paging::revs(&[2], paging::more("r-next"))];
+        rec.edge_pages = vec![paging::edges(&[1], paging::more("e-next"))];
+    }
+    let page = client
+        .get_revisions_page(&paging::item(), Some(1), Some("r-prev".into()))
+        .await
+        .unwrap();
+    assert_eq!(page.items.len(), 1);
+    assert_eq!(page.next_cursor.as_deref(), Some("r-next"));
+    assert_eq!(page.has_more(), Some(true));
+    let page = client
+        .get_edges_page(
+            &paging::revision(),
+            "",
+            kumiho::EdgeDirection::Outgoing,
+            Some(5),
+            None,
+        )
+        .await
+        .unwrap();
+    assert_eq!(page.next_cursor.as_deref(), Some("e-next"));
+    let rec = fake.rec.lock().unwrap();
+    let p = rec.revision_requests[0].pagination.clone().unwrap();
+    assert_eq!((p.page_size, p.cursor.as_str()), (1, "r-prev"));
+    let p = rec.edge_requests[0].pagination.clone().unwrap();
+    assert_eq!((p.page_size, p.cursor.as_str()), (5, ""));
 }

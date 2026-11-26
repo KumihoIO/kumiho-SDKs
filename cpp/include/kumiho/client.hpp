@@ -420,10 +420,29 @@ public:
 
     /**
      * @brief Get all revisions of an item.
+     *
+     * Follows the server's pagination cursor until every page is read, so the
+     * list is complete (kumiho-db returns at most 1000 rows per page).
+     *
      * @param item_kref The item's Kref.
      * @return A list of Revision objects.
+     * @throws RpcError if the server reports more results without a usable
+     *         cursor, rather than returning a partial list.
      */
     std::vector<std::shared_ptr<Revision>> getRevisions(const Kref& item_kref);
+
+    /**
+     * @brief Get one page of an item's revisions.
+     * @param item_kref The item's Kref.
+     * @param page_size Page size (0 with an empty cursor = no pagination sent).
+     * @param cursor The previous page's next_cursor (empty = first page).
+     * @return A PagedList of Revision objects.
+     */
+    PagedList<std::shared_ptr<Revision>> getRevisionsPaged(
+        const Kref& item_kref,
+        int32_t page_size = 0,
+        const std::string& cursor = ""
+    );
 
     /**
      * @brief Full-text fuzzy search across items.
@@ -645,15 +664,38 @@ public:
 
     /**
      * @brief Get edges for a revision.
+     *
+     * Follows the server's pagination cursor until every page is read, so the
+     * list is complete (kumiho-db returns at most 1000 rows per page).
+     *
      * @param kref The revision's Kref.
      * @param edge_type_filter Filter by edge type (empty = all).
      * @param direction Direction of edges to retrieve (OUTGOING, INCOMING, or BOTH).
      * @return A list of Edge objects.
+     * @throws RpcError if the server reports more results without a usable
+     *         cursor, rather than returning a partial list.
      */
     std::vector<std::shared_ptr<Edge>> getEdges(
         const Kref& kref,
         const std::string& edge_type_filter = "",
         EdgeDirection direction = EdgeDirection::OUTGOING
+    );
+
+    /**
+     * @brief Get one page of a revision's edges.
+     * @param kref The revision's Kref.
+     * @param edge_type_filter Filter by edge type (empty = all).
+     * @param direction Direction of edges to retrieve.
+     * @param page_size Page size (0 with an empty cursor = no pagination sent).
+     * @param cursor The previous page's next_cursor (empty = first page).
+     * @return A PagedList of Edge objects.
+     */
+    PagedList<std::shared_ptr<Edge>> getEdgesPaged(
+        const Kref& kref,
+        const std::string& edge_type_filter = "",
+        EdgeDirection direction = EdgeDirection::OUTGOING,
+        int32_t page_size = 0,
+        const std::string& cursor = ""
     );
 
     /**
@@ -932,6 +974,15 @@ private:
      * @param with_deadline Whether to set a default per-RPC deadline.
      */
     void configureContext(grpc::ClientContext& context, bool with_deadline = true) const;
+
+    /// One GetRevisions call; throws RpcError on failure.
+    ::kumiho::GetRevisionsResponse callGetRevisions(
+        const Kref& item_kref, int32_t page_size, const std::string& cursor);
+
+    /// One GetEdges call; throws RpcError on failure.
+    ::kumiho::GetEdgesResponse callGetEdges(
+        const Kref& kref, const std::string& edge_type_filter, EdgeDirection direction,
+        int32_t page_size, const std::string& cursor);
 };
 
 // --- Convenience Functions ---

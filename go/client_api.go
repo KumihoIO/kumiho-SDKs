@@ -427,8 +427,27 @@ func (c *Client) ResolveKref(ctx context.Context, kref string, tag, t *string) (
 }
 
 // GetRevisions lists all revisions of an item.
+//
+// It follows the server's pagination cursor until every page is read, so the
+// list is complete (kumiho-db returns at most 1000 rows per page). It returns
+// an error, not a partial list, if the server reports more results without a
+// usable cursor.
 func (c *Client) GetRevisions(ctx context.Context, itemKref Kref) ([]*Revision, error) {
-	resp, err := c.grpc.GetRevisions(ctx, &pb.GetRevisionsRequest{ItemKref: itemKref.pb()})
+	return collectPages("GetRevisions",
+		func(cursor string) (*InventoryPage[*Revision], error) {
+			return c.GetRevisionsPaged(ctx, itemKref, followPageSize, cursor)
+		},
+		func(r *Revision) string { return r.Kref.URI() },
+	)
+}
+
+// GetRevisionsPaged returns one page of an item's revisions. Pass the previous
+// page's NextCursor to continue; pageSize 0 with an empty cursor sends no
+// pagination and gets the server's default first page.
+func (c *Client) GetRevisionsPaged(ctx context.Context, itemKref Kref, pageSize int, cursor string) (*InventoryPage[*Revision], error) {
+	resp, err := c.grpc.GetRevisions(ctx, &pb.GetRevisionsRequest{
+		ItemKref: itemKref.pb(), Pagination: pagination(pageSize, cursor),
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -436,7 +455,7 @@ func (c *Client) GetRevisions(ctx context.Context, itemKref Kref) ([]*Revision, 
 	for _, r := range resp.GetRevisions() {
 		out = append(out, newRevision(r, c))
 	}
-	return out, nil
+	return inventoryPageFrom(out, resp.GetPagination()), nil
 }
 
 // GetLatestRevision resolves the latest revision, or (nil, nil) if none.
@@ -692,9 +711,29 @@ func (c *Client) CreateEdge(ctx context.Context, source, target *Revision, edgeT
 }
 
 // GetEdges gets edges for a revision, filtered by type and direction.
+//
+// It follows the server's pagination cursor until every page is read, so the
+// list is complete (kumiho-db returns at most 1000 rows per page). It returns
+// an error, not a partial list, if the server reports more results without a
+// usable cursor.
 func (c *Client) GetEdges(ctx context.Context, kref Kref, edgeTypeFilter string, direction EdgeDirection) ([]*Edge, error) {
+	return collectPages("GetEdges",
+		func(cursor string) (*InventoryPage[*Edge], error) {
+			return c.GetEdgesPaged(ctx, kref, edgeTypeFilter, direction, followPageSize, cursor)
+		},
+		func(e *Edge) string {
+			return e.SourceKref.URI() + "\x00" + e.TargetKref.URI() + "\x00" + e.EdgeType
+		},
+	)
+}
+
+// GetEdgesPaged returns one page of a revision's edges. Pass the previous
+// page's NextCursor to continue; pageSize 0 with an empty cursor sends no
+// pagination.
+func (c *Client) GetEdgesPaged(ctx context.Context, kref Kref, edgeTypeFilter string, direction EdgeDirection, pageSize int, cursor string) (*InventoryPage[*Edge], error) {
 	resp, err := c.grpc.GetEdges(ctx, &pb.GetEdgesRequest{
 		Kref: kref.pb(), EdgeTypeFilter: edgeTypeFilter, Direction: direction.pb(),
+		Pagination: pagination(pageSize, cursor),
 	})
 	if err != nil {
 		return nil, err
@@ -703,7 +742,57 @@ func (c *Client) GetEdges(ctx context.Context, kref Kref, edgeTypeFilter string,
 	for _, e := range resp.GetEdges() {
 		out = append(out, newEdge(e, c))
 	}
-	return out, nil
+	return inventoryPageFrom(out, resp.GetPagination()), nil
+}
+
+// followPageSize is the page size requested when following every page
+// (kumiho-db's maximum).
+const followPageSize = 1000
+
+// collectPages follows NextCursor across pages and returns every item.
+//
+// It stops when the server reports no more results or sends no pagination
+// field (kumiho-server CE answers GetEdges in one response without one). A
+// page may be empty while HasMore is true, because kumiho-db caps each call's
+// scan. A cursor that repeats, or HasMore without a cursor, is an error rather
+// than an endless loop or a silently partial list.
+//
+// key drops items an earlier page already returned: CE pages GetRevisions by
+// offset, newest first, so a revision created between two pages shifts the
+// window and the next page repeats a row.
+func collectPages[T any](rpc string, fetch func(cursor string) (*InventoryPage[T], error), key func(T) string) ([]T, error) {
+	var results []T
+	returned := map[string]struct{}{}
+	seen := map[string]struct{}{}
+	cursor := ""
+	for {
+		page, err := fetch(cursor)
+		if err != nil {
+			return nil, err
+		}
+		for _, item := range page.Items {
+			k := key(item)
+			if _, dup := returned[k]; dup {
+				continue
+			}
+			returned[k] = struct{}{}
+			results = append(results, item)
+		}
+		if !page.PaginationPresent || !page.HasMore {
+			if results == nil {
+				results = []T{}
+			}
+			return results, nil
+		}
+		if page.NextCursor == "" {
+			return nil, status.Errorf(codes.Internal, "%s reported more results but returned no pagination cursor", rpc)
+		}
+		if _, repeated := seen[page.NextCursor]; repeated {
+			return nil, status.Errorf(codes.Internal, "%s returned a pagination cursor that did not advance", rpc)
+		}
+		seen[page.NextCursor] = struct{}{}
+		cursor = page.NextCursor
+	}
 }
 
 // DeleteEdge deletes an edge.
