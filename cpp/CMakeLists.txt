@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.14)
-project(KumihoCpp VERSION 1.1.0 LANGUAGES CXX)
+project(KumihoCpp VERSION 1.1.1 LANGUAGES CXX)
 include(GNUInstallDirs)
 
 # --- Options ---

@@ -14,6 +14,7 @@
 #include <sstream> // For std::ostringstream
 #include <optional>
 #include <set>
+#include <tuple>
 #include <vector>
 
 #include "kref_vectors.hpp"
@@ -343,6 +344,208 @@ TEST_F(KumihoUnitTest, DirectItemsPagedForwardsDeprecatedAndCursor) {
     EXPECT_EQ(page.total_count, 8);
     kumiho::api::PagedList<int> legacy{{1}, std::nullopt, 1};
     EXPECT_EQ(legacy.total_count, 1);
+}
+
+// --- GetRevisions / GetEdges pagination ---
+
+namespace paging {
+
+kumiho::PaginationResponse more(const std::string& cursor) {
+    kumiho::PaginationResponse p;
+    p.set_next_cursor(cursor);
+    p.set_has_more(true);
+    p.set_total_count(-1);
+    return p;
+}
+
+kumiho::PaginationResponse done() {
+    kumiho::PaginationResponse p;
+    p.set_total_count(-1);
+    return p;
+}
+
+kumiho::GetRevisionsResponse revs(std::vector<int> numbers,
+                                  std::optional<kumiho::PaginationResponse> p) {
+    kumiho::GetRevisionsResponse res;
+    for (int n : numbers) {
+        auto* r = res.add_revisions();
+        r->mutable_kref()->set_uri("kref://p/s/x.k?r=" + std::to_string(n));
+        r->mutable_item_kref()->set_uri("kref://p/s/x.k");
+        r->set_number(n);
+    }
+    if (p) *res.mutable_pagination() = *p;
+    return res;
+}
+
+kumiho::GetEdgesResponse edges(std::vector<int> targets,
+                               std::optional<kumiho::PaginationResponse> p) {
+    kumiho::GetEdgesResponse res;
+    for (int n : targets) {
+        auto* e = res.add_edges();
+        e->mutable_source_kref()->set_uri("kref://p/s/x.k?r=1");
+        e->mutable_target_kref()->set_uri("kref://p/s/y.k?r=" + std::to_string(n));
+        e->set_edge_type("DEPENDS_ON");
+    }
+    if (p) *res.mutable_pagination() = *p;
+    return res;
+}
+
+// Serves `pages` in order and records (page_size, cursor, has_pagination).
+struct Script {
+    std::vector<kumiho::GetRevisionsResponse> rev_pages;
+    std::vector<kumiho::GetEdgesResponse> edge_pages;
+    std::vector<std::tuple<int32_t, std::string, bool>> rev_requests;
+    std::vector<std::tuple<int32_t, std::string, bool>> edge_requests;
+};
+
+void install(MockKumihoStub& stub, Script& script) {
+    ON_CALL(stub, GetRevisions(_, _, _))
+        .WillByDefault(Invoke([&script](grpc::ClientContext*, const kumiho::GetRevisionsRequest& req,
+                                        kumiho::GetRevisionsResponse* res) {
+            script.rev_requests.emplace_back(req.pagination().page_size(),
+                                             req.pagination().cursor(), req.has_pagination());
+            if (script.rev_pages.empty()) {
+                return grpc::Status(grpc::StatusCode::UNIMPLEMENTED, "unexpected GetRevisions");
+            }
+            *res = script.rev_pages.front();
+            script.rev_pages.erase(script.rev_pages.begin());
+            return grpc::Status::OK;
+        }));
+    ON_CALL(stub, GetEdges(_, _, _))
+        .WillByDefault(Invoke([&script](grpc::ClientContext*, const kumiho::GetEdgesRequest& req,
+                                        kumiho::GetEdgesResponse* res) {
+            script.edge_requests.emplace_back(req.pagination().page_size(),
+                                              req.pagination().cursor(), req.has_pagination());
+            if (script.edge_pages.empty()) {
+                return grpc::Status(grpc::StatusCode::UNIMPLEMENTED, "unexpected GetEdges");
+            }
+            *res = script.edge_pages.front();
+            script.edge_pages.erase(script.edge_pages.begin());
+            return grpc::Status::OK;
+        }));
+    EXPECT_CALL(stub, GetRevisions(_, _, _)).Times(::testing::AnyNumber());
+    EXPECT_CALL(stub, GetEdges(_, _, _)).Times(::testing::AnyNumber());
+}
+
+std::vector<int> revisionNumbers(kumiho::api::Client& client) {
+    std::vector<int> out;
+    for (const auto& r : client.getRevisions(kumiho::api::Kref("kref://p/s/x.k"))) {
+        out.push_back(r->getRevisionNumber());
+    }
+    return out;
+}
+
+std::vector<std::string> edgeTargets(kumiho::api::Client& client) {
+    std::vector<std::string> out;
+    for (const auto& e : client.getEdges(kumiho::api::Kref("kref://p/s/x.k?r=1"), "",
+                                         kumiho::api::EdgeDirection::BOTH)) {
+        out.push_back(e->getTargetKref().uri());
+    }
+    return out;
+}
+
+using Sent = std::vector<std::tuple<int32_t, std::string, bool>>;
+
+}  // namespace paging
+
+TEST_F(KumihoUnitTest, GetRevisionsFollowsEveryPageIncludingAnEmptyMiddlePage) {
+    paging::Script s;
+    s.rev_pages = {paging::revs({5, 4}, paging::more("c1")), paging::revs({}, paging::more("c2")),
+                   paging::revs({3, 2, 1}, paging::done())};
+    paging::install(*mock_stub, s);
+    EXPECT_EQ(paging::revisionNumbers(*client), (std::vector<int>{5, 4, 3, 2, 1}));
+    EXPECT_EQ(s.rev_requests,
+              (paging::Sent{{1000, "", true}, {1000, "c1", true}, {1000, "c2", true}}));
+}
+
+TEST_F(KumihoUnitTest, GetEdgesFollowsEveryPageIncludingAnEmptyMiddlePage) {
+    paging::Script s;
+    s.edge_pages = {paging::edges({1, 2}, paging::more("c1")), paging::edges({}, paging::more("c2")),
+                    paging::edges({3}, paging::done())};
+    paging::install(*mock_stub, s);
+    EXPECT_EQ(paging::edgeTargets(*client),
+              (std::vector<std::string>{"kref://p/s/y.k?r=1", "kref://p/s/y.k?r=2",
+                                        "kref://p/s/y.k?r=3"}));
+    EXPECT_EQ(s.edge_requests,
+              (paging::Sent{{1000, "", true}, {1000, "c1", true}, {1000, "c2", true}}));
+}
+
+TEST_F(KumihoUnitTest, MissingPaginationFieldIsOneCompleteResponse) {
+    // kumiho-server CE answers GetEdges with every edge and no pagination.
+    paging::Script s;
+    s.edge_pages = {paging::edges({1, 2, 3}, std::nullopt)};
+    s.rev_pages = {paging::revs({2, 1}, std::nullopt)};
+    paging::install(*mock_stub, s);
+    EXPECT_EQ(paging::edgeTargets(*client).size(), 3u);
+    EXPECT_EQ(paging::revisionNumbers(*client), (std::vector<int>{2, 1}));
+    EXPECT_EQ(s.edge_requests.size(), 1u);
+    EXPECT_EQ(s.rev_requests.size(), 1u);
+}
+
+TEST_F(KumihoUnitTest, RepeatedCursorIsAnErrorNotALoop) {
+    paging::Script s;
+    s.edge_pages = {paging::edges({1}, paging::more("c1")), paging::edges({2}, paging::more("c1"))};
+    s.rev_pages = {paging::revs({3}, paging::more("a")), paging::revs({2}, paging::more("b")),
+                   paging::revs({1}, paging::more("a"))};
+    paging::install(*mock_stub, s);
+    try {
+        paging::edgeTargets(*client);
+        FAIL() << "expected RpcError";
+    } catch (const kumiho::api::RpcError& e) {
+        EXPECT_NE(std::string(e.what()).find("did not advance"), std::string::npos) << e.what();
+    }
+    try {
+        paging::revisionNumbers(*client);
+        FAIL() << "expected RpcError";
+    } catch (const kumiho::api::RpcError& e) {
+        EXPECT_NE(std::string(e.what()).find("did not advance"), std::string::npos) << e.what();
+    }
+}
+
+TEST_F(KumihoUnitTest, HasMoreWithoutACursorIsAnError) {
+    paging::Script s;
+    s.edge_pages = {paging::edges({1}, paging::more(""))};
+    s.rev_pages = {paging::revs({1}, paging::more(""))};
+    paging::install(*mock_stub, s);
+    try {
+        paging::edgeTargets(*client);
+        FAIL() << "expected RpcError";
+    } catch (const kumiho::api::RpcError& e) {
+        EXPECT_NE(std::string(e.what()).find("no pagination cursor"), std::string::npos) << e.what();
+    }
+    try {
+        paging::revisionNumbers(*client);
+        FAIL() << "expected RpcError";
+    } catch (const kumiho::api::RpcError& e) {
+        EXPECT_NE(std::string(e.what()).find("no pagination cursor"), std::string::npos) << e.what();
+    }
+}
+
+TEST_F(KumihoUnitTest, CeOffsetShiftDoesNotRepeatARevision) {
+    // CE pages GetRevisions by offset, newest first. Revision 4 is created
+    // after the first page, so the second page starts one row later and
+    // repeats revision 2.
+    paging::Script s;
+    s.rev_pages = {paging::revs({3, 2}, paging::more("offset:2")),
+                   paging::revs({2, 1}, paging::done())};
+    paging::install(*mock_stub, s);
+    EXPECT_EQ(paging::revisionNumbers(*client), (std::vector<int>{3, 2, 1}));
+}
+
+TEST_F(KumihoUnitTest, SinglePageApisReturnOnePageWithItsCursor) {
+    paging::Script s;
+    s.rev_pages = {paging::revs({2}, paging::more("r-next"))};
+    s.edge_pages = {paging::edges({1}, paging::more("e-next"))};
+    paging::install(*mock_stub, s);
+    auto rp = client->getRevisionsPaged(kumiho::api::Kref("kref://p/s/x.k"), 1, "r-prev");
+    EXPECT_EQ(rp.items.size(), 1u);
+    EXPECT_EQ(rp.next_cursor, "r-next");
+    EXPECT_EQ(rp.hasMore(), true);
+    auto ep = client->getEdgesPaged(kumiho::api::Kref("kref://p/s/x.k?r=1"), "",
+                                    kumiho::api::EdgeDirection::OUTGOING, 5);
+    EXPECT_EQ(ep.next_cursor, "e-next");
+    EXPECT_EQ(s.rev_requests, (paging::Sent{{1, "r-prev", true}}));
+    EXPECT_EQ(s.edge_requests, (paging::Sent{{5, "", true}}));
 }
 
 TEST_F(KumihoUnitTest, LegacyForceDeletePropagatesTheServerGuard) {

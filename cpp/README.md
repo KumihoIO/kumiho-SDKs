@@ -46,7 +46,7 @@ Modern C++ client library for the Kumiho asset management and versioning platfor
 vcpkg install grpc protobuf curl gtest nlohmann-json
 
 # Clone and build
-git clone --recurse-submodules --branch cpp-v1.1.0 https://github.com/KumihoIO/kumiho-SDKs.git
+git clone --recurse-submodules --branch cpp-v1.1.1 https://github.com/KumihoIO/kumiho-SDKs.git
 cd kumiho-SDKs/cpp
 mkdir build && cd build
 cmake .. -DCMAKE_TOOLCHAIN_FILE=[vcpkg root]/scripts/buildsystems/vcpkg.cmake
@@ -54,7 +54,7 @@ cmake --build . --config Release
 cmake --install . --config Release --prefix /path/to/kumiho-sdk
 ```
 
-C++1.1.0 is distributed from the Git source tag; no package registry or
+C++1.1.1 is distributed from the Git source tag; no package registry or
 prebuilt binary is published. GitHub's automatic source archive omits the
 protobuf submodule, so use the recursive clone above. Dependencies (including
 Windows runtime DLLs) are supplied by your toolchain/package manager.

@@ -981,17 +981,50 @@ impl Client {
     }
 
     /// List all revisions of an item.
+    ///
+    /// Follows the server's pagination cursor until every page is read, so the
+    /// list is complete (kumiho-db returns at most 1000 rows per page). Returns
+    /// an error, not a partial list, if the server reports more results
+    /// without a usable cursor.
     pub async fn get_revisions(&self, item_kref: &Kref) -> Result<Vec<Revision>> {
+        collect_pages(
+            "GetRevisions",
+            |cursor| self.get_revisions_raw(item_kref, Some(FOLLOW_PAGE_SIZE), cursor),
+            |r: &Revision| r.kref.uri().to_string(),
+        )
+        .await
+    }
+
+    /// One page of an item's revisions. Pass the previous page's
+    /// `next_cursor` to continue; `page_size: None, cursor: None` sends no
+    /// pagination and gets the server's default first page.
+    pub async fn get_revisions_page(
+        &self,
+        item_kref: &Kref,
+        page_size: Option<i32>,
+        cursor: Option<String>,
+    ) -> Result<Page<Revision>> {
+        let (items, pagination) = self.get_revisions_raw(item_kref, page_size, cursor).await?;
+        Ok(page_from(items, pagination))
+    }
+
+    async fn get_revisions_raw(
+        &self,
+        item_kref: &Kref,
+        page_size: Option<i32>,
+        cursor: Option<String>,
+    ) -> Result<(Vec<Revision>, Option<pb::PaginationResponse>)> {
         let req = pb::GetRevisionsRequest {
             item_kref: Some(item_kref.to_pb()),
-            pagination: None,
+            pagination: make_pagination(page_size, cursor),
         };
         let resp = unary!(self, get_revisions, req)?;
-        Ok(resp
+        let items = resp
             .revisions
             .into_iter()
             .map(|r| Revision::from_pb(r, self.clone()))
-            .collect())
+            .collect();
+        Ok((items, resp.pagination))
     }
 
     /// Resolve the latest revision of an item, or `None` if it has none.
@@ -1380,24 +1413,76 @@ impl Client {
     }
 
     /// Get edges for a revision, filtered by type and direction.
+    ///
+    /// Follows the server's pagination cursor until every page is read, so the
+    /// list is complete (kumiho-db returns at most 1000 rows per page). Returns
+    /// an error, not a partial list, if the server reports more results
+    /// without a usable cursor.
     pub async fn get_edges(
         &self,
         kref: &Kref,
         edge_type_filter: &str,
         direction: EdgeDirection,
     ) -> Result<Vec<Edge>> {
+        collect_pages(
+            "GetEdges",
+            |cursor| {
+                self.get_edges_raw(
+                    kref,
+                    edge_type_filter,
+                    direction,
+                    Some(FOLLOW_PAGE_SIZE),
+                    cursor,
+                )
+            },
+            |e: &Edge| {
+                (
+                    e.source_kref.uri().to_string(),
+                    e.target_kref.uri().to_string(),
+                    e.edge_type.clone(),
+                )
+            },
+        )
+        .await
+    }
+
+    /// One page of a revision's edges. Pass the previous page's `next_cursor`
+    /// to continue; `page_size: None, cursor: None` sends no pagination.
+    pub async fn get_edges_page(
+        &self,
+        kref: &Kref,
+        edge_type_filter: &str,
+        direction: EdgeDirection,
+        page_size: Option<i32>,
+        cursor: Option<String>,
+    ) -> Result<Page<Edge>> {
+        let (items, pagination) = self
+            .get_edges_raw(kref, edge_type_filter, direction, page_size, cursor)
+            .await?;
+        Ok(page_from(items, pagination))
+    }
+
+    async fn get_edges_raw(
+        &self,
+        kref: &Kref,
+        edge_type_filter: &str,
+        direction: EdgeDirection,
+        page_size: Option<i32>,
+        cursor: Option<String>,
+    ) -> Result<(Vec<Edge>, Option<pb::PaginationResponse>)> {
         let req = pb::GetEdgesRequest {
             kref: Some(kref.to_pb()),
             edge_type_filter: edge_type_filter.to_string(),
             direction: direction.as_pb(),
-            pagination: None,
+            pagination: make_pagination(page_size, cursor),
         };
         let resp = unary!(self, get_edges, req)?;
-        Ok(resp
+        let items = resp
             .edges
             .into_iter()
             .map(|e| Edge::from_pb(e, self.clone()))
-            .collect())
+            .collect();
+        Ok((items, resp.pagination))
     }
 
     /// Delete an edge.
@@ -1679,6 +1764,61 @@ impl Client {
 }
 
 // ------------------------------------------------------------------- free helpers
+
+/// Page size requested when following every page (kumiho-db's maximum).
+const FOLLOW_PAGE_SIZE: i32 = 1000;
+
+/// Follow `next_cursor` across pages and return every item.
+///
+/// Stops when the server reports no more results or sends no pagination field
+/// (kumiho-server CE answers GetEdges in one response without one). A page may
+/// be empty while `has_more` is true, because kumiho-db caps each call's scan.
+/// A cursor that repeats, or `has_more` without a cursor, is an error rather
+/// than an endless loop or a silently partial list.
+///
+/// `key` drops items an earlier page already returned: CE pages GetRevisions
+/// by offset, newest first, so a revision created between two pages shifts the
+/// window and the next page repeats a row.
+async fn collect_pages<T, K, F, Fut>(
+    rpc: &str,
+    mut fetch: F,
+    key: impl Fn(&T) -> K,
+) -> Result<Vec<T>>
+where
+    F: FnMut(Option<String>) -> Fut,
+    Fut: std::future::Future<Output = Result<(Vec<T>, Option<pb::PaginationResponse>)>>,
+    K: Eq + std::hash::Hash,
+{
+    let mut results = Vec::new();
+    let mut returned = std::collections::HashSet::new();
+    let mut seen = std::collections::HashSet::new();
+    let mut cursor: Option<String> = None;
+    loop {
+        let (items, pagination) = fetch(cursor.take()).await?;
+        for item in items {
+            if returned.insert(key(&item)) {
+                results.push(item);
+            }
+        }
+        let Some(p) = pagination else {
+            return Ok(results);
+        };
+        if !p.has_more {
+            return Ok(results);
+        }
+        if p.next_cursor.is_empty() {
+            return Err(Error::Rpc(tonic::Status::internal(format!(
+                "{rpc} reported more results but returned no pagination cursor"
+            ))));
+        }
+        if !seen.insert(p.next_cursor.clone()) {
+            return Err(Error::Rpc(tonic::Status::internal(format!(
+                "{rpc} returned a pagination cursor that did not advance"
+            ))));
+        }
+        cursor = Some(p.next_cursor);
+    }
+}
 
 fn make_pagination(
     page_size: Option<i32>,

@@ -9,6 +9,30 @@ The grammar and the conformance corpus all SDKs share are in
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-11-26
+
+### Fixed
+- **`getRevisions` and `getEdges` return every row.** They sent no pagination
+  and read only the first page, so on kumiho-db they returned at most 100 rows
+  with no error. They now follow `nextCursor`, asking for 1000 rows per page,
+  until the server reports no more. A page can be empty while more remain; that
+  is followed too. `getEdges` still returns a `GetEdgesResponse`; it holds every
+  edge and no pagination field.
+- If the server sends no pagination field (kumiho-server CE `GetEdges`), the
+  single response is treated as complete.
+- A cursor that repeats, or `hasMore` with an empty cursor, throws
+  `KumihoError` instead of looping or returning a partial list.
+- A row that repeats across pages is returned once. kumiho-server CE pages
+  `GetRevisions` by offset, newest first, so a revision created during the walk
+  shifts the next page by one row. Revisions are keyed by kref, edges by
+  (source, target, edge type).
+
+### Added
+- `getRevisionsPaged` and `getEdgesPaged` return one `PagedList` with
+  `nextCursor` and `hasMore`, like `getItems`.
+
+## [0.3.0] - 2026-11-04
+
 ### Changed
 - No change to the library. `KumihoClient.getItemByKref` already split an item
   kref at its last `/` and its last `.`, and `Kref.itemName` and `Kref.kind`
