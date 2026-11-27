@@ -7,6 +7,10 @@
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let proto = "proto/kumiho.proto";
     println!("cargo:rerun-if-changed={proto}");
+    println!("cargo:rerun-if-changed=native/audit.proto");
+    println!("cargo:rerun-if-changed=native/project_export.proto");
+    println!("cargo:rerun-if-changed=native/backup_status.proto");
+    println!("cargo:rerun-if-changed=native/tenant_insight.proto");
     println!("cargo:rerun-if-env-changed=CARGO_FEATURE_MOCK_SERVER");
     println!("cargo:rerun-if-env-changed=PROTOC");
 
@@ -39,7 +43,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     tonic_build::configure()
         .build_server(build_server)
         .build_client(true)
-        .compile_protos(&[proto], &["proto"])?;
+        .compile_protos(
+            &[
+                proto,
+                "native/audit.proto",
+                "native/project_export.proto",
+                "native/backup_status.proto",
+                "native/tenant_insight.proto",
+            ],
+            &["proto", "native"],
+        )?;
     Ok(())
 }
 

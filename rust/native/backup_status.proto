@@ -1,0 +1,27 @@
+// A read-only summary of archive observations for the connected database.
+syntax = "proto3";
+
+package kumiho.backup.v1;
+
+service BackupStatusService {
+  rpc GetBackupStatus(GetBackupStatusRequest) returns (GetBackupStatusResponse);
+}
+
+message GetBackupStatusRequest {}
+
+enum BackupState {
+  BACKUP_STATE_UNSPECIFIED = 0;
+  BACKUP_STATE_UNCONFIGURED = 1;
+  BACKUP_STATE_PREPARING = 2;
+  BACKUP_STATE_HEALTHY = 3;
+  BACKUP_STATE_DELAYED = 4;
+  BACKUP_STATE_UNAVAILABLE = 5;
+}
+
+message GetBackupStatusResponse {
+  BackupState state = 1;
+  // The last successful checkpoint observed by the archive runner.
+  optional uint64 last_checkpoint_ms = 2;
+  // Publication time of the last observation, never the time of the RPC.
+  optional uint64 observed_at_ms = 3;
+}

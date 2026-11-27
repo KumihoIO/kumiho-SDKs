@@ -45,6 +45,8 @@ pub mod pb {
     tonic::include_proto!("kumiho");
 }
 
+pub mod audit;
+pub mod backup_status;
 mod client;
 mod discovery;
 mod edge;
@@ -52,6 +54,8 @@ mod error;
 mod kref;
 mod kref_parts;
 mod models;
+pub mod project_export;
+pub mod tenant_insight;
 mod token_loader;
 
 pub use client::{Client, ClientBuilder, ScoredRevision, SearchResult};

@@ -336,12 +336,30 @@ impl ClientBuilder {
         }
 
         let interceptor = KumihoInterceptor { metadata };
+        let audit = crate::audit::pb::change_audit_service_client::ChangeAuditServiceClient::with_interceptor(channel.clone(), interceptor.clone());
+        let export = crate::project_export::pb::project_export_service_client::ProjectExportServiceClient::with_interceptor(
+            channel.clone(), interceptor.clone(),
+        ).max_decoding_message_size(crate::project_export::MAX_DOCUMENT_BYTES + 512);
+        let backup_status = crate::backup_status::pb::backup_status_service_client::BackupStatusServiceClient::with_interceptor(
+            channel.clone(),
+            interceptor.clone(),
+        )
+        .max_decoding_message_size(256);
+        let insight = crate::tenant_insight::pb::tenant_insight_service_client::TenantInsightServiceClient::with_interceptor(
+            channel.clone(),
+            interceptor.clone(),
+        )
+        .max_decoding_message_size(crate::tenant_insight::MAX_RESPONSE_BYTES);
         let grpc =
             pb::kumiho_service_client::KumihoServiceClient::with_interceptor(channel, interceptor)
                 .max_decoding_message_size(64 * 1024 * 1024);
 
         Ok(Client {
             grpc,
+            audit,
+            export,
+            backup_status,
+            insight,
             max_attempts: retry_max_attempts(),
             rpc_timeout: rpc_timeout(),
         })
@@ -414,6 +432,19 @@ async fn build_channel(host: &str, port: u16, use_tls: bool) -> Result<Channel> 
 #[derive(Clone)]
 pub struct Client {
     grpc: GrpcClient,
+    audit: crate::audit::pb::change_audit_service_client::ChangeAuditServiceClient<
+        InterceptedService<Channel, KumihoInterceptor>,
+    >,
+    export: crate::project_export::pb::project_export_service_client::ProjectExportServiceClient<
+        InterceptedService<Channel, KumihoInterceptor>,
+    >,
+    backup_status:
+        crate::backup_status::pb::backup_status_service_client::BackupStatusServiceClient<
+            InterceptedService<Channel, KumihoInterceptor>,
+        >,
+    insight: crate::tenant_insight::pb::tenant_insight_service_client::TenantInsightServiceClient<
+        InterceptedService<Channel, KumihoInterceptor>,
+    >,
     // Retry/deadline config, resolved once at build time rather than re-reading
     // the environment on every RPC.
     max_attempts: u32,
@@ -1691,6 +1722,120 @@ fn make_pagination(
         page_size: page_size.unwrap_or(100),
         cursor: cursor.unwrap_or_default(),
     })
+}
+
+impl Client {
+    /// Read the tenant's exact aggregates at one snapshot of the connected native database.
+    ///
+    /// Only `Unavailable` is retried: every other refusal is the server's final answer for this
+    /// tenant and caller, and a retry would repeat a read of the whole tenant.
+    pub async fn get_tenant_aggregates(
+        &self,
+        input: crate::tenant_insight::GetTenantAggregatesRequest,
+    ) -> Result<crate::tenant_insight::TenantAggregates> {
+        let mut attempt = 0;
+        loop {
+            let mut grpc = self.insight.clone();
+            let mut request = tonic::Request::new(input);
+            if let Some(deadline) = self.rpc_timeout {
+                request.set_timeout(deadline);
+            }
+            match grpc.get_tenant_aggregates(request).await {
+                Ok(response) => return Ok(response.into_inner()),
+                Err(status) => {
+                    attempt += 1;
+                    if status.code() == tonic::Code::Unavailable && attempt < self.max_attempts {
+                        tokio::time::sleep(backoff(attempt)).await;
+                    } else {
+                        return Err(Error::Rpc(status));
+                    }
+                }
+            }
+        }
+    }
+
+    /// Read the connected database's published backup status as a current tenant owner or admin.
+    pub async fn get_backup_status(&self) -> Result<crate::backup_status::BackupStatus> {
+        let mut attempt = 0;
+        loop {
+            let mut grpc = self.backup_status.clone();
+            let mut request =
+                tonic::Request::new(crate::backup_status::pb::GetBackupStatusRequest {});
+            if let Some(deadline) = self.rpc_timeout {
+                request.set_timeout(deadline);
+            }
+            match grpc.get_backup_status(request).await {
+                Ok(response) => return crate::backup_status::read(response.into_inner()),
+                Err(status) => {
+                    attempt += 1;
+                    if is_transient(status.code()) && attempt < self.max_attempts {
+                        tokio::time::sleep(backoff(attempt)).await;
+                    } else {
+                        return Err(Error::Rpc(status));
+                    }
+                }
+            }
+        }
+    }
+
+    /// Download the complete manifest of one project from one authorized database snapshot.
+    pub async fn export_project(
+        &self,
+        project: &str,
+    ) -> Result<crate::project_export::ProjectExport> {
+        if project.is_empty() || project.len() > 255 || project.chars().any(char::is_control) {
+            return Err(Error::InvalidArgument("invalid project name".into()));
+        }
+        let mut attempt = 0;
+        loop {
+            let mut grpc = self.export.clone();
+            let mut request =
+                tonic::Request::new(crate::project_export::pb::ExportProjectRequest {
+                    project: project.to_owned(),
+                });
+            if let Some(deadline) = self.rpc_timeout {
+                request.set_timeout(deadline);
+            }
+            match grpc.export_project(request).await {
+                Ok(response) => return crate::project_export::read(project, response.into_inner()),
+                Err(status) => {
+                    attempt += 1;
+                    if is_transient(status.code()) && attempt < self.max_attempts {
+                        tokio::time::sleep(backoff(attempt)).await;
+                    } else {
+                        return Err(Error::Rpc(status));
+                    }
+                }
+            }
+        }
+    }
+
+    /// One bounded page of durable native changes under current Audit authority.
+    /// Server cursors and errors are returned unchanged; this never emulates history locally.
+    pub async fn list_changes(
+        &self,
+        input: crate::audit::ListChangesRequest,
+    ) -> Result<crate::audit::ChangeAuditPage> {
+        let mut attempt = 0;
+        loop {
+            let mut grpc = self.audit.clone();
+            let mut request = tonic::Request::new(input.clone());
+            if let Some(deadline) = self.rpc_timeout {
+                request.set_timeout(deadline);
+            }
+            match grpc.list_changes(request).await {
+                Ok(response) => return Ok(response.into_inner()),
+                Err(status) => {
+                    attempt += 1;
+                    if is_transient(status.code()) && attempt < self.max_attempts {
+                        tokio::time::sleep(backoff(attempt)).await;
+                    } else {
+                        return Err(Error::Rpc(status));
+                    }
+                }
+            }
+        }
+    }
 }
 
 #[cfg(test)]

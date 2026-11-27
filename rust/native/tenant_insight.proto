@@ -1,0 +1,179 @@
+syntax = "proto3";
+package kumiho.db.insight.v1;
+
+// Additive kumiho-db tenant aggregate API (owner decision 2026-11-26): the exact numbers of a
+// tenant's dashboard in one call. Self-contained: it imports no other proto. Tenant and
+// caller come from the authenticated metadata of the same TLS listener as KumihoService
+// (x-tenant-id and the bearer token, exactly as every KumihoService call). A server without
+// this service answers UNIMPLEMENTED (tonic's unknown-service answer).
+//
+// Exactness: every number is an exact count at one snapshot of the tenant, the cell log index
+// `basis.cell_log_index`. Nothing is sampled, estimated or truncated. When an exact answer is
+// impossible the call is refused with a fixed status, never answered with a partial number.
+//
+// Status codes (message text in quotes is fixed):
+// - PERMISSION_DENIED "permission denied": the public principal, or a caller that is not a
+//   member of the tenant.
+// - FAILED_PRECONDITION "tenant aggregates need a security administrator or a tenant without
+//   object labels": a member of a tenant with object labels that is not a security
+//   administrator (the counts would include objects it may not see).
+// - RESOURCE_EXHAUSTED "resource limit exceeded: tenant aggregate exceeds <N> rows" or
+//   "... exceeds <N> bytes of memory": the tenant is over the server's caps (2,000,000 rows,
+//   512 MiB); "resource limit exceeded: tenant aggregate activity exceeds 50000 rows; ask for
+//   a shorter window or day buckets"; "tenant aggregate response exceeds 4194304 bytes".
+// - UNAVAILABLE "tenant aggregate: the tenant kept changing during the read": an imported
+//   bundle's listing moved under three consecutive snapshots; retry.
+// - INVALID_ARGUMENT "window_days must be 0..=120" / "recent_limit must be 0..=500" /
+//   "utc_offset_minutes must be -720..=840".
+// - DATA_LOSS "stored record is corrupt": a stored row could not be decoded.
+service TenantInsightService {
+  rpc GetTenantAggregates(GetTenantAggregatesRequest) returns (TenantAggregates);
+}
+
+enum Granularity {
+  // Day buckets.
+  GRANULARITY_UNSPECIFIED = 0;
+  GRANULARITY_DAY = 1;
+  GRANULARITY_HOUR = 2;
+}
+
+message GetTenantAggregatesRequest {
+  // false (default): deprecated items, revisions and artifacts are left out of every count,
+  // as the listings leave them out by default. true: they are counted too.
+  bool include_deprecated = 1;
+  // Width of the activity buckets (UTC).
+  Granularity granularity = 2;
+  // Activity window in days, ending with the bucket that holds the server's current time.
+  // 0 means 30; at most 120.
+  uint32 window_days = 3;
+  // How many newest revisions `recent` lists. 0 means 50; at most 500.
+  uint32 recent_limit = 4;
+  // Day buckets start at local midnight for this offset from UTC in minutes (KST = 540);
+  // the window ends with the local day holding the server's current time. Hour buckets are UTC
+  // hours whatever it is. -720..=840; 0 (default) is UTC.
+  int32 utc_offset_minutes = 5;
+}
+
+// What the numbers are exact for.
+message AggregateBasis {
+  // The cell log index of the snapshot every number equals.
+  uint64 cell_log_index = 1;
+  // The server's wall-clock time of the answer, RFC 3339 UTC (the reference time to show).
+  string as_of = 2;
+  // How the server's derived state reached the snapshot: "rebuild" (a full pass over the
+  // tenant) or "delta" (advanced over `advanced_batches` logged batches).
+  string advance = 3;
+  uint64 advanced_batches = 4;
+  // The tenant is served by this store as its Migration destination.
+  bool migration_destination = 5;
+  bool include_deprecated = 6;
+  // The activity window [window_start, window_end), RFC 3339 UTC, bucket aligned.
+  string window_start = 7;
+  string window_end = 8;
+  Granularity granularity = 9;
+  // Why `advance` is "rebuild" (fixed English text, for diagnostics only); empty on "delta".
+  string rebuild_reason = 10;
+  // The request's offset the day buckets were cut at.
+  int32 utc_offset_minutes = 11;
+}
+
+message KindCount {
+  string kind = 1;
+  int64 items = 2;
+}
+
+// One live project (archived ones included and flagged). Counts follow the listings at the
+// snapshot: an item or bundle counts when it is live (current generation, not deleted, its
+// project and space live); its revisions are the rows GetRevisions lists for it; its artifacts
+// are the live artifacts of those revisions (GetArtifacts). Deprecated ones per the request.
+// Archived projects: spaces, items, kinds, revisions, retained_revisions and artifacts EXCLUDE
+// them (0 on an archived project, as the listings show nothing there); archived_spaces,
+// archived_items, archived_revisions and archived_artifacts hold them instead. Activity and
+// recent rows INCLUDE archived projects' revisions, each flagged `archived`; artifact_coverage
+// splits them into its archived_* fields; undated_revisions INCLUDES them.
+message ProjectAggregate {
+  string project_id = 1;
+  string name = 2;
+  bool archived = 3;
+  // Live spaces of the project (ordinary spaces and the project-root space).
+  int64 spaces = 4;
+  // Items and bundles (ItemSearch's rows).
+  int64 items = 5;
+  // `items` by kind, sorted by kind; a bundle is kind "bundle".
+  repeated KindCount kinds = 6;
+  int64 revisions = 7;
+  // The part of `revisions` held only as retained source rows (imported bundles).
+  int64 retained_revisions = 8;
+  int64 artifacts = 9;
+  // An archived project's items leave every listing (ItemSearch, GetItems, GetRevisions answer
+  // nothing under it): they are counted here, with the same rules, and never in items,
+  // revisions, artifacts or kinds. Activity, recent and artifact_coverage keep its revisions,
+  // flagged `archived`. Zero unless `archived`.
+  int64 archived_items = 10;
+  int64 archived_revisions = 11;
+  int64 archived_artifacts = 12;
+  // An archived project's live spaces (its `spaces` is then 0).
+  int64 archived_spaces = 13;
+}
+
+// Counted revisions in one bucket, space and author. The time and author of an imported
+// revision are its source values (what the original server answered); of a native revision
+// its commit time and committer. A revision whose source holds no readable time is in no
+// bucket (`TenantAggregates.undated_revisions`). Rows are sorted by bucket, space path, author,
+// then author_known, then archived. `bucket_start` is the bucket's first instant, RFC 3339 UTC. `space_path`
+// is the space's path without a leading slash ("project/space/child"); an item directly in the
+// project root reports the project name.
+message ActivityCount {
+  string bucket_start = 1;
+  string space_path = 2;
+  // The author's name when `author_known`; empty when the source held no author (no
+  // placeholder, so a principal really named "unknown" cannot collide).
+  string author = 3;
+  int64 revisions = 4;
+  bool author_known = 5;
+  // The revisions are of an archived project (its items leave the listings).
+  bool archived = 6;
+}
+
+// One of the newest counted revisions, newest first (ties: kref ascending, then number
+// descending). No metadata.
+message RecentRevision {
+  string kref = 1;
+  // The item's leaf name without its kind ("hero" for kref://p/s/hero.model).
+  string item_name = 2;
+  string kind = 3;
+  int64 number = 4;
+  // The author's name when `author_known`; empty otherwise (no placeholder).
+  string author = 5;
+  // RFC 3339 UTC when `created_known`; empty otherwise (such a revision sorts as the oldest).
+  string created_at = 6;
+  // "source" (an imported revision's source time) or "native" (its commit).
+  string time_source = 7;
+  repeated string tags = 8;
+  int64 artifact_count = 9;
+  bool deprecated = 10;
+  bool author_known = 11;
+  bool created_known = 12;
+  // The revision is of an archived project (its items leave the listings).
+  bool archived = 13;
+}
+
+// Counted item revisions (bundles' revisions are not counted here) with at least one counted
+// artifact, and without; revisions of archived projects are split out into fields 3 and 4.
+message ArtifactCoverage {
+  int64 revisions_with_artifacts = 1;
+  int64 revisions_without_artifacts = 2;
+  int64 archived_revisions_with_artifacts = 3;
+  int64 archived_revisions_without_artifacts = 4;
+}
+
+message TenantAggregates {
+  AggregateBasis basis = 1;
+  // Sorted by name, then project_id.
+  repeated ProjectAggregate projects = 2;
+  repeated ActivityCount activity = 3;
+  repeated RecentRevision recent = 4;
+  ArtifactCoverage artifact_coverage = 5;
+  // Counted revisions whose source holds no readable creation time: in no activity bucket.
+  int64 undated_revisions = 6;
+}

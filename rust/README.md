@@ -124,3 +124,69 @@ Unary RPCs retry automatically on `UNAVAILABLE`, `DEADLINE_EXCEEDED`,
 ## License
 
 MIT — see [LICENSE](LICENSE).
+
+## Native change audit
+
+An opt-in native server can expose ChangeAuditService.ListChanges independently
+of the existing KumihoService vocabulary. Client::list_changes returns bounded
+pages from persisted native events under the caller's current Audit and Read
+permissions. Exact action, project, actor and inclusive/exclusive time filters
+are supported. A short or empty filtered page may still have has_more; continue
+with next_cursor until it is false.
+
+Cursors remain opaque and bound to the caller, tenant and filters. Replay limits
+are returned explicitly. An absent historical request_id stays absent. These
+pages cover native change events; security audit records and console management
+operations are separate sources. Unsupported servers return their RPC error;
+the SDK never substitutes a local event buffer for persisted history.
+
+### Project export
+
+```rust
+let export = client.export_project("film-aurora").await?;
+std::fs::write("film-aurora-export.json", export.document)?;
+```
+
+The native database reads one project's catalog under the current session and returns
+a complete version 1 JSON manifest from a single read transaction. It includes
+project and asset metadata, live numeric revisions, dependency references, and
+registered artifact locations. The SDK validates the response's schema and project,
+preserves server errors, and accepts documents up to 8 MiB. A missing service or
+an over-limit project returns an error before a file can be written.
+
+### Backup status
+
+Use the same connected native client to read the database archive runner's
+published observation as a current tenant owner or admin.
+
+```rust,ignore
+let status = client.get_backup_status().await?;
+```
+
+The observation and checkpoint timestamps are Unix milliseconds. An older
+server can return `Unimplemented`; an unavailable observation can carry its
+last publication time. The RPC only returns status.
+
+### Tenant aggregates
+
+Use the same connected native client to read a tenant's exact dashboard numbers
+in one call: per-project space, item, revision and artifact counts, revision
+activity per time bucket, space and author, and the newest revisions. Day
+buckets start at local midnight for `utc_offset_minutes`.
+
+```rust,ignore
+use kumiho::tenant_insight::GetTenantAggregatesRequest;
+
+let totals = client
+    .get_tenant_aggregates(GetTenantAggregatesRequest {
+        utc_offset_minutes: 540,
+        ..Default::default()
+    })
+    .await?;
+println!("as of {}", totals.basis.unwrap_or_default().as_of);
+```
+
+Every number equals one snapshot of the tenant, named by `basis.cell_log_index`.
+Archived projects are counted apart from the live ones, in the `archived_*` fields.
+The server refuses instead of answering with a partial number, and an older
+server returns `Unimplemented`. Only `Unavailable` is retried.

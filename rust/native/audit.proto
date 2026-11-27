@@ -1,0 +1,41 @@
+syntax = "proto3";
+package kumiho.audit.v1;
+
+// Additive, bounded read of committed native changes. It does not include
+// governance SecurityAuditRecord or control-plane operations.
+service ChangeAuditService {
+  rpc ListChanges(ListChangesRequest) returns (ChangeAuditPage);
+}
+message ListChangesRequest {
+  uint32 page_size = 1;
+  string cursor = 2;
+  uint64 from_ms = 3; // inclusive; zero means unspecified
+  uint64 until_ms = 4; // exclusive; zero means unspecified
+  string action = 5; // exact native event kind
+  string project = 6; // exact original kref authority
+  string actor_kind = 7;
+  string actor_id = 8;
+}
+message AuditPrincipal { string kind = 1; string id = 2; }
+message ChangeAuditEntry {
+  string event_id = 1;
+  string action = 2;
+  uint64 committed_at_ms = 3;
+  AuditPrincipal actor = 4;
+  repeated AuditPrincipal via = 5;
+  string target_kref = 6;
+  repeated string related_krefs = 7;
+  // Absent when canonical history does not carry an authoritative request id.
+  optional string request_id = 8;
+}
+message ChangeAuditPage {
+  repeated ChangeAuditEntry entries = 1;
+  // Position of the last inspected event, even for a short/empty filtered page.
+  string next_cursor = 2;
+  bool has_more = 3;
+  // Opaque tail observed by this page. No snapshot lease across pages.
+  string observed_through = 4;
+  bool replay_window_limited = 5;
+  uint64 retention_hours = 6;
+  uint64 max_events = 7;
+}
